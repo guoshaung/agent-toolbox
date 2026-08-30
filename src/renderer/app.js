@@ -1,6 +1,7 @@
 import { TOOLS } from './core/registry.js';
 import { DeepSeekBridge } from './core/deepseek-bridge.js';
 import { Config } from './core/config.js';
+import { AI } from './core/ai.js';
 import { h, toast } from './core/ui.js';
 
 const rail = document.getElementById('rail');
@@ -14,6 +15,8 @@ bridge.attach(document.getElementById('bridge-host'));
 const ctx = {
   config,
   bridge,
+  /** 统一的 AI 入口：底下是网页版还是自定义 API，上层不用管 */
+  ai: new AI({ config, bridge }),
   toast,
   /** 让「专注」里的 AI 建议按钮能一键跳到「快问」去登录 */
   goto: (id) => activate(id),
@@ -71,7 +74,7 @@ for (const tool of TOOLS) {
       h('span', { class: 'rail__label' }, tool.title),
     ),
   );
-  if (tool.id === 'focus') rail.appendChild(h('div', { class: 'rail__spacer' }));
+  if (tool.id === 'study') rail.appendChild(h('div', { class: 'rail__spacer' }));
 }
 
 // Cmd+1..9 快速切工具

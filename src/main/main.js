@@ -143,6 +143,41 @@ function registerIpc() {
     if (mainWindow) mainWindow.webContents.openDevTools({ mode: 'detach' });
   });
 
+  /**
+   * 自定义 AI API 的请求。放在主进程有两个原因：
+   * 渲染进程有 CSP（connect-src 'self'）发不出去；API Key 也不该在页面上下文里流转。
+   */
+  ipcMain.handle('ai:chat', async (_e, { baseUrl, apiKey, model, messages, temperature, timeout }) => {
+    if (!/^https?:\/\//i.test(String(baseUrl || ''))) {
+      return { ok: false, code: 'not-configured', error: 'Base URL 必须是 http(s) 开头的完整地址。' };
+    }
+    const endpoint = `${String(baseUrl).replace(/\/+$/, '')}/chat/completions`;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), Math.min(Number(timeout) || 90000, 300000));
+    try {
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${apiKey}` },
+        body: JSON.stringify({ model, messages, temperature, stream: false }),
+        signal: controller.signal,
+      });
+      const text = await response.text();
+      if (!response.ok) {
+        return { ok: false, code: 'http', error: `${response.status} ${response.statusText}：${text.slice(0, 300)}` };
+      }
+      let payload;
+      try { payload = JSON.parse(text); } catch {
+        return { ok: false, code: 'http', error: `返回的不是 JSON：${text.slice(0, 200)}` };
+      }
+      return { ok: true, text: payload?.choices?.[0]?.message?.content ?? '' };
+    } catch (err) {
+      const aborted = err.name === 'AbortError';
+      return { ok: false, code: aborted ? 'timeout' : 'http', error: aborted ? '请求超时。' : err.message };
+    } finally {
+      clearTimeout(timer);
+    }
+  });
+
   ipcMain.handle('files:pickImage', async () => {
     const result = await dialog.showOpenDialog(mainWindow, {
       title: '选择背景图片',

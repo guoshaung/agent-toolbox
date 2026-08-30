@@ -19,6 +19,11 @@ contextBridge.exposeInMainWorld('toolbox', {
     pickImage: () => ipcRenderer.invoke('files:pickImage'),
   },
 
+  ai: {
+    /** 走主进程发 OpenAI 兼容请求；API Key 不进页面上下文 */
+    chat: (payload) => ipcRenderer.invoke('ai:chat', payload),
+  },
+
   clipboard: {
     write: (text) => ipcRenderer.invoke('clipboard:write', text),
     read: () => ipcRenderer.invoke('clipboard:read'),
