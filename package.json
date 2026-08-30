@@ -1,0 +1,14 @@
+{
+  "name": "agent-toolbox",
+  "version": "0.1.0",
+  "description": "个人 Agent 工具箱：文档浏览 / 打字纠错 / 专注模式 / DeepSeek 快问",
+  "private": true,
+  "main": "src/main/main.js",
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron . --dev"
+  },
+  "devDependencies": {
+    "electron": "^33.2.0"
+  }
+}
