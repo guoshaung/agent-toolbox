@@ -158,7 +158,9 @@ textarea.field { resize: none; line-height: 1.65; }
 }
 .empty__icon { font-size: 34px; display: block; margin-bottom: 10px; opacity: .55; }
 
-webview { flex: 1; min-height: 0; background: #fff; }
+/* display:flex 不能省：webview 内部靠它把 <object> 撑满容器，
+   否则内部视口会停在 150px 的固有高度，下半截是白屏 */
+webview { display: flex; flex: 1; min-height: 0; background: #fff; }
 
 .hidden-host {
   position: fixed;

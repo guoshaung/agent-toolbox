@@ -39,7 +39,7 @@ export class DeepSeekBridge {
     const view = document.createElement('webview');
     view.setAttribute('partition', DEEPSEEK_PARTITION);
     view.setAttribute('src', DEEPSEEK_URL);
-    view.style.cssText = 'width:1200px;height:900px;border:0;';
+    view.style.cssText = 'display:flex;width:1200px;height:900px;border:0;';
     host.appendChild(view);
     this.webview = view;
 
