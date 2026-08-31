@@ -310,7 +310,7 @@ export function createLiterature(root, ctx) {
         cells[i].querySelector('.lit__biling-dst').textContent = cache[i];
         done += 1;
         bilingBtn.textContent = `对照 ${done}/${pending.length}`;
-        await new Promise((r) => setTimeout(r, 200)); // 防有道限流
+        await new Promise((r) => setTimeout(r, 1000)); // 有道按突发频率限流，慢就是快
       }
       await config.set(transCacheKey(), cache);
     } finally {

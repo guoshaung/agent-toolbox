@@ -6,11 +6,11 @@
  * Google 翻译在本网络不可达，不用。
  *
  * 方向自动判断：中文为主 → 译成英文；其他 → 译成中文。
- * 长文本按段落切块（每块 ≤2000 字），逐块请求后拼回，块间留出节奏防限流。
+ * 长文本按段落切块（每块 ≤900 字，实测 1024 附近有硬限制），逐块请求后拼回。
  */
 
 const ENDPOINT = 'https://aidemo.youdao.com/trans';
-const CHUNK_SIZE = 2000;
+const CHUNK_SIZE = 900; // 实测 1024 附近有硬限制，留余量
 const MAX_TOTAL = 20000; // 整篇对照翻译的字符上限，超出截断
 
 function detectTarget(text) {
@@ -18,7 +18,7 @@ function detectTarget(text) {
   return cjk > String(text).length * 0.2 ? 'en' : 'zh-CHS';
 }
 
-async function translateChunk(q, to, retried = false) {
+async function translateChunk(q, to, attempt = 0) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 20000);
   try {
@@ -29,12 +29,21 @@ async function translateChunk(q, to, retried = false) {
       signal: controller.signal,
     });
     const data = await res.json();
-    if (String(data.errorCode) === '103' && !retried) {
-      // 有道限流：缓 1.2s 重试一次
-      await new Promise((r) => setTimeout(r, 1200));
-      return translateChunk(q, to, true);
+    const code = String(data.errorCode);
+    if (code === '103' && attempt < 2) {
+      // 有道限流（突发频率）：10s/20s 长退避重试
+      await new Promise((r) => setTimeout(r, 10000 * (attempt + 1)));
+      return translateChunk(q, to, attempt + 1);
     }
-    if (String(data.errorCode) !== '0' || !Array.isArray(data.translation)) {
+    if (code === '411' && attempt < 2) {
+      // 超长：对半切了分别翻再拼回
+      const half = Math.ceil(q.length / 2);
+      const a = await translateChunk(q.slice(0, half), to, attempt + 1);
+      const b = await translateChunk(q.slice(half), to, attempt + 1);
+      return `${a}\n${b}`;
+    }
+    if (code !== '0' || !Array.isArray(data.translation)) {
+      if (code === '103') throw new Error('有道限流了，稍等几秒再试');
       throw new Error(`有道返回错误（errorCode=${data.errorCode ?? '未知'}）`);
     }
     return data.translation.join('\n');
@@ -74,7 +83,7 @@ async function translate(text, options = {}) {
     for (let i = 0; i < chunks.length; i += 1) {
       parts.push(await translateChunk(chunks[i], to));
       options.onProgress?.(i + 1, chunks.length);
-      if (i < chunks.length - 1) await new Promise((r) => setTimeout(r, 250));
+      if (i < chunks.length - 1) await new Promise((r) => setTimeout(r, 2000));
     }
   } catch (err) {
     return { ok: false, error: err.message };
