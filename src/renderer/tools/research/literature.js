@@ -264,13 +264,32 @@ export function createLiterature(root, ctx) {
     viewerEl.appendChild(overlay);
   }
 
-  /** 对照翻译：TXT/MD 按段落原文/译文上下排，缓存到 config */
+  /** 对照翻译：TXT/MD 按段落原文/译文上下排，缓存到 config。
+   *  有道免费配额约每分钟 5 条新翻译，所以把多段打包成 ≤850 字的批
+   *  （有道保留换行结构），按批请求再按行拆回去；拆不齐的批退回逐段翻。 */
   function paragraphs() {
     return String(rawText || '').split(/\n+/).map((p) => p.trim()).filter(Boolean).slice(0, 60);
   }
 
   function transCacheKey() {
     return `research.litTrans.${current.file}`;
+  }
+
+  function makeParaBatches(paras, pendingIdx) {
+    const batches = [];
+    let cur = [];
+    let chars = 0;
+    for (const i of pendingIdx) {
+      if (cur.length && (chars + paras[i].length > 850 || cur.length >= 6)) {
+        batches.push(cur);
+        cur = [];
+        chars = 0;
+      }
+      cur.push(i);
+      chars += paras[i].length;
+    }
+    if (cur.length) batches.push(cur);
+    return batches;
   }
 
   async function toggleBilingual() {
@@ -293,26 +312,48 @@ export function createLiterature(root, ctx) {
       return cell;
     });
 
-    const pending = paras.map((p, i) => ({ p, i })).filter(({ i }) => !cache[i]);
-    if (!pending.length) return;
+    const pendingIdx = paras.map((_, i) => i).filter((i) => !cache[i]);
+    if (!pendingIdx.length) return;
     translating = true;
+    const batches = makeParaBatches(paras, pendingIdx);
     let done = 0;
     try {
-      for (const { p, i } of pending) {
+      for (const batch of batches) {
         if (!bilingual || current == null) break; // 中途切走了
-        cells[i].querySelector('.lit__biling-dst').textContent = '翻译中…';
+        for (const i of batch) cells[i].querySelector('.lit__biling-dst').textContent = '翻译中…';
+        let ok = false;
         try {
-          const result = await lit.translate(p);
-          cache[i] = result.ok ? result.translation : `（失败：${result.error}）`;
-        } catch (err) {
-          cache[i] = `（失败：${err.message}）`;
+          const result = await lit.translate(batch.map((i) => paras[i]).join('\n'));
+          if (result.ok) {
+            const lines = result.translation.split('\n');
+            if (lines.length === batch.length) {
+              batch.forEach((i, k) => { cache[i] = lines[k].trim(); cells[i].querySelector('.lit__biling-dst').textContent = lines[k].trim(); });
+              ok = true;
+            }
+          } else if (result.error) {
+            toast(result.error, 'bad');
+          }
+        } catch { /* 落到逐段兜底 */ }
+        if (!ok) {
+          // 行拆不齐（模型偶发合并/拆分）：逐段兜底
+          for (const i of batch) {
+            try {
+              const one = await lit.translate(paras[i]);
+              cache[i] = one.ok ? one.translation : `（失败：${one.error}）`;
+            } catch (err) {
+              cache[i] = `（失败：${err.message}）`;
+            }
+            cells[i].querySelector('.lit__biling-dst').textContent = cache[i];
+            await new Promise((r) => setTimeout(r, 1200));
+          }
         }
-        cells[i].querySelector('.lit__biling-dst').textContent = cache[i];
-        done += 1;
-        bilingBtn.textContent = `对照 ${done}/${pending.length}`;
-        await new Promise((r) => setTimeout(r, 1000)); // 有道按突发频率限流，慢就是快
+        done += batch.length;
+        bilingBtn.textContent = `对照 ${done}/${pendingIdx.length}`;
+        await config.set(transCacheKey(), cache); // 边翻边存，中断不丢
+        if (batches.indexOf(batch) < batches.length - 1) {
+          await new Promise((r) => setTimeout(r, 13000)); // 免费配额 ~5 条新内容/分钟
+        }
       }
-      await config.set(transCacheKey(), cache);
     } finally {
       translating = false;
       bilingBtn.textContent = '对照';

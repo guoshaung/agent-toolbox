@@ -30,20 +30,25 @@ async function translateChunk(q, to, attempt = 0) {
     });
     const data = await res.json();
     const code = String(data.errorCode);
-    if (code === '103' && attempt < 2) {
-      // 有道限流（突发频率）：10s/20s 长退避重试
-      await new Promise((r) => setTimeout(r, 10000 * (attempt + 1)));
+    if (code === '411' && attempt < 2) {
+      // 411 = 新内容配额耗尽（实测约每分钟 5 条新翻译）：等 30s 再试
+      await new Promise((r) => setTimeout(r, 30000));
       return translateChunk(q, to, attempt + 1);
     }
-    if (code === '411' && attempt < 2) {
-      // 超长：对半切了分别翻再拼回
-      const half = Math.ceil(q.length / 2);
-      const a = await translateChunk(q.slice(0, half), to, attempt + 1);
-      const b = await translateChunk(q.slice(half), to, attempt + 1);
-      return `${a}\n${b}`;
+    if (code === '103' && attempt < 2) {
+      // 103 = 单次文本超长（实测 ~1000 字上限）或被风控：对半切再试
+      if (q.length > 500) {
+        const half = Math.ceil(q.length / 2);
+        const a = await translateChunk(q.slice(0, half), to, attempt + 1);
+        const b = await translateChunk(q.slice(half), to, attempt + 1);
+        return `${a}\n${b}`;
+      }
+      await new Promise((r) => setTimeout(r, 30000));
+      return translateChunk(q, to, attempt + 1);
     }
     if (code !== '0' || !Array.isArray(data.translation)) {
       if (code === '103') throw new Error('有道限流了，稍等几秒再试');
+      if (code === '411') throw new Error('有道免费配额用完了，一分钟后再试');
       throw new Error(`有道返回错误（errorCode=${data.errorCode ?? '未知'}）`);
     }
     return data.translation.join('\n');
@@ -83,7 +88,7 @@ async function translate(text, options = {}) {
     for (let i = 0; i < chunks.length; i += 1) {
       parts.push(await translateChunk(chunks[i], to));
       options.onProgress?.(i + 1, chunks.length);
-      if (i < chunks.length - 1) await new Promise((r) => setTimeout(r, 2000));
+      if (i < chunks.length - 1) await new Promise((r) => setTimeout(r, 12000)); // 配额 ~5 条新内容/分钟
     }
   } catch (err) {
     return { ok: false, error: err.message };

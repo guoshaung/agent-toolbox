@@ -55,8 +55,10 @@ contextBridge.exposeInMainWorld('toolbox', {
   },
 
   news: {
-    /** 主进程代取 RSS/Atom 订阅源，返回 { ok, items: [{title, link, at}] | error } */
+    /** 主进程代取 RSS/Atom 订阅源，返回 { ok, items: [{title, link, at, image}] | error } */
     fetchFeed: (url) => ipcRenderer.invoke('news:fetchFeed', url),
+    /** 快报配图代取（data: URL 带磁盘缓存），拿不到返回 null */
+    image: (url) => ipcRenderer.invoke('news:image', url),
   },
 
   coach: {

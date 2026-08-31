@@ -6,9 +6,22 @@ const PRESET_GAMES = [
   { name: 'TapTap', url: 'https://www.taptap.cn', desc: '找 Q 版围棋等益智游戏', emoji: '🎮' },
   { name: '围棋 OGS', url: 'https://online-go.com', desc: '在线围棋对弈 / 死活题', emoji: '⚫' },
   { name: '腾讯野狐围棋', url: 'https://www.foxwq.com', desc: '国产围棋平台', emoji: '🏁' },
-  { name: '2048', url: 'https://play2048.co', desc: '经典数字合成', emoji: '🔢' },
+  { name: '2048', url: 'https://gabrielecirulli.github.io/2048/', desc: '原版开源（官网已禁内嵌）', emoji: '🔢' },
   { name: '数独', url: 'https://sudoku.com', desc: '网页版数独', emoji: '🧩' },
   { name: 'Lichess', url: 'https://lichess.org', desc: '国际象棋 / 谜题', emoji: '♟️' },
+];
+
+/**
+ * 小游戏流：一局一换的轻量网页游戏，像刷短视频一样上下滑切换。
+ * 全部实测可 iframe 内嵌、国内可达；进视口才加载，切走暂停不了就随它去（都是静态页）。
+ */
+const FEED_GAMES = [
+  { name: 'Chrome 恐龙', url: 'https://chromedino.com/', desc: '断网小恐龙，空格跳', emoji: '🦖' },
+  { name: '2048', url: 'https://gabrielecirulli.github.io/2048/', desc: '原版开源，方向键合成', emoji: '🔢' },
+  { name: '俄罗斯方块', url: 'https://chvin.github.io/react-tetris/', desc: '像素完美复刻，还支持手柄', emoji: '🧱' },
+  { name: '笨拙小鸟', url: 'https://ellisonleao.github.io/clumsy-bird/', desc: 'Flappy Bird 克隆，点按飞', emoji: '🐦' },
+  { name: 'Floppy Bird', url: 'https://nebez.github.io/floppybird/', desc: '又一个 Flappy，上/空格', emoji: '🐤' },
+  { name: '吃豆人', url: 'https://passer-by.com/pacman/', desc: '网页版 Pac-Man，方向键', emoji: '🟡' },
 ];
 
 function shuffle(arr) {
@@ -231,7 +244,106 @@ function createFlowMemory(host, config) {
   return { deactivate: clearTimers };
 }
 
-/** 醒脑：内置小游戏 + 网页版游戏格子铺，三个小页签切换。 */
+/**
+ * 小游戏流：竖向滚动 + scroll-snap，一屏一个游戏，滚轮/方向键切换。
+ * webview 懒加载：卡片第一次进入视口才设 src，六个游戏不会一上来全连网。
+ */
+function createGameFeed(host, config) {
+  const scroller = h('div', { class: 'feed__scroller' });
+  const positionEl = h('span', { class: 'faint feed__position' }, '');
+  const webviews = new Map(); // index -> webview
+  let current = 0;
+  let observer = null;
+
+  // 记住上次玩到哪个
+  const saved = Math.min(FEED_GAMES.length - 1, Math.max(0, Number(config.get('focus.gameFeed.index', 0)) || 0));
+
+  function ensureWebview(index) {
+    if (webviews.has(index)) return webviews.get(index);
+    const view = h('webview', { partition: 'persist:focus', src: FEED_GAMES[index].url });
+    webviews.set(index, view);
+    scroller.children[index].querySelector('.feed__stage').appendChild(view);
+    return view;
+  }
+
+  function updatePosition() {
+    positionEl.textContent = `${current + 1} / ${FEED_GAMES.length} · ${FEED_GAMES[current].name}`;
+    config.set('focus.gameFeed.index', current);
+  }
+
+  function goTo(index) {
+    const clamped = Math.min(FEED_GAMES.length - 1, Math.max(0, index));
+    scroller.children[clamped].scrollIntoView({ behavior: 'smooth' });
+  }
+
+  function onKey(e) {
+    if (e.key === 'ArrowDown' || e.key === 'PageDown') { goTo(current + 1); e.preventDefault(); }
+    if (e.key === 'ArrowUp' || e.key === 'PageUp') { goTo(current - 1); e.preventDefault(); }
+  }
+
+  host.append(
+    h('div', { class: 'bar' },
+      h('strong', {}, '小游戏流'),
+      positionEl,
+      h('button', { class: 'btn btn--sm', title: '上一局', onclick: () => goTo(current - 1) }, '↑'),
+      h('button', { class: 'btn btn--sm', title: '下一局', onclick: () => goTo(current + 1) }, '↓'),
+      h('span', { style: { flex: 1 } }),
+      h('span', { class: 'faint' }, '游戏区外滚轮也能切换'),
+      h('button', {
+        class: 'btn btn--sm btn--ghost', title: '用系统浏览器打开当前游戏',
+        onclick: () => window.toolbox.shell.openExternal(FEED_GAMES[current].url),
+      }, '↗'),
+    ),
+    scroller,
+  );
+
+  // 卡片骨架先全部铺好（webview 等进视口再补）
+  FEED_GAMES.forEach((game, index) => {
+    scroller.appendChild(h('div', { class: 'feed__card' },
+      h('div', { class: 'feed__head' },
+        h('span', { class: 'feed__emoji' }, game.emoji),
+        h('span', { class: 'feed__name' }, game.name),
+        h('span', { class: 'faint feed__desc' }, game.desc),
+        h('button', {
+          class: 'btn btn--sm btn--ghost', title: '重新加载这个游戏',
+          onclick: () => {
+            const view = webviews.get(index);
+            if (view) view.reload();
+            else ensureWebview(index);
+          },
+        }, '⟳'),
+      ),
+      h('div', { class: 'feed__stage' }),
+    ));
+  });
+
+  observer = new IntersectionObserver((entries) => {
+    for (const entry of entries) {
+      if (!entry.isIntersecting) continue;
+      const index = [...scroller.children].indexOf(entry.target);
+      if (index === -1) continue;
+      ensureWebview(index);
+      if (entry.intersectionRatio > 0.6) {
+        current = index;
+        updatePosition();
+      }
+    }
+  }, { root: scroller, threshold: [0.2, 0.6] });
+  for (const card of scroller.children) observer.observe(card);
+
+  updatePosition();
+  // 首屏：直接加载上次玩到的那个（scrollIntoView 平滑滚过去会顺路加载中间的，先瞬移）
+  scroller.children[saved].scrollIntoView();
+
+  return {
+    deactivate: () => {
+      if (observer) observer.disconnect();
+      webviews.clear();
+    },
+  };
+}
+
+/** 醒脑：内置小游戏 + 小游戏流 + 网页版游戏格子铺，页签切换。 */
 export function createGames(root, ctx) {
   const { config } = ctx;
   const panels = new Map();
@@ -241,6 +353,7 @@ export function createGames(root, ctx) {
   const tabs = [
     { id: 'schulte', label: '舒尔特方格' },
     { id: 'memory', label: '流光记忆' },
+    { id: 'feed', label: '小游戏流' },
     { id: 'web', label: '网页游戏' },
   ];
 
@@ -250,6 +363,7 @@ export function createGames(root, ctx) {
   const factories = {
     schulte: (panel) => createSchulte(panel, config),
     memory: (panel) => createFlowMemory(panel, config),
+    feed: (panel) => createGameFeed(panel, config),
     web: (panel) => createSiteGrid(panel, {
       presets: PRESET_GAMES,
       configKey: 'focus.gameSites',

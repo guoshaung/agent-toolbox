@@ -22,6 +22,7 @@ const HOT_SITES = [
 ];
 
 const PARTITION = 'persist:focus';
+const READ_LIMIT = 500;
 
 function timeAgo(at) {
   if (!at) return '';
@@ -34,14 +35,18 @@ function timeAgo(at) {
 }
 
 /**
- * 快报：RSS 条目列表。点条目在下方内嵌浏览器里读原文，不跳出应用。
- * 条目缓存在本地，断网也能看上次的。
+ * 快报：看过即消化——点开的条目从未读流里消失，但进「已读回溯」可随时翻旧账。
+ * 条目带配图缩略图（主进程代取 + 缩放缓存）；断网也能看本地快照。
  */
 function createDigest(host, ctx) {
   const { config } = ctx;
   const items = new Map(); // link -> item（含来源名）
   let activeFeed = 'all';
+  let view = 'unread'; // unread | read
   let reader = null;
+  let thumbObserver = null;
+
+  const readMap = config.get('focus.newsRead') || {};
 
   const listEl = h('div', { class: 'news__list' });
   const chipsEl = h('div', { class: 'news__chips' });
@@ -58,18 +63,51 @@ function createDigest(host, ctx) {
   );
   let readerUrl = null;
 
+  // 缩略图懒加载：进视口才向主进程要图（代取 + 缩放 + 磁盘缓存都在那边）
+  function observeThumbs() {
+    if (thumbObserver) thumbObserver.disconnect();
+    thumbObserver = new IntersectionObserver((entries) => {
+      for (const entry of entries) {
+        if (!entry.isIntersecting) continue;
+        const el = entry.target;
+        thumbObserver.unobserve(el);
+        window.toolbox.news.image(el.dataset.src).then((dataUrl) => {
+          if (dataUrl) el.src = dataUrl;
+          else el.classList.add('is-empty');
+        });
+      }
+    }, { root: listEl, rootMargin: '120px' });
+    for (const el of listEl.querySelectorAll('img[data-src]')) thumbObserver.observe(el);
+  }
+
+  function persistRead() {
+    const entries = Object.entries(readMap)
+      .sort((a, b) => b[1].at - a[1].at)
+      .slice(0, READ_LIMIT);
+    config.set('focus.newsRead', Object.fromEntries(entries));
+  }
+
+  function markRead(item) {
+    if (!readMap[item.link]) {
+      readMap[item.link] = { t: item.title, s: item.source, at: Date.now(), img: item.image || '' };
+      persistRead();
+    }
+  }
+
   function openReader(item) {
+    markRead(item);
     readerUrl = item.link;
     readerBar.children[1].textContent = item.title;
     if (!reader) {
       reader = h('webview', { partition: PARTITION });
       readerHost.appendChild(reader);
     }
-    reader.src = item.link;
+    if (reader.getAttribute('src') !== item.link) reader.src = item.link;
     readerBar.removeAttribute('hidden');
     readerHost.removeAttribute('hidden');
     listEl.setAttribute('hidden', '');
     chipsEl.setAttribute('hidden', '');
+    render(); // 未读流里去掉它
   }
 
   function closeReader() {
@@ -80,37 +118,74 @@ function createDigest(host, ctx) {
     chipsEl.removeAttribute('hidden');
   }
 
+  function renderItem(item, readAt) {
+    const row = h('div', { class: 'news__item', onclick: () => openReader(item) });
+    if (item.image) {
+      row.appendChild(h('img', { class: 'news__thumb', 'data-src': item.image, alt: '' }));
+    } else {
+      row.appendChild(h('span', { class: 'news__thumb news__thumb--ph' }, (item.source || '·').slice(0, 1)));
+    }
+    row.appendChild(h('div', { class: 'news__main' },
+      h('div', { class: 'news__meta' },
+        h('span', { class: 'news__source' }, item.source),
+        h('span', { class: 'news__time faint' }, readAt ? `读过 · ${timeAgo(readAt)}` : timeAgo(item.at)),
+      ),
+      h('span', { class: 'news__title' }, item.title),
+    ));
+    return row;
+  }
+
   function render() {
     listEl.textContent = '';
-    const shown = [...items.values()]
-      .filter((item) => activeFeed === 'all' || item.source === activeFeed)
-      .sort((a, b) => b.at - a.at);
+    const sourceFiltered = (item) => activeFeed === 'all' || item.source === activeFeed;
+    let shown;
+    if (view === 'unread') {
+      shown = [...items.values()].filter((item) => !readMap[item.link] && sourceFiltered(item))
+        .sort((a, b) => b.at - a.at)
+        .slice(0, 120);
+    } else {
+      shown = Object.entries(readMap)
+        .filter(([, r]) => activeFeed === 'all' || r.s === activeFeed)
+        .sort((a, b) => b[1].at - a[1].at)
+        .slice(0, 200)
+        .map(([link, r]) => ({ link, title: r.t, source: r.s, at: r.at, image: r.img }));
+    }
     if (!shown.length) {
       listEl.appendChild(h('div', { class: 'faint', style: { padding: '24px 18px' } },
-        '还没有内容。点右上角「刷新」抓一遍各源的最新条目。'));
+        view === 'unread' ? '没有未读。点「刷新」抓最新的，或去「已读回溯」翻旧账。' : '还没有读过的条目。'));
       return;
     }
-    for (const item of shown.slice(0, 120)) {
-      listEl.appendChild(h('div', { class: 'news__item', onclick: () => openReader(item) },
-        h('span', { class: 'news__source' }, item.source),
-        h('span', { class: 'news__title' }, item.title),
-        h('span', { class: 'news__time faint' }, timeAgo(item.at)),
-      ));
+    for (const item of shown) {
+      listEl.appendChild(renderItem(item, view === 'read' ? readMap[item.link]?.at : 0));
     }
+    observeThumbs();
   }
 
   function renderChips() {
     chipsEl.textContent = '';
+    const views = [
+      { id: 'unread', label: '未读' },
+      { id: 'read', label: '已读回溯' },
+    ];
+    for (const v of views) {
+      chipsEl.appendChild(h('button', {
+        class: `btn btn--sm ${view === v.id ? 'is-active' : ''}`,
+        onclick: () => { view = v.id; renderChips(); render(); },
+      }, v.label));
+    }
+    chipsEl.appendChild(h('span', { class: 'news__chips-sep' }));
     chipsEl.appendChild(h('button', {
       class: `btn btn--sm ${activeFeed === 'all' ? 'is-active' : ''}`,
       onclick: () => { activeFeed = 'all'; renderChips(); render(); },
-    }, '全部'));
+    }, '全部源'));
     for (const feed of FEEDS) {
       chipsEl.appendChild(h('button', {
         class: `btn btn--sm ${activeFeed === feed.id ? 'is-active' : ''}`,
         onclick: () => { activeFeed = feed.id; renderChips(); render(); },
       }, feed.name));
     }
+    viewActionBtn.textContent = view === 'unread' ? '全部已读' : '清空回溯';
+    viewActionBtn.title = view === 'unread' ? '把当前未读全部标为已读' : '清空全部已读记录';
   }
 
   async function refresh() {
@@ -141,11 +216,29 @@ function createDigest(host, ctx) {
     if (item && item.link && !items.has(item.link)) items.set(item.link, item);
   }
 
+  const viewActionBtn = h('button', {
+    class: 'btn btn--sm',
+    onclick: () => {
+      if (view === 'unread') {
+        for (const item of [...items.values()]) {
+          if (activeFeed === 'all' || item.source === activeFeed) markRead(item);
+        }
+        render();
+        toast('都标成已读了', 'good');
+      } else if (window.confirm('清空全部已读回溯记录？')) {
+        for (const key of Object.keys(readMap)) delete readMap[key];
+        persistRead();
+        render();
+      }
+    },
+  });
+
   host.append(
     h('div', { class: 'bar' },
       chipsEl,
       h('span', { style: { flex: 1 } }),
       statusEl,
+      viewActionBtn,
       h('button', { class: 'btn btn--sm btn--primary', onclick: () => refresh() }, '刷新'),
     ),
     readerBar,

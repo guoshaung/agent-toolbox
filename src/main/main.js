@@ -813,6 +813,20 @@ function registerIpc() {
 
   // ---- 专注 · AI 情报：RSS 快报由主进程代取（渲染进程 CSP 不放行跨域请求） ----
   ipcMain.handle('news:fetchFeed', (_e, url) => newsFeed.fetchFeed(url));
+
+  // 快报配图代取成 data: URL，磁盘缓存放 userData/cache/news-img/。
+  // 原图动辄几百 KB，用 nativeImage 缩到缩略图尺寸再转 JPEG，渲染层内存和缓存盘都省。
+  ipcMain.handle('news:image', (_e, url) =>
+    newsFeed.fetchImage(url, path.join(app.getPath('userData'), 'cache', 'news-img'), (buf) => {
+      try {
+        const img = nativeImage.createFromBuffer(buf);
+        if (img.isEmpty()) return null;
+        const resized = img.resize({ width: 180 });
+        return { mime: 'image/jpeg', b64: resized.toJPEG(72).toString('base64') };
+      } catch {
+        return null;
+      }
+    }));
 }
 
 app.whenReady().then(() => {
