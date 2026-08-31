@@ -54,6 +54,11 @@ contextBridge.exposeInMainWorld('toolbox', {
     favicon: (url) => ipcRenderer.invoke('site:favicon', url),
   },
 
+  news: {
+    /** 主进程代取 RSS/Atom 订阅源，返回 { ok, items: [{title, link, at}] | error } */
+    fetchFeed: (url) => ipcRenderer.invoke('news:fetchFeed', url),
+  },
+
   coach: {
     /** 把陪读插件装进本机 VSCode / Cursor 并写入默认 API 配置 */
     install: () => ipcRenderer.invoke('coach:install'),
@@ -78,6 +83,10 @@ contextBridge.exposeInMainWorld('toolbox', {
     fixNames: () => ipcRenderer.invoke('lit:fixNames'),
     /** 按文献名自动下载免费 PDF（arXiv/Semantic Scholar），返回 { ok, file | error } */
     fetchByTitle: (query) => ipcRenderer.invoke('lit:fetch', query),
+    /** 免费翻译（有道），返回 { ok, translation | error } */
+    translate: (text) => ipcRenderer.invoke('lit:translate', text),
+    /** 圈选截图 OCR + 翻译，返回 { ok, srcText, translation | error } */
+    snipTranslate: (dataUrl) => ipcRenderer.invoke('lit:snipTranslate', dataUrl),
   },
 
   ai: {

@@ -102,18 +102,17 @@ function extractArxivId(input) {
   return m ? m[1] : null;
 }
 
-/** 从一条 OpenAlex 记录里挑最靠谱的 PDF：arXiv 位置 > OA 位置 > 主位置 */
+/** 从一条 OpenAlex 记录里挑最靠谱的 PDF：arXiv 号（含 doi.org/10.48550 形式）> 任意 PDF 直链 > OA 位置 */
 function pickPdfFromWork(w) {
+  let anyPdf = null;
   for (const loc of w.locations || []) {
-    const src = ((loc.source || {}).display_name || '').toLowerCase();
-    const landing = loc.landing_page_url || '';
-    const aid = (landing.match(/arxiv\.org\/abs\/(\d{4}\.\d{4,5})/i)
-      || (loc.pdf_url || '').match(/arxiv\.org\/pdf\/(\d{4}\.\d{4,5})/i))?.[1];
-    if (src.includes('arxiv') || aid) {
-      return `https://arxiv.org/pdf/${aid || ''}`.replace(/\/$/, '');
-    }
+    const hay = `${loc.landing_page_url || ''} ${loc.pdf_url || ''}`;
+    const aid = (hay.match(/arxiv\.org\/(?:abs|pdf)\/(\d{4}\.\d{4,5})/i)
+      || hay.match(/10\.48550\/arxiv\.(\d{4}\.\d{4,5})/i))?.[1];
+    if (aid) return `https://arxiv.org/pdf/${aid}`;
+    if (!anyPdf && loc.pdf_url) anyPdf = loc.pdf_url;
   }
-  return w.best_oa_location?.pdf_url || w.primary_location?.pdf_url || null;
+  return anyPdf || w.best_oa_location?.pdf_url || w.primary_location?.pdf_url || null;
 }
 
 const WORK_SELECT = 'select=title,best_oa_location,primary_location,locations';

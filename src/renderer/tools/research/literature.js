@@ -24,16 +24,22 @@ export function createLiterature(root, ctx) {
   let zoomIndex = 2;  // ZOOM_STEPS 里的 1.0
 
   const listEl = h('div', { class: 'lit__list' });
+  const noticeEl = h('div', { class: 'lit__notice', hidden: true });
   const viewerEl = h('div', { class: 'lit__viewer' });
 
   const zoomOutBtn = h('button', { class: 'btn btn--icon', title: '缩小', onclick: () => zoom(-1) }, '−');
   const zoomLabel = h('span', { class: 'faint mono lit__zoom-label' }, '100%');
   const zoomInBtn = h('button', { class: 'btn btn--icon', title: '放大', onclick: () => zoom(1) }, '＋');
   const annoToggle = h('button', { class: 'btn btn--sm', onclick: () => toggleAnno() }, '批注');
+  const bilingBtn = h('button', { class: 'btn btn--sm', hidden: true, title: '原文/译文对照（TXT/MD）', onclick: () => toggleBilingual() }, '对照');
+  const selBtn = h('button', { class: 'btn btn--sm', title: '翻译当前选中的文字', onclick: () => translateSelection() }, '划词');
+  const snipBtn = h('button', { class: 'btn btn--sm', title: '框选一块区域，OCR 圈内文字并翻译', onclick: () => startSnip() }, '圈译');
   const viewerBar = h('div', { class: 'bar lit__viewerbar', hidden: true },
     h('span', { class: 'lit__viewer-name', title: '' }, ''),
     h('span', { style: { flex: 1 } }),
     zoomOutBtn, zoomLabel, zoomInBtn,
+    h('span', { class: 'subbar__sep' }),
+    bilingBtn, selBtn, snipBtn,
     h('span', { class: 'subbar__sep' }),
     annoToggle,
   );
@@ -116,6 +122,209 @@ export function createLiterature(root, ctx) {
     }
   }
 
+  // ---- 翻译：对照 / 划词 / 圈译（有道免费接口 + 本地 Vision OCR） ----
+
+  let rawText = null;        // TXT/MD 的原文（对照翻译用）
+  let bilingual = false;
+  let currentWebview = null; // PDF 的 webview 引用（圈译截图用）
+  let snipping = false;
+  let translating = false;
+
+  /** 圈译/划词的浮动结果卡 */
+  const transCard = h('div', { class: 'lit__trans-card', hidden: true });
+
+  function showTransResult(srcText, translation) {
+    transCard.textContent = '';
+    transCard.removeAttribute('hidden');
+    transCard.appendChild(
+      h('div', { class: 'lit__trans-head' },
+        h('strong', {}, '翻译'),
+        h('span', { style: { flex: 1 } }),
+        translation && h('button', {
+          class: 'btn btn--sm',
+          onclick: async () => { await window.toolbox.clipboard.write(translation); toast('译文已复制', 'good'); },
+        }, '复制译文'),
+        translation && h('button', {
+          class: 'btn btn--sm',
+          onclick: async () => {
+            annoQuote.value = srcText || '';
+            annoNote.value = `【译文】${translation}`;
+            annoPanel.removeAttribute('hidden');
+            renderAnnos();
+            toast('已填进批注栏，补一句想法再点「记下」', 'info');
+          },
+        }, '存为批注'),
+        h('button', { class: 'lit__anno-del', title: '关闭', onclick: () => transCard.setAttribute('hidden', '') }, '×'),
+      ),
+      srcText && h('div', { class: 'lit__trans-src faint' }, srcText),
+      translation && h('div', { class: 'lit__trans-dst' }, translation),
+    );
+  }
+
+  function showTransBusy(text) {
+    transCard.textContent = '';
+    transCard.removeAttribute('hidden');
+    transCard.appendChild(h('div', { class: 'lit__trans-head' },
+      h('span', { class: 'spinner' }), ` ${text}`,
+      h('span', { style: { flex: 1 } }),
+      h('button', { class: 'lit__anno-del', title: '关闭', onclick: () => transCard.setAttribute('hidden', '') }, '×'),
+    ));
+  }
+
+  /** 划词翻译：文本阅读器走 window.getSelection；PDF 试试 webview 里能不能拿到选区 */
+  async function translateSelection() {
+    if (translating || !current) return;
+    let selected = '';
+    if (currentWebview) {
+      try {
+        selected = await currentWebview.executeJavaScript('window.getSelection().toString()') || '';
+      } catch { /* PDF 插件里拿不到 */ }
+    } else {
+      selected = String(window.getSelection()?.toString() || '');
+    }
+    selected = selected.trim();
+    if (!selected) {
+      toast(currentWebview ? 'PDF 里选不了字就用「圈译」框选区域' : '先在左边原文里选中一段文字', 'info');
+      return;
+    }
+    translating = true;
+    showTransBusy('正在翻译…');
+    try {
+      const result = await lit.translate(selected);
+      if (!result.ok) return showTransResult(selected, `翻译失败：${result.error}`);
+      showTransResult(selected, result.translation);
+    } catch (err) {
+      showTransResult(selected, `翻译失败：${err.message}`);
+    } finally {
+      translating = false;
+    }
+  }
+
+  /** 圈译：在阅读区上盖一层蒙版拖框 → 截这块 → OCR → 翻译 */
+  function startSnip() {
+    if (snipping || !current || !currentWebview) {
+      if (!currentWebview) toast('圈译用于 PDF；文本文档直接划词翻译', 'info');
+      return;
+    }
+    snipping = true;
+    const rectEl = h('div', { class: 'lit__snip-rect', hidden: true });
+    const overlay = h('div', { class: 'lit__snip-overlay' },
+      rectEl,
+      h('div', { class: 'lit__snip-tip' }, '拖一个框圈住要翻译的内容，Esc 取消'),
+    );
+    let start = null;
+    const escHandler = (e) => { if (e.key === 'Escape') cleanup(); };
+
+    function cleanup() {
+      snipping = false;
+      document.removeEventListener('keydown', escHandler);
+      overlay.remove();
+    }
+
+    overlay.addEventListener('mousedown', (e) => {
+      const box = overlay.getBoundingClientRect();
+      start = { x: e.clientX - box.left, y: e.clientY - box.top };
+      rectEl.removeAttribute('hidden');
+    });
+    overlay.addEventListener('mousemove', (e) => {
+      if (!start) return;
+      const box = overlay.getBoundingClientRect();
+      const cur = { x: e.clientX - box.left, y: e.clientY - box.top };
+      const x = Math.min(start.x, cur.x);
+      const y = Math.min(start.y, cur.y);
+      const w = Math.abs(cur.x - start.x);
+      const hh = Math.abs(cur.y - start.y);
+      Object.assign(rectEl.style, { left: `${x}px`, top: `${y}px`, width: `${w}px`, height: `${hh}px` });
+    });
+    overlay.addEventListener('mouseup', async (e) => {
+      if (!start) return;
+      const box = overlay.getBoundingClientRect();
+      const cur = { x: e.clientX - box.left, y: e.clientY - box.top };
+      const rect = {
+        x: Math.round(Math.min(start.x, cur.x)),
+        y: Math.round(Math.min(start.y, cur.y)),
+        width: Math.round(Math.abs(cur.x - start.x)),
+        height: Math.round(Math.abs(cur.y - start.y)),
+      };
+      cleanup();
+      if (rect.width < 12 || rect.height < 12) return;
+      showTransBusy('正在截图 + OCR…');
+      try {
+        const img = await currentWebview.capturePage(rect);
+        const result = await lit.snipTranslate(img.toDataURL());
+        if (!result.ok) return showTransResult(result.srcText, `失败：${result.error}`);
+        showTransResult(result.srcText, result.translation);
+      } catch (err) {
+        showTransResult(null, `圈译失败：${err.message}`);
+      }
+    });
+
+    document.addEventListener('keydown', escHandler);
+    viewerEl.style.position = 'relative';
+    viewerEl.appendChild(overlay);
+  }
+
+  /** 对照翻译：TXT/MD 按段落原文/译文上下排，缓存到 config */
+  function paragraphs() {
+    return String(rawText || '').split(/\n+/).map((p) => p.trim()).filter(Boolean).slice(0, 60);
+  }
+
+  function transCacheKey() {
+    return `research.litTrans.${current.file}`;
+  }
+
+  async function toggleBilingual() {
+    if (!current || !rawText || translating) return;
+    bilingual = !bilingual;
+    bilingBtn.classList.toggle('is-on', bilingual);
+    if (!bilingual) return renderTextPlain();
+
+    const paras = paragraphs();
+    const cache = config.get(transCacheKey()) || {};
+    viewerEl.textContent = '';
+    const wrap = h('div', { class: 'lit__biling' });
+    viewerEl.appendChild(wrap);
+    const cells = paras.map((p, i) => {
+      const cell = h('div', { class: 'lit__biling-item' },
+        h('div', { class: 'lit__biling-src' }, p),
+        h('div', { class: 'lit__biling-dst faint' }, cache[i] || '（待翻译）'),
+      );
+      wrap.appendChild(cell);
+      return cell;
+    });
+
+    const pending = paras.map((p, i) => ({ p, i })).filter(({ i }) => !cache[i]);
+    if (!pending.length) return;
+    translating = true;
+    let done = 0;
+    try {
+      for (const { p, i } of pending) {
+        if (!bilingual || current == null) break; // 中途切走了
+        cells[i].querySelector('.lit__biling-dst').textContent = '翻译中…';
+        try {
+          const result = await lit.translate(p);
+          cache[i] = result.ok ? result.translation : `（失败：${result.error}）`;
+        } catch (err) {
+          cache[i] = `（失败：${err.message}）`;
+        }
+        cells[i].querySelector('.lit__biling-dst').textContent = cache[i];
+        done += 1;
+        bilingBtn.textContent = `对照 ${done}/${pending.length}`;
+        await new Promise((r) => setTimeout(r, 200)); // 防有道限流
+      }
+      await config.set(transCacheKey(), cache);
+    } finally {
+      translating = false;
+      bilingBtn.textContent = '对照';
+    }
+  }
+
+  function renderTextPlain() {
+    viewerEl.textContent = '';
+    viewerEl.appendChild(h('div', { class: 'lit__text' }, rawText));
+    zoom(0);
+  }
+
   // ---- 阅读器 ----
 
   function zoom(delta) {
@@ -144,6 +353,12 @@ export function createLiterature(root, ctx) {
 
   async function openReader(item) {
     current = item;
+    rawText = null;
+    bilingual = false;
+    bilingBtn.textContent = '对照';
+    bilingBtn.classList.remove('is-on');
+    currentWebview = null;
+    transCard.setAttribute('hidden', '');
     zoomIndex = 2;
     zoomLabel.textContent = '100%';
     viewerBar.removeAttribute('hidden');
@@ -151,6 +366,7 @@ export function createLiterature(root, ctx) {
     viewerBar.querySelector('.lit__viewer-name').title = item.file;
     viewerEl.textContent = '';
     annoPanel.setAttribute('hidden', '');
+    bilingBtn.setAttribute('hidden', '');
 
     if (item.format === 'pdf') {
       const fullPath = await lit.path(item.file);
@@ -161,6 +377,7 @@ export function createLiterature(root, ctx) {
         class: 'lit__pdf',
         src: fileUrl,
       });
+      currentWebview = view;
       viewerEl.appendChild(view);
       return;
     }
@@ -168,7 +385,9 @@ export function createLiterature(root, ctx) {
     if (TEXT_READABLE.has(item.format)) {
       const result = await lit.readText(item.file);
       if (!result.ok) return viewerFail(result.error);
-      viewerEl.appendChild(h('div', { class: 'lit__text' }, result.content));
+      rawText = result.content;
+      bilingBtn.removeAttribute('hidden');
+      renderTextPlain();
       return;
     }
 
@@ -308,17 +527,46 @@ export function createLiterature(root, ctx) {
     }
   }
 
+  /** 下载失败时的持久提示卡：地址留下来，可打开/复制/关掉，切走自动消失 */
+  function showFetchNotice(result) {
+    noticeEl.textContent = '';
+    if (!result) { noticeEl.setAttribute('hidden', ''); return; }
+    noticeEl.removeAttribute('hidden');
+    noticeEl.appendChild(
+      h('div', { class: 'lit__notice-head' },
+        h('strong', {}, result.code === 'download-failed' ? '找到了，但自动下载没成功' : '没找到免费下载源'),
+        h('span', { style: { flex: 1 } }),
+        h('button', { class: 'lit__anno-del', title: '关闭', onclick: () => showFetchNotice(null) }, '×'),
+      ),
+      result.title && h('div', { class: 'lit__notice-title' }, result.title),
+      h('div', { class: 'faint' }, result.error),
+      result.url && h('div', { class: 'lit__notice-url' },
+        h('code', {}, result.url),
+        h('button', {
+          class: 'btn btn--sm btn--primary',
+          onclick: () => window.toolbox.shell.openExternal(result.url),
+        }, '打开下载地址'),
+        h('button', {
+          class: 'btn btn--sm',
+          onclick: async () => { await window.toolbox.clipboard.write(result.url); toast('地址已复制', 'good'); },
+        }, '复制地址'),
+      ),
+      result.url && h('div', { class: 'faint lit__notice-hint' }, '手动下载后用「导入文献」放进来即可。'),
+    );
+  }
+
   /** 按名字自动下载：优先 arXiv 免费源，找不到就提示用户自己去找 */
   async function doFetch() {
     const query = fetchInput.value.trim();
     if (!query) return toast('先粘贴文献名或 arXiv 号', 'info');
     fetchBtn.disabled = true;
-    fetchStatus.textContent = '正在 arXiv / Semantic Scholar 上找免费 PDF…';
+    showFetchNotice(null);
+    fetchStatus.textContent = '正在 arXiv / dblp / OpenAlex 上找免费 PDF…';
     try {
       const result = await lit.fetchByTitle(query);
       if (!result.ok) {
         fetchStatus.textContent = '';
-        toast(result.error, 'bad', 6000);
+        showFetchNotice(result);
         return;
       }
       const metaMap = meta();
@@ -363,11 +611,12 @@ export function createLiterature(root, ctx) {
       h('span', { class: 'faint lit__hint' }, '点「阅读」右侧直接看，不用开 WPS'),
     ),
     h('div', { class: 'lit__body' },
-      h('div', { class: 'lit__side' }, listEl),
+      h('div', { class: 'lit__side' }, noticeEl, listEl),
       h('div', { class: 'lit__reader' },
         viewerBar,
         h('div', { class: 'lit__reader-body' },
           viewerEl,
+          transCard,
           annoPanel,
         ),
       ),

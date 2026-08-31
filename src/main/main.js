@@ -14,6 +14,9 @@ const videoReport = require('./video-report');
 const pdfTitle = require('./pdf-title');
 const { installCoachExtension } = require('./coach-install');
 const litFetch = require('./lit-fetch');
+const translator = require('./translate');
+const ocr = require('./ocr');
+const newsFeed = require('./news-feed');
 
 const IS_DEV = process.argv.includes('--dev');
 const ICON_PATH = path.join(__dirname, '..', '..', 'assets', 'icon.png');
@@ -28,6 +31,7 @@ const PARTITIONS = {
   deepseek: 'persist:deepseek',
   docs: 'persist:docs',
   research: 'persist:research',
+  focus: 'persist:focus', // 醒脑游戏 / 情报热榜 / 大佬动态共用这个分区，登录态持久
 };
 
 let store;
@@ -736,6 +740,18 @@ function registerIpc() {
   /** 按文献名自动下载免费 PDF 进库（arXiv 优先，Semantic Scholar 兜底） */
   ipcMain.handle('lit:fetch', (_e, query) => litFetch.fetchPaperByTitle(litDir(), query));
 
+  /** 免费翻译（有道），返回 { ok, translation | error } */
+  ipcMain.handle('lit:translate', (_e, text) => translator.translate(text));
+
+  /** 圈选截图（dataURL PNG）→ 本地 OCR → 有道翻译，返回 { ok, srcText, translation | error } */
+  ipcMain.handle('lit:snipTranslate', async (_e, dataUrl) => {
+    const got = await ocr.ocrImage(app.getPath('userData'), dataUrl);
+    if (!got.ok) return got;
+    const tr = await translator.translate(got.text);
+    if (!tr.ok) return { ok: false, srcText: got.text, error: tr.error };
+    return { ok: true, srcText: got.text, translation: tr.translation };
+  });
+
   ipcMain.handle('lit:list', () => {
     try {
       return fs.readdirSync(litDir())
@@ -794,6 +810,9 @@ function registerIpc() {
   // ---- 代码陪读：把插件装进本机 VSCode / Cursor 并写好默认配置 ----
 
   ipcMain.handle('coach:install', () => installCoachExtension());
+
+  // ---- 专注 · AI 情报：RSS 快报由主进程代取（渲染进程 CSP 不放行跨域请求） ----
+  ipcMain.handle('news:fetchFeed', (_e, url) => newsFeed.fetchFeed(url));
 }
 
 app.whenReady().then(() => {
