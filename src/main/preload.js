@@ -71,6 +71,8 @@ contextBridge.exposeInMainWorld('toolbox', {
     readText: (file) => ipcRenderer.invoke('lit:readText', file),
     /** 整理库里编号命名的 PDF（arxiv 编号 → 正文标题），返回重命名列表 */
     fixNames: () => ipcRenderer.invoke('lit:fixNames'),
+    /** 按文献名自动下载免费 PDF（arXiv/Semantic Scholar），返回 { ok, file | error } */
+    fetchByTitle: (query) => ipcRenderer.invoke('lit:fetch', query),
   },
 
   ai: {

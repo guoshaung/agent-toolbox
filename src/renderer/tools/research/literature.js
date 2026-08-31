@@ -308,6 +308,44 @@ export function createLiterature(root, ctx) {
     }
   }
 
+  /** 按名字自动下载：优先 arXiv 免费源，找不到就提示用户自己去找 */
+  async function doFetch() {
+    const query = fetchInput.value.trim();
+    if (!query) return toast('先粘贴文献名或 arXiv 号', 'info');
+    fetchBtn.disabled = true;
+    fetchStatus.textContent = '正在 arXiv / Semantic Scholar 上找免费 PDF…';
+    try {
+      const result = await lit.fetchByTitle(query);
+      if (!result.ok) {
+        fetchStatus.textContent = '';
+        toast(result.error, 'bad', 6000);
+        return;
+      }
+      const metaMap = meta();
+      metaMap[result.file] = { note: `自动下载自 ${result.source}`, addedAt: new Date().toISOString() };
+      await config.set('research.litMeta', metaMap);
+      fetchInput.value = '';
+      fetchStatus.textContent = '';
+      toast(`已下载入库：${result.title}`, 'good', 5000);
+      renderList();
+    } catch (err) {
+      fetchStatus.textContent = '';
+      toast(`下载失败：${err.message}`, 'bad');
+    } finally {
+      fetchBtn.disabled = false;
+    }
+  }
+
+  const fetchInput = h('input', {
+    class: 'field lit__fetch-input',
+    placeholder: '粘贴文献名 / arXiv 号，回车自动下载（arXiv 免费）',
+    onkeydown: (e) => {
+      if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); doFetch(); }
+    },
+  });
+  const fetchBtn = h('button', { class: 'btn btn--sm btn--primary', onclick: () => doFetch() }, '查找下载');
+  const fetchStatus = h('span', { class: 'faint lit__fetch-status' }, '');
+
   const importBtn = h('button', { class: 'btn btn--primary', onclick: (e) => doImport(e.currentTarget) }, '导入文献');
   const fixBtn = h('button', {
     class: 'btn btn--sm',
@@ -319,7 +357,10 @@ export function createLiterature(root, ctx) {
     h('div', { class: 'bar research__viewbar' },
       importBtn,
       fixBtn,
-      h('span', { class: 'faint lit__hint' }, '文件存在应用数据目录；点「阅读」右侧直接看，不用开 WPS'),
+      fetchInput,
+      fetchBtn,
+      fetchStatus,
+      h('span', { class: 'faint lit__hint' }, '点「阅读」右侧直接看，不用开 WPS'),
     ),
     h('div', { class: 'lit__body' },
       h('div', { class: 'lit__side' }, listEl),

@@ -12,6 +12,7 @@ const { buildCompatibleEndpoints, validateCompatibleConfig, readStoredCompatible
 const chatBridge = require('./chat-bridge');
 const videoReport = require('./video-report');
 const pdfTitle = require('./pdf-title');
+const litFetch = require('./lit-fetch');
 
 const IS_DEV = process.argv.includes('--dev');
 const ICON_PATH = path.join(__dirname, '..', '..', 'assets', 'icon.png');
@@ -730,6 +731,9 @@ function registerIpc() {
     }
     return renames;
   });
+
+  /** 按文献名自动下载免费 PDF 进库（arXiv 优先，Semantic Scholar 兜底） */
+  ipcMain.handle('lit:fetch', (_e, query) => litFetch.fetchPaperByTitle(litDir(), query));
 
   ipcMain.handle('lit:list', () => {
     try {
