@@ -445,7 +445,6 @@
 
 /* ---------- 科研门户 ---------- */
 .research__hint { font-size: 12px; }
-.research__body { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .research__grid { flex: 1; overflow-y: auto; padding: 18px; display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 14px; align-content: start; }
 .research__card { position: relative; display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 20px 14px 14px; border-radius: var(--radius-lg); background: var(--bg-raised); border: 1px solid var(--line-soft); cursor: pointer; text-align: center; transition: border-color .15s, transform .15s; }
 .research__card:hover { border-color: var(--accent); transform: translateY(-2px); }
@@ -461,3 +460,46 @@
 .research__views { flex: 1; min-height: 0; display: flex; }
 .research__views webview { flex: 1; }
 .research__address { flex: 1; }
+
+/* ---------- 科研：子区切换 ---------- */
+.research__subbar { display: inline-flex; gap: 4px; margin-left: 12px; }
+.research__subbtn.is-active { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
+.research__subbody { flex: 1; min-height: 0; display: flex; }
+.research__panel { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.research__portalbody { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.research__viewbar { border-bottom: 1px solid var(--line-soft); }
+
+/* ---------- 文献管理器 ---------- */
+.lit__hint { font-size: 12px; }
+.lit__scroll { flex: 1; min-height: 0; overflow-y: auto; padding: 14px; }
+.lit__list { display: flex; flex-direction: column; gap: 10px; max-width: 900px; }
+.lit__count { font-size: 12px; padding: 0 2px; }
+.lit__item { display: flex; gap: 12px; padding: 12px 14px; border-radius: var(--radius-lg); background: var(--bg-raised); border: 1px solid var(--line-soft); align-items: flex-start; }
+.lit__icon { font-size: 26px; flex: 0 0 auto; margin-top: 2px; }
+.lit__main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 5px; }
+.lit__name { font-size: 13.5px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lit__meta { font-size: 11.5px; }
+.lit__note { width: 100%; max-width: 420px; }
+.lit__actions { display: flex; gap: 6px; flex: 0 0 auto; align-items: center; }
+.lit__del { font-size: 14px; }
+
+/* ---------- 想法区 ---------- */
+.ideas__bar .field { flex: 1; }
+.ideas__scroll { flex: 1; min-height: 0; overflow-y: auto; padding: 14px; display: flex; flex-direction: column; gap: 12px; }
+.ideas__detail-wrap { max-width: 900px; }
+.ideas__detail { width: 100%; min-height: 68px; resize: vertical; }
+.ideas__list { display: flex; flex-direction: column; gap: 10px; max-width: 900px; }
+.ideas__card { display: flex; flex-direction: column; gap: 8px; }
+.ideas__head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+.ideas__title { font-size: 14.5px; font-weight: 650; line-height: 1.5; }
+.ideas__detail-text { font-size: 12.5px; line-height: 1.7; white-space: pre-wrap; }
+.ideas__actions { display: flex; align-items: center; gap: 7px; }
+.ideas__plan { border-top: 1px solid var(--line-soft); padding-top: 10px; display: flex; flex-direction: column; gap: 10px; }
+.ideas__goal { font-size: 13px; line-height: 1.7; }
+.ideas__steps { display: flex; flex-direction: column; gap: 8px; }
+.ideas__step { display: flex; gap: 10px; align-items: flex-start; }
+.ideas__step-no { flex: 0 0 auto; width: 22px; height: 22px; border-radius: 50%; background: var(--accent-soft); color: var(--accent); font-size: 12px; font-weight: 700; display: grid; place-items: center; }
+.ideas__step-title { font-size: 13px; font-weight: 600; display: flex; align-items: center; gap: 7px; flex-wrap: wrap; }
+.ideas__step-detail { font-size: 12.5px; line-height: 1.7; margin-top: 2px; }
+.ideas__risks { font-size: 12.5px; line-height: 1.7; color: var(--text-dim); }
+.ideas__first { display: flex; align-items: center; gap: 8px; font-size: 13px; }

@@ -648,6 +648,81 @@ function registerIpc() {
     } catch { /* 放弃，界面用 emoji 兜底 */ }
     return null;
   });
+
+  // ---- 文献管理器：文件统一收进 userData/literature/，元信息在渲染进程存 config ----
+
+  const LIT_EXTENSIONS = ['pdf', 'doc', 'docx', 'txt', 'md', 'epub', 'caj', 'djvu', 'ppt', 'pptx', 'xls', 'xlsx', 'rtf'];
+
+  const litDir = () => {
+    const dir = path.join(app.getPath('userData'), 'literature');
+    fs.mkdirSync(dir, { recursive: true });
+    return dir;
+  };
+
+  ipcMain.handle('lit:import', async () => {
+    const result = await dialog.showOpenDialog(mainWindow, {
+      title: '导入文献',
+      properties: ['openFile', 'multiSelections'],
+      filters: [
+        { name: '文献', extensions: LIT_EXTENSIONS },
+        { name: '所有文件', extensions: ['*'] },
+      ],
+    });
+    if (result.canceled || !result.filePaths.length) return [];
+    const dir = litDir();
+    const imported = [];
+    for (const src of result.filePaths) {
+      const base = path.basename(src);
+      const ext = path.extname(base);
+      const stem = path.basename(base, ext);
+      let dest = path.join(dir, base);
+      let n = 1;
+      while (fs.existsSync(dest)) dest = path.join(dir, `${stem}-${n++}${ext}`);
+      try {
+        fs.copyFileSync(src, dest);
+        const stat = fs.statSync(dest);
+        imported.push({ file: path.basename(dest), size: stat.size, format: ext.slice(1).toLowerCase() });
+      } catch { /* 单个失败不拖垮整批 */ }
+    }
+    return imported;
+  });
+
+  ipcMain.handle('lit:list', () => {
+    try {
+      return fs.readdirSync(litDir())
+        .filter((f) => !f.startsWith('.'))
+        .map((f) => {
+          const stat = fs.statSync(path.join(litDir(), f));
+          return { file: f, size: stat.size, mtime: stat.mtime.toISOString(), format: path.extname(f).slice(1).toLowerCase() };
+        })
+        .sort((a, b) => b.mtime.localeCompare(a.mtime));
+    } catch {
+      return [];
+    }
+  });
+
+  ipcMain.handle('lit:open', (_e, file) => {
+    const full = path.join(litDir(), path.basename(String(file || '')));
+    if (!fs.existsSync(full)) return { ok: false, error: '文件不存在了' };
+    return shell.openPath(full).then((err) => (err ? { ok: false, error: err } : { ok: true }));
+  });
+
+  ipcMain.handle('lit:reveal', (_e, file) => {
+    const full = path.join(litDir(), path.basename(String(file || '')));
+    if (!fs.existsSync(full)) return false;
+    shell.showItemInFolder(full);
+    return true;
+  });
+
+  ipcMain.handle('lit:remove', (_e, file) => {
+    const full = path.join(litDir(), path.basename(String(file || '')));
+    try {
+      fs.rmSync(full);
+      return true;
+    } catch {
+      return false;
+    }
+  });
 }
 
 app.whenReady().then(() => {

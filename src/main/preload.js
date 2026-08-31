@@ -52,6 +52,19 @@ contextBridge.exposeInMainWorld('toolbox', {
     favicon: (url) => ipcRenderer.invoke('site:favicon', url),
   },
 
+  lit: {
+    /** 弹文件选择框导入文献到 userData/literature/，返回导入的文件列表 */
+    import: () => ipcRenderer.invoke('lit:import'),
+    /** 列出已导入的文献（文件名/大小/格式/时间） */
+    list: () => ipcRenderer.invoke('lit:list'),
+    /** 用系统默认程序打开 */
+    open: (file) => ipcRenderer.invoke('lit:open', file),
+    /** 在访达里显示 */
+    reveal: (file) => ipcRenderer.invoke('lit:reveal', file),
+    /** 删除 */
+    remove: (file) => ipcRenderer.invoke('lit:remove', file),
+  },
+
   ai: {
     /** 走主进程发 OpenAI 兼容请求；API Key 只从主进程安全存储读取 */
     chat: (payload) => ipcRenderer.invoke('ai:chat', payload),
