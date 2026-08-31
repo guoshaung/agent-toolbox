@@ -47,6 +47,11 @@ contextBridge.exposeInMainWorld('toolbox', {
     readReport: (fileName) => ipcRenderer.invoke('video:readReport', fileName),
   },
 
+  site: {
+    /** 主进程代取站点 favicon，返回 data: URL（拿不到返回 null，界面用兜底图标） */
+    favicon: (url) => ipcRenderer.invoke('site:favicon', url),
+  },
+
   ai: {
     /** 走主进程发 OpenAI 兼容请求；API Key 只从主进程安全存储读取 */
     chat: (payload) => ipcRenderer.invoke('ai:chat', payload),

@@ -24,6 +24,7 @@ const CHROME_UA =
 const PARTITIONS = {
   deepseek: 'persist:deepseek',
   docs: 'persist:docs',
+  research: 'persist:research',
 };
 
 let store;
@@ -592,6 +593,61 @@ function registerIpc() {
 
   ipcMain.handle('video:readReport', (_e, fileName) =>
     videoReport.readReport(app.getPath('userData'), fileName));
+
+  // ---- 科研门户：站点 favicon 抓取（渲染进程 CSP 只放行 self/data，图片要主进程代取） ----
+  ipcMain.handle('site:favicon', async (_e, url) => {
+    let origin;
+    try {
+      origin = new URL(String(url)).origin;
+    } catch {
+      return null;
+    }
+    const tryImage = async (imageUrl) => {
+      try {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), 8000);
+        const res = await fetch(imageUrl, {
+          headers: { 'User-Agent': CHROME_UA },
+          signal: controller.signal,
+          redirect: 'follow',
+        });
+        clearTimeout(timer);
+        if (!res.ok) return null;
+        const mime = (res.headers.get('content-type') || '').split(';')[0];
+        if (!/^image\//.test(mime)) return null;
+        const buf = Buffer.from(await res.arrayBuffer());
+        if (buf.length > 256 * 1024) return null; // 图标不该超过 256KB
+        return `data:${mime};base64,${buf.toString('base64')}`;
+      } catch {
+        return null;
+      }
+    };
+
+    // 1. 直接要 /favicon.ico，大多数站点吃这套
+    const direct = await tryImage(`${origin}/favicon.ico`);
+    if (direct) return direct;
+
+    // 2. SPA 站点的图标常在首页 HTML 的 <link rel="icon"> 里，可能在 CDN 上
+    try {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 8000);
+      const res = await fetch(origin, {
+        headers: { 'User-Agent': CHROME_UA },
+        signal: controller.signal,
+      });
+      clearTimeout(timer);
+      const htmlText = await res.text();
+      const tag = htmlText.match(/<link[^>]+rel=["'](?:shortcut )?icon["'][^>]*>/i)
+        || htmlText.match(/<link[^>]+href=[^>]+rel=["'](?:shortcut )?icon["'][^>]*>/i);
+      const hrefMatch = tag && tag[0].match(/href=["']([^"']+)["']/i);
+      if (hrefMatch) {
+        const iconUrl = new URL(hrefMatch[1], origin).href;
+        const fromLink = await tryImage(iconUrl);
+        if (fromLink) return fromLink;
+      }
+    } catch { /* 放弃，界面用 emoji 兜底 */ }
+    return null;
+  });
 }
 
 app.whenReady().then(() => {
