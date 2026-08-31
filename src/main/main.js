@@ -755,14 +755,9 @@ function registerIpc() {
   /** 免费翻译（有道），返回 { ok, translation | error } */
   ipcMain.handle('lit:translate', (_e, text, opts) => translator.translate(text, opts));
 
-  /** 圈选截图（dataURL PNG）→ 本地 OCR → 有道翻译，返回 { ok, srcText, translation | error } */
-  ipcMain.handle('lit:snipTranslate', async (_e, dataUrl) => {
-    const got = await ocr.ocrImage(app.getPath('userData'), dataUrl);
-    if (!got.ok) return got;
-    const tr = await translator.translate(got.text, { interactive: true });
-    if (!tr.ok) return { ok: false, srcText: got.text, error: tr.error };
-    return { ok: true, srcText: got.text, translation: tr.translation };
-  });
+  /** 圈选截图（dataURL PNG）→ 本地 OCR，只识别不翻译，返回 { ok, text | error }。
+   *  翻译由渲染层自己走 AI 接口（质量好、没有有道每分钟约 5 条新内容的配额）。 */
+  ipcMain.handle('lit:snipOcr', (_e, dataUrl) => ocr.ocrImage(app.getPath('userData'), dataUrl));
 
   ipcMain.handle('lit:list', () => {
     try {

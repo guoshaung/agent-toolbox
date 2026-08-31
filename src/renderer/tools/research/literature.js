@@ -166,6 +166,33 @@ export function createLiterature(root, ctx) {
   /** 圈译/划词的浮动结果卡 */
   const transCard = h('div', { class: 'lit__trans-card', hidden: true });
 
+  /** 翻译方向：和主进程 detectTarget 一致 —— 中文为主译英，否则译中 */
+  function targetLang(text) {
+    const cjk = (String(text).match(/[\u4e00-\u9fff]/g) || []).length;
+    return cjk > String(text).length * 0.2 ? '英文' : '中文';
+  }
+
+  /**
+   * 圈译/划词专用：优先走 AI 接口（质量好，且没有有道「每分钟约 5 条新翻译」的免费配额
+   * —— 之前对照翻译一批批跑，配额常常被烧光，圈译一等 12 秒然后报配额用完，看起来就是
+   * 「圈了但没翻译」）。AI 没配好或失败时退回有道免费接口。
+   */
+  async function translateSmart(text) {
+    const to = targetLang(text);
+    try {
+      const out = await ctx.ai.chat(
+        `你是翻译引擎。把下面的内容准确翻译成${to}。\n` +
+        '只输出译文本身：不要解释、不要重复原文、不要任何前后缀或引号。\n' +
+        '保留原有的换行分段；代码、公式、文件路径、专有名词保留原样。\n\n' + text,
+        { timeout: 60000 },
+      );
+      const cleaned = String(out || '').trim();
+      if (cleaned) return { ok: true, translation: cleaned, via: 'ai' };
+    } catch { /* AI 没配好 / 桥没登录 / 超时，都落到有道 */ }
+    const fallback = await lit.translate(text, { interactive: true });
+    return fallback.ok ? { ...fallback, via: 'youdao' } : fallback;
+  }
+
   function showTransResult(srcText, translation) {
     transCard.textContent = '';
     transCard.removeAttribute('hidden');
@@ -222,10 +249,10 @@ export function createLiterature(root, ctx) {
     translating = true;
     showTransBusy(`正在翻译（${selected.length} 字）…`);
     try {
-      const result = await lit.translate(selected, { interactive: true });
+      const result = await translateSmart(selected);
       if (!result.ok) return showTransResult(selected, `翻译失败：${result.error}`);
       showTransResult(selected, result.translation);
-      toast('翻译好了，译文在右下角浮卡', 'good');
+      toast(`翻译好了（走${result.via === 'ai' ? 'AI 接口' : '有道'}），译文在右下角浮卡`, 'good');
     } catch (err) {
       showTransResult(selected, `翻译失败：${err.message}`);
     } finally {
@@ -303,21 +330,27 @@ export function createLiterature(root, ctx) {
       try {
         const crops = await cropLassoRegion(rect);
         if (!crops.length) return showTransResult(null, '圈住的地方还没有渲染出来，滚动一下再圈。');
+        // 先把每页的裁片都 OCR 出来；翻译只发一次请求（合并全文），
+        // 既省有道配额，AI 翻译也能带着上下文，术语前后一致
         const srcParts = [];
-        const dstParts = [];
-        const errs = [];
+        const ocrErrs = [];
         for (const c of crops) {
-          const r = await lit.snipTranslate(c.dataUrl);
-          if (r.srcText) srcParts.push(r.srcText);
-          if (r.ok && r.translation) dstParts.push(r.translation);
-          else if (r.error) errs.push(`第 ${c.num} 页：${r.error}`);
+          const r = await lit.snipOcr(c.dataUrl);
+          if (r.ok && r.text) srcParts.push(r.text);
+          else if (r.error) ocrErrs.push(`第 ${c.num} 页：${r.error}`);
         }
-        if (!dstParts.length) {
+        const srcText = srcParts.join('\n');
+        if (!srcText) {
+          return showTransResult(null, ocrErrs.join('；') || '圈里没识别出文字，圈大一点、对准文字试试。');
+        }
+        showTransBusy(`识别出 ${srcText.length} 字，翻译中…`);
+        const tr = await translateSmart(srcText);
+        if (!tr.ok) {
           // OCR 原文还在的话也亮出来，方便看是识别问题还是翻译问题
-          return showTransResult(srcParts.join('\n') || null, errs.join('；') || '圈里没识别出文字，圈大一点、对准文字试试。');
+          return showTransResult(srcText, `翻译失败：${tr.error}`);
         }
-        showTransResult(srcParts.join('\n'), dstParts.join('\n——\n') + (errs.length ? `\n（${errs.join('；')}）` : ''));
-        toast('翻译好了，原文+译文都在右下角浮卡', 'good');
+        showTransResult(srcText, tr.translation + (ocrErrs.length ? `\n（${ocrErrs.join('；')}）` : ''));
+        toast(`翻译好了（走${tr.via === 'ai' ? 'AI 接口' : '有道'}），原文+译文都在右下角浮卡`, 'good');
       } catch (err) {
         showTransResult(null, `圈译失败：${err.message}`);
       }

@@ -89,8 +89,8 @@ contextBridge.exposeInMainWorld('toolbox', {
     fetchByTitle: (query) => ipcRenderer.invoke('lit:fetch', query),
     /** 免费翻译（有道），返回 { ok, translation | error } */
     translate: (text, opts) => ipcRenderer.invoke('lit:translate', text, opts),
-    /** 圈选截图 OCR + 翻译，返回 { ok, srcText, translation | error } */
-    snipTranslate: (dataUrl) => ipcRenderer.invoke('lit:snipTranslate', dataUrl),
+    /** 圈选截图 OCR（只识别不翻译，翻译走渲染层 AI 接口），返回 { ok, text | error } */
+    snipOcr: (dataUrl) => ipcRenderer.invoke('lit:snipOcr', dataUrl),
   },
 
   ai: {
