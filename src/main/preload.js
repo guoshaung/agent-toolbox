@@ -17,11 +17,55 @@ contextBridge.exposeInMainWorld('toolbox', {
   files: {
     /** 打开选图对话框，返回 { path, name, mime, base64 } 或 null（用户取消） */
     pickImage: () => ipcRenderer.invoke('files:pickImage'),
+    pickPetSkin: () => ipcRenderer.invoke('files:pickPetSkin'),
+  },
+
+  chat: {
+    /** 可用的 AI 来源列表：{ codex: 'Codex', ... } */
+    sources: () => ipcRenderer.invoke('chat:sources'),
+    /** 列出本机某 AI 工具的会话：source 为 'codex' | 'claude' | 'opencode' | ... */
+    list: (source) => ipcRenderer.invoke('chat:list', source),
+    /** 加载单个会话（默认预览前 120 条；full=true 拿全部） */
+    load: (source, id, full) => ipcRenderer.invoke('chat:load', { source, id, full }),
+    /** 导出会话到文件（弹保存框），返回 { ok, path, count } */
+    export: (source, id, format) => ipcRenderer.invoke('chat:export', { source, id, format }),
+    /** 把若干会话打包成迁移包 JSON（弹保存框） */
+    transfer: (source, ids, note) => ipcRenderer.invoke('chat:transfer', { source, ids, note }),
+    /** 选择一个迁移包并读取摘要 */
+    pickTransfer: () => ipcRenderer.invoke('chat:pickTransfer'),
+    /** 在访达里显示文件 */
+    showInFinder: (path) => ipcRenderer.invoke('chat:showInFinder', path),
+  },
+
+  video: {
+    /** 抓 B 站视频公开信息（标题/简介/UP主/分集/播放量），返回 { ok, info | error } */
+    fetchInfo: (url) => ipcRenderer.invoke('video:fetchInfo', url),
+    /** 报告落盘 userData/reports/*.md，publish=true 时再用 lark-cli 发飞书 */
+    saveReport: (payload) => ipcRenderer.invoke('video:saveReport', payload),
+    /** 历史报告列表（本地持久化的） */
+    listReports: () => ipcRenderer.invoke('video:listReports'),
+    readReport: (fileName) => ipcRenderer.invoke('video:readReport', fileName),
   },
 
   ai: {
-    /** 走主进程发 OpenAI 兼容请求；API Key 不进页面上下文 */
+    /** 走主进程发 OpenAI 兼容请求；API Key 只从主进程安全存储读取 */
     chat: (payload) => ipcRenderer.invoke('ai:chat', payload),
+    credentialStatus: () => ipcRenderer.invoke('ai:credentialStatus'),
+    saveCredential: (key) => ipcRenderer.invoke('ai:saveCredential', key),
+    clearCredential: () => ipcRenderer.invoke('ai:clearCredential'),
+    listModels: (baseUrl) => ipcRenderer.invoke('ai:listModels', { baseUrl }),
+  },
+
+  pet: {
+    getState: () => ipcRenderer.invoke('pet:getState'),
+    setEnabled: (enabled) => ipcRenderer.invoke('pet:setEnabled', enabled),
+    resize: (expanded) => ipcRenderer.invoke('pet:resize', expanded),
+    move: (position) => ipcRenderer.invoke('pet:move', position),
+    endDrag: () => ipcRenderer.invoke('pet:endDrag'),
+    explain: (input) => ipcRenderer.invoke('pet:explain', input),
+    openAiSettings: () => ipcRenderer.invoke('pet:openAiSettings'),
+    onSettingsChanged: (callback) => ipcRenderer.on('pet:settings-changed', (_event, settings) => callback(settings)),
+    onCollapse: (callback) => ipcRenderer.on('pet:collapse', callback),
   },
 
   clipboard: {
@@ -42,5 +86,6 @@ contextBridge.exposeInMainWorld('toolbox', {
     version: () => ipcRenderer.invoke('app:version'),
     reload: () => ipcRenderer.invoke('app:reload'),
     openDevTools: () => ipcRenderer.invoke('app:openDevTools'),
+    onNavigateTool: (callback) => ipcRenderer.on('app:navigate-tool', (_event, target) => callback(target)),
   },
 });

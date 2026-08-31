@@ -211,3 +211,13 @@ webview { display: flex; flex: 1; min-height: 0; background: #fff; }
   display: inline-block;
 }
 @keyframes spin { to { transform: rotate(360deg); } }
+
+.rail__logo {
+  width: 32px;
+  height: 32px;
+  margin: 0 auto 14px;
+  -webkit-app-region: no-drag;
+  flex: 0 0 auto;
+  opacity: .92;
+}
+.rail__logo svg { display: block; width: 100%; height: 100%; }

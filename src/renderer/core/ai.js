@@ -45,8 +45,8 @@ export class AI {
   /** 当前这套配置能不能真的发出请求 */
   check() {
     if (this.provider !== 'openai-api') return { ok: true };
-    const { baseUrl, apiKey, model } = this.apiConfig();
-    if (!baseUrl || !apiKey || !model) {
+    const { baseUrl, hasKey, model } = this.apiConfig();
+    if (!baseUrl || !hasKey || !model) {
       return { ok: false, reason: '自定义 API 还没填全（Base URL / API Key / 模型名），去「设置 → AI 接口」补上。' };
     }
     return { ok: true };
@@ -55,7 +55,7 @@ export class AI {
   apiConfig() {
     return {
       baseUrl: this.config.get('ai.api.baseUrl', ''),
-      apiKey: this.config.get('ai.api.key', ''),
+      hasKey: this.config.get('ai.api.hasKey', false),
       model: this.config.get('ai.api.model', ''),
       temperature: this.config.get('ai.api.temperature', 0.7),
     };
@@ -92,12 +92,12 @@ export class AI {
   }
 
   async _callApi(prompt, { timeout = 90000, system } = {}) {
-    const { baseUrl, apiKey, model, temperature } = this.apiConfig();
+    const { baseUrl, model, temperature } = this.apiConfig();
     const messages = [];
     if (system) messages.push({ role: 'system', content: system });
     messages.push({ role: 'user', content: prompt });
 
-    const result = await window.toolbox.ai.chat({ baseUrl, apiKey, model, messages, temperature, timeout });
+    const result = await window.toolbox.ai.chat({ baseUrl, model, messages, temperature, timeout });
     if (!result.ok) throw new AIError(result.code || 'http', result.error);
     if (!result.text) throw new AIError('empty', 'API 返回了空内容。');
     return result.text;

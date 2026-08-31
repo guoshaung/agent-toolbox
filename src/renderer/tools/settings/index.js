@@ -5,7 +5,7 @@ export default {
   id: 'settings',
   title: '设置',
   icon: '⚙︎',
-  hint: 'AI 接口、桥接自检与维护（Cmd+6）',
+  hint: 'AI 接口、桥接自检与维护（Cmd+7）',
 
   create(root, ctx) {
     const { config, bridge } = ctx;
@@ -59,15 +59,56 @@ export default {
       onchange: () => config.set('ai.api.baseUrl', baseUrl.value.trim()),
     });
     const apiKey = h('input', {
-      class: 'field mono', type: 'password', placeholder: 'sk-...',
-      value: config.get('ai.api.key', ''),
-      onchange: () => config.set('ai.api.key', apiKey.value.trim()),
+      class: 'field mono', type: 'password', placeholder: '输入新 Key（已保存内容不会回显）',
+      autocomplete: 'new-password', value: '',
     });
     const model = h('input', {
       class: 'field mono', placeholder: 'deepseek-chat',
       value: config.get('ai.api.model', ''),
+      list: 'ai-model-list',
       onchange: () => config.set('ai.api.model', model.value.trim()),
     });
+    const modelList = h('datalist', { id: 'ai-model-list' });
+
+    const credentialState = h('span', { class: 'tag' }, '检查中');
+    async function refreshCredentialState() {
+      const state = await window.toolbox.ai.credentialStatus();
+      config.cache.ai ||= {};
+      config.cache.ai.api ||= {};
+      config.cache.ai.api.hasKey = state.hasKey;
+      credentialState.textContent = state.hasKey ? '已安全保存' : '未保存';
+      credentialState.className = `tag ${state.hasKey ? 'tag--good' : 'tag--warn'}`;
+    }
+    const saveKeyBtn = h('button', {
+      class: 'btn btn--sm',
+      onclick: async () => {
+        if (!apiKey.value.trim()) return toast('请输入要保存的新 API Key', 'bad');
+        const result = await window.toolbox.ai.saveCredential(apiKey.value);
+        apiKey.value = '';
+        if (!result.ok) return toast(result.error, 'bad');
+        await refreshCredentialState();
+        toast('API Key 已写入系统安全存储', 'good');
+      },
+    }, '安全保存');
+    const clearKeyBtn = h('button', {
+      class: 'btn btn--sm',
+      onclick: async () => {
+        await window.toolbox.ai.clearCredential();
+        await refreshCredentialState();
+        toast('已移除 API Key', 'good');
+      },
+    }, '移除');
+    const loadModelsBtn = h('button', {
+      class: 'btn btn--sm',
+      onclick: async () => {
+        loadModelsBtn.disabled = true;
+        const result = await window.toolbox.ai.listModels(baseUrl.value.trim());
+        loadModelsBtn.disabled = false;
+        if (!result.ok) return toast(result.error, 'bad', 5000);
+        modelList.replaceChildren(...result.models.map((id) => h('option', { value: id })));
+        toast(result.models.length ? `已找到 ${result.models.length} 个模型，点击模型名输入框选择` : '端点未返回模型；可手工填写', result.models.length ? 'good' : 'info');
+      },
+    }, '查询模型');
 
     const aiStatus = h('div', { class: 'faint settings__hint' }, '');
     function syncProvider() {
@@ -101,18 +142,19 @@ export default {
     apiFields.append(
       h('label', { class: 'settings__field' }, h('span', {}, 'Base URL'), baseUrl),
       h('label', { class: 'settings__field' }, h('span', {}, 'API Key'), apiKey),
-      h('label', { class: 'settings__field' }, h('span', {}, '模型名'), model),
+      h('div', { class: 'settings__inline-actions' }, credentialState, saveKeyBtn, clearKeyBtn),
+      h('label', { class: 'settings__field' }, h('span', {}, '模型名'), model, modelList, loadModelsBtn),
       h('div', { class: 'faint settings__hint' },
         'Base URL 填到 /v1 为止，不含 /chat/completions。常见：DeepSeek 官方 https://api.deepseek.com/v1（模型 deepseek-chat）；' +
         '本地 Ollama http://localhost:11434/v1。'),
-      h('div', { class: 'faint settings__warn' },
-        '注意：API Key 以明文存在本机的 config.json 里。这是个本地个人工具，没有做加密存储 —— 别填公司的生产 Key。'),
+      h('div', { class: 'faint settings__hint' },
+        'API Key 由系统安全存储加密，保存后不回显，也不会进入页面配置。查询模型失败不影响手工填写模型名。'),
     );
 
     root.append(
       h('div', { class: 'bar bar--drag' }, h('strong', {}, '设置')),
       h('div', { class: 'settings__body' },
-        h('section', { class: 'card' },
+        h('section', { class: 'card', id: 'settings-ai' },
           h('h3', { class: 'card__title' }, 'AI 接口'),
           h('p', { class: 'faint settings__hint' },
             '打字纠错、AI 出题、网站知识点整理都走这里。默认用你已登录的 DeepSeek 网页版（免费）；' +
@@ -155,15 +197,16 @@ export default {
         h('section', { class: 'card' },
           h('h3', { class: 'card__title' }, '关于'),
           h('p', { class: 'faint settings__hint' },
-            '所有数据只存在本机的 userData/config.json 里，不上传任何地方。' +
+            '普通设置只存在本机的 userData/config.json；API Key 使用系统安全存储加密。' +
             '需求与设计见仓库里的 docs/SPEC.md，加新工具见 docs/ADD-A-TOOL.md。'),
           h('p', { class: 'faint settings__hint' },
-            '快捷键：Cmd+1…6 切工具，Cmd+F 页内查找，Cmd+L 定位地址栏，Cmd+Enter 触发纠错。'),
+            '快捷键：Cmd+1…7 切工具，Cmd+F 页内查找，Cmd+L 定位地址栏，Cmd+Enter 触发纠错。'),
         ),
       ),
     );
 
     syncProvider();
+    refreshCredentialState();
 
     return {};
   },

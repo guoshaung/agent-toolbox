@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 180 200" role="img" aria-label="原创蓝白学习助手桌宠">
+  <defs>
+    <linearGradient id="b" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#78b8ff"/><stop offset="1" stop-color="#3972e8"/></linearGradient>
+    <filter id="s" x="-30%" y="-30%" width="160%" height="170%"><feDropShadow dx="0" dy="7" stdDeviation="6" flood-color="#0a1d42" flood-opacity=".32"/></filter>
+  </defs>
+  <ellipse cx="91" cy="181" rx="52" ry="10" fill="#153266" opacity=".2"/>
+  <g filter="url(#s)">
+    <path d="M36 83c0-37 23-63 55-63 33 0 56 26 56 63v48c0 33-23 53-56 53-32 0-55-20-55-53z" fill="#f5fbff" stroke="#316bd8" stroke-width="6"/>
+    <path d="M39 84c2-39 23-64 52-64 31 0 52 25 55 64-13-11-32-17-55-17-22 0-40 6-52 17z" fill="url(#b)"/>
+    <path d="M51 57l-17-15 7 27M132 57l17-15-7 28" fill="#6aa9fa" stroke="#316bd8" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+    <rect x="52" y="78" width="78" height="54" rx="25" fill="#dff3ff" stroke="#9ccfff" stroke-width="3"/>
+    <ellipse cx="73" cy="103" rx="6" ry="9" fill="#18345f"/><ellipse cx="109" cy="103" rx="6" ry="9" fill="#18345f"/>
+    <circle cx="75" cy="100" r="2" fill="white"/><circle cx="111" cy="100" r="2" fill="white"/>
+    <path d="M85 116c4 4 9 4 13 0" fill="none" stroke="#316bd8" stroke-width="3" stroke-linecap="round"/>
+    <circle cx="54" cy="114" r="7" fill="#92c9ff" opacity=".55"/><circle cx="128" cy="114" r="7" fill="#92c9ff" opacity=".55"/>
+    <path d="M58 147h66v31c-9 5-20 7-33 7s-24-2-33-7z" fill="url(#b)"/>
+    <path d="M70 144h42v31H70z" fill="#fff" stroke="#b7dcff" stroke-width="3"/>
+    <path d="M91 147v27M75 153h11M96 153h11" stroke="#68a4ee" stroke-width="2" opacity=".8"/>
+    <path d="M57 150l-17 13M125 150l17 13" stroke="#316bd8" stroke-width="9" stroke-linecap="round"/>
+    <path d="M45 161l-8-2M137 161l8-2" stroke="#f5fbff" stroke-width="10" stroke-linecap="round"/>
+    <path d="M85 35h12l-2 19h-8z" fill="#fff" opacity=".9"/><circle cx="91" cy="30" r="6" fill="#fff"/>
+  </g>
+</svg>

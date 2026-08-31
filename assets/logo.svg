@@ -1,0 +1,49 @@
+<svg viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0B2A1D"/>
+      <stop offset="0.55" stop-color="#05160E"/>
+      <stop offset="1" stop-color="#010805"/>
+    </linearGradient>
+    <linearGradient id="neon" x1="0.1" y1="0" x2="0.9" y2="1">
+      <stop offset="0" stop-color="#3BFFB4"/>
+      <stop offset="0.45" stop-color="#00FF9C"/>
+      <stop offset="1" stop-color="#00A867"/>
+    </linearGradient>
+    <filter id="glow" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="14"/>
+    </filter>
+    <mask id="cut">
+      <rect width="1024" height="1024" fill="black"/>
+      <rect x="262" y="262" width="500" height="500" rx="88" fill="white"/>
+      <path d="M512 322 Q529.1 494.9, 702 512 Q529.1 529.1, 512 702 Q494.9 529.1, 322 512 Q494.9 494.9, 512 322 Z" fill="black"/>
+    </mask>
+  </defs>
+  <rect width="1024" height="1024" rx="224" fill="url(#bg)"/>
+  <g filter="url(#glow)" opacity="0.6"><g fill="url(#neon)">
+      <rect x="182" y="353" width="114" height="54" rx="27"/>
+      <rect x="728" y="353" width="114" height="54" rx="27"/>
+      <rect x="353" y="182" width="54" height="114" rx="27"/>
+      <rect x="353" y="728" width="54" height="114" rx="27"/>
+      <rect x="182" y="617" width="114" height="54" rx="27"/>
+      <rect x="728" y="617" width="114" height="54" rx="27"/>
+      <rect x="617" y="182" width="54" height="114" rx="27"/>
+      <rect x="617" y="728" width="54" height="114" rx="27"/>
+    </g>
+    <rect x="262" y="262" width="500" height="500" rx="92"
+        fill="none" stroke="url(#neon)" stroke-width="84"/>
+      <path d="M512 394.2 Q522.602 501.398, 629.8 512 Q522.602 522.602, 512 629.8 Q501.398 522.602, 394.2 512 Q501.398 501.398, 512 394.2 Z" fill="url(#neon)"/></g>
+  <g fill="url(#neon)">
+      <rect x="182" y="353" width="114" height="54" rx="27"/>
+      <rect x="728" y="353" width="114" height="54" rx="27"/>
+      <rect x="353" y="182" width="54" height="114" rx="27"/>
+      <rect x="353" y="728" width="54" height="114" rx="27"/>
+      <rect x="182" y="617" width="114" height="54" rx="27"/>
+      <rect x="728" y="617" width="114" height="54" rx="27"/>
+      <rect x="617" y="182" width="54" height="114" rx="27"/>
+      <rect x="617" y="728" width="54" height="114" rx="27"/>
+    </g>
+    <rect x="262" y="262" width="500" height="500" rx="92"
+        fill="none" stroke="url(#neon)" stroke-width="84"/>
+      <path d="M512 394.2 Q522.602 501.398, 629.8 512 Q522.602 522.602, 512 629.8 Q501.398 522.602, 394.2 512 Q501.398 501.398, 512 394.2 Z" fill="url(#neon)"/>
+</svg>

@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data:; style-src 'self'; script-src 'self'; connect-src 'self'" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>快速解释</title>
+  <link rel="stylesheet" href="pet.css" />
+</head>
+<body>
+  <main id="shell" class="shell">
+    <button id="avatar" class="avatar" title="拖动；点击打开快速解释" aria-label="打开快速解释">
+      <img id="skin" src="assets/study-buddy.svg" alt="蓝白学习助手" draggable="false" />
+      <span class="avatar__hint">解释</span>
+    </button>
+    <section id="card" class="card" hidden>
+      <header id="dragbar" class="card__header">
+        <div><span class="eyebrow">CURRENT LAYER</span><strong>快速解释</strong></div>
+        <div class="header__actions">
+          <div class="font-controls" role="group" aria-label="调整知识卡字号">
+            <button id="font-minus" title="减小知识卡字号" aria-label="减小知识卡字号">A−</button>
+            <button id="font-plus" title="增大知识卡字号" aria-label="增大知识卡字号">A+</button>
+          </div>
+          <button id="disable" title="关闭桌宠">休息</button><button id="collapse" title="收起">×</button>
+        </div>
+      </header>
+      <div class="card__body">
+        <label class="code-field"><span>选中代码</span><textarea id="code" spellcheck="false" placeholder="先复制或粘贴看不懂的那一小段代码"></textarea></label>
+        <div class="meta-row">
+          <label><span>语言</span><input id="language" placeholder="可选，如 TypeScript" /></label>
+          <button id="paste">粘贴剪贴板</button>
+        </div>
+        <label><span>我卡在哪里</span><input id="stuck" maxlength="100" placeholder="可选，只写一行" /></label>
+        <button id="explain" class="primary">解释当前层</button>
+        <p id="status" class="status">只解释眼前这层，不猜项目背景。</p>
+        <button id="go-settings" class="settings-action" hidden>去 AI 设置</button>
+        <div id="answer" class="answer" hidden></div>
+        <button id="supplement-toggle" class="supplement-toggle" aria-expanded="false" hidden>查看语法拆解与例子 ↓</button>
+        <div id="supplement" class="supplement" hidden>
+          <section><h4>语法拆解</h4><p id="detail-syntax"></p></section>
+          <section><h4>真正的知识点</h4><p id="detail-knowledge"></p></section>
+          <section><h4>最小例子</h4><pre id="detail-example"></pre></section>
+          <section><h4>当前调用关系</h4><p id="detail-relation"></p></section>
+        </div>
+        <button id="trace" class="trace" hidden>向上一层追溯</button>
+      </div>
+    </section>
+  </main>
+  <script type="module" src="pet.js"></script>
+</body>
+</html>

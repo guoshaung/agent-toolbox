@@ -3,6 +3,7 @@ import { DeepSeekBridge } from './core/deepseek-bridge.js';
 import { Config } from './core/config.js';
 import { AI } from './core/ai.js';
 import { h, toast } from './core/ui.js';
+import { LOGO_MARK_SVG } from './core/logo.js';
 
 const rail = document.getElementById('rail');
 const stage = document.getElementById('stage');
@@ -62,6 +63,8 @@ function activate(id) {
   config.set('ui.lastTool', id);
 }
 
+rail.appendChild(h('div', { class: 'rail__logo', title: 'Agent 工具箱', html: LOGO_MARK_SVG }));
+
 for (const tool of TOOLS) {
   rail.appendChild(
     h('button', {
@@ -99,6 +102,18 @@ bridge.onStatus((state, detail) => {
 
 window.toolbox.onOpenUrl((url) => {
   window.dispatchEvent(new CustomEvent('toolbox:open-url', { detail: { url } }));
+});
+
+window.toolbox.app.onNavigateTool(({ id, section }) => {
+  activate(id);
+  if (section === 'ai') {
+    requestAnimationFrame(() => {
+      const target = document.getElementById('settings-ai');
+      target?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      target?.classList.add('settings__target');
+      setTimeout(() => target?.classList.remove('settings__target'), 1400);
+    });
+  }
 });
 
 window.__ctx = ctx; // 方便在 DevTools 里手动调试

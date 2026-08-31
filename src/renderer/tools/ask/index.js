@@ -37,6 +37,10 @@ export default {
     const view = h('webview', {
       partition: DEEPSEEK_PARTITION,
       src: DEEPSEEK_URL,
+      // 第三方登录（Google / Apple）走 window.open，不开这个就是「弹窗已被拦截」。
+      // 弹出的窗口由主进程的 setWindowOpenHandler 管控：只放行 https，
+      // 且强制同 partition + 关掉 Node 能力。
+      allowpopups: true,
     });
 
     const quick = h('input', {
