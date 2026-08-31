@@ -212,10 +212,39 @@ export function createLiterature(root, ctx) {
         }
       }
       await config.set('research.litMeta', metaMap);
-      toast(`导入 ${imported.length} 篇`, 'good');
+      const renamed = imported.filter((x) => x.renamed);
+      toast(
+        renamed.length
+          ? `导入 ${imported.length} 篇，其中 ${renamed.length} 篇编号命名已按标题重命名`
+          : `导入 ${imported.length} 篇`,
+        'good',
+      );
       renderList();
     } catch (err) {
       toast(`导入失败：${err.message}`, 'bad');
+    } finally {
+      btn.disabled = false;
+    }
+  }
+
+  /** 整理库里已有的编号命名 PDF，备注跟着新文件名走 */
+  async function fixNames(btn) {
+    btn.disabled = true;
+    try {
+      const renames = await lit.fixNames();
+      if (!renames.length) return toast('没有需要整理的编号命名 PDF', 'info');
+      const metaMap = meta();
+      for (const r of renames) {
+        if (metaMap[r.from]) {
+          metaMap[r.to] = metaMap[r.from];
+          delete metaMap[r.from];
+        }
+      }
+      await config.set('research.litMeta', metaMap);
+      renderList();
+      toast(`已重命名 ${renames.length} 篇：${renames[0].title || renames[0].to}${renames.length > 1 ? ' 等' : ''}`, 'good', 5000);
+    } catch (err) {
+      toast(`整理失败：${err.message}`, 'bad');
     } finally {
       btn.disabled = false;
     }
@@ -280,10 +309,16 @@ export function createLiterature(root, ctx) {
   }
 
   const importBtn = h('button', { class: 'btn btn--primary', onclick: (e) => doImport(e.currentTarget) }, '导入文献');
+  const fixBtn = h('button', {
+    class: 'btn btn--sm',
+    title: 'arxiv 这类编号命名的 PDF，读正文标题自动重命名',
+    onclick: (e) => fixNames(e.currentTarget),
+  }, '整理编号名');
 
   root.append(
     h('div', { class: 'bar research__viewbar' },
       importBtn,
+      fixBtn,
       h('span', { class: 'faint lit__hint' }, '文件存在应用数据目录；点「阅读」右侧直接看，不用开 WPS'),
     ),
     h('div', { class: 'lit__body' },

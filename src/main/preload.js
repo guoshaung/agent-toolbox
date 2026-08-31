@@ -40,6 +40,8 @@ contextBridge.exposeInMainWorld('toolbox', {
   video: {
     /** 抓 B 站视频公开信息（标题/简介/UP主/分集/播放量），返回 { ok, info | error } */
     fetchInfo: (url) => ipcRenderer.invoke('video:fetchInfo', url),
+    /** 拉字幕：官方字幕优先，没有则 AI 字幕；scope: 'p1' | 'p5' | 'all' */
+    fetchSubs: (payload) => ipcRenderer.invoke('video:fetchSubs', payload),
     /** 报告落盘 userData/reports/*.md，publish=true 时再用 lark-cli 发飞书 */
     saveReport: (payload) => ipcRenderer.invoke('video:saveReport', payload),
     /** 历史报告列表（本地持久化的） */
@@ -67,6 +69,8 @@ contextBridge.exposeInMainWorld('toolbox', {
     path: (file) => ipcRenderer.invoke('lit:path', file),
     /** 读纯文本内容（TXT/MD 内置阅读） */
     readText: (file) => ipcRenderer.invoke('lit:readText', file),
+    /** 整理库里编号命名的 PDF（arxiv 编号 → 正文标题），返回重命名列表 */
+    fixNames: () => ipcRenderer.invoke('lit:fixNames'),
   },
 
   ai: {

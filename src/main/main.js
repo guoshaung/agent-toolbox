@@ -11,6 +11,7 @@ const { buildQuickExplainMessages, parseQuickExplainResponse } = require('./quic
 const { buildCompatibleEndpoints, validateCompatibleConfig, readStoredCompatibleConfig } = require('./ai-config');
 const chatBridge = require('./chat-bridge');
 const videoReport = require('./video-report');
+const pdfTitle = require('./pdf-title');
 
 const IS_DEV = process.argv.includes('--dev');
 const ICON_PATH = path.join(__dirname, '..', '..', 'assets', 'icon.png');
@@ -588,6 +589,9 @@ function registerIpc() {
 
   ipcMain.handle('video:fetchInfo', (_e, url) => videoReport.fetchBilibiliInfo(url));
 
+  ipcMain.handle('video:fetchSubs', (_e, payload) =>
+    videoReport.fetchSubtitles(payload?.url, payload?.scope));
+
   ipcMain.handle('video:saveReport', (_e, payload) =>
     videoReport.saveReport(app.getPath('userData'), payload));
 
@@ -661,6 +665,23 @@ function registerIpc() {
     return dir;
   };
 
+  /** 编号命名的 PDF 尝试用正文标题重命名，返回最终文件名（识别不出就保持原名） */
+  function maybeRenamePdf(dir, fileName) {
+    if (!pdfTitle.looksLikeId(fileName)) return { file: fileName, renamed: false };
+    const title = pdfTitle.extractPdfTitle(path.join(dir, fileName));
+    if (!title) return { file: fileName, renamed: false };
+    const stem = pdfTitle.sanitizeFileStem(title);
+    if (!stem || stem.length < 6) return { file: fileName, renamed: false };
+    let target = `${stem}.pdf`;
+    let n = 1;
+    while (fs.existsSync(path.join(dir, target)) && target !== fileName) {
+      target = `${stem}-${n++}.pdf`;
+    }
+    if (target === fileName) return { file: fileName, renamed: false };
+    fs.renameSync(path.join(dir, fileName), path.join(dir, target));
+    return { file: target, renamed: true, from: fileName, title };
+  }
+
   ipcMain.handle('lit:import', async () => {
     const result = await dialog.showOpenDialog(mainWindow, {
       title: '导入文献',
@@ -683,10 +704,31 @@ function registerIpc() {
       try {
         fs.copyFileSync(src, dest);
         const stat = fs.statSync(dest);
-        imported.push({ file: path.basename(dest), size: stat.size, format: ext.slice(1).toLowerCase() });
+        const extName = ext.slice(1).toLowerCase();
+        let finalName = path.basename(dest);
+        let renamed = false;
+        // arxiv 这类编号命名的 PDF：读正文标题重命名
+        if (extName === 'pdf') {
+          const r = maybeRenamePdf(dir, finalName);
+          finalName = r.file;
+          renamed = r.renamed;
+        }
+        imported.push({ file: finalName, size: stat.size, format: extName, renamed });
       } catch { /* 单个失败不拖垮整批 */ }
     }
     return imported;
+  });
+
+  /** 整理库里已有的编号命名 PDF（不重新导入） */
+  ipcMain.handle('lit:fixNames', () => {
+    const dir = litDir();
+    const renames = [];
+    for (const f of fs.readdirSync(dir)) {
+      if (!f.toLowerCase().endsWith('.pdf') || !pdfTitle.looksLikeId(f)) continue;
+      const r = maybeRenamePdf(dir, f);
+      if (r.renamed) renames.push({ from: r.from, to: r.file, title: r.title });
+    }
+    return renames;
   });
 
   ipcMain.handle('lit:list', () => {

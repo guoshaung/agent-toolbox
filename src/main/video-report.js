@@ -2,15 +2,21 @@
 const path = require('node:path');
 const fs = require('node:fs');
 const os = require('node:os');
-const { execFileSync } = require('node:child_process');
+const { execFileSync, execFile } = require('node:child_process');
+const { promisify } = require('node:util');
+
+const execFileAsync = promisify(execFile);
 
 /**
- * 视频报告：B 站链接 → 抓公开信息 → 本地存 Markdown → 可选 lark-cli 发到飞书。
+ * 视频报告：B 站链接 → 抓公开信息 → 拉字幕（官方优先，AI 兜底）→ 本地存 Markdown
+ * → 可选 lark-cli 发到飞书。
  *
- * - 抓信息走 B 站公开 API（x/web-interface/view），不需要登录，拿不到字幕；
- *   没有字幕时报告就是「内容地图」：标题/简介/分集大纲，AI 摘要基于这些生成。
+ * - 抓信息走 B 站公开 API（x/web-interface/view），不需要登录；
+ * - 字幕走 yt-dlp + 浏览器 Cookie 登录态，官方字幕（zh-CN 等）优先，
+ *   没有官方字幕才拉 B 站 AI 生成字幕（ai-zh）；
  * - 报告一律先落盘 userData/reports/*.md，发不发飞书都不丢。
- * - lark-cli 在 nvm 目录下，Electron 从 Finder 启动时 PATH 里没有，要挨个候选路径找。
+ * - lark-cli / yt-dlp 多在 nvm、pipx 目录下，Electron 从 Finder 启动时 PATH 里没有，
+ *   要挨个候选路径找。
  */
 
 function extractBvid(url) {
@@ -87,6 +93,136 @@ function findLarkCli() {
     } catch { /* 下一个 */ }
   }
   return null;
+}
+
+/**
+ * 字幕拉取：优先 UP 主上传的官方字幕（zh-CN 等），没有再拉 B 站 AI 生成字幕（ai-zh）。
+ * 两种字幕 B 站都要求登录态，所以走 yt-dlp --cookies-from-browser 借浏览器登录态。
+ * 字幕是整集文本，可能很长（57 集约 20 万字），通过 scope 控制拉取范围。
+ */
+
+const SUB_SCOPES = {
+  p1: { items: '1', timeout: 120000, label: '仅第 1 集' },
+  p5: { items: '1-5', timeout: 360000, label: '前 5 集' },
+  all: { items: null, timeout: 900000, label: '全部集' },
+};
+
+const SUB_BROWSERS = ['edge', 'chrome', 'firefox', 'safari'];
+// B 站把 AI 生成字幕（ai-zh）也归在「字幕」而不是「自动字幕」里，
+// 所以一趟 --write-subs 把官方和 AI 字幕语言都要上，拿到哪种算哪种
+const SUB_LANGS = 'zh-CN,zh-Hans,zh-Hant,zh,en,ai-zh';
+
+/** 找 yt-dlp：pipx 装在 ~/.local/bin，Electron 从 Dock 启动时 PATH 里没有 */
+function findYtDlp() {
+  const candidates = [];
+  for (const dir of String(process.env.PATH || '').split(':')) {
+    if (dir) candidates.push(path.join(dir, 'yt-dlp'));
+  }
+  candidates.push(
+    path.join(os.homedir(), '.local', 'bin', 'yt-dlp'),
+    '/usr/local/bin/yt-dlp',
+    '/opt/homebrew/bin/yt-dlp',
+  );
+  for (const p of candidates) {
+    try {
+      fs.accessSync(p, fs.constants.X_OK);
+      return p;
+    } catch { /* 下一个 */ }
+  }
+  return null;
+}
+
+/** 把 SRT/VTT 字幕文件剥成纯文本 */
+function subtitleFileToText(file) {
+  const raw = fs.readFileSync(file, 'utf8');
+  const lines = [];
+  for (const line of raw.split(/\r?\n/)) {
+    const t = line.trim();
+    if (!t) continue;
+    if (/^\d+$/.test(t)) continue; // SRT 序号
+    if (t.includes('-->')) continue; // 时间轴
+    if (/^(WEBVTT|Kind:|Language:)/.test(t)) continue;
+    lines.push(t.replace(/<[^>]+>/g, '')); // 去内联标签
+  }
+  return lines.join('');
+}
+
+/** 扫输出目录里下到的字幕文件，按分 P 序号归组；文件名带 ai- 前缀的是 B 站 AI 字幕 */
+function collectSubtitleFiles(dir) {
+  let files = [];
+  try {
+    files = fs.readdirSync(dir).filter((f) => /\.(srt|vtt)$/i.test(f));
+  } catch { /* 目录不存在 */ }
+  const out = [];
+  for (const f of files) {
+    const page = parseInt(f, 10);
+    if (!Number.isFinite(page)) continue;
+    try {
+      out.push({ page, ai: /\.ai[-.]/i.test(f) || /ai-zh/i.test(f), text: subtitleFileToText(path.join(dir, f)) });
+    } catch { /* 跳过坏文件 */ }
+  }
+  const byPage = new Map();
+  for (const e of out) {
+    const prev = byPage.get(e.page);
+    // 同一集同时有官方和 AI 字幕时，官方优先
+    if (!prev || (prev.ai && !e.ai)) byPage.set(e.page, e);
+  }
+  return [...byPage.values()].sort((a, b) => a.page - b.page);
+}
+
+async function runYtDlp(ytdlp, args, timeout) {
+  await execFileAsync(ytdlp, args, {
+    encoding: 'utf8',
+    maxBuffer: 8 * 1024 * 1024,
+    timeout,
+    env: process.env,
+  });
+}
+
+/**
+ * 拉字幕。返回 { ok, kind: 'official'|'ai'|'mixed', episodes: [{page, text, chars}], error? }
+ * 依次借各浏览器的登录态跑 yt-dlp，哪个浏览器下到文件就用哪个。
+ */
+async function fetchSubtitles(url, scope) {
+  const bvid = extractBvid(url);
+  if (!bvid) return { ok: false, error: '没认出来 BV 号。' };
+  const sc = SUB_SCOPES[scope] || SUB_SCOPES.p1;
+  const ytdlp = findYtDlp();
+  if (!ytdlp) {
+    return { ok: false, error: '没找到 yt-dlp（查过 PATH、~/.local/bin、/usr/local/bin、/opt/homebrew/bin）。先在终端跑 pipx install yt-dlp。' };
+  }
+
+  const videoUrl = `https://www.bilibili.com/video/${bvid}/`;
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'toolbox-subs-'));
+  const outTpl = path.join(dir, '%(playlist_index)s.%(ext)s');
+  const baseArgs = ['--skip-download', '--no-warnings', '--socket-timeout', '20', '-o', outTpl];
+  if (sc.items) baseArgs.push('--playlist-items', sc.items);
+
+  try {
+    for (const browser of SUB_BROWSERS) {
+      try {
+        await runYtDlp(
+          ytdlp,
+          [...baseArgs, '--cookies-from-browser', browser, '--write-subs', '--sub-langs', SUB_LANGS, videoUrl],
+          sc.timeout,
+        );
+      } catch { continue; /* 这个浏览器取 Cookie 失败或网络问题，换下一个 */ }
+      const episodes = collectSubtitleFiles(dir);
+      if (episodes.length) {
+        const aiCount = episodes.filter((e) => e.ai).length;
+        const kind = aiCount === 0 ? 'official' : aiCount === episodes.length ? 'ai' : 'mixed';
+        return {
+          ok: true,
+          kind,
+          browser,
+          episodes: episodes.map((e) => ({ page: e.page, text: e.text, chars: e.text.length })),
+        };
+      }
+    }
+    return { ok: false, error: '没拿到字幕。这个视频可能既没开官方字幕也没开 AI 字幕，或者浏览器里没登录 B 站（试过 Edge/Chrome/Firefox/Safari 的 Cookie）。' };
+  } finally {
+    try { fs.rmSync(dir, { recursive: true, force: true }); } catch { /* 临时目录清不掉就算了 */ }
+  }
 }
 
 function reportsDir(userDataDir) {
@@ -179,4 +315,4 @@ function readReport(userDataDir, fileName) {
   }
 }
 
-module.exports = { fetchBilibiliInfo, saveReport, listReports, readReport };
+module.exports = { fetchBilibiliInfo, fetchSubtitles, saveReport, listReports, readReport };
