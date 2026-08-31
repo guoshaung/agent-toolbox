@@ -1,0 +1,5 @@
+{
+  "apiBaseUrl": "https://你的兼容端点/v1",
+  "apiKey": "sk-...",
+  "model": "gpt-4.1-mini"
+}

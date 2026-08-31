@@ -54,6 +54,11 @@ contextBridge.exposeInMainWorld('toolbox', {
     favicon: (url) => ipcRenderer.invoke('site:favicon', url),
   },
 
+  coach: {
+    /** 把陪读插件装进本机 VSCode / Cursor 并写入默认 API 配置 */
+    install: () => ipcRenderer.invoke('coach:install'),
+  },
+
   lit: {
     /** 弹文件选择框导入文献到 userData/literature/，返回导入的文件列表 */
     import: () => ipcRenderer.invoke('lit:import'),

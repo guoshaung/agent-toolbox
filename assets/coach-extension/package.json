@@ -1,0 +1,61 @@
+{
+  "name": "ai-code-reading-coach",
+  "displayName": "AI Code Reading Coach",
+  "description": "Identify the knowledge gap that blocks understanding of selected code.",
+  "version": "0.1.0",
+  "publisher": "local",
+  "engines": {
+    "vscode": "^1.95.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "aiCodeReadingCoach.explainSelection",
+        "title": "AI Code Reading Coach: Explain Selection"
+      }
+    ],
+    "keybindings": [
+      {
+        "command": "aiCodeReadingCoach.explainSelection",
+        "key": "ctrl+alt+k",
+        "mac": "cmd+alt+k",
+        "when": "editorTextFocus && editorHasSelection"
+      }
+    ],
+    "configuration": {
+      "title": "AI Code Reading Coach",
+      "properties": {
+        "aiCodeReadingCoach.model": {
+          "type": "string",
+          "default": "gpt-4.1-mini",
+          "description": "OpenAI model used to generate knowledge cards."
+        },
+        "aiCodeReadingCoach.apiBaseUrl": {
+          "type": "string",
+          "default": "https://api.openai.com/v1",
+          "description": "Base URL of an OpenAI Responses-compatible API, without the /responses path."
+        },
+        "aiCodeReadingCoach.apiKey": {
+          "type": "string",
+          "default": "",
+          "description": "API key（可选）。填了就不再弹窗询问；建议只在本机使用。"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "test": "npm run compile && node --test dist/test/response.test.js"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "@types/vscode": "^1.95.0",
+    "typescript": "^5.7.2"
+  }
+}

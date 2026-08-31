@@ -12,6 +12,7 @@ const { buildCompatibleEndpoints, validateCompatibleConfig, readStoredCompatible
 const chatBridge = require('./chat-bridge');
 const videoReport = require('./video-report');
 const pdfTitle = require('./pdf-title');
+const { installCoachExtension } = require('./coach-install');
 const litFetch = require('./lit-fetch');
 
 const IS_DEV = process.argv.includes('--dev');
@@ -789,6 +790,10 @@ function registerIpc() {
       return { ok: false, error: '读不出来。' };
     }
   });
+
+  // ---- 代码陪读：把插件装进本机 VSCode / Cursor 并写好默认配置 ----
+
+  ipcMain.handle('coach:install', () => installCoachExtension());
 }
 
 app.whenReady().then(() => {

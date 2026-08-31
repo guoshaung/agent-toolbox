@@ -1,6 +1,11 @@
 'use strict';
 const path = require('node:path');
 const fs = require('node:fs');
+const os = require('node:os');
+const { execFile } = require('node:child_process');
+const { promisify } = require('node:util');
+
+const execFileAsync = promisify(execFile);
 
 /**
  * 按文献名自动下载免费 PDF。
@@ -33,24 +38,61 @@ function normalize(s) {
   return String(s || '').toLowerCase().replace(/[^a-z0-9\u4e00-\u9fff]+/g, ' ').trim();
 }
 
-/** 词级匹配：等值或 8 字符词干相同（兜住 incentivizing/incentivizes 这类词形差） */
-function wordHit(a, b) {
-  if (a === b) return true;
-  return a.slice(0, 8) === b.slice(0, 8) && Math.min(a.length, b.length) >= 5;
+/** 字符 bigram Dice 相似度：词序/插词敏感（"attention is NOT all you need" 骗不过它） */
+function diceScore(q, t) {
+  const bigrams = (s) => {
+    const set = new Set();
+    for (let i = 0; i < s.length - 1; i += 1) set.add(s.slice(i, i + 2));
+    return set;
+  };
+  const a = bigrams(q);
+  const b = bigrams(t);
+  if (!a.size || !b.size) return 0;
+  let inter = 0;
+  for (const g of a) if (b.has(g)) inter += 1;
+  return (2 * inter) / (a.size + b.size);
 }
 
-/** 标题相似度评分：0 = 不匹配；否则是词重合率（0.7–1）。归一化后互相包含直接给 1。 */
+/** 标题相似度评分：0 = 不匹配。完全相等 1.0，互相包含 0.9，bigram 相似度 ≥0.75 按实际值。 */
 function titleScore(query, title) {
   const q = normalize(query);
   const t = normalize(title);
   if (!q || !t) return 0;
-  if (t.includes(q) || q.includes(t)) return 1;
-  const qw = q.split(' ');
-  const tw = t.split(' ');
-  let hit = 0;
-  for (const a of qw) if (tw.some((b) => wordHit(a, b))) hit += 1;
-  const ratio = hit / qw.length;
-  return ratio >= 0.7 ? ratio : 0;
+  if (q === t) return 1;
+  if (t.includes(q) || q.includes(t)) return 0.9;
+  const dice = diceScore(q, t);
+  return dice >= 0.75 ? dice : 0;
+}
+
+function decodeEntities(s) {
+  return String(s || '')
+    .replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"').replace(/&#39;|&apos;/g, "'");
+}
+
+function arxivPdfFromLink(link) {
+  const m = String(link || '').match(/arxiv\.org\/abs\/(\d{4}\.\d{4,5})/i)
+    || String(link || '').match(/10\.48550\/arXiv\.(\d{4}\.\d{4,5})/i);
+  return m ? `https://arxiv.org/pdf/${m[1]}` : null;
+}
+
+/** dblp：CS 领域标题检索最准，ee 链接常带 arXiv 号 */
+async function searchDblp(query) {
+  const data = await fetchJson(`https://dblp.org/search/publ/api?q=${encodeURIComponent(query)}&format=json&h=10`);
+  const hits = [];
+  for (const hit of data?.result?.hits?.hit || []) {
+    const info = hit.info || {};
+    const title = decodeEntities(info.title).replace(/\.$/, '');
+    const score = titleScore(query, title);
+    if (!score) continue;
+    const ees = Array.isArray(info.ee) ? info.ee : [info.ee];
+    for (const ee of ees.filter(Boolean)) {
+      const pdfUrl = arxivPdfFromLink(ee);
+      if (pdfUrl) { hits.push({ title, pdfUrl, score }); break; }
+    }
+  }
+  hits.sort((a, b) => b.score - a.score);
+  return hits;
 }
 
 /** 输入里直接给了 arXiv 号 / 链接的情况 */
@@ -136,21 +178,25 @@ async function searchCrossref(query) {
   return hits;
 }
 
+/**
+ * 下载 PDF。Node fetch（undici）被 arXiv 按 TLS 指纹挂起，curl 能过，
+ * 所以统一走 curl。下载到临时文件，校验 %PDF- 魔数后读回 Buffer。
+ */
 async function downloadPdf(url, timeout = 60000) {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), timeout);
+  const tmp = path.join(os.tmpdir(), `toolbox-pdf-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
   try {
-    const res = await fetch(url, { headers: { 'User-Agent': UA }, signal: controller.signal, redirect: 'follow' });
-    if (!res.ok) return null;
-    const buf = Buffer.from(await res.arrayBuffer());
-    // 有的源站 200 但回 HTML 错误页，看魔数最稳
+    await execFileAsync('curl', [
+      '-sL', '--max-time', String(Math.ceil(timeout / 1000)),
+      '-A', UA, '-o', tmp, url,
+    ], { timeout: timeout + 10000 });
+    const buf = fs.readFileSync(tmp);
     if (!buf.slice(0, 5).equals(Buffer.from('%PDF-'))) return null;
     if (buf.length > MAX_PDF_BYTES) return null;
     return buf;
   } catch {
     return null;
   } finally {
-    clearTimeout(timer);
+    try { fs.rmSync(tmp, { force: true }); } catch { /* 临时文件清不掉就算了 */ }
   }
 }
 
@@ -170,13 +216,26 @@ async function fetchPaperByTitle(litDir, query) {
   let hits = [];
   const directId = extractArxivId(q);
   if (directId) {
-    hits = [{ title: `arXiv ${directId}`, pdfUrl: `https://arxiv.org/pdf/${directId}` }];
+    hits = [{ title: `arXiv ${directId}`, pdfUrl: `https://arxiv.org/pdf/${directId}`, score: 1 }];
   } else {
-    hits = await searchOpenAlex(q);
-    if (!hits.length) hits = await searchCrossref(q);
+    const seen = new Set();
+    const merge = (list) => {
+      for (const hit of list || []) {
+        const key = normalize(hit.title);
+        if (seen.has(key)) continue;
+        seen.add(key);
+        hits.push(hit);
+      }
+    };
+    // dblp 标题检索最准排最前；OpenAlex 补非 CS 领域；Crossref 最后兜底
+    merge(await searchDblp(q));
+    merge(await searchOpenAlex(q));
+    if (!hits.length) merge(await searchCrossref(q));
+    hits.sort((a, b) => (b.score - a.score)
+      || (Number(b.pdfUrl.includes('arxiv.org')) - Number(a.pdfUrl.includes('arxiv.org'))));
   }
   if (!hits.length) {
-    return { ok: false, error: 'OpenAlex 和 Crossref 都没搜到匹配的免费文献。这篇可能要自己去知网/出版社站点下载，再用「导入文献」放进来。' };
+    return { ok: false, code: 'not-found', error: 'dblp / OpenAlex / Crossref 都没搜到匹配的免费文献。这篇可能要自己去知网/出版社站点下载，再用「导入文献」放进来。' };
   }
 
   // 候选挨个试，第一个下成功的入库
@@ -193,7 +252,13 @@ async function fetchPaperByTitle(litDir, query) {
     const stat = fs.statSync(path.join(litDir, file));
     return { ok: true, file, title: hit.title, source: hit.pdfUrl, size: stat.size, format: 'pdf' };
   }
-  return { ok: false, error: `找到了「${hits[0].title}」但 PDF 没下载成功（源站拒绝或不是免费 PDF）。可以浏览器打开 ${lastUrl} 手动下载后导入。` };
+  return {
+    ok: false,
+    code: 'download-failed',
+    title: hits[0].title,
+    url: lastUrl,
+    error: `找到了「${hits[0].title}」但 PDF 没下载成功（源站拒绝或不是免费 PDF）。`,
+  };
 }
 
 module.exports = { fetchPaperByTitle };

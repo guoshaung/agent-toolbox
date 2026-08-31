@@ -3,3 +3,4 @@ dist/
 out/
 .DS_Store
 *.log
+assets/coach-extension/defaults.local.json

@@ -182,6 +182,23 @@ export default {
         h('span', { style: { flex: 1 } }),
         h('button', {
           class: 'btn btn--sm',
+          title: '把插件装进本机 VSCode / Cursor，并写入默认 API 配置',
+          onclick: async (e) => {
+            e.currentTarget.disabled = true;
+            try {
+              const result = await window.toolbox.coach.install();
+              if (!result.ok) return toast(result.error, 'bad');
+              const names = result.installed.map((x) => `${x.editor}${x.configured ? '（含默认配置）' : ''}`).join('、');
+              toast(`已装进 ${names}，重启编辑器后选中代码按 Cmd+Alt+K`, 'good', 6000);
+            } catch (err) {
+              toast(`安装失败：${err.message}`, 'bad');
+            } finally {
+              e.currentTarget.disabled = false;
+            }
+          },
+        }, '装到 VSCode'),
+        h('button', {
+          class: 'btn btn--sm',
           onclick: async () => {
             const text = await window.toolbox.clipboard.read();
             if (!text.trim()) return toast('剪贴板是空的', 'info');
