@@ -32,11 +32,15 @@ export function createLiterature(root, ctx) {
   const zoomInBtn = h('button', { class: 'btn btn--icon', title: '放大', onclick: () => zoom(1) }, '＋');
   const annoToggle = h('button', { class: 'btn btn--sm', onclick: () => toggleAnno() }, '批注');
   const bilingBtn = h('button', { class: 'btn btn--sm', hidden: true, title: '原文/译文对照（TXT/MD）', onclick: () => toggleBilingual() }, '对照');
+  const handBtn = h('button', { class: 'btn btn--sm', title: '手掌：拖拽平移页面', onclick: () => setCursorMode('hand') }, '✋');
+  const selectBtn = h('button', { class: 'btn btn--sm', title: '指针：选中文字（配合划词/批注）', onclick: () => setCursorMode('select') }, '➤');
   const selBtn = h('button', { class: 'btn btn--sm', title: '翻译当前选中的文字', onclick: () => translateSelection() }, '划词');
   const snipBtn = h('button', { class: 'btn btn--sm', title: '框选一块区域，OCR 圈内文字并翻译', onclick: () => startSnip() }, '圈译');
   const viewerBar = h('div', { class: 'bar lit__viewerbar', hidden: true },
     h('span', { class: 'lit__viewer-name', title: '' }, ''),
     h('span', { style: { flex: 1 } }),
+    handBtn, selectBtn,
+    h('span', { class: 'subbar__sep' }),
     zoomOutBtn, zoomLabel, zoomInBtn,
     h('span', { class: 'subbar__sep' }),
     bilingBtn, selBtn, snipBtn,
@@ -129,6 +133,8 @@ export function createLiterature(root, ctx) {
   let currentWebview = null; // PDF 的 webview 引用（圈译截图用）
   let snipping = false;
   let translating = false;
+  let cursorMode = config.get('research.lit.cursor', 'hand'); // hand | select
+  let panOverlay = null;     // 手掌模式的拖拽层
 
   /** 圈译/划词的浮动结果卡 */
   const transCard = h('div', { class: 'lit__trans-card', hidden: true });
@@ -200,19 +206,23 @@ export function createLiterature(root, ctx) {
     }
   }
 
-  /** 圈译：在阅读区上盖一层蒙版拖框 → 截这块 → OCR → 翻译 */
+  /** 圈译：像画画一样绕着内容画一圈 → 取圈的外接框截图 → OCR → 翻译。
+   *  外接框多留 8px 余量：圈的内容多一点不会丢，宁可多截一点。 */
   function startSnip() {
     if (snipping || !current || !currentWebview) {
       if (!currentWebview) toast('圈译用于 PDF；文本文档直接划词翻译', 'info');
       return;
     }
     snipping = true;
-    const rectEl = h('div', { class: 'lit__snip-rect', hidden: true });
+    const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.setAttribute('class', 'lit__snip-svg');
+    const pathEl = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    svg.appendChild(pathEl);
     const overlay = h('div', { class: 'lit__snip-overlay' },
-      rectEl,
-      h('div', { class: 'lit__snip-tip' }, '拖一个框圈住要翻译的内容，Esc 取消'),
+      svg,
+      h('div', { class: 'lit__snip-tip' }, '像画画一样把要翻译的内容圈一圈，Esc 取消'),
     );
-    let start = null;
+    let pts = [];
     const escHandler = (e) => { if (e.key === 'Escape') cleanup(); };
 
     function cleanup() {
@@ -221,33 +231,44 @@ export function createLiterature(root, ctx) {
       overlay.remove();
     }
 
-    overlay.addEventListener('mousedown', (e) => {
+    function toLocal(e) {
       const box = overlay.getBoundingClientRect();
-      start = { x: e.clientX - box.left, y: e.clientY - box.top };
-      rectEl.removeAttribute('hidden');
+      return [e.clientX - box.left, e.clientY - box.top];
+    }
+
+    function pathD() {
+      return pts.map(([x, y], i) => `${i ? 'L' : 'M'}${x} ${y}`).join(' ') + (pts.length > 2 ? ' Z' : '');
+    }
+
+    function bbox(pad) {
+      const xs = pts.map((p) => p[0]);
+      const ys = pts.map((p) => p[1]);
+      const box = overlay.getBoundingClientRect();
+      const x0 = Math.max(0, Math.round(Math.min(...xs) - pad));
+      const y0 = Math.max(0, Math.round(Math.min(...ys) - pad));
+      const x1 = Math.min(box.width, Math.ceil(Math.max(...xs) + pad));
+      const y1 = Math.min(box.height, Math.ceil(Math.max(...ys) + pad));
+      return { x: x0, y: y0, width: x1 - x0, height: y1 - y0 };
+    }
+
+    overlay.addEventListener('mousedown', (e) => {
+      e.preventDefault();
+      pts = [toLocal(e)];
+      pathEl.setAttribute('d', pathD());
     });
     overlay.addEventListener('mousemove', (e) => {
-      if (!start) return;
-      const box = overlay.getBoundingClientRect();
-      const cur = { x: e.clientX - box.left, y: e.clientY - box.top };
-      const x = Math.min(start.x, cur.x);
-      const y = Math.min(start.y, cur.y);
-      const w = Math.abs(cur.x - start.x);
-      const hh = Math.abs(cur.y - start.y);
-      Object.assign(rectEl.style, { left: `${x}px`, top: `${y}px`, width: `${w}px`, height: `${hh}px` });
+      if (!pts.length) return;
+      const [x, y] = toLocal(e);
+      const [lx, ly] = pts[pts.length - 1];
+      if (Math.abs(x - lx) + Math.abs(y - ly) < 3) return; // 太密的点不要
+      pts.push([x, y]);
+      pathEl.setAttribute('d', pathD());
     });
-    overlay.addEventListener('mouseup', async (e) => {
-      if (!start) return;
-      const box = overlay.getBoundingClientRect();
-      const cur = { x: e.clientX - box.left, y: e.clientY - box.top };
-      const rect = {
-        x: Math.round(Math.min(start.x, cur.x)),
-        y: Math.round(Math.min(start.y, cur.y)),
-        width: Math.round(Math.abs(cur.x - start.x)),
-        height: Math.round(Math.abs(cur.y - start.y)),
-      };
+    overlay.addEventListener('mouseup', async () => {
+      if (!pts.length) return;
+      const rect = bbox(8); // 外接框 + 8px 余量：多一点可以，少一点不行
       cleanup();
-      if (rect.width < 12 || rect.height < 12) return;
+      if (rect.width < 16 || rect.height < 16) return; // 点了一下没画圈
       showTransBusy('正在截图 + OCR…');
       try {
         const img = await currentWebview.capturePage(rect);
@@ -368,6 +389,51 @@ export function createLiterature(root, ctx) {
 
   // ---- 阅读器 ----
 
+  /** PDF 手掌/指针切换：手掌 = 透明拖拽层平移页面；指针 = 原生选文字 */
+  function setCursorMode(mode) {
+    cursorMode = mode;
+    config.set('research.lit.cursor', mode);
+    applyCursorMode();
+  }
+
+  function applyCursorMode() {
+    handBtn.classList.toggle('is-on', cursorMode === 'hand');
+    selectBtn.classList.toggle('is-on', cursorMode === 'select');
+    if (!currentWebview) return;
+    viewerEl.style.position = 'relative';
+    if (cursorMode === 'hand') {
+      if (panOverlay) return;
+      panOverlay = h('div', { class: 'lit__pan-overlay', title: '' });
+      let last = null;
+      panOverlay.addEventListener('mousedown', (e) => {
+        last = { x: e.clientX, y: e.clientY };
+        panOverlay.classList.add('is-dragging');
+        e.preventDefault();
+      });
+      window.addEventListener('mousemove', (e) => {
+        if (!last) return;
+        const dx = e.clientX - last.x;
+        const dy = e.clientY - last.y;
+        last = { x: e.clientX, y: e.clientY };
+        // PDF 查看器的滚动容器各版本不一样，全都试一遍
+        currentWebview.executeJavaScript(
+          `window.scrollBy(${dx}, ${dy});
+           document.scrollingElement && document.scrollingElement.scrollBy(${dx}, ${dy});
+           var c = document.getElementById('viewerContainer') || document.getElementById('viewer.container');
+           c && c.scrollBy(${dx}, ${dy});`,
+        ).catch(() => { /* 拖太快偶发失败无所谓 */ });
+      });
+      window.addEventListener('mouseup', () => {
+        last = null;
+        panOverlay?.classList.remove('is-dragging');
+      });
+      viewerEl.appendChild(panOverlay);
+    } else if (panOverlay) {
+      panOverlay.remove();
+      panOverlay = null;
+    }
+  }
+
   function zoom(delta) {
     zoomIndex = Math.min(ZOOM_STEPS.length - 1, Math.max(0, zoomIndex + delta));
     const factor = ZOOM_STEPS[zoomIndex];
@@ -399,6 +465,7 @@ export function createLiterature(root, ctx) {
     bilingBtn.textContent = '对照';
     bilingBtn.classList.remove('is-on');
     currentWebview = null;
+    panOverlay = null; // viewerEl 马上要清空，旧拖拽层引用作废
     transCard.setAttribute('hidden', '');
     zoomIndex = 2;
     zoomLabel.textContent = '100%';
@@ -408,6 +475,8 @@ export function createLiterature(root, ctx) {
     viewerEl.textContent = '';
     annoPanel.setAttribute('hidden', '');
     bilingBtn.setAttribute('hidden', '');
+    handBtn.setAttribute('hidden', '');
+    selectBtn.setAttribute('hidden', '');
 
     if (item.format === 'pdf') {
       const fullPath = await lit.path(item.file);
@@ -419,6 +488,9 @@ export function createLiterature(root, ctx) {
         src: fileUrl,
       });
       currentWebview = view;
+      handBtn.removeAttribute('hidden');
+      selectBtn.removeAttribute('hidden');
+      applyCursorMode();
       viewerEl.appendChild(view);
       return;
     }

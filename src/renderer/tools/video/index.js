@@ -279,8 +279,65 @@ export default {
       }
     }
 
-    function renderResult(markdown, result) {
+    /** 极简 Markdown 渲染：标题/列表/加粗/行内代码/引用/分割线/链接，先转义再拼，报告内容来自 AI 也不怕 */
+    function mdToHtml(md) {
+      const esc = (s) => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      const inline = (s) => esc(s)
+        .replace(/`([^`]+)`/g, '<code>$1</code>')
+        .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+        .replace(/\[([^\]]+)\]\((https?:[^\s)]+)\)/g, '<a href="#" data-url="$2">$1</a>')
+        .replace(/\*([^*]+)\*/g, '<em>$1</em>');
+      const out = [];
+      let list = null;
+      const closeList = () => { if (list) { out.push(`</${list}>`); list = null; } };
+      for (const raw of String(md).split('\n')) {
+        const line = raw.trimEnd();
+        let m;
+        if ((m = line.match(/^(#{1,3})\s+(.*)$/))) { closeList(); out.push(`<h${m[1].length}>${inline(m[2])}</h${m[1].length}>`); continue; }
+        if (/^---+\s*$/.test(line)) { closeList(); out.push('<hr>'); continue; }
+        if ((m = line.match(/^>\s?(.*)$/))) { closeList(); out.push(`<blockquote>${inline(m[1])}</blockquote>`); continue; }
+        if ((m = line.match(/^[-*]\s+(.*)$/))) {
+          if (list !== 'ul') { closeList(); out.push('<ul>'); list = 'ul'; }
+          out.push(`<li>${inline(m[1])}</li>`); continue;
+        }
+        if ((m = line.match(/^\d+[.、]\s+(.*)$/))) {
+          if (list !== 'ol') { closeList(); out.push('<ol>'); list = 'ol'; }
+          out.push(`<li>${inline(m[1])}</li>`); continue;
+        }
+        if (!line.trim()) { closeList(); continue; }
+        closeList();
+        out.push(`<p>${inline(line)}</p>`);
+      }
+      closeList();
+      return out.join('');
+    }
+
+    /** 渲染出的文章里的链接走系统浏览器（壳有 CSP 且不让内页导航走） */
+    function bindArticleLinks(articleEl) {
+      articleEl.addEventListener('click', (e) => {
+        const a = e.target.closest('a[data-url]');
+        if (!a) return;
+        e.preventDefault();
+        window.toolbox.shell.openExternal(a.dataset.url);
+      });
+    }
+
+    function renderResult(markdown, result, { fromHistory = false } = {}) {
       body.textContent = '';
+      if (fromHistory) {
+        body.appendChild(h('div', { class: 'video__reader-bar' },
+          h('button', {
+            class: 'btn btn--sm',
+            onclick: () => {
+              body.textContent = '';
+              body.appendChild(h('div', { class: 'empty' },
+                h('span', { class: 'empty__icon' }, '📺'),
+                '贴一个 B 站视频链接，回车抓取。'));
+            },
+          }, '‹ 返回'),
+          h('span', { class: 'faint' }, '正在阅读历史报告'),
+        ));
+      }
       body.appendChild(
         h('div', { class: 'card video__result' },
           h('div', { class: 'video__result-head' },
@@ -307,7 +364,11 @@ export default {
             h('span', { class: 'tag tag--warn' }, '飞书未发'), result.publishError),
           result.publishNote && h('div', { class: 'faint video__note' }, result.publishNote),
         ),
-        h('div', { class: 'card video__markdown' }, markdown),
+        (() => {
+          const article = h('div', { class: 'card video__article', html: mdToHtml(markdown) });
+          bindArticleLinks(article);
+          return article;
+        })(),
       );
     }
 
@@ -333,7 +394,7 @@ export default {
     async function openReport(r) {
       const result = await video.readReport(r.name);
       if (!result.ok) return toast(result.error, 'bad');
-      renderResult(result.content, { localPath: result.path });
+      renderResult(result.content, { localPath: result.path }, { fromHistory: true });
     }
 
     root.append(
