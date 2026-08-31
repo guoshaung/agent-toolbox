@@ -187,6 +187,8 @@ function createWindow() {
     delete webPreferences.preload;
     webPreferences.nodeIntegration = false;
     webPreferences.contextIsolation = true;
+    // 文献阅读器要用 Chromium 内置 PDF 查看器（自带缩放/翻页/搜索）
+    webPreferences.plugins = true;
   });
 
   mainWindow.webContents.on('did-attach-webview', (_event, guest) => {
@@ -721,6 +723,24 @@ function registerIpc() {
       return true;
     } catch {
       return false;
+    }
+  });
+
+  /** 内置阅读器要拿完整路径喂给 webview 的 file:// */
+  ipcMain.handle('lit:path', (_e, file) => {
+    const full = path.join(litDir(), path.basename(String(file || '')));
+    return fs.existsSync(full) ? full : null;
+  });
+
+  /** TXT/MD 这类纯文本直接读进应用内阅读器 */
+  ipcMain.handle('lit:readText', (_e, file) => {
+    const full = path.join(litDir(), path.basename(String(file || '')));
+    try {
+      const stat = fs.statSync(full);
+      if (stat.size > 3 * 1024 * 1024) return { ok: false, error: '文件超过 3MB，建议外部打开。' };
+      return { ok: true, content: fs.readFileSync(full, 'utf8') };
+    } catch {
+      return { ok: false, error: '读不出来。' };
     }
   });
 }

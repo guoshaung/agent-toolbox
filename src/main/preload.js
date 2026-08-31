@@ -63,6 +63,10 @@ contextBridge.exposeInMainWorld('toolbox', {
     reveal: (file) => ipcRenderer.invoke('lit:reveal', file),
     /** 删除 */
     remove: (file) => ipcRenderer.invoke('lit:remove', file),
+    /** 完整路径（内置阅读器用） */
+    path: (file) => ipcRenderer.invoke('lit:path', file),
+    /** 读纯文本内容（TXT/MD 内置阅读） */
+    readText: (file) => ipcRenderer.invoke('lit:readText', file),
   },
 
   ai: {
