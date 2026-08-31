@@ -322,7 +322,40 @@ export default {
       });
     }
 
-    function renderResult(markdown, result, { fromHistory = false } = {}) {
+    let lastResultView = null; // 记最近一屏，内嵌飞书返回时用
+
+    /** 飞书文档内嵌打开：webview + 独立分区，扫码登录一次后保持 */
+    function openFeishuDoc(url) {
+      body.textContent = '';
+      const view = h('webview', {
+        class: 'video__feishu',
+        partition: 'persist:feishu',
+        src: url,
+      });
+      body.appendChild(
+        h('div', { class: 'video__reader-bar' },
+          h('button', {
+            class: 'btn btn--sm',
+            onclick: () => {
+              const v = lastResultView;
+              if (v) renderResult(v.markdown, v.result, v.opts);
+            },
+          }, '‹ 返回报告'),
+          h('span', { class: 'faint' }, '内嵌飞书文档（首次需扫码登录一次，之后保持登录态）'),
+          h('span', { style: { flex: 1 } }),
+          h('button', {
+            class: 'btn btn--sm btn--ghost',
+            title: '用系统浏览器打开',
+            onclick: () => window.toolbox.shell.openExternal(url),
+          }, '↗'),
+        ),
+        view,
+      );
+    }
+
+    function renderResult(markdown, result, opts = {}) {
+      const { fromHistory = false } = opts;
+      lastResultView = { markdown, result, opts };
       body.textContent = '';
       if (fromHistory) {
         body.appendChild(h('div', { class: 'video__reader-bar' },
@@ -353,7 +386,8 @@ export default {
             h('span', { class: 'tag tag--good' }, '已发飞书'),
             h('a', {
               class: 'video__doc-link', href: '#',
-              onclick: (e) => { e.preventDefault(); window.toolbox.shell.openExternal(result.docUrl); },
+              title: '在应用内打开这篇飞书文档',
+              onclick: (e) => { e.preventDefault(); openFeishuDoc(result.docUrl); },
             }, result.docUrl),
             h('button', {
               class: 'btn btn--sm',

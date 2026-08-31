@@ -662,3 +662,6 @@
 .video__article a { color: var(--accent); }
 .video__article strong { font-weight: 650; }
 .video__history-feishu { margin-left: 8px; flex: 0 0 auto; }
+
+/* ---------- 内嵌飞书文档 ---------- */
+.video__feishu { flex: 1; min-height: 0; border-radius: var(--radius-lg); overflow: hidden; }

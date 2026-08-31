@@ -31,7 +31,7 @@ const PARTITIONS = {
   deepseek: 'persist:deepseek',
   docs: 'persist:docs',
   research: 'persist:research',
-  focus: 'persist:focus', // 醒脑游戏 / 情报热榜 / 大佬动态共用这个分区，登录态持久
+  feishu: 'persist:feishu',
 };
 
 let store;
