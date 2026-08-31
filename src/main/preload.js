@@ -81,12 +81,14 @@ contextBridge.exposeInMainWorld('toolbox', {
     path: (file) => ipcRenderer.invoke('lit:path', file),
     /** 读纯文本内容（TXT/MD 内置阅读） */
     readText: (file) => ipcRenderer.invoke('lit:readText', file),
+    /** 读 PDF 字节（渲染进程用 PDF.js 自渲染，摆脱内置插件的各种限制） */
+    readPdf: (file) => ipcRenderer.invoke('lit:readPdf', file),
     /** 整理库里编号命名的 PDF（arxiv 编号 → 正文标题），返回重命名列表 */
     fixNames: () => ipcRenderer.invoke('lit:fixNames'),
     /** 按文献名自动下载免费 PDF（arXiv/Semantic Scholar），返回 { ok, file | error } */
     fetchByTitle: (query) => ipcRenderer.invoke('lit:fetch', query),
     /** 免费翻译（有道），返回 { ok, translation | error } */
-    translate: (text) => ipcRenderer.invoke('lit:translate', text),
+    translate: (text, opts) => ipcRenderer.invoke('lit:translate', text, opts),
     /** 圈选截图 OCR + 翻译，返回 { ok, srcText, translation | error } */
     snipTranslate: (dataUrl) => ipcRenderer.invoke('lit:snipTranslate', dataUrl),
   },

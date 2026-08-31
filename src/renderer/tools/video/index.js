@@ -386,7 +386,9 @@ export default {
           onclick: () => openReport(r),
         },
           h('div', { class: 'video__history-title' }, r.title),
-          h('div', { class: 'faint' }, new Date(r.mtime).toLocaleString('zh-CN', { hour12: false })),
+          h('div', { class: 'faint' },
+            new Date(r.mtime).toLocaleString('zh-CN', { hour12: false }),
+            r.docUrl && h('span', { class: 'tag tag--good video__history-feishu' }, '飞书')),
         ));
       }
     }
@@ -394,7 +396,11 @@ export default {
     async function openReport(r) {
       const result = await video.readReport(r.name);
       if (!result.ok) return toast(result.error, 'bad');
-      renderResult(result.content, { localPath: result.path }, { fromHistory: true });
+      renderResult(
+        result.content,
+        { localPath: result.path, docUrl: result.docUrl },
+        { fromHistory: true },
+      );
     }
 
     root.append(

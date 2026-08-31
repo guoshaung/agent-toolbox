@@ -259,6 +259,14 @@ function saveReport(userDataDir, { title, markdown, bvid, publish }) {
     }
     const grant = parsed?.data?.permission_grant;
     const warnings = parsed?.data?.warnings;
+    // 飞书链接持久化：不然重开应用后历史报告里就没法打开飞书版了
+    try {
+      fs.writeFileSync(
+        `${file}.json`,
+        JSON.stringify({ title, docUrl, bvid: bvid || '', publishedAt: new Date().toISOString() }, null, 2),
+        'utf8',
+      );
+    } catch { /* 存不上也不影响报告本身 */ }
     return {
       ...result,
       docUrl,
@@ -288,12 +296,17 @@ function listReports(userDataDir) {
         const stat = fs.statSync(full);
         const head = fs.readFileSync(full, 'utf8').slice(0, 2000);
         const titleMatch = head.match(/^#\s+(.+)$/m);
+        let docUrl = '';
+        try {
+          docUrl = String(JSON.parse(fs.readFileSync(`${full}.json`, 'utf8')).docUrl || '');
+        } catch { /* 没发布过 */ }
         return {
           file: full,
           name: f,
           title: titleMatch ? titleMatch[1].trim() : f,
           mtime: stat.mtime.toISOString(),
           size: stat.size,
+          docUrl,
         };
       } catch {
         return null;
@@ -309,7 +322,13 @@ function readReport(userDataDir, fileName) {
   const safe = path.basename(String(fileName || '')); // 挡路径穿越
   const full = path.join(dir, safe);
   try {
-    return { ok: true, path: full, content: fs.readFileSync(full, 'utf8') };
+    const result = { ok: true, path: full, content: fs.readFileSync(full, 'utf8'), docUrl: '' };
+    // 伴随元数据里可能存着飞书链接（发布成功时写入）
+    try {
+      const meta = JSON.parse(fs.readFileSync(`${full}.json`, 'utf8'));
+      result.docUrl = String(meta.docUrl || '');
+    } catch { /* 没发布过或元数据丢了 */ }
+    return result;
   } catch {
     return { ok: false, error: '报告文件读不到，可能被删了。' };
   }

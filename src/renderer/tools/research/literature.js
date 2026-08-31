@@ -8,6 +8,21 @@ const FORMAT_ICONS = {
 const TEXT_READABLE = new Set(['txt', 'md', 'rtf']);
 const ZOOM_STEPS = [0.6, 0.8, 1, 1.25, 1.5, 2];
 
+/** PDF.js 懒加载：只有打开 PDF 时才 import（自带 worker 配置，加载失败会退回主线程渲染） */
+let pdfjsPromise = null;
+function loadPdfJs() {
+  if (!pdfjsPromise) {
+    pdfjsPromise = import('../../../../node_modules/pdfjs-dist/build/pdf.min.mjs').then((lib) => {
+      lib.GlobalWorkerOptions.workerSrc = new URL(
+        '../../../../node_modules/pdfjs-dist/build/pdf.worker.min.mjs',
+        import.meta.url,
+      ).href;
+      return lib;
+    });
+  }
+  return pdfjsPromise;
+}
+
 /**
  * 文献管理器：左边是库（导入/备注/删除），右边是内置阅读器。
  * - PDF：Chromium 内置 PDF 查看器（自带缩放/翻页/搜索/选中复制）
@@ -130,11 +145,23 @@ export function createLiterature(root, ctx) {
 
   let rawText = null;        // TXT/MD 的原文（对照翻译用）
   let bilingual = false;
-  let currentWebview = null; // PDF 的 webview 引用（圈译截图用）
   let snipping = false;
   let translating = false;
   let cursorMode = config.get('research.lit.cursor', 'hand'); // hand | select
   let panOverlay = null;     // 手掌模式的拖拽层
+
+  // PDF.js 自渲染状态
+  let pdfDoc = null;         // PDFDocumentProxy
+  let pdfLoadingTask = null; // 销毁用
+  let pdfScrollEl = null;    // 滚动容器（手掌平移就滚它）
+  let pdfPagesWrap = null;   // 页面包装层（流动缩放时对它做 CSS 变换）
+  let pdfPageEls = {};       // n -> 页面占位 div
+  let pdfRendered = new Set();
+  let pdfRendering = new Set();
+  let pdfFitScale = 1;       // 按宽度自适应的基础缩放
+  let pdfBaseWidth = 612;    // 原始页宽（scale=1），窗口变化时重算适配用
+  let pdfViewScale = 1;      // 目标缩放（浮点，流动变化）
+  let pdfRenderedScale = 1;  // 画布当前实际渲染的缩放
 
   /** 圈译/划词的浮动结果卡 */
   const transCard = h('div', { class: 'lit__trans-card', hidden: true });
@@ -177,28 +204,28 @@ export function createLiterature(root, ctx) {
     ));
   }
 
-  /** 划词翻译：文本阅读器走 window.getSelection；PDF 试试 webview 里能不能拿到选区 */
+  /** 记住最近一次非空选区：点「划词」按钮那一下会把选区塌掉，必须提前存 */
+  let lastSelection = '';
+  document.addEventListener('selectionchange', () => {
+    const s = String(window.getSelection()?.toString() || '').trim();
+    if (s) lastSelection = s;
+  });
+
+  /** 划词翻译：文本阅读器里选中的一段（PDF 没文本层，用圈译） */
   async function translateSelection() {
     if (translating || !current) return;
-    let selected = '';
-    if (currentWebview) {
-      try {
-        selected = await currentWebview.executeJavaScript('window.getSelection().toString()') || '';
-      } catch { /* PDF 插件里拿不到 */ }
-    } else {
-      selected = String(window.getSelection()?.toString() || '');
-    }
-    selected = selected.trim();
+    const selected = String(window.getSelection()?.toString() || '').trim() || lastSelection;
     if (!selected) {
-      toast(currentWebview ? 'PDF 里选不了字就用「圈译」框选区域' : '先在左边原文里选中一段文字', 'info');
+      toast(pdfDoc ? 'PDF 选不了字，用「圈译」圈住要翻的内容' : '先在左边原文里选中一段文字', 'info');
       return;
     }
     translating = true;
-    showTransBusy('正在翻译…');
+    showTransBusy(`正在翻译（${selected.length} 字）…`);
     try {
-      const result = await lit.translate(selected);
+      const result = await lit.translate(selected, { interactive: true });
       if (!result.ok) return showTransResult(selected, `翻译失败：${result.error}`);
       showTransResult(selected, result.translation);
+      toast('翻译好了，译文在右下角浮卡', 'good');
     } catch (err) {
       showTransResult(selected, `翻译失败：${err.message}`);
     } finally {
@@ -206,11 +233,11 @@ export function createLiterature(root, ctx) {
     }
   }
 
-  /** 圈译：像画画一样绕着内容画一圈 → 取圈的外接框截图 → OCR → 翻译。
-   *  外接框多留 8px 余量：圈的内容多一点不会丢，宁可多截一点。 */
+  /** 圈译：像画画一样绕着内容画一圈 → 取圈的外接框从页面画布裁图 → OCR → 翻译。
+   *  裁图来自 PDF.js 渲染的高清画布（非屏幕截图），圈的内容多 8px 余量不会丢。 */
   function startSnip() {
-    if (snipping || !current || !currentWebview) {
-      if (!currentWebview) toast('圈译用于 PDF；文本文档直接划词翻译', 'info');
+    if (snipping || !current || !pdfDoc) {
+      if (!pdfDoc) toast('圈译用于 PDF；文本文档直接划词翻译', 'info');
       return;
     }
     snipping = true;
@@ -255,6 +282,8 @@ export function createLiterature(root, ctx) {
       e.preventDefault();
       pts = [toLocal(e)];
       pathEl.setAttribute('d', pathD());
+      // 松手才收尾，且只在真正落笔之后监听——防止无关点击把圈选会话关掉
+      window.addEventListener('mouseup', done, { once: true });
     });
     overlay.addEventListener('mousemove', (e) => {
       if (!pts.length) return;
@@ -264,21 +293,38 @@ export function createLiterature(root, ctx) {
       pts.push([x, y]);
       pathEl.setAttribute('d', pathD());
     });
-    overlay.addEventListener('mouseup', async () => {
+    async function done() {
+      window.removeEventListener('mouseup', done);
       if (!pts.length) return;
       const rect = bbox(8); // 外接框 + 8px 余量：多一点可以，少一点不行
       cleanup();
       if (rect.width < 16 || rect.height < 16) return; // 点了一下没画圈
-      showTransBusy('正在截图 + OCR…');
+      showTransBusy(`正在从高清页面裁图（${Math.round(rect.width)}×${Math.round(rect.height)}）+ OCR…`);
       try {
-        const img = await currentWebview.capturePage(rect);
-        const result = await lit.snipTranslate(img.toDataURL());
-        if (!result.ok) return showTransResult(result.srcText, `失败：${result.error}`);
-        showTransResult(result.srcText, result.translation);
+        const crops = await cropLassoRegion(rect);
+        if (!crops.length) return showTransResult(null, '圈住的地方还没有渲染出来，滚动一下再圈。');
+        const srcParts = [];
+        const dstParts = [];
+        const errs = [];
+        for (const c of crops) {
+          const r = await lit.snipTranslate(c.dataUrl);
+          if (r.srcText) srcParts.push(r.srcText);
+          if (r.ok && r.translation) dstParts.push(r.translation);
+          else if (r.error) errs.push(`第 ${c.num} 页：${r.error}`);
+        }
+        if (!dstParts.length) {
+          // OCR 原文还在的话也亮出来，方便看是识别问题还是翻译问题
+          return showTransResult(srcParts.join('\n') || null, errs.join('；') || '圈里没识别出文字，圈大一点、对准文字试试。');
+        }
+        showTransResult(srcParts.join('\n'), dstParts.join('\n——\n') + (errs.length ? `\n（${errs.join('；')}）` : ''));
+        toast('翻译好了，原文+译文都在右下角浮卡', 'good');
       } catch (err) {
         showTransResult(null, `圈译失败：${err.message}`);
       }
-    });
+    }
+
+    // mouseup 挂 window：拖到阅读区外松手也能正常收尾
+    window.addEventListener('mouseup', done, { once: true });
 
     document.addEventListener('keydown', escHandler);
     viewerEl.style.position = 'relative';
@@ -333,7 +379,8 @@ export function createLiterature(root, ctx) {
       return cell;
     });
 
-    const pendingIdx = paras.map((_, i) => i).filter((i) => !cache[i]);
+    // 以前失败的条目不算已翻译，重开时自动重试
+    const pendingIdx = paras.map((_, i) => i).filter((i) => !cache[i] || String(cache[i]).startsWith('（失败'));
     if (!pendingIdx.length) return;
     translating = true;
     const batches = makeParaBatches(paras, pendingIdx);
@@ -389,7 +436,7 @@ export function createLiterature(root, ctx) {
 
   // ---- 阅读器 ----
 
-  /** PDF 手掌/指针切换：手掌 = 透明拖拽层平移页面；指针 = 原生选文字 */
+  /** PDF 手掌/指针切换：手掌 = 透明拖拽层平移滚动容器；指针 = 原生光标 */
   function setCursorMode(mode) {
     cursorMode = mode;
     config.set('research.lit.cursor', mode);
@@ -399,11 +446,11 @@ export function createLiterature(root, ctx) {
   function applyCursorMode() {
     handBtn.classList.toggle('is-on', cursorMode === 'hand');
     selectBtn.classList.toggle('is-on', cursorMode === 'select');
-    if (!currentWebview) return;
+    if (!pdfScrollEl) return;
     viewerEl.style.position = 'relative';
     if (cursorMode === 'hand') {
       if (panOverlay) return;
-      panOverlay = h('div', { class: 'lit__pan-overlay', title: '' });
+      panOverlay = h('div', { class: 'lit__pan-overlay' });
       let last = null;
       panOverlay.addEventListener('mousedown', (e) => {
         last = { x: e.clientX, y: e.clientY };
@@ -411,22 +458,23 @@ export function createLiterature(root, ctx) {
         e.preventDefault();
       });
       window.addEventListener('mousemove', (e) => {
-        if (!last) return;
+        if (!last || !pdfScrollEl) return;
         const dx = e.clientX - last.x;
         const dy = e.clientY - last.y;
         last = { x: e.clientX, y: e.clientY };
-        // PDF 查看器的滚动容器各版本不一样，全都试一遍
-        currentWebview.executeJavaScript(
-          `window.scrollBy(${dx}, ${dy});
-           document.scrollingElement && document.scrollingElement.scrollBy(${dx}, ${dy});
-           var c = document.getElementById('viewerContainer') || document.getElementById('viewer.container');
-           c && c.scrollBy(${dx}, ${dy});`,
-        ).catch(() => { /* 拖太快偶发失败无所谓 */ });
+        pdfScrollEl.scrollBy(-dx, -dy); // 拖文章 = 内容跟手走
       });
       window.addEventListener('mouseup', () => {
         last = null;
         panOverlay?.classList.remove('is-dragging');
       });
+      // 拖拽层盖住了滚动容器，滚轮在这里分发的：普通滚轮 = 滚动，⌘/捏合 = 缩放
+      panOverlay.addEventListener('wheel', (e) => {
+        if (!pdfScrollEl) return;
+        if (e.metaKey || e.ctrlKey) return wheelZoom(e);
+        e.preventDefault();
+        pdfScrollEl.scrollBy(e.deltaX, e.deltaY);
+      }, { passive: false });
       viewerEl.appendChild(panOverlay);
     } else if (panOverlay) {
       panOverlay.remove();
@@ -434,16 +482,202 @@ export function createLiterature(root, ctx) {
     }
   }
 
+  // ---- PDF.js 自渲染：滚动、缩放、圈译截图全部自己掌控 ----
+
+  let pdfObserver = null;
+  let pdfRerenderTimer = null;
+  let pdfResizeHandler = null;
+
+  async function openPdfJs(item) {
+    const buf = await lit.readPdf(item.file);
+    if (!buf.ok) throw new Error(buf.error);
+    const pdfjsLib = await loadPdfJs();
+    // pdf.js 会把 data 的缓冲区 detach 掉，给副本
+    pdfLoadingTask = pdfjsLib.getDocument({
+      data: new Uint8Array(buf.data),
+      standardFontDataUrl: new URL('../../../../node_modules/pdfjs-dist/standard_fonts/', import.meta.url).href,
+      cMapUrl: new URL('../../../../node_modules/pdfjs-dist/cmaps/', import.meta.url).href,
+      cMapPacked: true,
+    });
+    pdfDoc = await pdfLoadingTask.promise;
+
+    // 等一帧布局稳定，clientWidth 才是真值（否则量出 0，页面尺寸全错）
+    await new Promise((r) => requestAnimationFrame(r));
+    const dpr = window.devicePixelRatio || 1;
+    const first = await pdfDoc.getPage(1);
+    const baseVp = first.getViewport({ scale: 1 });
+    pdfBaseWidth = baseVp.width;
+    // 按阅读区宽度自适应，再乘缩放档位；量不到宽度就退回原始页宽
+    const avail = viewerEl.clientWidth > 100 ? viewerEl.clientWidth - 36 : baseVp.width;
+    pdfFitScale = Math.min(2, Math.max(0.3, avail / baseVp.width));
+    pdfViewScale = pdfFitScale;
+    pdfRenderedScale = pdfFitScale;
+
+    const scrollEl = h('div', { class: 'lit__pdfjs' });
+    pdfPagesWrap = h('div', { class: 'lit__pdfjs-pages' });
+    scrollEl.appendChild(pdfPagesWrap);
+    // 指针模式下没有拖拽层，⌘/捏合缩放直接挂在滚动容器上
+    scrollEl.addEventListener('wheel', (e) => {
+      if (e.metaKey || e.ctrlKey) wheelZoom(e);
+    }, { passive: false });
+    viewerEl.style.position = 'relative';
+    viewerEl.appendChild(scrollEl);
+    pdfScrollEl = scrollEl;
+    // 窗口/面板尺寸变化后按新宽度重新适配，页面永远保持居中
+    if (!pdfResizeHandler) {
+      pdfResizeHandler = () => { if (pdfDoc) schedulePdfRerender(true); };
+      window.addEventListener('resize', pdfResizeHandler);
+    }
+
+    pdfPageEls = {};
+    pdfRendered = new Set();
+    pdfRendering = new Set();
+    for (let n = 1; n <= pdfDoc.numPages; n += 1) {
+      const vp = (await pdfDoc.getPage(n)).getViewport({ scale: pdfRenderedScale });
+      const pageEl = h('div', { class: 'lit__page', dataset: { page: String(n) } },
+        h('canvas', {}),
+        h('div', { class: 'lit__page-no faint' }, String(n)),
+      );
+      pageEl.style.width = `${Math.round(vp.width)}px`;
+      pageEl.style.height = `${Math.round(vp.height)}px`;
+      pdfPagesWrap.appendChild(pageEl);
+      pdfPageEls[n] = pageEl;
+    }
+
+    // 首页立刻渲，其余进入视口附近再渲
+    await renderPdfPage(1);
+    pdfObserver = new IntersectionObserver((entries) => {
+      for (const en of entries) {
+        if (en.isIntersecting) renderPdfPage(Number(en.target.dataset.page));
+      }
+    }, { root: scrollEl, rootMargin: '600px 0px' });
+    for (const el of Object.values(pdfPageEls)) pdfObserver.observe(el);
+
+    applyCursorMode();
+  }
+
+  async function renderPdfPage(n) {
+    if (!pdfDoc || pdfRendered.has(n) || pdfRendering.has(n)) return;
+    pdfRendering.add(n);
+    try {
+      const page = await pdfDoc.getPage(n);
+      const dpr = window.devicePixelRatio || 1;
+      const viewport = page.getViewport({ scale: pdfRenderedScale * dpr });
+      const canvas = pdfPageEls[n]?.querySelector('canvas');
+      if (!canvas) return;
+      canvas.width = Math.round(viewport.width);
+      canvas.height = Math.round(viewport.height);
+      canvas.style.width = `${Math.round(viewport.width / dpr)}px`;
+      canvas.style.height = `${Math.round(viewport.height / dpr)}px`;
+      await page.render({ canvasContext: canvas.getContext('2d'), viewport }).promise;
+      pdfRendered.add(n);
+    } finally {
+      pdfRendering.delete(n);
+    }
+  }
+
+  /** 手势停止 ~260ms 后：按目标缩放重排尺寸、清缓存重渲可见页，然后撤掉 CSS 变换换回高清位图 */
+  function schedulePdfRerender(refit = false) {
+    if (!pdfDoc) return;
+    clearTimeout(pdfRerenderTimer);
+    pdfRerenderTimer = setTimeout(async () => {
+      if (refit) {
+        // 窗口变化：重算自适应基准，保持用户当前缩放比例不变
+        const prevFit = pdfFitScale;
+        const avail = viewerEl.clientWidth > 100 ? viewerEl.clientWidth - 36 : pdfBaseWidth;
+        pdfFitScale = Math.min(2, Math.max(0.3, avail / pdfBaseWidth));
+        pdfViewScale = pdfViewScale * (pdfFitScale / prevFit);
+      }
+      if (!pdfPagesWrap) return;
+      pdfPagesWrap.style.transform = '';
+      for (let n = 1; n <= pdfDoc.numPages; n += 1) {
+        const page = await pdfDoc.getPage(n);
+        const vp = page.getViewport({ scale: pdfViewScale });
+        const el = pdfPageEls[n];
+        if (!el) continue;
+        el.style.width = `${Math.round(vp.width)}px`;
+        el.style.height = `${Math.round(vp.height)}px`;
+        const canvas = el.querySelector('canvas');
+        canvas.width = 0; // 清掉旧内容，防拉伸模糊
+        canvas.style.width = '100%';
+        canvas.style.height = '100%';
+      }
+      pdfRendered.clear();
+      pdfRenderedScale = pdfViewScale;
+      zoomLabel.textContent = `${Math.round((pdfViewScale / pdfFitScale) * 100)}%`;
+      // 当前视口内的页马上渲
+      const box = pdfScrollEl.getBoundingClientRect();
+      for (const el of Object.values(pdfPageEls)) {
+        const r = el.getBoundingClientRect();
+        if (r.bottom > box.top - 600 && r.top < box.bottom + 600) renderPdfPage(Number(el.dataset.page));
+      }
+    }, 260);
+  }
+
+  /** 把圈住的区域从已渲染的页面画布上裁下来（画布是 dpr 缩放的高清位图） */
+  async function cropLassoRegion(rect) {
+    const overlayBox = viewerEl.getBoundingClientRect();
+    const crops = [];
+    for (const [n, pageEl] of Object.entries(pdfPageEls)) {
+      const pr = pageEl.getBoundingClientRect();
+      const ix0 = Math.max(rect.x, pr.left - overlayBox.left);
+      const iy0 = Math.max(rect.y, pr.top - overlayBox.top);
+      const ix1 = Math.min(rect.x + rect.width, pr.right - overlayBox.left);
+      const iy1 = Math.min(rect.y + rect.height, pr.bottom - overlayBox.top);
+      if (ix1 - ix0 < 4 || iy1 - iy0 < 4) continue;
+      const num = Number(n);
+      if (!pdfRendered.has(num)) await renderPdfPage(num);
+      const canvas = pageEl.querySelector('canvas');
+      if (!canvas || !canvas.width) continue;
+      const ratio = canvas.width / pr.width; // 画布像素 / CSS 像素
+      const sx = Math.round((ix0 - (pr.left - overlayBox.left)) * ratio);
+      const sy = Math.round((iy0 - (pr.top - overlayBox.top)) * ratio);
+      const sw = Math.max(1, Math.round((ix1 - ix0) * ratio));
+      const sh = Math.max(1, Math.round((iy1 - iy0) * ratio));
+      const off = document.createElement('canvas');
+      off.width = sw;
+      off.height = sh;
+      off.getContext('2d').drawImage(canvas, sx, sy, sw, sh, 0, 0, sw, sh);
+      crops.push({ num, dataUrl: off.toDataURL('image/png') });
+    }
+    return crops;
+  }
+
   function zoom(delta) {
+    if (pdfDoc) {
+      // PDF：连续缩放，按钮一步 ×1.25 / ÷1.25，同样走流动变换
+      applyGestureZoom(delta > 0 ? 1.25 : 0.8);
+      return;
+    }
     zoomIndex = Math.min(ZOOM_STEPS.length - 1, Math.max(0, zoomIndex + delta));
     const factor = ZOOM_STEPS[zoomIndex];
     zoomLabel.textContent = `${Math.round(factor * 100)}%`;
-    const webview = viewerEl.querySelector('webview');
-    if (webview) {
-      try { webview.setZoomFactor(factor); } catch { /* 还没 attach */ }
-    }
     const textEl = viewerEl.querySelector('.lit__text');
     if (textEl) textEl.style.fontSize = `${14.5 * factor}px`;
+  }
+
+  /** ⌘+滚轮 / 触控板捏合 / 缩放按钮 —— 统一走流动缩放：
+   *  手势中先用 CSS 变换即时跟手，停手 ~260ms 后按最终比例高清重渲。 */
+  function applyGestureZoom(mult) {
+    if (!pdfDoc || !pdfPagesWrap) return;
+    const min = Math.max(0.25, pdfFitScale * 0.3);
+    const max = Math.max(min + 0.1, pdfFitScale * 4);
+    const prev = pdfViewScale;
+    pdfViewScale = Math.min(max, Math.max(min, prev * mult));
+    if (pdfViewScale === prev) return;
+    zoomLabel.textContent = `${Math.round((pdfViewScale / pdfFitScale) * 100)}%`;
+    const ratio = pdfViewScale / pdfRenderedScale;
+    pdfPagesWrap.style.transformOrigin = '50% 0'; // 水平绕中线缩放，保持居中
+    pdfPagesWrap.style.transform = `scale(${ratio})`;
+    schedulePdfRerender();
+  }
+
+  /** ⌘+滚轮 / 触控板捏合事件入口：指数缩放，多少都吃，不再一档一档跳 */
+  function wheelZoom(e) {
+    if (!pdfDoc) return;
+    e.preventDefault();
+    const delta = e.deltaMode === 1 ? e.deltaY * 16 : e.deltaY;
+    applyGestureZoom(Math.exp(-delta * 0.0022));
   }
 
   function viewerIdle() {
@@ -464,7 +698,15 @@ export function createLiterature(root, ctx) {
     bilingual = false;
     bilingBtn.textContent = '对照';
     bilingBtn.classList.remove('is-on');
-    currentWebview = null;
+    // 释放上一个 PDF
+    if (pdfObserver) { pdfObserver.disconnect(); pdfObserver = null; }
+    if (pdfLoadingTask) { try { pdfLoadingTask.destroy(); } catch { /* 已销毁 */ } pdfLoadingTask = null; }
+    pdfDoc = null;
+    pdfScrollEl = null;
+    pdfPagesWrap = null;
+    pdfPageEls = {};
+    pdfRendered = new Set();
+    pdfRendering = new Set();
     panOverlay = null; // viewerEl 马上要清空，旧拖拽层引用作废
     transCard.setAttribute('hidden', '');
     zoomIndex = 2;
@@ -479,19 +721,15 @@ export function createLiterature(root, ctx) {
     selectBtn.setAttribute('hidden', '');
 
     if (item.format === 'pdf') {
-      const fullPath = await lit.path(item.file);
-      if (!fullPath) return viewerFail('文件不存在了，可能被移动过。');
-      // 逐段编码：中文名、空格、# 之类都不能漏
-      const fileUrl = `file://${fullPath.split('/').map(encodeURIComponent).join('/')}`;
-      const view = h('webview', {
-        class: 'lit__pdf',
-        src: fileUrl,
-      });
-      currentWebview = view;
       handBtn.removeAttribute('hidden');
       selectBtn.removeAttribute('hidden');
-      applyCursorMode();
-      viewerEl.appendChild(view);
+      selBtn.setAttribute('hidden', ''); // PDF 没有文本层，划词用圈译替代
+      viewerEl.style.position = 'relative';
+      try {
+        await openPdfJs(item);
+      } catch (err) {
+        viewerFail(`PDF 打开失败：${err.message}`);
+      }
       return;
     }
 

@@ -740,14 +740,26 @@ function registerIpc() {
   /** 按文献名自动下载免费 PDF 进库（arXiv 优先，Semantic Scholar 兜底） */
   ipcMain.handle('lit:fetch', (_e, query) => litFetch.fetchPaperByTitle(litDir(), query));
 
+  /** 读 PDF 原始字节给渲染进程的 PDF.js 自渲染（Uint8Array） */
+  ipcMain.handle('lit:readPdf', (_e, file) => {
+    const full = path.join(litDir(), path.basename(String(file || '')));
+    try {
+      const stat = fs.statSync(full);
+      if (stat.size > 60 * 1024 * 1024) return { ok: false, error: 'PDF 超过 60MB，太大了。' };
+      return { ok: true, data: fs.readFileSync(full) };
+    } catch {
+      return { ok: false, error: '读不到这个 PDF。' };
+    }
+  });
+
   /** 免费翻译（有道），返回 { ok, translation | error } */
-  ipcMain.handle('lit:translate', (_e, text) => translator.translate(text));
+  ipcMain.handle('lit:translate', (_e, text, opts) => translator.translate(text, opts));
 
   /** 圈选截图（dataURL PNG）→ 本地 OCR → 有道翻译，返回 { ok, srcText, translation | error } */
   ipcMain.handle('lit:snipTranslate', async (_e, dataUrl) => {
     const got = await ocr.ocrImage(app.getPath('userData'), dataUrl);
     if (!got.ok) return got;
-    const tr = await translator.translate(got.text);
+    const tr = await translator.translate(got.text, { interactive: true });
     if (!tr.ok) return { ok: false, srcText: got.text, error: tr.error };
     return { ok: true, srcText: got.text, translation: tr.translation };
   });
