@@ -3,10 +3,12 @@ import { createSiteGrid } from '../../core/sitegrid.js';
 
 /** 主进程能直接抓的 RSS/Atom 源：快报列表用。预置的都是国内网络实测可达的。 */
 const FEEDS = [
-  { id: 'sspai', name: '少数派', url: 'https://sspai.com/feed' },
-  { id: '36kr', name: '36氪', url: 'https://36kr.com/feed' },
-  { id: 'geekpark', name: '极客公园', url: 'https://www.geekpark.net/rss' },
   { id: 'solidot', name: 'Solidot', url: 'https://www.solidot.org/index.rss' },
+  { id: 'geekpark', name: '极客公园', url: 'https://www.geekpark.net/rss' },
+  { id: 'ithome', name: 'IT之家', url: 'https://www.ithome.com/rss/' },
+  { id: 'ifanr', name: '爱范儿', url: 'https://www.ifanr.com/feed' },
+  { id: 'infoq', name: 'InfoQ', url: 'https://www.infoq.cn/feed' },
+  { id: 'sspai', name: '少数派', url: 'https://sspai.com/feed' },
 ];
 
 /** 没有可用 RSS（或反爬拦 RSS 但真浏览器能过）的站点：整个热榜内嵌进来。 */

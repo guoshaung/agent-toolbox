@@ -21,7 +21,11 @@ function decodeEntities(text) {
 }
 
 function stripCdata(text) {
-  return String(text || '').replace(/^<!\[CDATA\[/, '').replace(/\]\]>$/, '').replace(/<[^>]+>/g, '').trim();
+  return String(text || '')
+    // 先还原 CDATA（可能前面有换行缩进，不能锚定行首），再去掉残留标签
+    .replace(/<!\[CDATA\[([\s\S]*?)\]\]>/g, '$1')
+    .replace(/<[^>]+>/g, '')
+    .trim();
 }
 
 function matchTag(block, tag) {
