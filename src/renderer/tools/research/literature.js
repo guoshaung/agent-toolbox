@@ -46,6 +46,7 @@ export function createLiterature(root, ctx) {
   const zoomLabel = h('span', { class: 'faint mono lit__zoom-label' }, '100%');
   const zoomInBtn = h('button', { class: 'btn btn--icon', title: '放大', onclick: () => zoom(1) }, '＋');
   const annoToggle = h('button', { class: 'btn btn--sm', onclick: () => toggleAnno() }, '批注');
+  const chatToggle = h('button', { class: 'btn btn--sm', title: '带着文献内容问 AI', onclick: () => toggleChat() }, '💬 问答');
   const bilingBtn = h('button', { class: 'btn btn--sm', hidden: true, title: '原文/译文对照（TXT/MD）', onclick: () => toggleBilingual() }, '对照');
   const handBtn = h('button', { class: 'btn btn--sm', title: '手掌：拖拽平移页面', onclick: () => setCursorMode('hand') }, '✋');
   const selectBtn = h('button', { class: 'btn btn--sm', title: '指针：选中文字（配合划词/批注）', onclick: () => setCursorMode('select') }, '➤');
@@ -60,7 +61,7 @@ export function createLiterature(root, ctx) {
     h('span', { class: 'subbar__sep' }),
     bilingBtn, selBtn, snipBtn,
     h('span', { class: 'subbar__sep' }),
-    annoToggle,
+    chatToggle, annoToggle,
   );
 
   // ---- 批注栏 ----
@@ -83,6 +84,125 @@ export function createLiterature(root, ctx) {
 
   function annoKey() {
     return `research.litAnno.${current.file}`;
+  }
+
+  // ---- 文献问答：带着文献内容问 AI ----
+
+  let chatBusy = false;
+  let chatHistory = []; // { role: 'user' | 'ai', text }
+  let docContextFile = null;
+  let docContextText = '';
+
+  const chatList = h('div', { class: 'lit__chat-list' });
+  const chatInput = h('textarea', {
+    class: 'field lit__chat-input',
+    placeholder: '就这篇文献提问，比如：这篇的核心方法是什么？和 baseline 差在哪？\n（Enter 发送，Shift+Enter 换行）',
+    rows: 3,
+    onkeydown: (e) => {
+      if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) {
+        e.preventDefault();
+        askDoc();
+      }
+    },
+  });
+  const chatPanel = h('div', { class: 'lit__chat', hidden: true },
+    h('div', { class: 'lit__anno-head' },
+      '文献问答',
+      h('span', { style: { flex: 1 } }),
+      h('button', {
+        class: 'btn btn--sm btn--ghost', title: '清空这轮对话',
+        onclick: () => { chatHistory = []; chatList.textContent = ''; },
+      }, '清空'),
+    ),
+    chatList,
+    chatInput,
+    h('button', { class: 'btn btn--sm btn--primary', onclick: () => askDoc() }, '提问'),
+  );
+
+  function pushChat(role, text) {
+    chatHistory.push({ role, text });
+    if (chatHistory.length > 40) chatHistory = chatHistory.slice(-40);
+    const bubble = h('div', { class: `lit__chat-msg lit__chat-msg--${role}` }, text);
+    chatList.appendChild(bubble);
+    chatList.scrollTop = chatList.scrollHeight;
+    return bubble;
+  }
+
+  function setChatMsg(bubble, text) {
+    bubble.textContent = text;
+    chatHistory[chatHistory.length - 1].text = text;
+    chatList.scrollTop = chatList.scrollHeight;
+  }
+
+  /** 提取文献文本（问答的上下文）：PDF 走文本层逐页抽，TXT/MD 直接用原文。 */
+  async function docContext() {
+    if (!current) return '';
+    if (docContextFile === current.file && docContextText) return docContextText;
+    let text = '';
+    if (pdfDoc) {
+      const maxPages = Math.min(pdfDoc.numPages, 20);
+      for (let n = 1; n <= maxPages; n += 1) {
+        try {
+          const page = await pdfDoc.getPage(n);
+          const tc = await page.getTextContent();
+          text += `${tc.items.map((i) => i.str).join(' ')}\n`;
+          if (text.length > 9000) break;
+        } catch { /* 单页抽不出文本就跳过 */ }
+      }
+    } else {
+      text = rawText || '';
+    }
+    docContextFile = current.file;
+    docContextText = text.slice(0, 9000);
+    return docContextText;
+  }
+
+  async function askDoc() {
+    const q = chatInput.value.trim();
+    if (!q || chatBusy) return;
+    if (!current) return toast('先打开一篇文献', 'info');
+    chatBusy = true;
+    chatInput.value = '';
+    pushChat('user', q);
+    const thinking = pushChat('ai', '…');
+    try {
+      const context = await docContext();
+      if (!context) throw new Error('这篇文献提取不到文本（扫描版 PDF 是纯图片，可以先圈译转文字再问）');
+      const history = chatHistory.slice(-7, -1)
+        .map((m) => `${m.role === 'user' ? '问' : '答'}：${m.text}`)
+        .join('\n');
+      const answer = await ctx.ai.chat(
+        `你在帮一个人读文献，标题：《${current.file}》。下面是文献内容（较长文献只给了开头部分）：\n\n` +
+        `${context}\n\n` +
+        (history ? `之前的问答：\n${history}\n\n` : '') +
+        `基于文献内容回答下面的问题。文献里没说的就直说没提，不要编：\n${q}`,
+        { timeout: 90000 },
+      );
+      setChatMsg(thinking, String(answer || '').trim() || '（AI 返回了空内容）');
+    } catch (err) {
+      setChatMsg(thinking, `回答失败：${err.message}`);
+    } finally {
+      chatBusy = false;
+    }
+  }
+
+  function toggleChat() {
+    if (!current) return toast('先打开一篇文献', 'info');
+    const hidden = chatPanel.hasAttribute('hidden');
+    if (hidden) {
+      annoPanel.setAttribute('hidden', ''); // 右栏一次只开一个
+      chatPanel.removeAttribute('hidden');
+    } else {
+      chatPanel.setAttribute('hidden', '');
+    }
+  }
+
+  function resetChat() {
+    chatPanel.setAttribute('hidden', '');
+    chatHistory = [];
+    chatList.textContent = '';
+    docContextFile = null;
+    docContextText = '';
   }
 
   function annotations() {
@@ -134,6 +254,7 @@ export function createLiterature(root, ctx) {
     if (!current) return;
     const hidden = annoPanel.hasAttribute('hidden');
     if (hidden) {
+      chatPanel.setAttribute('hidden', ''); // 右栏一次只开一个
       annoPanel.removeAttribute('hidden');
       renderAnnos();
     } else {
@@ -177,8 +298,18 @@ export function createLiterature(root, ctx) {
    * —— 之前对照翻译一批批跑，配额常常被烧光，圈译一等 12 秒然后报配额用完，看起来就是
    * 「圈了但没翻译」）。AI 没配好或失败时退回有道免费接口。
    */
+  function cleanTranslation(text) {
+    return String(text || '')
+      .trim()
+      .replace(/^```[a-z]*\s*/i, '')
+      .replace(/\s*```$/, '')
+      .replace(/^(译文|翻译结果|翻译)\s*[:：]\s*/, '')
+      .trim();
+  }
+
   async function translateSmart(text) {
     const to = targetLang(text);
+    const errs = [];
     try {
       const out = await ctx.ai.chat(
         `你是翻译引擎。把下面的内容准确翻译成${to}。\n` +
@@ -186,11 +317,22 @@ export function createLiterature(root, ctx) {
         '保留原有的换行分段；代码、公式、文件路径、专有名词保留原样。\n\n' + text,
         { timeout: 60000 },
       );
-      const cleaned = String(out || '').trim();
+      const cleaned = cleanTranslation(out);
       if (cleaned) return { ok: true, translation: cleaned, via: 'ai' };
-    } catch { /* AI 没配好 / 桥没登录 / 超时，都落到有道 */ }
-    const fallback = await lit.translate(text, { interactive: true });
-    return fallback.ok ? { ...fallback, via: 'youdao' } : fallback;
+      errs.push('AI 接口返回了空内容');
+    } catch (err) {
+      errs.push(`AI 接口：${err.message}`);
+    }
+    try {
+      const fallback = await lit.translate(text, { interactive: true });
+      const cleaned = cleanTranslation(fallback.ok ? fallback.translation : '');
+      if (fallback.ok && cleaned) return { ok: true, translation: cleaned, via: 'youdao' };
+      errs.push(fallback.ok ? '有道返回了空译文' : `有道：${fallback.error}`);
+    } catch (err) {
+      errs.push(`有道：${err.message}`);
+    }
+    // 两条通道都失败时把原因都亮出来，不然浮卡空着根本不知道发生了什么
+    return { ok: false, error: errs.join('；') };
   }
 
   function showTransResult(srcText, translation) {
@@ -236,6 +378,27 @@ export function createLiterature(root, ctx) {
   document.addEventListener('selectionchange', () => {
     const s = String(window.getSelection()?.toString() || '').trim();
     if (s) lastSelection = s;
+  });
+
+  /** 双击翻译：文本阅读器里双击单词/短语直接翻。浏览器双击自动选中，直接取选区 */
+  viewerEl.addEventListener('dblclick', async () => {
+    if (!current) return;
+    if (pdfDoc) return; // PDF 画布没有文本层，双击选不中，圈译干这个
+    const word = String(window.getSelection()?.toString() || '').trim();
+    if (!word || word.length > 120) return; // 不是点词，是整段拖选，走「划词」按钮
+    if (translating) return;
+    translating = true;
+    const short = word.length > 24 ? `${word.slice(0, 24)}…` : word;
+    showTransBusy(`翻译「${short}」…`);
+    try {
+      const result = await translateSmart(word);
+      if (!result.ok) return showTransResult(word, `翻译失败：${result.error}`);
+      showTransResult(word, result.translation);
+    } catch (err) {
+      showTransResult(word, `翻译失败：${err.message}`);
+    } finally {
+      translating = false;
+    }
   });
 
   /** 划词翻译：文本阅读器里选中的一段（PDF 没文本层，用圈译） */
@@ -716,6 +879,7 @@ export function createLiterature(root, ctx) {
   function viewerIdle() {
     viewerBar.setAttribute('hidden', '');
     annoPanel.setAttribute('hidden', '');
+    resetChat();
     viewerEl.textContent = '';
     viewerEl.appendChild(h('div', { class: 'empty' },
       h('span', { class: 'empty__icon' }, '📖'),
@@ -749,6 +913,7 @@ export function createLiterature(root, ctx) {
     viewerBar.querySelector('.lit__viewer-name').title = item.file;
     viewerEl.textContent = '';
     annoPanel.setAttribute('hidden', '');
+    resetChat();
     bilingBtn.setAttribute('hidden', '');
     handBtn.setAttribute('hidden', '');
     selectBtn.setAttribute('hidden', '');
@@ -1001,6 +1166,7 @@ export function createLiterature(root, ctx) {
         h('div', { class: 'lit__reader-body' },
           viewerEl,
           transCard,
+          chatPanel,
           annoPanel,
         ),
       ),
