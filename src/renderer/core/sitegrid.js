@@ -208,6 +208,109 @@ export function createSiteGrid(root, {
 
   let draggingSite = false;
 
+  /**
+   * 加载失败时的提示面板。
+   *
+   * 以前这里什么都没有：站点加载失败（证书错误、DNS 失败、超时）就是一片白，
+   * 用户完全不知道发生了什么，只会觉得"这工具坏了"。
+   */
+  const errorPane = h('div', { class: 'sitegrid__error', hidden: true });
+
+  const NET_REASON = {
+    '-105': '域名解析失败（DNS 查不到这个站点）',
+    '-106': '网络好像断了',
+    '-118': '连接超时',
+    '-7': '请求超时',
+    '-102': '连接被拒绝',
+    '-501': '不安全的响应',
+    '-137': '域名解析超时',
+  };
+
+  function hideError() {
+    errorPane.setAttribute('hidden', '');
+    errorPane.textContent = '';
+  }
+
+  async function showError(view, { errorCode, errorDescription, validatedURL }) {
+    const isCert = String(errorDescription || '').includes('CERT');
+    const reason = isCert
+      ? await window.toolbox.cert.describe(`net::${errorDescription}`)
+      : NET_REASON[String(errorCode)] || `${errorDescription}（${errorCode}）`;
+
+    errorPane.textContent = '';
+    errorPane.append(
+      h('div', { class: 'sitegrid__error-title' }, isCert ? '这个站点的安全证书有问题' : '页面没能打开'),
+      h('div', { class: 'sitegrid__error-reason' }, reason),
+      h('div', { class: 'sitegrid__error-url mono' }, validatedURL || ''),
+      isCert
+        ? h('div', { class: 'sitegrid__error-note' },
+          '证书不对意味着这条连接可能被中间人看到或篡改。'
+          + '浏览这类站点的公开内容风险有限，但不要在这种连接上输入账号密码。')
+        : null,
+      h('div', { class: 'sitegrid__error-actions' },
+        h('button', {
+          class: 'btn btn--sm btn--primary',
+          onclick: () => { hideError(); view.reload(); },
+        }, '重试'),
+        h('button', {
+          class: 'btn btn--sm',
+          title: '交给系统浏览器打开：那里有完整的安全提示，也能用你已有的登录态',
+          onclick: () => window.toolbox.shell.openExternal(validatedURL || activeUrl),
+        }, '用系统浏览器打开'),
+        isCert
+          ? h('button', {
+            class: 'btn btn--sm sitegrid__error-risky',
+            title: '只对这一个域名放行，不影响 App 里其它站点',
+            onclick: async () => {
+              const result = await window.toolbox.cert.allow(validatedURL || activeUrl);
+              if (!result?.ok) return toast(result?.error || '放行失败', 'bad');
+              toast(`已放行 ${result.host}，正在重新加载`, 'good');
+              hideError();
+              view.reload();
+            },
+          }, '我知道风险，仍然访问此域名')
+          : null,
+      ),
+    );
+    errorPane.removeAttribute('hidden');
+  }
+
+  /** 加载完成但页面是空的 —— 多半是站点拒绝了内嵌访问 */
+  async function checkBlank(view, siteUrl) {
+    if (activeUrl !== siteUrl) return;
+    if (!errorPane.hasAttribute('hidden')) return;      // 已经在报别的错了
+    let empty = false;
+    try {
+      empty = await view.executeJavaScript(
+        '(() => { const t = document.body ? document.body.innerText.trim().length : 0;'
+        + ' const nodes = document.body ? document.body.querySelectorAll("img,canvas,svg,video,iframe").length : 0;'
+        + ' return t < 8 && nodes === 0; })()',
+      );
+    } catch { return; }                                  // 页面还没准备好，不做判断
+    if (!empty) return;
+
+    errorPane.textContent = '';
+    errorPane.append(
+      h('div', { class: 'sitegrid__error-title' }, '这个站点拒绝了内嵌访问'),
+      h('div', { class: 'sitegrid__error-reason' },
+        '页面加载完成了，但服务器没有返回任何内容。常见于有反爬机制的站点'
+        + '（知网就是典型：不管换什么请求头都返回 418 空响应）。这不是网络问题，也不是登录问题。'),
+      h('div', { class: 'sitegrid__error-url mono' }, view.getURL()),
+      h('div', { class: 'sitegrid__error-note' },
+        '找论文的话，建议走学校图书馆的「校外访问 / CARSI 入口」——那类地址是学校的代理域名，'
+        + '通常不会被拦，而且自带机构权限。直接开公网的 cnki.net 即使打开了也没有下载权限。'),
+      h('div', { class: 'sitegrid__error-actions' },
+        h('button', { class: 'btn btn--sm btn--primary', onclick: () => { hideError(); view.reload(); } }, '重试'),
+        h('button', {
+          class: 'btn btn--sm',
+          onclick: () => window.toolbox.shell.openExternal(view.getURL()),
+        }, '用系统浏览器打开'),
+        h('button', { class: 'btn btn--sm', onclick: () => { hideError(); view.goBack(); } }, '返回上一页'),
+      ),
+    );
+    errorPane.removeAttribute('hidden');
+  }
+
   function openSite(site) {
     activeUrl = site.url;
     if (!views.has(site.url)) {
@@ -220,10 +323,24 @@ export function createSiteGrid(root, {
       view.addEventListener('did-navigate', (e) => { if (activeUrl === site.url) address.value = e.url; });
       view.addEventListener('did-navigate-in-page', (e) => { if (activeUrl === site.url) address.value = e.url; });
       view.addEventListener('dom-ready', () => injectBypass(view));
+      view.addEventListener('did-start-loading', () => { if (activeUrl === site.url) hideError(); });
+      // 有些站点（知网就是典型）对内嵌浏览器直接返回 418 之类的空响应：
+      // 不触发 did-fail-load，但页面是空的。不检查就又是一片白屏。
+      view.addEventListener('did-finish-load', () => {
+        if (activeUrl !== site.url) return;
+        setTimeout(() => checkBlank(view, site.url), 1400);   // 留点时间给前端渲染
+      });
+      view.addEventListener('did-fail-load', (e) => {
+        if (e.errorCode === -3) return;                 // -3 是主动取消的导航，不是故障
+        if (!e.isMainFrame && e.isMainFrame !== undefined) return;   // 子框架失败不弹整页错误
+        if (activeUrl !== site.url) return;
+        showError(view, e);
+      });
       syncEdgeCookiesFor(site.url);
       views.set(site.url, view);
       viewHost.appendChild(view);
     }
+    hideError();
     for (const [url, view] of views) view.style.display = url === site.url ? 'flex' : 'none';
     address.value = site.url;
     grid.setAttribute('hidden', '');
@@ -249,6 +366,7 @@ export function createSiteGrid(root, {
   }
 
   renderCategoryBar();
+  viewHost.appendChild(errorPane);
   root.append(viewBar, h('div', { class: 'research__portalbody' }, categoryBar, grid, viewHost));
   renderGrid();
 }

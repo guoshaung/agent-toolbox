@@ -1,5 +1,6 @@
 import { h, toast } from '../../core/ui.js';
 import { paperToMeta } from './citation.js';
+import { buildPaperQaPrompt, buildReadingSummaryPrompt, ANNO_TAGS, tagOf } from './readprompt.js';
 
 const FORMAT_ICONS = {
   pdf: '📕', doc: '📘', docx: '📘', txt: '📄', md: '📄',
@@ -53,7 +54,9 @@ export function createLiterature(root, ctx) {
 
   const zoomOutBtn = h('button', { class: 'btn btn--icon', title: '缩小', onclick: () => zoom(-1) }, '−');
   const zoomLabel = h('span', { class: 'faint mono lit__zoom-label' }, '100%');
-  const zoomInBtn = h('button', { class: 'btn btn--icon', title: '放大', onclick: () => zoom(1) }, '＋');
+  const zoomInBtn = h('button', { class: 'btn btn--icon', title: '放大 (Cmd +)', onclick: () => zoom(1) }, '＋');
+  const fitWidthBtn = h('button', { class: 'btn btn--sm', title: '适应宽度 (Cmd 0)', onclick: () => fitTo('width') }, '适宽');
+  const fitPageBtn = h('button', { class: 'btn btn--sm', title: '整页显示，一眼看到版面结构', onclick: () => fitTo('page') }, '整页');
   const annoToggle = h('button', { class: 'btn btn--sm', onclick: () => toggleAnno() }, '批注');
   const chatToggle = h('button', { class: 'btn btn--sm', title: '带着文献内容问 AI', onclick: () => toggleChat() }, '💬 问答');
   const bilingBtn = h('button', { class: 'btn btn--sm', hidden: true, title: '豆包一键翻译全文，原文/译文对照阅读', onclick: () => toggleBilingual() }, '一键对照');
@@ -67,7 +70,7 @@ export function createLiterature(root, ctx) {
     h('span', { style: { flex: 1 } }),
     handBtn, selectBtn,
     h('span', { class: 'subbar__sep' }),
-    zoomOutBtn, zoomLabel, zoomInBtn,
+    zoomOutBtn, zoomLabel, zoomInBtn, fitWidthBtn, fitPageBtn,
     h('span', { class: 'subbar__sep' }),
     bilingBtn, selBtn, snipBtn, transToggleBtn,
     h('span', { class: 'subbar__sep' }),
@@ -84,13 +87,102 @@ export function createLiterature(root, ctx) {
     class: 'field lit__anno-note',
     placeholder: '我的批注…',
   });
+  /** 标签选择：读文献时最常要区分的几类，一眼能扫回来 */
+  const annoTagBar = h('div', { class: 'lit__anno-tags' });
+  for (const tag of ANNO_TAGS) {
+    annoTagBar.append(h('button', {
+      class: 'lit__anno-tagbtn',
+      dataset: { tag: tag.id },
+      style: { '--tag-color': tag.color },
+      onclick: () => { annoTag = tag.id; syncTagBar(); },
+    }, tag.label));
+  }
+  function syncTagBar() {
+    for (const btn of annoTagBar.children) btn.classList.toggle('is-active', btn.dataset.tag === annoTag);
+  }
+
+  const summaryBox = h('div', { class: 'lit__summary' });
+  const summaryBtn = h('button', {
+    class: 'btn btn--sm',
+    title: '把你标的重点和论文主线接起来，生成一份读后总结',
+    onclick: () => makeSummary(summaryBtn),
+  }, '读后总结');
+
   const annoPanel = h('div', { class: 'lit__anno', hidden: true },
-    h('div', { class: 'lit__anno-head' }, '批注'),
+    h('div', { class: 'lit__anno-head' }, '批注', h('span', { style: { flex: 1 } }), summaryBtn),
+    annoTagBar,
     annoQuote,
     annoNote,
     h('button', { class: 'btn btn--sm btn--primary', onclick: () => addAnno() }, '记下'),
+    summaryBox,
     annoList,
   );
+
+  /**
+   * 读后总结。不是简单摘要 —— 关键是把读者标记的重点和论文主线接起来，
+   * 回答"我划的这些东西在这篇论文里是什么位置"，否则读完还是不知道自己读到了什么。
+   */
+  async function makeSummary(button) {
+    if (!current) return toast('先打开一篇文献', 'info');
+    button.disabled = true;
+    summaryBox.textContent = '';
+    summaryBox.append(h('div', { class: 'faint' }, h('span', { class: 'spinner' }), ' 正在把批注和论文主线接起来…'));
+    try {
+      const context = await docContext();
+      if (!context) throw new Error('这篇提取不到文本（扫描版 PDF 是纯图片）');
+      const result = await ctx.ai.json(buildReadingSummaryPrompt({
+        title: current.file.replace(/\.[^.]+$/, ''),
+        context,
+        annotations: annotations(),
+      }), { timeout: 150000 });
+      renderSummary(result);
+      await config.set(`research.litSummary.${current.file}`, { ...result, at: Date.now() });
+    } catch (err) {
+      summaryBox.textContent = '';
+      summaryBox.append(h('div', { class: 'faint' }, `总结失败：${err.message}`));
+    } finally {
+      button.disabled = false;
+    }
+  }
+
+  function renderSummary(result) {
+    const row = (label, value) => (value
+      ? h('div', { class: 'lit__summary-row' },
+        h('span', { class: 'lit__summary-label' }, label), h('span', {}, value))
+      : null);
+    const list = (label, arr) => (Array.isArray(arr) && arr.length
+      ? h('div', { class: 'lit__summary-row' },
+        h('span', { class: 'lit__summary-label' }, label),
+        h('ul', {}, ...arr.map((x) => h('li', {}, typeof x === 'string' ? x : JSON.stringify(x)))))
+      : null);
+
+    summaryBox.textContent = '';
+    summaryBox.append(
+      h('div', { class: 'lit__summary-title' }, result.oneLine || ''),
+      row('要解决什么', result.problem),
+      row('核心方法', result.method),
+      row('凭什么说有效', result.evidence),
+      result.yourMarks ? h('div', { class: 'lit__summary-marks' },
+        h('span', { class: 'lit__summary-label' }, '你标的那些点'), h('span', {}, result.yourMarks)) : null,
+      list('局限', result.limits),
+      list('还该查什么', result.followUp),
+      Array.isArray(result.terms) && result.terms.length
+        ? h('div', { class: 'lit__summary-terms' },
+          h('span', { class: 'lit__summary-label' }, '生僻概念'),
+          ...result.terms.map((t) => h('div', { class: 'lit__summary-term' },
+            h('b', {}, t.term || ''), ' ', t.plain || '')))
+        : null,
+      h('button', {
+        class: 'btn btn--sm',
+        onclick: async () => {
+          const text = [result.oneLine, result.problem, result.method, result.evidence, result.yourMarks]
+            .filter(Boolean).join('\n\n');
+          await window.toolbox.clipboard.write(text);
+          toast('总结已复制', 'good');
+        },
+      }, '复制总结'),
+    );
+  }
 
   function annoKey() {
     return `research.litAnno.${current.file}`;
@@ -182,10 +274,12 @@ export function createLiterature(root, ctx) {
         .map((m) => `${m.role === 'user' ? '问' : '答'}：${m.text}`)
         .join('\n');
       const answer = await ctx.ai.chat(
-        `你在帮一个人读文献，标题：《${current.file}》。下面是文献内容（较长文献只给了开头部分）：\n\n` +
-        `${context}\n\n` +
-        (history ? `之前的问答：\n${history}\n\n` : '') +
-        `基于文献内容回答下面的问题。文献里没说的就直说没提，不要编：\n${q}`,
+        buildPaperQaPrompt({
+          title: current.file.replace(/\.[^.]+$/, ''),
+          context,
+          history,
+          question: q,
+        }),
         { timeout: 90000 },
       );
       setChatMsg(thinking, String(answer || '').trim() || '（AI 返回了空内容）');
@@ -220,6 +314,8 @@ export function createLiterature(root, ctx) {
     return (config.get(annoKey()) || []);
   }
 
+  let annoTag = 'key';        // 当前选中的批注标签
+
   async function addAnno() {
     const note = annoNote.value.trim();
     if (!note) return toast('批注内容还没写', 'info');
@@ -228,6 +324,7 @@ export function createLiterature(root, ctx) {
       id: `anno-${Date.now()}`,
       quote: annoQuote.value.trim(),
       note,
+      tag: annoTag,
       at: new Date().toISOString(),
     });
     await config.set(annoKey(), list);
@@ -252,7 +349,14 @@ export function createLiterature(root, ctx) {
     for (const a of list) {
       annoList.appendChild(h('div', { class: 'lit__anno-item' },
         h('div', { class: 'lit__anno-item-head' },
+          a.tag && tagOf(a.tag)
+            ? h('span', {
+              class: 'lit__anno-tag',
+              style: { background: `${tagOf(a.tag).color}22`, color: tagOf(a.tag).color, borderColor: `${tagOf(a.tag).color}55` },
+            }, tagOf(a.tag).label)
+            : null,
           h('span', { class: 'faint' }, new Date(a.at).toLocaleString('zh-CN', { hour12: false })),
+          h('span', { style: { flex: 1 } }),
           h('button', { class: 'lit__anno-del', title: '删除', onclick: () => removeAnno(a.id) }, '×'),
         ),
         a.quote && h('div', { class: 'lit__anno-item-quote' }, a.quote),
@@ -268,6 +372,9 @@ export function createLiterature(root, ctx) {
       chatPanel.setAttribute('hidden', ''); // 右栏一次只开一个
       closeTransPanel();
       annoPanel.removeAttribute('hidden');
+      syncTagBar();
+      const saved = current && config.get(`research.litSummary.${current.file}`);
+      if (saved) renderSummary(saved);
       renderAnnos();
     } else {
       annoPanel.setAttribute('hidden', '');
@@ -1171,6 +1278,28 @@ export function createLiterature(root, ctx) {
     return crops;
   }
 
+  /**
+   * 适应宽度 / 整页。
+   * 缩放百分比本来只有 +/- 两个按钮，想回到"刚好铺满"要按半天；
+   * 长时间读论文这两个是最常用的动作，给独立入口。
+   */
+  function fitTo(mode) {
+    if (!pdfDoc || !pdfPagesWrap) return toast('先打开一篇 PDF', 'info');
+    const wrap = pdfPagesWrap.parentElement;
+    if (!wrap) return;
+    if (mode === 'width') {
+      applyGestureZoom(pdfFitScale / pdfViewScale);        // 回到按宽度自适应
+      return;
+    }
+    // 整页：让第一页的高度刚好放进可视区
+    const page = pdfPagesWrap.querySelector('canvas');
+    if (!page) return;
+    const pageHeightAtFit = (page.clientHeight / pdfViewScale) * pdfFitScale;
+    const avail = wrap.clientHeight - 32;
+    const target = pdfFitScale * Math.min(1, avail / (pageHeightAtFit || avail));
+    applyGestureZoom(target / pdfViewScale);
+  }
+
   function zoom(delta) {
     if (pdfDoc) {
       // PDF：连续缩放，按钮一步 ×1.25 / ÷1.25，同样走流动变换
@@ -1207,6 +1336,15 @@ export function createLiterature(root, ctx) {
     const delta = e.deltaMode === 1 ? e.deltaY * 16 : e.deltaY;
     applyGestureZoom(Math.exp(-delta * 0.0022));
   }
+
+  // 读论文时最常按的三个快捷键，省得每次去点工具栏
+  window.addEventListener('keydown', (event) => {
+    if (!pdfDoc || !(event.metaKey || event.ctrlKey)) return;
+    if (viewerEl.offsetParent === null) return;          // 阅读器不在前台就不抢快捷键
+    if (event.key === '=' || event.key === '+') { event.preventDefault(); zoom(1); }
+    else if (event.key === '-') { event.preventDefault(); zoom(-1); }
+    else if (event.key === '0') { event.preventDefault(); fitTo('width'); }
+  });
 
   function viewerIdle() {
     closeBilingual();

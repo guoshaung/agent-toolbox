@@ -216,6 +216,15 @@ contextBridge.exposeInMainWorld('toolbox', {
     copyRich: (payload) => ipcRenderer.invoke('biblio:copyRich', payload),
   },
 
+  cert: {
+    /** 证书错误的人话解释 */
+    describe: (error) => ipcRenderer.invoke('cert:describe', error),
+    /** 用户确认风险后，按域名放行 */
+    allow: (url) => ipcRenderer.invoke('cert:allow', url),
+    list: () => ipcRenderer.invoke('cert:list'),
+    revoke: (host) => ipcRenderer.invoke('cert:revoke', host),
+  },
+
   clipboard: {
     write: (text) => ipcRenderer.invoke('clipboard:write', text),
     read: () => ipcRenderer.invoke('clipboard:read'),

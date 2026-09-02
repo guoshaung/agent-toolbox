@@ -18,6 +18,7 @@ const { installCoachExtension } = require('./coach-install');
 const litFetch = require('./lit-fetch');
 const { registerNotebookIpc } = require('./notebook');
 const { registerBiblioIpc } = require('./biblio');
+const { registerCertTrust } = require('./certtrust');
 const translator = require('./translate');
 const ocr = require('./ocr');
 const newsFeed = require('./news-feed');
@@ -515,6 +516,7 @@ function createWindow(showOnReady = true) {
     const deepseekSession = session.fromPartition(PARTITIONS.deepseek);
     const bilibiliSession = session.fromPartition(PARTITIONS.bilibili);
     const feishuSession = session.fromPartition(PARTITIONS.feishu);
+    const researchSession = session.fromPartition(PARTITIONS.research);
 
     // 拦截已知站点的强制登录重定向（先弹登录页再让内容页可访问）
     // 注意：did-attach-webview 的 guest 参数本身就是 WebContents
@@ -606,7 +608,19 @@ function createWindow(showOnReady = true) {
         };
       }
 
-      // 文档站里 target="_blank" 的链接：不弹窗，转给渲染进程开新标签
+      // 门户 / 学术入口 / 学校访问：直接在同一个 webview 里导航。
+      //
+      // 图书馆的数据库入口（知网、Web of Science、SpringerLink…）几乎全是
+      // target="_blank" 或 window.open。之前的做法是把 URL 转回渲染进程、再由
+      // 当前可见的格子铺去导航 —— 环节太多，实测六种跳转方式里四种都断在半路，
+      // 表现就是"点了没反应"。在主进程直接 loadURL 少了两个中间环节，
+      // 而且天然在同一个 session 里，学校的 VPN / 登录态不会丢。
+      if (guest.session === researchSession) {
+        guest.loadURL(url);
+        return { action: 'deny' };
+      }
+
+      // 文档站里 target="_blank" 的链接：转给渲染进程开新标签（那边有多标签）
       mainWindow.webContents.send('webview:open-url', url);
       return { action: 'deny' };
     });
@@ -1172,6 +1186,9 @@ async function callQuizApi({ messages, temperature = 0.2, timeout = 120000 }) {
 }
 
 function registerIpc() {
+  // 证书例外：按域名放行，不做全局关闭
+  registerCertTrust(app, ipcMain, { getStore: () => store, getWindow: () => mainWindow });
+
   // 文献库：书目元数据补全 + 引用导出
   registerBiblioIpc(ipcMain, { dialog, getWindow: () => mainWindow, clipboard });
 

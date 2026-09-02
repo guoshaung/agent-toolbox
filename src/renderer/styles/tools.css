@@ -1686,3 +1686,138 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
   filter: drop-shadow(0 5px 7px rgba(0,0,0,.4));
   pointer-events: none;
 }
+
+/* ---------- PPT图板：图标化工具栏 + 新图形 ---------- */
+
+.figureboard__tools { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.figureboard__group { display: flex; align-items: center; gap: 2px; padding: 2px; border-radius: 8px; background: rgba(255,255,255,.03); }
+.figureboard__tool-btn { padding: 5px 6px; line-height: 0; }
+.figureboard__tool-icon { width: 17px; height: 17px; }
+.figureboard__danger:hover { color: var(--bad); border-color: rgba(229,100,95,.5); }
+.figureboard__select { min-width: 74px; }
+.figureboard__tool-sep { width: 1px; height: 18px; background: var(--line); flex: 0 0 auto; }
+
+/* 形状交给内联 SVG 画，容器本身不再涂底色/描边 */
+.figureboard__svg { display: block; width: 100%; height: 100%; overflow: visible; pointer-events: none; }
+
+/* 画布背景：网格 / 点阵 / 透明棋盘格 */
+.figureboard__canvas.is-grid,
+.figureboard__canvas.is-dots { background-repeat: repeat; }
+.figureboard__canvas.is-grid {
+  background-image: linear-gradient(to right, #dfe4ee 1px, transparent 1px),
+                    linear-gradient(to bottom, #dfe4ee 1px, transparent 1px);
+  background-size: 24px 24px;
+}
+.figureboard__canvas.is-dots {
+  background-image: radial-gradient(#dfe4ee 1.4px, transparent 1.4px);
+  background-size: 22px 22px;
+}
+.figureboard__canvas.is-transparent {
+  background-image: linear-gradient(45deg, #e9edf4 25%, transparent 25%, transparent 75%, #e9edf4 75%),
+                    linear-gradient(45deg, #e9edf4 25%, transparent 25%, transparent 75%, #e9edf4 75%);
+  background-size: 18px 18px;
+  background-position: 0 0, 9px 9px;
+}
+
+/* 画布内文字编辑 */
+.figureboard__text { display: block; width: 100%; height: 100%; white-space: pre-wrap; outline: none; }
+.figureboard__text.is-editing {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 4px;
+  background: rgba(255,255,255,.7);
+  cursor: text;
+}
+
+/* ---------- 图板：连接线 ---------- */
+
+.figureboard__wires {
+  position: absolute; left: 0; top: 0;
+  pointer-events: none;              /* 整层不挡操作 */
+  overflow: visible; z-index: 0;
+}
+/* 只有线本身和锚点可点 */
+.figureboard__wires .fb-wire-hit,
+.figureboard__wires path[data-wire],
+.figureboard__wires .fb-port { pointer-events: stroke; }
+.figureboard__wires .fb-port {
+  pointer-events: all;
+  fill: #ffffff; stroke: var(--accent); stroke-width: 2;
+  cursor: crosshair; transition: r .12s ease, fill .12s ease;
+}
+.figureboard__wires .fb-port:hover { fill: var(--accent); }
+.figureboard__wires .fb-wire-hit { cursor: pointer; }
+
+/* 图形要压在连线之上 */
+.figureboard__item { z-index: 1; }
+/* 拖线时悬停到可连的图形，给个提示 */
+.figureboard__item.is-wire-target { outline: 2px dashed var(--accent); outline-offset: 3px; }
+
+.figureboard__wire-label-input {
+  position: absolute; z-index: 5; width: 140px; text-align: center;
+}
+
+/* 形状改由内联 SVG 绘制后，容器只是个定位框：
+   旧的 min-width/min-height 会把小图形（图例、箭头、锚点大小的方块）强行撑大，
+   box-shadow 则会在透明容器上投出一个方块阴影。两个都得去掉。 */
+.figureboard__item { min-width: 0; min-height: 0; box-shadow: none; }
+.figureboard__item--image { box-shadow: 0 5px 18px rgba(0,0,0,.2); }
+/* 文字块例外：原来的 8px 内边距 + 取消最小高度后，26px 的框只剩 10px 装字，会把字裁掉。
+   收紧内边距并允许溢出，字才完整。 */
+.figureboard__item--text { padding: 2px 4px; overflow: visible; }
+.figureboard__item--text .figureboard__text { overflow: visible; }
+
+/* 连线标签单独一层，压在图形之上，避免被节点挡住看不清 */
+.figureboard__wire-labels { position: absolute; left: 0; top: 0; pointer-events: none; overflow: visible; z-index: 2; }
+
+/* ---------- 文献精读：批注标签与读后总结 ---------- */
+
+.lit__anno-tags { display: flex; gap: 5px; flex-wrap: wrap; margin-bottom: 8px; }
+.lit__anno-tagbtn {
+  appearance: none; cursor: pointer; font-size: 11.5px; padding: 3px 10px;
+  border-radius: 999px; border: 1px solid var(--line); background: transparent; color: var(--text-faint);
+  transition: background .13s, color .13s, border-color .13s;
+}
+.lit__anno-tagbtn:hover { color: var(--tag-color); border-color: var(--tag-color); }
+.lit__anno-tagbtn.is-active {
+  background: color-mix(in srgb, var(--tag-color) 18%, transparent);
+  border-color: var(--tag-color); color: var(--tag-color);
+}
+.lit__anno-tag { font-size: 10.5px; padding: 1px 7px; border-radius: 999px; border: 1px solid; flex: 0 0 auto; }
+.lit__anno-item-head { display: flex; align-items: center; gap: 6px; }
+
+.lit__summary:not(:empty) {
+  margin: 10px 0 12px; padding: 12px 13px; border-radius: 10px;
+  background: var(--bg-sunken); border: 1px solid var(--line-soft);
+  display: flex; flex-direction: column; gap: 9px; font-size: 12.5px; line-height: 1.8;
+}
+.lit__summary-title { font-size: 14px; font-weight: 600; line-height: 1.7; }
+.lit__summary-row { display: flex; gap: 8px; align-items: baseline; }
+.lit__summary-label { flex: 0 0 auto; color: var(--text-faint); font-size: 11px; min-width: 68px; }
+.lit__summary-row ul { margin: 0; padding-left: 18px; }
+.lit__summary-row li { margin-bottom: 3px; }
+.lit__summary-marks {
+  display: flex; gap: 8px; align-items: baseline;
+  background: rgba(91,140,255,.09); padding: 9px 11px; border-radius: 8px;
+}
+.lit__summary-terms { display: flex; flex-direction: column; gap: 5px; }
+.lit__summary-term { padding-left: 4px; line-height: 1.7; }
+
+/* ---------- 站点加载失败提示（替代白屏） ---------- */
+
+.sitegrid__error {
+  position: absolute; inset: 0; z-index: 6;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 12px; padding: 32px; text-align: center;
+  background: var(--bg); 
+}
+.sitegrid__error-title { font-size: 17px; font-weight: 600; }
+.sitegrid__error-reason { font-size: 13.5px; line-height: 1.8; color: var(--text-dim); max-width: 560px; }
+.sitegrid__error-url { font-size: 11.5px; color: var(--text-faint); word-break: break-all; max-width: 560px; }
+.sitegrid__error-note {
+  font-size: 12.5px; line-height: 1.85; color: var(--warn); max-width: 560px;
+  background: rgba(223,161,69,.08); padding: 10px 14px; border-radius: 9px;
+}
+.sitegrid__error-actions { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; margin-top: 4px; }
+.sitegrid__error-risky { border-color: rgba(229,100,95,.45); color: var(--bad); }
+.sitegrid__error-risky:hover { background: rgba(229,100,95,.12); border-color: var(--bad); }

@@ -1,5 +1,13 @@
 import { h, toast } from '../../core/ui.js';
 import { iconFor } from '../../core/icons.js';
+import {
+  SHAPES, LINES, isLine, shapeMarkup, lineMarkup, arrowDefs,
+  BACKGROUNDS, backgroundDefs, PIE_COLORS,
+} from './figureshapes.js';
+import {
+  ROUTES, PORTS, portPoint, wireMarkup, wireLabelMarkup, isWire,
+  wireMidpoint as wireMidpointOf,
+} from './figurewires.js';
 
 const DEFAULT_SITES = [
   { name: 'BioRender', url: 'https://www.biorender.com/', desc: '生命科学插图素材', emoji: '🧬' },
@@ -59,6 +67,22 @@ export function createFigureboard(root, ctx) {
   let marquee = null;
   let saveTimer;
 
+  let editingId = null;                                   // 正在画布内编辑文字的对象
+  let background = config.get('research.figureBg', 'white');
+
+  function bgSpec() {
+    return BACKGROUNDS[background] || BACKGROUNDS.white;
+  }
+
+  /** 把背景应用到画布 DOM（导出时另有一份，见 toSvg） */
+  function applyBackground() {
+    const spec = bgSpec();
+    board.style.backgroundColor = spec.color || 'transparent';
+    board.classList.toggle('is-grid', spec.pattern === 'grid');
+    board.classList.toggle('is-dots', spec.pattern === 'dots');
+    board.classList.toggle('is-transparent', !spec.color);
+  }
+
   function cloneItems(value = items) {
     return JSON.parse(JSON.stringify(value));
   }
@@ -94,9 +118,15 @@ export function createFigureboard(root, ctx) {
     if (item?.stroke?.startsWith('#')) strokeInput.value = item.stroke;
     if (item && typeof opacityInput !== 'undefined') opacityInput.value = String(Math.round((item.opacity ?? 1) * 100));
     if (item && typeof strokeWidthInput !== 'undefined') strokeWidthInput.value = String(item.strokeWidth ?? 3);
+    if (item?.route && typeof routeSelect !== 'undefined') routeSelect.value = item.route;
+    // 锚点和连线选中态都画在连线层上，选中一变就得重画
+    if (typeof renderWires === 'function') renderWires();
   }
 
   function removeItem(id) {
+    // 连在这个图形上的线也要一起删，不然会剩下指向空气的线
+    items = items.filter((entry) => !(isWire(entry)
+      && (entry.from?.id === id || entry.to?.id === id)));
     record(cloneItems());
     const ids = selectedIds.size ? selectedIds : new Set([id]);
     items = items.filter((item) => !ids.has(item.id));
@@ -128,19 +158,25 @@ export function createFigureboard(root, ctx) {
 
   function addShape(type) {
     record(cloneItems());
+    const line = isLine(type);
+    // 新建就给能看的默认样式：以前默认透明填充 + 透明描边，加进来是"隐形"的
     const item = {
       id: `figure-${Date.now()}-${Math.random().toString(16).slice(2)}`,
       type,
       x: 70 + (items.length % 4) * 24,
       y: 70 + (items.length % 4) * 24,
-      width: type === 'arrow' ? 240 : 180,
-      height: type === 'arrow' ? 4 : 110,
-      fill: 'transparent',
-      stroke: ['line', 'dashed', 'arrow', 'double-arrow'].includes(type) ? '#3d6fe8' : 'transparent',
+      width: line ? 240 : type === 'pie' ? 200 : type === 'container' ? 320 : 180,
+      height: line ? 6 : type === 'pie' ? 200 : type === 'container' ? 220 : 110,
+      fill: line || type === 'container' || type === 'bracket' ? 'transparent' : '#dce8ff',
+      stroke: type === 'container' ? '#7b8aa5' : '#3d6fe8',
       color: '#14213d',
       text: '',
       fontSize: 18,
-      strokeWidth: type === 'arrow' || type === 'double-arrow' || type === 'line' || type === 'dashed' ? 4 : 3,
+      strokeWidth: line ? 4 : type === 'container' ? 2 : 2,
+      radius: type === 'roundRect' ? 16 : 0,
+      dash: type === 'container' ? 'dashed' : 'solid',
+      slices: type === 'pie' ? 6 : undefined,
+      sliceColors: type === 'pie' ? [...PIE_COLORS] : undefined,
       opacity: 1,
       angle: 0,
     };
@@ -152,17 +188,37 @@ export function createFigureboard(root, ctx) {
   }
 
   function addText() {
-    const text = window.prompt('输入科研图中的文字');
-    if (!text?.trim()) return;
+    // 原来用 window.prompt —— Electron 不实现它，点"文字"完全没反应，
+    // 对一张全是标注的科研图来说这个工具等于不存在。改成画布内直接编辑。
     record(cloneItems());
+    const text = '';
     const item = {
       id: `figure-${Date.now()}-${Math.random().toString(16).slice(2)}`,
       type: 'text', x: 80, y: 80 + items.length * 18, width: 240, height: 54,
-      fill: 'transparent', stroke: 'transparent', color: '#14213d', text: text.trim(), fontSize: 22, angle: 0,
+      fill: 'transparent', stroke: 'transparent', color: '#14213d', text, fontSize: 22, angle: 0,
       strokeWidth: 0, opacity: 1,
     };
     items = [...items, item];
     selectedId = item.id;
+    selectedIds = new Set([item.id]);
+    editingId = item.id;          // 直接进入编辑态，落笔即可打字
+    persist();
+    renderBoard();
+  }
+
+  /** 提交画布内编辑的文字 */
+  function commitText(id, value) {
+    const item = items.find((entry) => entry.id === id);
+    editingId = null;
+    if (!item) return renderBoard();
+    const next = String(value ?? '').replace(/\u00a0/g, ' ').trim();
+    if (!next) {                  // 空文本没有意义，直接删掉，免得画布上留隐形块
+      items = items.filter((entry) => entry.id !== id);
+      selectedId = null;
+      selectedIds = new Set();
+    } else if (next !== item.text) {
+      item.text = next;
+    }
     persist();
     renderBoard();
   }
@@ -338,20 +394,49 @@ export function createFigureboard(root, ctx) {
 
   function toSvg() {
     const { width, height } = canvasSize();
-    const body = items.map((item) => {
-      const transform = `translate(${item.x} ${item.y}) rotate(${item.angle || 0} ${item.width / 2} ${item.height / 2})`;
-      if (item.type === 'image') return `<image href="${item.dataUrl}" x="0" y="0" width="${item.width}" height="${item.height}" preserveAspectRatio="xMidYMid meet"/>`;
-      if (item.type === 'text') return `<text x="0" y="${Math.max(24, item.fontSize)}" font-family="Arial, sans-serif" font-size="${item.fontSize}" font-weight="600" fill="${item.color}">${escapeXml(item.text)}</text>`;
-      if (['arrow', 'double-arrow', 'line', 'dashed'].includes(item.type)) {
-        const markers = item.type === 'arrow' ? 'marker-end="url(#arrow)"' : item.type === 'double-arrow' ? 'marker-start="url(#arrow)" marker-end="url(#arrow)"' : '';
-        const dash = item.type === 'dashed' ? 'stroke-dasharray="12 9"' : '';
-        return `<line x1="0" y1="${(item.strokeWidth || 4) / 2}" x2="${item.width}" y2="${(item.strokeWidth || 4) / 2}" stroke="${item.stroke}" stroke-width="${item.strokeWidth || 4}" ${markers} ${dash}/>`;
+    const spec = bgSpec();
+
+    // 和画布共用 shapeMarkup / lineMarkup —— 导出和屏幕上看到的必然一致
+    const defs = [];
+    const body = items.filter((item) => !isWire(item)).map((item) => {
+      const g = (inner) => `<g transform="translate(${item.x} ${item.y}) rotate(${item.angle || 0} ${item.width / 2} ${item.height / 2})" opacity="${item.opacity ?? 1}">${inner}</g>`;
+
+      if (item.type === 'image') {
+        return g(`<image href="${item.dataUrl}" x="0" y="0" width="${item.width}" height="${item.height}" preserveAspectRatio="xMidYMid meet"/>`);
       }
-      const radius = item.type === 'ellipse' ? item.height / 2 : item.type === 'diamond' ? 0 : 12;
-      if (item.type === 'diamond') return `<polygon points="${item.width / 2},0 ${item.width},${item.height / 2} ${item.width / 2},${item.height} 0,${item.height / 2}" fill="${item.fill}" stroke="${item.stroke}" stroke-width="${item.strokeWidth || 0}"/>`;
-      return `<rect x="0" y="0" width="${item.width}" height="${item.height}" rx="${radius}" fill="${item.fill}" stroke="${item.stroke}" stroke-width="${item.strokeWidth || 0}"/>`;
-    }).map((content, index) => `<g transform="translate(${items[index].x} ${items[index].y}) rotate(${items[index].angle || 0} ${items[index].width / 2} ${items[index].height / 2})">${content}</g>`).join('');
-    return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}"><defs><marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto"><path d="M0,0 L0,6 L9,3 z" fill="#3d6fe8"/></marker></defs><rect width="100%" height="100%" fill="#f7f8fb"/>${body}</svg>`;
+      if (item.type === 'text') {
+        // 逐行输出，导出的换行才和画布一致
+        const lines = String(item.text || '').split('\n');
+        const size = item.fontSize || 22;
+        const tspans = lines.map((line, i) => `<tspan x="0" dy="${i === 0 ? 0 : size * 1.35}">${escapeXml(line)}</tspan>`).join('');
+        return g(`<text x="0" y="${size}" font-family="'PingFang SC','Microsoft YaHei',Arial,sans-serif" font-size="${size}" font-weight="600" fill="${item.color}">${tspans}</text>`);
+      }
+      if (isLine(item.type)) {
+        const markerId = `fbA${String(item.id).replace(/[^a-zA-Z0-9]/g, '')}`;
+        defs.push(arrowDefs(item.stroke || '#3d6fe8', markerId));
+        return g(lineMarkup(item, markerId));
+      }
+      return g(shapeMarkup(item));
+    }).join('');
+
+    // 连线也要进导出，而且和画布共用同一份路径算法
+    const byId = new Map(items.map((entry) => [entry.id, entry]));
+    let wireBody = '';
+    for (const wire of items.filter(isWire)) {
+      const markerId = `fbW${String(wire.id).replace(/[^a-zA-Z0-9]/g, '')}`;
+      defs.push(arrowDefs(wire.stroke || '#3d6fe8', markerId));
+      wireBody += wireMarkup(wire, byId, { markerId }).replace(/<path class="fb-wire-hit"[^>]*\/>/g, '');
+    }
+    for (const wire of items.filter(isWire)) wireBody += wireLabelMarkup(wire, byId);
+
+    const bgDef = backgroundDefs(spec.pattern);
+    const bgRect = spec.color
+      ? `<rect width="100%" height="100%" fill="${spec.color}"/>`
+      : '';                                  // 透明背景就什么都不画，导出带 alpha
+    const bgPattern = spec.pattern ? `<rect width="100%" height="100%" fill="url(#fbBg)"/>` : '';
+
+    return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">`
+      + `<defs>${bgDef}${defs.join('')}</defs>${bgRect}${bgPattern}${wireBody}${body}</svg>`;
   }
 
   function downloadBlob(blob, name) {
@@ -406,28 +491,199 @@ export function createFigureboard(root, ctx) {
     }
   }
 
+  /** 连接线画在一整块覆盖画布的 SVG 上 —— 它们跨越任意距离，塞不进单个定位 div */
+  const wireLayer = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  wireLayer.setAttribute('class', 'figureboard__wires');
+  /** 连线标签单独一层，画在图形之上；线本身仍在图形之下 */
+  const labelLayer = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  labelLayer.setAttribute('class', 'figureboard__wire-labels');
+
+  const itemById = () => new Map(items.map((entry) => [entry.id, entry]));
+
+  function renderWires() {
+    const size = canvasSize();
+    wireLayer.setAttribute('viewBox', `0 0 ${size.width} ${size.height}`);
+    wireLayer.setAttribute('width', size.width);
+    wireLayer.setAttribute('height', size.height);
+
+    const byId = itemById();
+    const wires = items.filter(isWire);
+    const defs = [];
+    let body = '';
+    for (const wire of wires) {
+      const markerId = `fbW${String(wire.id).replace(/[^a-zA-Z0-9]/g, '')}`;
+      defs.push(arrowDefs(wire.stroke || '#3d6fe8', markerId));
+      body += wireMarkup(wire, byId, { markerId, selected: selectedIds.has(wire.id) });
+    }
+    labelLayer.setAttribute('viewBox', `0 0 ${size.width} ${size.height}`);
+    labelLayer.setAttribute('width', size.width);
+    labelLayer.setAttribute('height', size.height);
+    labelLayer.innerHTML = wires.map((wire) => wireLabelMarkup(wire, byId)).join('');
+
+    // 选中单个图形时，四条边上给出锚点，从锚点拖出去就是连线
+    let handles = '';
+    if (selectedIds.size === 1) {
+      const only = byId.get([...selectedIds][0]);
+      if (only && !isWire(only) && only.type !== 'text') {
+        for (const port of PORTS) {
+          const pt = portPoint(only, port);
+          handles += `<circle class="fb-port" cx="${pt.x}" cy="${pt.y}" r="6" `
+            + `data-port="${port}" data-owner="${only.id}"/>`;
+        }
+      }
+    }
+    wireLayer.innerHTML = `<defs>${defs.join('')}</defs>${body}${handles}`;
+  }
+
   function renderBoard() {
     board.replaceChildren();
     if (!items.length) board.appendChild(empty);
+    board.appendChild(wireLayer);          // 连线在底层，图形压在上面
     for (const item of items) {
+      if (isWire(item)) continue;          // 连线不用定位 div，走 wireLayer
       let content;
-      if (item.type === 'image') content = h('img', { src: item.dataUrl, alt: '科研素材', draggable: 'false' });
-      else if (item.type === 'text') content = h('span', { class: 'figureboard__text' }, item.text);
-      else if (['arrow', 'double-arrow', 'line', 'dashed'].includes(item.type)) content = h('span', { class: `figureboard__line${item.type === 'arrow' ? ' is-arrow' : ''}${item.type === 'double-arrow' ? ' is-double' : ''}${item.type === 'dashed' ? ' is-dashed' : ''}` });
-      else content = h('span', { class: `figureboard__shape figureboard__shape--${item.type}` });
+      if (item.type === 'image') {
+        content = h('img', { src: item.dataUrl, alt: '科研素材', draggable: 'false' });
+      } else if (item.type === 'text') {
+        content = h('span', {
+          class: `figureboard__text${editingId === item.id ? ' is-editing' : ''}`,
+          contenteditable: editingId === item.id ? 'true' : null,
+          onblur: (event) => { if (editingId === item.id) commitText(item.id, event.currentTarget.textContent); },
+          onkeydown: (event) => {
+            if (event.key === 'Escape') { event.preventDefault(); event.currentTarget.blur(); }
+            // Enter 提交、Shift+Enter 换行；输入法组合中的回车不算
+            if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) {
+              event.preventDefault();
+              event.currentTarget.blur();
+            }
+          },
+        }, item.text);
+      } else {
+        // 形状和线条走同一份几何定义，所见即所得地对应导出的 SVG
+        const markerId = `fbA${String(item.id).replace(/[^a-zA-Z0-9]/g, '')}`;
+        const inner = isLine(item.type)
+          ? `<defs>${arrowDefs(item.stroke || '#3d6fe8', markerId)}</defs>${lineMarkup(item, markerId)}`
+          : shapeMarkup(item);
+        content = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+        content.setAttribute('class', 'figureboard__svg');
+        content.setAttribute('viewBox', `0 0 ${Math.max(1, item.width)} ${Math.max(1, item.height)}`);
+        content.setAttribute('width', '100%');
+        content.setAttribute('height', '100%');
+        content.innerHTML = inner;
+      }
       const resize = h('span', { class: 'figureboard__resize' });
       const rotate = h('span', { class: 'figureboard__rotate', title: '旋转' });
       const element = h('div', {
         class: `figureboard__item figureboard__item--${item.type}${selectedIds.has(item.id) ? ' is-selected' : ''}`,
         dataset: { id: item.id },
-        style: { left: `${item.x}px`, top: `${item.y}px`, width: `${item.width}px`, height: `${item.height}px`, background: ['rect', 'ellipse', 'diamond'].includes(item.type) ? 'transparent' : item.fill, borderColor: item.stroke, color: ['line', 'dashed', 'arrow', 'double-arrow'].includes(item.type) ? item.stroke : item.color, '--figure-fill': item.fill, '--figure-stroke': item.stroke, '--figure-stroke-width': `${item.strokeWidth || 0}px`, fontSize: `${item.fontSize}px`, opacity: item.opacity ?? 1, transform: `rotate(${item.angle || 0}deg)` },
-        onpointerdown: (event) => startDrag(event, item, element),
+        style: { left: `${item.x}px`, top: `${item.y}px`, width: `${item.width}px`, height: `${item.height}px`, background: item.type === 'image' ? item.fill : 'transparent', borderColor: 'transparent', color: ['line', 'dashed', 'arrow', 'double-arrow'].includes(item.type) ? item.stroke : item.color, '--figure-fill': item.fill, '--figure-stroke': item.stroke, '--figure-stroke-width': `${item.strokeWidth || 0}px`, fontSize: `${item.fontSize}px`, opacity: item.opacity ?? 1, transform: `rotate(${item.angle || 0}deg)` },
+        onpointerdown: (event) => { if (editingId !== item.id) startDrag(event, item, element); },
+        ondblclick: (event) => {
+          if (item.type !== 'text') return;
+          event.stopPropagation();
+          editingId = item.id;
+          renderBoard();
+        },
         onclick: (event) => { event.stopPropagation(); selectItem(item.id); },
       }, content, resize, rotate);
       board.appendChild(element);
     }
+    board.appendChild(labelLayer);
     board.appendChild(boardHint);
+    renderWires();
+
+    if (editingId) {
+      const editable = board.querySelector('.figureboard__text.is-editing');
+      if (editable) {
+        editable.focus();
+        const range = document.createRange();
+        range.selectNodeContents(editable);
+        range.collapse(false);              // 光标落到末尾
+        const sel = window.getSelection();
+        sel.removeAllRanges();
+        sel.addRange(range);
+      }
+    }
   }
+
+  /** 把浏览器坐标换成画布坐标（画布可滚动，不能直接用 clientX） */
+  function boardPoint(event) {
+    const rect = board.getBoundingClientRect();
+    return { x: event.clientX - rect.x + board.scrollLeft, y: event.clientY - rect.y + board.scrollTop };
+  }
+
+  /** 光标下的图形（用于把线吸附到目标）。排除连线本身和正在连的源图形 */
+  function shapeAt(point, excludeId) {
+    for (let i = items.length - 1; i >= 0; i--) {
+      const it = items[i];
+      if (isWire(it) || it.id === excludeId) continue;
+      if (point.x >= it.x && point.x <= it.x + it.width
+        && point.y >= it.y && point.y <= it.y + it.height) return it;
+    }
+    return null;
+  }
+
+  /** 从某个锚点拖出一条连线 */
+  function startWire(event, ownerId, port) {
+    event.preventDefault();
+    event.stopPropagation();
+    const before = cloneItems();
+    const wire = {
+      id: `wire-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+      type: 'wire',
+      from: { id: ownerId, port },
+      to: null,
+      toPoint: boardPoint(event),
+      route: config.get('research.figureRoute', 'elbow'),
+      stroke: '#3d6fe8', strokeWidth: 2, dash: 'solid',
+      arrowEnd: true, arrowStart: false, label: '', color: '#14213d', fontSize: 13,
+      x: 0, y: 0, width: 0, height: 0, opacity: 1, angle: 0,
+    };
+    items = [...items, wire];
+    renderWires();
+
+    const move = (moveEvent) => {
+      const pt = boardPoint(moveEvent);
+      const hit = shapeAt(pt, ownerId);
+      wire.to = hit ? { id: hit.id, port: 'auto' } : null;
+      wire.toPoint = hit ? null : pt;
+      renderWires();
+      // 悬停到可连的图形上时给个高亮，让人知道会连上
+      for (const node of board.querySelectorAll('.figureboard__item')) {
+        node.classList.toggle('is-wire-target', Boolean(hit) && node.dataset.id === hit.id);
+      }
+    };
+    const end = (upEvent) => {
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', end);
+      for (const node of board.querySelectorAll('.is-wire-target')) node.classList.remove('is-wire-target');
+      const pt = boardPoint(upEvent);
+      const hit = shapeAt(pt, ownerId);
+      if (!hit && Math.hypot(pt.x - portPoint(itemById().get(ownerId), port).x,
+        pt.y - portPoint(itemById().get(ownerId), port).y) < 16) {
+        items = items.filter((entry) => entry.id !== wire.id);   // 原地松手视为取消
+        renderBoard();
+        return;
+      }
+      record(before);
+      persist();
+      selectItem(wire.id);
+      renderBoard();
+    };
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', end, { once: true });
+  }
+
+  wireLayer.addEventListener('pointerdown', (event) => {
+    const portNode = event.target.closest('.fb-port');
+    if (portNode) return startWire(event, portNode.dataset.owner, portNode.dataset.port);
+    const wireId = event.target.getAttribute?.('data-wire');
+    if (wireId) {
+      event.stopPropagation();
+      selectItem(wireId, event.shiftKey);
+      renderBoard();
+    }
+  });
 
   function startDrag(event, item, element) {
     if (event.target.classList.contains('figureboard__resize')) return startResize(event, item, element);
@@ -448,6 +704,7 @@ export function createFigureboard(root, ctx) {
         const node = board.querySelector(`[data-id="${origin.item.id}"]`);
         if (node) { node.style.left = `${origin.item.x}px`; node.style.top = `${origin.item.y}px`; }
       }
+      renderWires();       // 连线跟着图形实时走
     };
     const end = () => {
       window.removeEventListener('pointermove', move);
@@ -472,6 +729,7 @@ export function createFigureboard(root, ctx) {
       item.height = Math.max(40, Math.round(startHeight + moveEvent.clientY - startY));
       element.style.width = `${item.width}px`;
       element.style.height = `${item.height}px`;
+      renderWires();
     };
     const end = () => {
       window.removeEventListener('pointermove', move);
@@ -507,7 +765,24 @@ export function createFigureboard(root, ctx) {
     window.addEventListener('pointerup', end, { once: true });
   }
 
+  /**
+   * 关掉素材浏览区。
+   * 原来只有 openSite 没有对应的关闭 —— 点开一个素材网站就再也收不回去，
+   * 画布被永久挤到一边，webview 也一直挂着占资源。
+   */
+  function closeSite() {
+    activeSite = null;
+    browserPane.setAttribute('hidden', '');
+    workspace.classList.remove('has-browser');
+    siteViewHost.replaceChildren();          // 顺手销毁 webview，别让它在后台跑
+    for (const button of siteList.querySelectorAll('.figureboard__site-button')) {
+      button.classList.remove('is-active');
+    }
+    boardHint.hidden = sources.classList.contains('is-open');
+  }
+
   function openSite(site) {
+    if (activeSite?.url === site.url) return closeSite();   // 再点一次同一个 = 收起
     activeSite = site;
     browserPane.removeAttribute('hidden');
     workspace.classList.add('has-browser');
@@ -542,43 +817,104 @@ export function createFigureboard(root, ctx) {
 
   const siteName = h('input', { class: 'field field--sm', placeholder: '网站名称' });
   const siteUrl = h('input', { class: 'field field--sm', placeholder: 'https://素材网站…' });
+  /** 连线标签：浮在线中点的小输入框。同样不用 window.prompt —— Electron 不支持 */
+  function openWireLabel(wire) {
+    document.querySelector('.figureboard__wire-label-input')?.remove();
+    const byId = new Map(items.map((entry) => [entry.id, entry]));
+    const mid = wireMidpointOf(wire, byId);
+    if (!mid) return;
+    const input = h('input', {
+      class: 'field field--sm figureboard__wire-label-input',
+      value: wire.label || '',
+      placeholder: '连线上的文字',
+      style: { left: `${mid.x - 70}px`, top: `${mid.y - 14}px` },
+      onkeydown: (event) => {
+        if (event.key === 'Escape') { input.remove(); return; }
+        if (event.key !== 'Enter' || event.isComposing) return;
+        const before = cloneItems();
+        wire.label = input.value.trim();
+        record(before);
+        persist();
+        input.remove();
+        renderBoard();
+      },
+      onblur: () => input.remove(),
+    });
+    board.appendChild(input);
+    input.focus();
+    input.select();
+  }
+
+  /** 图标按钮：只放图标，说明走 tooltip —— 一排中文按钮又长又难认 */
+  const toolBtn = (icon, title, onClick, extra = '') => h('button', {
+    class: `btn btn--sm figureboard__tool-btn ${extra}`.trim(),
+    title,
+    onclick: onClick,
+  }, iconFor(icon, 'ui-icon figureboard__tool-icon'));
+
+  const shapeButtons = Object.entries(SHAPES)
+    .map(([type, meta]) => toolBtn(meta.icon, meta.label, () => addShape(type)));
+  const lineButtons = Object.entries(LINES)
+    .map(([type, meta]) => toolBtn(meta.icon, meta.label, () => addShape(type)));
+
+  const textBtn = toolBtn('textTool', '文字（双击可再编辑）', addText);
+  const undoBtn = toolBtn('undo', '撤销 (Cmd+Z)', undo);
+  const redoBtn = toolBtn('redo', '重做 (Cmd+Shift+Z)', redo);
+  const duplicateBtn = toolBtn('copy', '原地复制一份 (Cmd+D)', duplicateSelected);
+  const copyBtn = toolBtn('copy', '复制选中对象 (Cmd+C)', copySelected);
+  const cutBtn = toolBtn('cut', '剪切 (Cmd+X)', cutSelected);
+  const pasteObjectBtn = toolBtn('paste', '粘贴对象 (Cmd+V)', pasteSelected);
+  const layerUpBtn = toolBtn('layerUp', '上移一层', () => moveLayer(1));
+  const layerTopBtn = toolBtn('layerTop', '置顶', () => moveLayer('top'));
+  const rotateBtn = toolBtn('rotateCw', '旋转 15°', rotateSelected);
+  const groupBtn = toolBtn('group', '组合选中对象', groupSelected);
+  const ungroupBtn = toolBtn('ungroup', '取消组合', ungroupSelected);
+  const alignLeftBtn = toolBtn('alignLeft', '左对齐', () => alignSelected('left'));
+  const alignCenterBtn = toolBtn('alignCenterH', '水平居中对齐', () => alignSelected('center'));
+  const alignTopBtn = toolBtn('alignTop', '顶端对齐', () => alignSelected('top'));
+  const deleteBtn = toolBtn('trash', '删除选中', () => selectedId && removeItem(selectedId), 'figureboard__danger');
+  const pasteBtn = toolBtn('image', '把剪贴板里的图片贴进画布', pasteImage);
+  const importBtn = toolBtn('image', '从文件导入图片', importImage);
   const addSiteBtn = h('button', { class: 'btn btn--sm btn--primary', onclick: addSite }, '添加网站');
-  const pasteBtn = h('button', { class: 'btn btn--sm btn--primary', onclick: pasteImage }, '粘贴图片');
-  const importBtn = h('button', { class: 'btn btn--sm', onclick: importImage }, '导入图片');
-  const rectBtn = h('button', { class: 'btn btn--sm figureboard__tool-btn', onclick: () => addShape('rect') }, '矩形');
-  const ellipseBtn = h('button', { class: 'btn btn--sm figureboard__tool-btn', onclick: () => addShape('ellipse') }, '圆形');
-  const diamondBtn = h('button', { class: 'btn btn--sm figureboard__tool-btn', onclick: () => addShape('diamond') }, '菱形');
-  const arrowBtn = h('button', { class: 'btn btn--sm figureboard__tool-btn', onclick: () => addShape('arrow') }, '箭头');
-  const dashedBtn = h('button', { class: 'btn btn--sm figureboard__tool-btn', onclick: () => addShape('dashed') }, '虚线');
-  const doubleArrowBtn = h('button', { class: 'btn btn--sm figureboard__tool-btn', onclick: () => addShape('double-arrow') }, '双箭头');
-  const lineBtn = h('button', { class: 'btn btn--sm figureboard__tool-btn', onclick: () => addShape('line') }, '连线');
-  const textBtn = h('button', { class: 'btn btn--sm figureboard__tool-btn', onclick: addText }, '文字');
-  const undoBtn = h('button', { class: 'btn btn--sm', title: '撤销', onclick: undo }, '↶');
-  const redoBtn = h('button', { class: 'btn btn--sm', title: '重做', onclick: redo }, '↷');
-  const duplicateBtn = h('button', { class: 'btn btn--sm', onclick: duplicateSelected }, '复制');
-  const layerUpBtn = h('button', { class: 'btn btn--sm', title: '上移一层', onclick: () => moveLayer(1) }, '上移');
-  const layerTopBtn = h('button', { class: 'btn btn--sm', title: '置顶', onclick: () => moveLayer('top') }, '置顶');
-  const rotateBtn = h('button', { class: 'btn btn--sm', title: '旋转 15°', onclick: rotateSelected }, '旋转');
-  const copyBtn = h('button', { class: 'btn btn--sm', title: '复制选中对象', onclick: copySelected }, '复制对象');
-  const cutBtn = h('button', { class: 'btn btn--sm', title: '剪切选中对象', onclick: cutSelected }, '剪切');
-  const pasteObjectBtn = h('button', { class: 'btn btn--sm', title: '粘贴已复制的图板对象', onclick: pasteSelected }, '粘贴对象');
-  const groupBtn = h('button', { class: 'btn btn--sm', title: '组合选中对象', onclick: groupSelected }, '组合');
-  const ungroupBtn = h('button', { class: 'btn btn--sm', title: '取消组合', onclick: ungroupSelected }, '取消组合');
-  const alignLeftBtn = h('button', { class: 'btn btn--sm', title: '左对齐', onclick: () => alignSelected('left') }, '左对齐');
-  const alignCenterBtn = h('button', { class: 'btn btn--sm', title: '水平居中对齐', onclick: () => alignSelected('center') }, '居中');
-  const alignTopBtn = h('button', { class: 'btn btn--sm', title: '顶端对齐', onclick: () => alignSelected('top') }, '顶对齐');
-  const deleteBtn = h('button', { class: 'btn btn--sm btn--ghost', onclick: () => selectedId && removeItem(selectedId) }, '删除');
+
   const fillInput = h('input', { class: 'figureboard__color', type: 'color', value: '#dce8ff', title: '填充色', onchange: (event) => updateSelected({ fill: event.currentTarget.value }) });
-  const strokeInput = h('input', { class: 'figureboard__color', type: 'color', value: '#3d6fe8', title: '边框色', onchange: (event) => updateSelected({ stroke: event.currentTarget.value }) });
-  const strokeWidthInput = h('input', { class: 'figureboard__range', type: 'range', min: '0', max: '12', step: '1', value: '3', title: '边框/线条粗细', oninput: (event) => updateSelected({ strokeWidth: Number(event.currentTarget.value) }) });
+  const strokeInput = h('input', { class: 'figureboard__color', type: 'color', value: '#3d6fe8', title: '描边色', onchange: (event) => updateSelected({ stroke: event.currentTarget.value }) });
+  const strokeWidthInput = h('input', { class: 'figureboard__range', type: 'range', min: '0', max: '12', step: '1', value: '2', title: '描边粗细', oninput: (event) => updateSelected({ strokeWidth: Number(event.currentTarget.value) }) });
+  const radiusInput = h('input', { class: 'figureboard__range', type: 'range', min: '0', max: '60', step: '1', value: '0', title: '圆角半径', oninput: (event) => updateSelected({ radius: Number(event.currentTarget.value) }) });
+  const dashSelect = h('select', { class: 'field field--sm figureboard__select', title: '描边样式', onchange: (event) => updateSelected({ dash: event.currentTarget.value }) },
+    h('option', { value: 'solid' }, '实线'),
+    h('option', { value: 'dashed' }, '虚线'),
+    h('option', { value: 'dotted' }, '点线'),
+  );
+  const routeSelect = h('select', { class: 'field field--sm figureboard__select', title: '连接线走向（选中连线可改，也决定新连线的默认）', onchange: (event) => { config.set('research.figureRoute', event.currentTarget.value); updateSelected({ route: event.currentTarget.value }); } },
+    ...Object.entries(ROUTES).map(([key, meta]) => h('option', { value: key }, meta.label)));
+  const arrowEndBtn = toolBtn('lineArrow', '这条连线的箭头开关', () => {
+    const wire = items.find((entry) => selectedIds.has(entry.id) && isWire(entry));
+    if (!wire) return toast('先选中一条连线', 'info');
+    updateSelected({ arrowEnd: !(wire.arrowEnd !== false) });
+  });
+  const wireLabelBtn = toolBtn('wireLabel', '给选中的连线加/改文字', () => {
+    const wire = items.find((entry) => selectedIds.has(entry.id) && isWire(entry));
+    if (!wire) return toast('先选中一条连线', 'info');
+    openWireLabel(wire);
+  });
+
+  const sliceInput = h('input', { class: 'figureboard__range', type: 'range', min: '2', max: '12', step: '1', value: '6', title: '饼图扇区数', oninput: (event) => updateSelected({ slices: Number(event.currentTarget.value) }) });
+  const transparentFillBtn = h('button', { class: 'btn btn--sm', title: '去掉填充', onclick: () => updateSelected({ fill: 'transparent' }) }, '无填充');
+  const transparentStrokeBtn = h('button', { class: 'btn btn--sm', title: '去掉描边', onclick: () => updateSelected({ stroke: 'transparent' }) }, '无描边');
+
+  const bgSelect = h('select', { class: 'field field--sm figureboard__select', title: '画布背景', onchange: (event) => { background = event.currentTarget.value; config.set('research.figureBg', background); applyBackground(); } },
+    ...Object.entries(BACKGROUNDS).map(([key, meta]) => h('option', { value: key }, meta.label)));
+
+  const exportSvgBtn = h('button', { class: 'btn btn--sm', title: '矢量，投稿和 LaTeX 用这个', onclick: exportSvg }, 'SVG');
+  const exportPngBtn = h('button', { class: 'btn btn--sm btn--primary', title: '位图，贴进 PPT / Word', onclick: exportPng }, 'PNG');
+
   const opacityInput = h('input', { class: 'figureboard__range', type: 'range', min: '10', max: '100', step: '1', value: '100', title: '对象透明度', oninput: (event) => updateSelected({ opacity: Number(event.currentTarget.value) / 100 }) });
-  const exportSvgBtn = h('button', { class: 'btn btn--sm', onclick: exportSvg }, '导出 SVG');
-  const exportPngBtn = h('button', { class: 'btn btn--sm btn--primary', onclick: exportPng }, '导出 PNG');
-  const transparentFillBtn = h('button', { class: 'btn btn--sm', onclick: () => updateSelected({ fill: 'transparent' }) }, '透明填充');
-  const transparentStrokeBtn = h('button', { class: 'btn btn--sm', onclick: () => updateSelected({ stroke: 'transparent' }) }, '无边框');
-  const boardColor = h('input', { class: 'figureboard__color', type: 'color', value: config.get('research.figureBackground', '#f7f8fb'), title: '画布背景色', onchange: (event) => { board.style.backgroundColor = event.currentTarget.value; config.set('research.figureBackground', event.currentTarget.value); } });
   function toggleSources() {
-    sources.classList.toggle('is-open');
+    const opening = !sources.classList.contains('is-open');
+    sources.classList.toggle('is-open', opening);
+    // 收起素材库时把浏览区一并收掉，否则画布仍被挤在一边
+    if (!opening && activeSite) closeSite();
     boardHint.hidden = activeSite || sources.classList.contains('is-open');
   }
 
@@ -605,9 +941,25 @@ export function createFigureboard(root, ctx) {
       h('span', { class: 'faint' }, '单页科研图片工作台'),
       sourcesToggle,
       h('span', { class: 'figureboard__bar-spacer' }),
-      h('div', { class: 'figureboard__tools' }, rectBtn, ellipseBtn, diamondBtn, arrowBtn, dashedBtn, doubleArrowBtn, lineBtn, textBtn),
-      h('span', { class: 'figureboard__tool-sep' }), fillInput, strokeInput, strokeWidthInput, opacityInput, boardColor, transparentFillBtn, transparentStrokeBtn, rotateBtn, groupBtn, ungroupBtn, alignLeftBtn, alignCenterBtn, alignTopBtn, layerUpBtn, layerTopBtn, undoBtn, redoBtn, copyBtn, cutBtn, pasteObjectBtn, duplicateBtn, deleteBtn,
-      h('span', { class: 'figureboard__tool-sep' }), pasteBtn, importBtn, exportSvgBtn, exportPngBtn,
+      h('div', { class: 'figureboard__tools' },
+        h('div', { class: 'figureboard__group', title: '形状' }, ...shapeButtons),
+        h('span', { class: 'figureboard__tool-sep' }),
+        h('div', { class: 'figureboard__group', title: '连线与文字' }, ...lineButtons, textBtn, routeSelect, arrowEndBtn, wireLabelBtn),
+        h('span', { class: 'figureboard__tool-sep' }),
+        h('div', { class: 'figureboard__group', title: '样式' },
+          fillInput, strokeInput, transparentFillBtn, transparentStrokeBtn,
+          dashSelect, strokeWidthInput, radiusInput, sliceInput, opacityInput),
+        h('span', { class: 'figureboard__tool-sep' }),
+        h('div', { class: 'figureboard__group', title: '排列' },
+          alignLeftBtn, alignCenterBtn, alignTopBtn, groupBtn, ungroupBtn,
+          layerUpBtn, layerTopBtn, rotateBtn),
+        h('span', { class: 'figureboard__tool-sep' }),
+        h('div', { class: 'figureboard__group', title: '编辑' },
+          undoBtn, redoBtn, copyBtn, cutBtn, pasteObjectBtn, duplicateBtn, deleteBtn),
+        h('span', { class: 'figureboard__tool-sep' }),
+        h('div', { class: 'figureboard__group', title: '画布与导出' },
+          pasteBtn, importBtn, iconFor('canvasBg', 'ui-icon figureboard__tool-icon'), bgSelect, exportSvgBtn, exportPngBtn),
+      ),
     ),
     workspace,
   );
@@ -620,7 +972,12 @@ export function createFigureboard(root, ctx) {
     ),
   );
   browserPane.append(
-    h('div', { class: 'figureboard__pane-head' }, h('strong', {}, '素材浏览区'), h('span', { class: 'faint' }, '点击左侧网站打开')),
+    h('div', { class: 'figureboard__pane-head' },
+      h('strong', {}, '素材浏览区'),
+      h('span', { class: 'faint' }, '再点一次同一个网站也能收起'),
+      h('span', { class: 'figureboard__bar-spacer' }),
+      h('button', { class: 'btn btn--sm btn--ghost', title: '收起素材浏览区，把画布还回来', onclick: closeSite }, '收起 ✕'),
+    ),
     siteViewHost,
   );
   sources.append(
@@ -628,7 +985,8 @@ export function createFigureboard(root, ctx) {
     h('div', { class: 'figureboard__site-form' }, siteName, siteUrl, addSiteBtn),
     siteList,
   );
-  board.style.backgroundColor = config.get('research.figureBackground', '#f7f8fb');
+  bgSelect.value = background;
+  applyBackground();
   renderSites();
   renderBoard();
 }
