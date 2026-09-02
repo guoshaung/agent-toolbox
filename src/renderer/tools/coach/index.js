@@ -11,7 +11,7 @@ const LANGS = ['自动判断', 'Python', 'JavaScript', 'TypeScript', 'Java', 'Go
 export default {
   id: 'coach',
   title: '陪读',
-  icon: '🧑‍🏫',
+  icon: 'graduation',
   hint: '选中代码 → 逐行讲懂 or 知识缺口卡片（Cmd+0）',
 
   create(root, ctx) {

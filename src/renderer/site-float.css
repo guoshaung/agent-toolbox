@@ -1,0 +1,20 @@
+:root { color-scheme: dark; font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif; }
+* { box-sizing: border-box; }
+html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; background: transparent; }
+button { -webkit-app-region: no-drag; border: 1px solid transparent; border-radius: 7px; padding: 5px 8px; color: #b8c4ca; background: transparent; cursor: pointer; font: 600 11px/1.2 inherit; }
+button:hover { color: #fff; background: rgba(255,255,255,.1); }
+button.is-active { color: #b3f2e7; border-color: rgba(105,215,200,.46); background: rgba(105,215,200,.13); }
+.float-ball { -webkit-app-region: no-drag; position: relative; display: grid; place-items: center; width: 70px; height: 70px; margin: 6px; border: 1px solid rgba(105,215,200,.72); border-radius: 50%; color: #fff; background: radial-gradient(circle at 34% 25%, #384c58, #142127 62%, #0c1216); box-shadow: 0 8px 30px rgba(0,0,0,.45), 0 0 24px rgba(105,215,200,.24), inset 0 1px rgba(255,255,255,.16); cursor: grab; user-select: none; }
+.float-ball:active { cursor: grabbing; }
+.float-ball::before { content: ''; position: absolute; inset: 5px; border: 1px solid rgba(255,255,255,.13); border-radius: inherit; pointer-events: none; }
+.float-ball span:first-child { position: relative; z-index: 1; font-size: 28px; filter: drop-shadow(0 2px 4px rgba(0,0,0,.35)); }
+.float-ball__dot, #ball-dot { position: absolute; right: 9px; top: 10px; width: 8px; height: 8px; border: 1px solid #0c1216; border-radius: 50%; background: #6ee0cc; box-shadow: 0 0 8px #6ee0cc; }
+.float-expanded { display: flex; flex-direction: column; width: 100%; height: 100%; overflow: hidden; border: 1px solid rgba(105,215,200,.38); border-radius: 13px; background: #12191f; box-shadow: 0 18px 60px rgba(0,0,0,.48); }
+.float-bar { -webkit-app-region: drag; display: flex; align-items: center; gap: 7px; min-height: 42px; padding: 5px 8px 5px 11px; color: #e7f1f1; background: #182229; border-bottom: 1px solid rgba(255,255,255,.08); }
+.float-bar button { flex: 0 0 auto; }
+.float-bar__icon { font-size: 17px; }
+.float-bar__mode { color: #6ee0cc; font-size: 10px; }
+.float-bar__spacer { flex: 1; }
+#site-view { flex: 1; min-height: 0; width: 100%; border: 0; background: #fff; }
+body[data-mode="mobile"] #site-view { max-width: 390px; align-self: center; border-left: 1px solid #27343a; border-right: 1px solid #27343a; }
+@media (prefers-reduced-motion: no-preference) { .float-ball { animation: ball-in .25s ease-out both; } @keyframes ball-in { from { opacity: 0; transform: scale(.7); } to { opacity: 1; transform: scale(1); } } }

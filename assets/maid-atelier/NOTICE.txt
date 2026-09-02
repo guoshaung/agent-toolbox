@@ -1,0 +1,6 @@
+Agent 工具箱使用了 dsh-deep-whale/maid-atelier 的部分装饰素材：
+https://github.com/Small-tailqwq/dsh-deep-whale/tree/main/maid-atelier
+
+素材及皮肤整体许可：CC BY-NC-SA 4.0。
+原作者与完整署名链请见上方仓库的 LICENSE、NOTICE 文件。
+本项目仅作个人本地、非商业使用；如需分发或商业使用，请先取得相关权利人的许可。

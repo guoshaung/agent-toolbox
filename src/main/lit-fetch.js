@@ -38,6 +38,77 @@ function normalize(s) {
   return String(s || '').toLowerCase().replace(/[^a-z0-9\u4e00-\u9fff]+/g, ' ').trim();
 }
 
+const SEARCH_STOP_WORDS = new Set([
+  'the', 'and', 'for', 'with', 'from', 'into', 'using', 'use', 'based', 'study', 'paper',
+  'research', 'method', 'methods', 'approach', 'towards', 'toward', '的', '和', '与', '及',
+  '或', '在', '中', '对', '于', '研究', '方法', '基于', '关于', '一个', '进行', '以及',
+]);
+
+function queryTerms(query) {
+  const terms = [];
+  for (const token of String(query || '').toLowerCase().match(/[a-z0-9]+|[\u4e00-\u9fff]{2,}/g) || []) {
+    if (/^[a-z0-9]+$/.test(token)) {
+      if (token.length >= 2 && !SEARCH_STOP_WORDS.has(token)) terms.push(token);
+      continue;
+    }
+    const segments = token.split(/[的和与及或在中对关于于]/).filter((segment) => segment.length >= 2);
+    for (const segment of segments) {
+      if (SEARCH_STOP_WORDS.has(segment)) continue;
+      terms.push(segment);
+      for (let index = 0; index < segment.length - 1; index += 1) {
+        const pair = segment.slice(index, index + 2);
+        if (!SEARCH_STOP_WORDS.has(pair)) terms.push(pair);
+      }
+    }
+  }
+  return [...new Set(terms)];
+}
+
+function queryGroups(query) {
+  const groups = [];
+  for (const token of String(query || '').toLowerCase().match(/[a-z0-9 ]+|[\u4e00-\u9fff]{2,}/g) || []) {
+    if (/^[a-z0-9 ]+$/.test(token)) {
+      const words = token.split(/\s+/).filter((word) => word.length >= 2 && !SEARCH_STOP_WORDS.has(word));
+      if (words.length) groups.push(words);
+      continue;
+    }
+    for (const segment of token.split(/[的和与及或在中对关于于]/).filter((part) => part.length >= 2 && !SEARCH_STOP_WORDS.has(part))) groups.push([segment]);
+  }
+  return groups;
+}
+
+function relevanceDetail(paper, query) {
+  const terms = queryTerms(query);
+  const title = normalize(paper.title);
+  const body = normalize(`${paper.abstract} ${paper.venue}`);
+  const titleMatches = terms.filter((term) => title.includes(term));
+  const bodyMatches = terms.filter((term) => body.includes(term));
+  const groups = queryGroups(query);
+  const matchedGroups = groups.filter((group) => group.every((term) => title.includes(term)));
+  const normalizedQuery = normalize(query);
+  const phrase = normalizedQuery.length >= 4 && title.includes(normalizedQuery);
+  const titleCoverage = terms.length ? titleMatches.length / terms.length : 0;
+  const isChinese = /[\u4e00-\u9fff]/.test(query);
+  const minimumTitleMatches = isChinese ? Math.min(2, terms.length) : Math.min(1, terms.length);
+  const groupCoverage = groups.length ? matchedGroups.length / groups.length : 0;
+  const requiredGroupCoverage = groups.length <= 1 ? 1 : groups.length === 2 ? 1 : 0.67;
+  const relevant = titleMatches.length >= minimumTitleMatches && groupCoverage >= requiredGroupCoverage &&
+    (phrase || titleCoverage >= (terms.length <= 2 ? 0.5 : 0.28));
+  return {
+    terms,
+    titleMatches,
+    bodyMatches,
+    titleCoverage,
+    groupCoverage,
+    matchedGroups,
+    phrase,
+    relevant,
+    reason: titleMatches.length
+      ? `标题命中 ${titleMatches.length}/${terms.length} 个关键词 · 主题组 ${matchedGroups.length}/${groups.length}`
+      : '标题没有命中检索关键词',
+  };
+}
+
 /** 字符 bigram Dice 相似度：词序/插词敏感（"attention is NOT all you need" 骗不过它） */
 function diceScore(q, t) {
   const bigrams = (s) => {
@@ -177,6 +248,23 @@ async function searchCrossref(query) {
   return hits;
 }
 
+/** Europe PMC 的全文 PDF 地址稳定，给标题检索再补一条医学/生命科学来源。 */
+async function searchEuropePmcByTitle(query) {
+  const data = await fetchJson(
+    `https://www.ebi.ac.uk/europepmc/webservices/rest/search?query=${encodeURIComponent(query)}&format=json&pageSize=10&resultType=core`,
+    25000,
+  );
+  const hits = [];
+  for (const item of data?.resultList?.result || []) {
+    const title = String(item.title || '').trim();
+    const score = titleScore(query, title);
+    const pmcid = String(item.pmcid || '').trim();
+    if (!score || !title || !pmcid) continue;
+    hits.push({ title, pdfUrl: `https://www.ebi.ac.uk/europepmc/webservices/rest/${pmcid}/fullTextPDF`, score: score + 0.01 });
+  }
+  return hits;
+}
+
 /**
  * 下载 PDF。Node fetch（undici）被 arXiv 按 TLS 指纹挂起，curl 能过，
  * 所以统一走 curl。下载到临时文件，校验 %PDF- 魔数后读回 Buffer。
@@ -185,7 +273,8 @@ async function downloadPdf(url, timeout = 60000) {
   const tmp = path.join(os.tmpdir(), `toolbox-pdf-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
   try {
     await execFileAsync('curl', [
-      '-sL', '--max-time', String(Math.ceil(timeout / 1000)),
+      '-fL', '--retry', '2', '--retry-delay', '1', '--connect-timeout', '15',
+      '--max-filesize', String(MAX_PDF_BYTES), '--max-time', String(Math.ceil(timeout / 1000)),
       '-A', UA, '-o', tmp, url,
     ], { timeout: timeout + 10000 });
     const buf = fs.readFileSync(tmp);
@@ -204,6 +293,247 @@ function sanitizeFileStem(title) {
   return s.slice(0, 120) || 'paper';
 }
 
+function normalizeDoi(value) {
+  return String(value || '').trim().replace(/^https?:\/\/(?:dx\.)?doi\.org\//i, '').replace(/^doi:\s*/i, '');
+}
+
+function restoreAbstract(index) {
+  if (!index || typeof index !== 'object') return '';
+  const words = [];
+  for (const [word, positions] of Object.entries(index)) {
+    for (const position of positions || []) words[position] = word;
+  }
+  return words.filter(Boolean).join(' ').slice(0, 2400);
+}
+
+function authorNames(authorships) {
+  return (authorships || []).map((item) => item?.author?.display_name).filter(Boolean).slice(0, 8);
+}
+
+function venueName(work) {
+  return work?.primary_location?.source?.display_name || '';
+}
+
+function landingUrl(work) {
+  return work?.primary_location?.landing_page_url
+    || work?.best_oa_location?.landing_page_url
+    || work?.doi
+    || work?.id
+    || '';
+}
+
+function openAlexPaper(work) {
+  const pdfUrl = pickPdfFromWork(work);
+  const doi = normalizeDoi(work?.doi);
+  return {
+    id: String(work?.id || '').split('/').pop(),
+    title: work?.title || work?.display_name || 'Untitled',
+    authors: authorNames(work?.authorships),
+    year: work?.publication_year || null,
+    venue: venueName(work),
+    citedBy: Number(work?.cited_by_count || 0),
+    abstract: restoreAbstract(work?.abstract_inverted_index),
+    doi,
+    isOpenAccess: Boolean(work?.open_access?.is_oa || pdfUrl),
+    oaStatus: work?.open_access?.oa_status || '',
+    pdfUrl: pdfUrl || '',
+    landingUrl: landingUrl(work),
+    source: 'OpenAlex',
+  };
+}
+
+function europePmcPaper(item) {
+  const pmcid = String(item?.pmcid || '').trim();
+  const doi = normalizeDoi(item?.doi);
+  const open = item?.isOpenAccess === 'Y' || Boolean(pmcid);
+  return {
+    id: pmcid || item?.pmid || doi || item?.id || '',
+    title: item?.title || 'Untitled',
+    authors: String(item?.authorString || '').split(',').map((name) => name.trim()).filter(Boolean).slice(0, 8),
+    year: Number(item?.pubYear || 0) || null,
+    venue: item?.journalTitle || '',
+    citedBy: Number(item?.citedByCount || 0),
+    abstract: String(item?.abstractText || '').replace(/<[^>]+>/g, '').slice(0, 2400),
+    doi,
+    isOpenAccess: open,
+    oaStatus: open ? 'open' : 'closed',
+    pdfUrl: pmcid ? `https://www.ebi.ac.uk/europepmc/webservices/rest/${pmcid}/fullTextPDF` : '',
+    landingUrl: pmcid
+      ? `https://europepmc.org/articles/${pmcid}`
+      : doi ? `https://doi.org/${doi}` : item?.pmid ? `https://europepmc.org/article/MED/${item.pmid}` : '',
+    source: 'Europe PMC',
+  };
+}
+
+function paperKey(paper) {
+  return paper.doi ? `doi:${paper.doi.toLowerCase()}` : `title:${normalize(paper.title)}`;
+}
+
+function rankPaper(paper, query) {
+  const detail = relevanceDetail(paper, query);
+  const recency = paper.year ? Math.max(0, paper.year - 2018) : 0;
+  return detail.titleMatches.length * 45
+    + (detail.phrase ? 90 : 0)
+    + detail.matchedGroups.length * 55
+    + detail.bodyMatches.length * 3
+    + Math.log10(paper.citedBy + 1) * 2
+    + recency * 0.4
+    + (paper.pdfUrl ? 2 : 0);
+}
+
+/**
+ * 按研究方向发现论文。只查询公开元数据；开放全文优先，但可保留需要机构登录的候选。
+ */
+async function discoverPapers(options = {}) {
+  const query = String(options.query || options.direction || '').trim();
+  if (!query) return { ok: false, error: '先填写研究方向或检索式。' };
+  if (!queryTerms(query).length) return { ok: false, error: '检索词太宽泛，请输入 2-5 个具体主题词，例如“多模态 幻觉评测”。' };
+  const yearFrom = Math.max(1900, Math.min(2100, Number(options.yearFrom) || new Date().getFullYear() - 3));
+  const yearTo = Math.max(yearFrom, Math.min(2100, Number(options.yearTo) || new Date().getFullYear()));
+  const limit = Math.max(5, Math.min(50, Number(options.limit) || 20));
+  const openOnly = Boolean(options.openAccessOnly);
+  const filters = [
+    `from_publication_date:${yearFrom}-01-01`,
+    `to_publication_date:${yearTo}-12-31`,
+  ];
+  if (openOnly) filters.push('open_access.is_oa:true');
+  const select = [
+    'id', 'doi', 'title', 'publication_year', 'authorships', 'primary_location',
+    'best_oa_location', 'open_access', 'cited_by_count', 'abstract_inverted_index', 'locations',
+  ].join(',');
+  const candidatePageSize = Math.min(100, Math.max(limit * 4, 40));
+  const openAlexUrl = `https://api.openalex.org/works?search=${encodeURIComponent(query)}`
+    + `&filter=${encodeURIComponent(filters.join(','))}&per-page=${candidatePageSize}&select=${select}`;
+
+  const [openAlex, europePmc] = await Promise.all([
+    fetchJson(openAlexUrl, 25000),
+    fetchJson(`https://www.ebi.ac.uk/europepmc/webservices/rest/search?query=${encodeURIComponent(`${query} FIRST_PDATE:[${yearFrom}-01-01 TO ${yearTo}-12-31]${openOnly ? ' OPEN_ACCESS:Y' : ''}`)}&format=json&pageSize=${Math.min(candidatePageSize, 100)}&resultType=core`, 25000),
+  ]);
+
+  const merged = new Map();
+  for (const work of openAlex?.results || []) {
+    const paper = openAlexPaper(work);
+    merged.set(paperKey(paper), paper);
+  }
+  for (const item of europePmc?.resultList?.result || []) {
+    const paper = europePmcPaper(item);
+    const key = paperKey(paper);
+    const previous = merged.get(key);
+    if (!previous) merged.set(key, paper);
+    else if (!previous.pdfUrl && paper.pdfUrl) merged.set(key, { ...previous, pdfUrl: paper.pdfUrl, isOpenAccess: true });
+  }
+  const ranked = [...merged.values()]
+    .filter((paper) => !openOnly || paper.isOpenAccess)
+    .map((paper) => {
+      const detail = relevanceDetail(paper, query);
+      return { ...paper, relevance: rankPaper(paper, query), relevanceReason: detail.reason, titleCoverage: detail.titleCoverage };
+    })
+    .filter((paper) => relevanceDetail(paper, query).relevant)
+    .sort((a, b) => b.relevance - a.relevance || b.citedBy - a.citedBy)
+  const papers = ranked.slice(0, limit);
+  return {
+    ok: true,
+    query,
+    yearFrom,
+    yearTo,
+    papers,
+    totalCandidates: ranked.length,
+    sources: ['OpenAlex', 'Europe PMC'],
+  };
+}
+
+function safeHttpUrl(value) {
+  try {
+    const url = new URL(String(value || ''));
+    return ['http:', 'https:'].includes(url.protocol) ? url.toString() : '';
+  } catch {
+    return '';
+  }
+}
+
+async function resolveOpenPdf(paper) {
+  const direct = safeHttpUrl(paper?.pdfUrl);
+  if (direct) return { pdfUrl: direct, source: paper.source || '开放全文' };
+  const doi = normalizeDoi(paper?.doi);
+  if (doi) {
+    const data = await fetchJson(`https://api.openalex.org/works/https://doi.org/${encodeURIComponent(doi)}?${WORK_SELECT}`);
+    const pdfUrl = pickPdfFromWork(data || {});
+    if (pdfUrl) return { pdfUrl, source: 'OpenAlex OA' };
+  }
+  return null;
+}
+
+async function downloadPaperCandidate(litDir, paper) {
+  const title = String(paper?.title || '').trim();
+  if (!title) return { ok: false, error: '候选论文缺少标题。' };
+  fs.mkdirSync(litDir, { recursive: true });
+  const resolved = await resolveOpenPdf(paper);
+  if (!resolved) {
+    return {
+      ok: false,
+      code: 'login-required',
+      title,
+      url: safeHttpUrl(paper?.landingUrl) || (paper?.doi ? `https://doi.org/${normalizeDoi(paper.doi)}` : ''),
+      error: '没有发现合法的开放 PDF。可以打开登录浏览器，使用学校或出版社账号下载；下载完成后会自动进入文献库。',
+    };
+  }
+  const buf = await downloadPdf(resolved.pdfUrl, 90000);
+  if (!buf) {
+    return {
+      ok: false,
+      code: 'download-failed',
+      title,
+      url: safeHttpUrl(paper?.landingUrl) || resolved.pdfUrl,
+      error: '发现了开放全文地址，但源站拒绝自动下载或返回的不是 PDF。可用登录浏览器打开论文页面继续。',
+    };
+  }
+  const stem = sanitizeFileStem(title);
+  let file = `${stem}.pdf`;
+  let index = 1;
+  while (fs.existsSync(path.join(litDir, file))) file = `${stem}-${index++}.pdf`;
+  fs.writeFileSync(path.join(litDir, file), buf);
+  return { ok: true, file, title, source: resolved.source, size: buf.length, format: 'pdf' };
+}
+
+/**
+ * 批量下载开放全文：逐篇隔离错误，不能下载的论文保留原因，继续处理后面的候选。
+ * onProgress 只传状态，不暴露 PDF 内容；渲染层可以据此更新进度条和重试列表。
+ */
+async function downloadPapersBatch(litDir, papers, onProgress = () => {}) {
+  const list = Array.isArray(papers)
+    ? papers.filter((paper) => paper && String(paper.title || '').trim()).slice(0, 50)
+    : [];
+  if (!list.length) return { ok: false, error: '没有可下载的论文。', completed: 0, total: 0, results: [] };
+  const results = [];
+  for (let index = 0; index < list.length; index += 1) {
+    const paper = list[index];
+    const title = String(paper.title).trim();
+    onProgress({ index, total: list.length, title, state: 'opening' });
+    try {
+      const result = await downloadPaperCandidate(litDir, paper);
+      results.push({ ...result, title });
+      onProgress({
+        index,
+        total: list.length,
+        title,
+        state: result.ok ? 'done' : 'failed',
+        error: result.error || '',
+      });
+    } catch (err) {
+      const result = { ok: false, title, code: 'download-failed', error: err.message || '下载失败' };
+      results.push(result);
+      onProgress({ index, total: list.length, title, state: 'failed', error: result.error });
+    }
+  }
+  return {
+    ok: results.every((result) => result.ok),
+    completed: results.filter((result) => result.ok).length,
+    failed: results.filter((result) => !result.ok).length,
+    total: list.length,
+    results,
+  };
+}
+
 /**
  * 主入口：按名字找到免费 PDF 并写进文献目录。
  * 返回 { ok, file, title, source, size, format } 或 { ok: false, error }
@@ -211,6 +541,7 @@ function sanitizeFileStem(title) {
 async function fetchPaperByTitle(litDir, query) {
   const q = String(query || '').trim();
   if (!q) return { ok: false, error: '先输入文献名' };
+  fs.mkdirSync(litDir, { recursive: true });
 
   let hits = [];
   const directId = extractArxivId(q);
@@ -226,10 +557,15 @@ async function fetchPaperByTitle(litDir, query) {
         hits.push(hit);
       }
     };
-    // dblp 标题检索最准排最前；OpenAlex 补非 CS 领域；Crossref 最后兜底
+    // 多源并行补候选：一个索引暂时不可用，不应让用户失去其他可下载的版本。
     merge(await searchDblp(q));
     merge(await searchOpenAlex(q));
-    if (!hits.length) merge(await searchCrossref(q));
+    const [crossref, europePmc] = await Promise.all([
+      searchCrossref(q),
+      searchEuropePmcByTitle(q),
+    ]);
+    merge(crossref);
+    merge(europePmc);
     hits.sort((a, b) => (b.score - a.score)
       || (Number(b.pdfUrl.includes('arxiv.org')) - Number(a.pdfUrl.includes('arxiv.org'))));
   }
@@ -260,4 +596,15 @@ async function fetchPaperByTitle(litDir, query) {
   };
 }
 
-module.exports = { fetchPaperByTitle };
+module.exports = {
+  fetchPaperByTitle,
+  discoverPapers,
+  downloadPaperCandidate,
+  downloadPapersBatch,
+  restoreAbstract,
+  normalizeDoi,
+  normalize,
+  queryTerms,
+  relevanceDetail,
+  rankPaper,
+};

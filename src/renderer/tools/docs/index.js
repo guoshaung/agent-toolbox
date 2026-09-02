@@ -16,7 +16,7 @@ const normalizeUrl = (raw) => {
 export default {
   id: 'docs',
   title: '文档',
-  icon: '📖',
+  icon: 'book',
   hint: '内置 Chromium 的官方文档浏览器（Cmd+2）',
 
   create(root, ctx) {

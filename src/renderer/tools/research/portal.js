@@ -16,5 +16,6 @@ export function createPortal(root, ctx) {
     cachePrefix: 'research.favicons.',
     partition: 'persist:research',
     config: ctx.config,
+    detachable: true,
   });
 }

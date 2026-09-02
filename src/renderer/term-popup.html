@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data:; style-src 'self'; script-src 'self'" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>术语解释</title>
+  <link rel="stylesheet" href="term-popup.css" />
+</head>
+<body>
+  <div id="card" class="popup">
+    <header class="popup__head">
+      <div>
+        <div class="popup__eyebrow">DEEPSEEK · EVIDENCE NOTE</div>
+        <h1 id="term">正在读取选词…</h1>
+      </div>
+      <div class="popup__actions">
+        <button id="open" title="在工具箱中打开">↗</button>
+        <button id="close" title="关闭">×</button>
+      </div>
+    </header>
+    <main id="content" class="popup__content">
+      <div class="popup__loading"><span></span>正在建立解释和依据…</div>
+    </main>
+    <footer>
+      <span>选词后按 <kbd id="shortcut">⌘⇧E</kbd> 再查一个</span>
+      <button id="copy">复制解释</button>
+    </footer>
+  </div>
+  <script src="term-popup.js"></script>
+</body>
+</html>

@@ -17,34 +17,34 @@ export const LOGO_MARK_SVG = `<svg viewBox="0 0 1024 1024" aria-hidden="true">
     </filter>
     <mask id="tbxcut">
       <rect width="1024" height="1024" fill="black"/>
-      <rect x="262" y="262" width="500" height="500" rx="88" fill="white"/>
-      <path d="M512 322 Q529.1 494.9, 702 512 Q529.1 529.1, 512 702 Q494.9 529.1, 322 512 Q494.9 494.9, 512 322 Z" fill="black"/>
+      <rect x="224" y="224" width="576" height="576" rx="88" fill="white"/>
+      <path d="M512 276 Q533.24 490.76, 748 512 Q533.24 533.24, 512 748 Q490.76 533.24, 276 512 Q490.76 490.76, 512 276 Z" fill="black"/>
     </mask>
   </defs>
   <g filter="url(#tbxglow)" opacity="0.6"><g fill="url(#tbxneon)">
-      <rect x="182" y="353" width="114" height="54" rx="27"/>
-      <rect x="728" y="353" width="114" height="54" rx="27"/>
-      <rect x="353" y="182" width="54" height="114" rx="27"/>
-      <rect x="353" y="728" width="54" height="114" rx="27"/>
-      <rect x="182" y="617" width="114" height="54" rx="27"/>
-      <rect x="728" y="617" width="114" height="54" rx="27"/>
-      <rect x="617" y="182" width="54" height="114" rx="27"/>
-      <rect x="617" y="728" width="54" height="114" rx="27"/>
+      <rect x="128" y="332" width="132" height="60" rx="30"/>
+      <rect x="764" y="332" width="132" height="60" rx="30"/>
+      <rect x="332" y="128" width="60" height="132" rx="30"/>
+      <rect x="332" y="764" width="60" height="132" rx="30"/>
+      <rect x="128" y="632" width="132" height="60" rx="30"/>
+      <rect x="764" y="632" width="132" height="60" rx="30"/>
+      <rect x="632" y="128" width="60" height="132" rx="30"/>
+      <rect x="632" y="764" width="60" height="132" rx="30"/>
     </g>
-    <rect x="262" y="262" width="500" height="500" rx="92"
-        fill="none" stroke="url(#tbxneon)" stroke-width="84"/>
-      <path d="M512 394.2 Q522.602 501.398, 629.8 512 Q522.602 522.602, 512 629.8 Q501.398 522.602, 394.2 512 Q501.398 501.398, 512 394.2 Z" fill="url(#tbxneon)"/></g>
+    <rect x="224" y="224" width="576" height="576" rx="92"
+        fill="none" stroke="url(#tbxneon)" stroke-width="92"/>
+      <path d="M512 365.68 Q525.1688 498.8312, 658.3199999999999 512 Q525.1688 525.1688, 512 658.3199999999999 Q498.8312 525.1688, 365.68 512 Q498.8312 498.8312, 512 365.68 Z" fill="url(#tbxneon)"/></g>
   <g fill="url(#tbxneon)">
-      <rect x="182" y="353" width="114" height="54" rx="27"/>
-      <rect x="728" y="353" width="114" height="54" rx="27"/>
-      <rect x="353" y="182" width="54" height="114" rx="27"/>
-      <rect x="353" y="728" width="54" height="114" rx="27"/>
-      <rect x="182" y="617" width="114" height="54" rx="27"/>
-      <rect x="728" y="617" width="114" height="54" rx="27"/>
-      <rect x="617" y="182" width="54" height="114" rx="27"/>
-      <rect x="617" y="728" width="54" height="114" rx="27"/>
+      <rect x="128" y="332" width="132" height="60" rx="30"/>
+      <rect x="764" y="332" width="132" height="60" rx="30"/>
+      <rect x="332" y="128" width="60" height="132" rx="30"/>
+      <rect x="332" y="764" width="60" height="132" rx="30"/>
+      <rect x="128" y="632" width="132" height="60" rx="30"/>
+      <rect x="764" y="632" width="132" height="60" rx="30"/>
+      <rect x="632" y="128" width="60" height="132" rx="30"/>
+      <rect x="632" y="764" width="60" height="132" rx="30"/>
     </g>
-    <rect x="262" y="262" width="500" height="500" rx="92"
-        fill="none" stroke="url(#tbxneon)" stroke-width="84"/>
-      <path d="M512 394.2 Q522.602 501.398, 629.8 512 Q522.602 522.602, 512 629.8 Q501.398 522.602, 394.2 512 Q501.398 501.398, 512 394.2 Z" fill="url(#tbxneon)"/>
+    <rect x="224" y="224" width="576" height="576" rx="92"
+        fill="none" stroke="url(#tbxneon)" stroke-width="92"/>
+      <path d="M512 365.68 Q525.1688 498.8312, 658.3199999999999 512 Q525.1688 525.1688, 512 658.3199999999999 Q498.8312 525.1688, 365.68 512 Q498.8312 498.8312, 512 365.68 Z" fill="url(#tbxneon)"/>
 </svg>`;

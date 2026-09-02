@@ -4,7 +4,7 @@ import { PET_SKINS } from '../../../pet/skins.js';
 export default {
   id: 'pet',
   title: '桌宠',
-  icon: '◉',
+  icon: 'bot',
   hint: '代码读不懂时，打开四行快速解释',
 
   create(root, ctx) {

@@ -5,8 +5,10 @@ import { highlightBlock } from './highlight.js';
 import { diffLines, verdict } from './recite.js';
 import { createQuizPanel } from './quiz.js';
 import { PageScraper, buildKnowledgePrompt, buildSiteDiscoveryPrompt } from './scrape.js';
+import { createPracticePanel } from './practice.js';
 
 const VIEWS = [
+  { id: 'practice', label: '实践敲码' },
   { id: 'templates', label: '模板背诵' },
   { id: 'quiz', label: 'AI 出题' },
   { id: 'sites', label: '知识网站' },
@@ -15,7 +17,7 @@ const VIEWS = [
 export default {
   id: 'study',
   title: '学习',
-  icon: '📚',
+  icon: 'book',
   hint: '必背模板 / AI 出题 / 知识网站（Cmd+5）',
 
   create(root, ctx) {
@@ -26,6 +28,8 @@ export default {
     let view = 'templates';
 
     const scraper = new PageScraper(document.getElementById('bridge-host'));
+
+    const practice = createPracticePanel(ctx);
 
     // ---------- 数据：内置 + 用户自己加的 ----------
     const userTemplates = () => config.get('study.userTemplates') || [];
@@ -488,8 +492,16 @@ export default {
     const quiz = createQuizPanel(ctx, () => {
       const tpl = currentTemplate();
       return tpl
-        ? { name: `${currentModule().name} · ${tpl.title}`, code: tpl.code }
-        : { name: currentModule().name, code: null };
+        ? {
+            name: `${currentModule().name} · ${tpl.title}`,
+            code: tpl.code,
+            lessonText: [tpl.why, ...(tpl.points || []), ...(tpl.pitfalls || [])].filter(Boolean).join('\n'),
+          }
+        : {
+            name: currentModule().name,
+            code: null,
+            lessonText: currentModule().description || '',
+          };
     });
 
     // ---------- 视图切换 ----------
@@ -506,6 +518,11 @@ export default {
     }
 
     function renderMain() {
+      if (view === 'practice') {
+        main.textContent = '';
+        main.append(practice.el);
+        return;
+      }
       if (view === 'quiz') {
         main.textContent = '';
         quiz.updateScope({ name: currentTemplate() ? `${currentModule().name} · ${currentTemplate().title}` : currentModule().name });

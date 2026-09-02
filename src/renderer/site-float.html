@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data:; style-src 'self'; script-src 'self'" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>科研悬浮球</title>
+  <link rel="stylesheet" href="site-float.css" />
+</head>
+<body>
+  <div id="ball" class="float-ball" hidden title="双击展开网页">
+    <span id="ball-icon">🔬</span>
+    <span id="ball-dot"></span>
+  </div>
+  <div id="expanded" class="float-expanded" hidden>
+    <header class="float-bar">
+      <span id="site-icon" class="float-bar__icon">🔬</span>
+      <strong id="site-name">科研网站</strong>
+      <span id="site-mode" class="float-bar__mode">手机端</span>
+      <span class="float-bar__spacer"></span>
+      <button id="mobile" class="is-active">手机</button>
+      <button id="pc">PC</button>
+      <button id="back" title="收起为悬浮球">●</button>
+      <button id="external" title="用系统浏览器打开">↗</button>
+      <button id="close" title="关闭悬浮球">×</button>
+    </header>
+    <webview id="site-view" partition="persist:research" allowpopups></webview>
+  </div>
+  <script src="site-float.js"></script>
+</body>
+</html>

@@ -1,4 +1,5 @@
 import { h, toast } from '../../core/ui.js';
+import { paperToMeta } from './citation.js';
 
 const FORMAT_ICONS = {
   pdf: '📕', doc: '📘', docx: '📘', txt: '📄', md: '📄',
@@ -37,21 +38,30 @@ export function createLiterature(root, ctx) {
   let files = [];
   let current = null; // 当前阅读的 { file, format, size, mtime }
   let zoomIndex = 2;  // ZOOM_STEPS 里的 1.0
+  let paperCandidates = [];
+  let libraryCandidates = [];
+  let autoDownloadBusy = false;
 
   const listEl = h('div', { class: 'lit__list' });
+  const discoveryList = h('div', { class: 'lit__discovery-list' });
+  const libraryList = h('div', { class: 'lit__library-list' });
   const noticeEl = h('div', { class: 'lit__notice', hidden: true });
   const viewerEl = h('div', { class: 'lit__viewer' });
+  const pdfXValue = h('span', { class: 'mono lit__pdf-x-value' }, '0%');
+  const pdfXSlider = h('input', { class: 'lit__pdf-x-slider', type: 'range', min: '0', max: '0', step: '1', value: '0', disabled: true });
+  const pdfXBar = h('div', { class: 'lit__pdf-xbar', hidden: true }, h('span', {}, '横向'), pdfXSlider, pdfXValue);
 
   const zoomOutBtn = h('button', { class: 'btn btn--icon', title: '缩小', onclick: () => zoom(-1) }, '−');
   const zoomLabel = h('span', { class: 'faint mono lit__zoom-label' }, '100%');
   const zoomInBtn = h('button', { class: 'btn btn--icon', title: '放大', onclick: () => zoom(1) }, '＋');
   const annoToggle = h('button', { class: 'btn btn--sm', onclick: () => toggleAnno() }, '批注');
   const chatToggle = h('button', { class: 'btn btn--sm', title: '带着文献内容问 AI', onclick: () => toggleChat() }, '💬 问答');
-  const bilingBtn = h('button', { class: 'btn btn--sm', hidden: true, title: '原文/译文对照（TXT/MD）', onclick: () => toggleBilingual() }, '对照');
+  const bilingBtn = h('button', { class: 'btn btn--sm', hidden: true, title: '豆包一键翻译全文，原文/译文对照阅读', onclick: () => toggleBilingual() }, '一键对照');
   const handBtn = h('button', { class: 'btn btn--sm', title: '手掌：拖拽平移页面', onclick: () => setCursorMode('hand') }, '✋');
   const selectBtn = h('button', { class: 'btn btn--sm', title: '指针：选中文字（配合划词/批注）', onclick: () => setCursorMode('select') }, '➤');
-  const selBtn = h('button', { class: 'btn btn--sm', title: '翻译当前选中的文字', onclick: () => translateSelection() }, '划词');
-  const snipBtn = h('button', { class: 'btn btn--sm', title: '框选一块区域，OCR 圈内文字并翻译', onclick: () => startSnip() }, '圈译');
+  const selBtn = h('button', { class: 'btn btn--sm', title: '先选中文字，再翻译；PDF 请切到指针模式', onclick: () => translateSelection() }, '翻译选中');
+  const snipBtn = h('button', { class: 'btn btn--sm', title: '默认方式：在 PDF 页面右键后圈选区域；也可点击此按钮', onclick: () => startSnip() }, '圈译');
+  const transToggleBtn = h('button', { class: 'btn btn--sm', title: '打开固定译文栏', onclick: () => toggleTransPanel() }, '译文栏');
   const viewerBar = h('div', { class: 'bar lit__viewerbar', hidden: true },
     h('span', { class: 'lit__viewer-name', title: '' }, ''),
     h('span', { style: { flex: 1 } }),
@@ -59,7 +69,7 @@ export function createLiterature(root, ctx) {
     h('span', { class: 'subbar__sep' }),
     zoomOutBtn, zoomLabel, zoomInBtn,
     h('span', { class: 'subbar__sep' }),
-    bilingBtn, selBtn, snipBtn,
+    bilingBtn, selBtn, snipBtn, transToggleBtn,
     h('span', { class: 'subbar__sep' }),
     chatToggle, annoToggle,
   );
@@ -191,6 +201,7 @@ export function createLiterature(root, ctx) {
     const hidden = chatPanel.hasAttribute('hidden');
     if (hidden) {
       annoPanel.setAttribute('hidden', ''); // 右栏一次只开一个
+      closeTransPanel();
       chatPanel.removeAttribute('hidden');
     } else {
       chatPanel.setAttribute('hidden', '');
@@ -255,6 +266,7 @@ export function createLiterature(root, ctx) {
     const hidden = annoPanel.hasAttribute('hidden');
     if (hidden) {
       chatPanel.setAttribute('hidden', ''); // 右栏一次只开一个
+      closeTransPanel();
       annoPanel.removeAttribute('hidden');
       renderAnnos();
     } else {
@@ -262,12 +274,15 @@ export function createLiterature(root, ctx) {
     }
   }
 
-  // ---- 翻译：对照 / 划词 / 圈译（有道免费接口 + 本地 Vision OCR） ----
+  // ---- 翻译：豆包优先，对照 / 划词 / 圈译共用 ----
 
   let rawText = null;        // TXT/MD 的原文（对照翻译用）
   let bilingual = false;
   let snipping = false;
   let translating = false;
+  let bilingualTranslating = false;
+  let bilingualPanel = null;
+  let bilingualRunId = 0;
   let cursorMode = config.get('research.lit.cursor', 'hand'); // hand | select
   let panOverlay = null;     // 手掌模式的拖拽层
 
@@ -284,8 +299,16 @@ export function createLiterature(root, ctx) {
   let pdfViewScale = 1;      // 目标缩放（浮点，流动变化）
   let pdfRenderedScale = 1;  // 画布当前实际渲染的缩放
 
-  /** 圈译/划词的浮动结果卡 */
-  const transCard = h('div', { class: 'lit__trans-card', hidden: true });
+  /** 圈译/划词固定显示在右侧专注栏，避免浮卡挡住正文或译文看不见。 */
+  let lastTransResult = null;
+  const transCard = h('aside', { class: 'lit__trans-panel', hidden: true });
+  let transOpacity = Math.min(1, Math.max(0.15, Number(config.get('research.lit.transOpacity', 0.94)) || 0.94));
+  transCard.style.setProperty('--lit-trans-opacity', String(transOpacity));
+  const selectionAction = h('button', {
+    class: 'lit__selection-action', hidden: true,
+    onmousedown: (e) => e.preventDefault(),
+    onclick: () => translateSelection(),
+  }, '译');
 
   /** 翻译方向：和主进程 detectTarget 一致 —— 中文为主译英，否则译中 */
   function targetLang(text) {
@@ -293,11 +316,12 @@ export function createLiterature(root, ctx) {
     return cjk > String(text).length * 0.2 ? '英文' : '中文';
   }
 
-  /**
-   * 圈译/划词专用：优先走 AI 接口（质量好，且没有有道「每分钟约 5 条新翻译」的免费配额
-   * —— 之前对照翻译一批批跑，配额常常被烧光，圈译一等 12 秒然后报配额用完，看起来就是
-   * 「圈了但没翻译」）。AI 没配好或失败时退回有道免费接口。
-   */
+  function isSingleWord(text) {
+    const value = String(text || '').trim();
+    return Boolean(value) && !/\s/.test(value) && value.length <= 80;
+  }
+
+  /** 豆包翻译独立于全局 AI；失败时再退到全局 AI 和有道，单个词不会静默空白。 */
   function cleanTranslation(text) {
     return String(text || '')
       .trim()
@@ -310,18 +334,36 @@ export function createLiterature(root, ctx) {
   async function translateSmart(text) {
     const to = targetLang(text);
     const errs = [];
+    const messages = [
+      {
+        role: 'system',
+        content: '你是资深科研论文翻译。忠实、准确、自然地翻译，优先保证技术含义和术语一致。模型名、基准名、数据集名、缩写、变量、代码、文件名、坐标轴、图例标签和版本号保持原样，不要臆造释义；无法确定的短标签保留英文并在后面给出括号说明。只输出译文本身，不解释，不添加标题。',
+      },
+      {
+        role: 'user',
+        content: `将下面的科研内容翻译成${to}。这是论文正文、图注或图表文字，必须结合上下文翻译；不要把 high、xhigh、max、ultracode、RHI、HI 等可能是模型/实验标签的 token 翻译成普通中文。保留段落、公式、代码、引用编号、文件路径、专有名词、图例标签和数字：\n\n${text}`,
+      },
+    ];
+    try {
+      const result = await window.toolbox.ai.translate({ messages, temperature: 0.1, timeout: 90000 });
+      const cleaned = cleanTranslation(result.ok ? result.text : '');
+      if (result.ok && cleaned) return { ok: true, translation: cleaned, via: 'doubao' };
+      errs.push(result.ok ? '豆包返回了空内容' : `豆包：${result.error}`);
+    } catch (err) {
+      errs.push(`豆包：${err.message}`);
+    }
     try {
       const out = await ctx.ai.chat(
-        `你是翻译引擎。把下面的内容准确翻译成${to}。\n` +
+        `你是资深科研论文翻译。把下面的内容准确翻译成${to}。\n` +
         '只输出译文本身：不要解释、不要重复原文、不要任何前后缀或引号。\n' +
-        '保留原有的换行分段；代码、公式、文件路径、专有名词保留原样。\n\n' + text,
+        '模型名、基准名、数据集名、缩写、变量、代码、文件名、坐标轴、图例标签、版本号和 high/xhigh/max/ultracode 等 token 保持原样；不确定的短标签不要臆译。保留原有换行分段、公式、引用编号和专有名词。\n\n' + text,
         { timeout: 60000 },
       );
       const cleaned = cleanTranslation(out);
       if (cleaned) return { ok: true, translation: cleaned, via: 'ai' };
-      errs.push('AI 接口返回了空内容');
+      errs.push('全局 AI 返回了空内容');
     } catch (err) {
-      errs.push(`AI 接口：${err.message}`);
+      errs.push(`全局 AI：${err.message}`);
     }
     try {
       const fallback = await lit.translate(text, { interactive: true });
@@ -335,65 +377,236 @@ export function createLiterature(root, ctx) {
     return { ok: false, error: errs.join('；') };
   }
 
-  function showTransResult(srcText, translation) {
-    transCard.textContent = '';
+  /** 单词速查先走有道单发接口，避免每个词都等待学术翻译模型。 */
+  async function translateWordFast(text) {
+    try {
+      const result = await lit.translate(text, { interactive: true });
+      const cleaned = cleanTranslation(result.ok ? result.translation : '');
+      if (result.ok && cleaned) return { ok: true, translation: cleaned, via: 'youdao-fast' };
+    } catch { /* 快速通道失败就交给完整翻译链路 */ }
+    return translateSmart(text);
+  }
+
+  function viaLabel(via) {
+    return via === 'doubao' ? '豆包' : via === 'ai' ? '全局 AI' : via === 'youdao-fast' ? '快速词义' : '有道';
+  }
+
+  function openTransPanel() {
+    chatPanel.setAttribute('hidden', '');
+    annoPanel.setAttribute('hidden', '');
     transCard.removeAttribute('hidden');
-    transCard.appendChild(
-      h('div', { class: 'lit__trans-head' },
-        h('strong', {}, '翻译'),
+    pdfXBar.hidden = !pdfScrollEl;
+    syncPdfXSlider();
+    transToggleBtn.classList.add('is-on');
+    requestAnimationFrame(() => { transCard.scrollTop = 0; updatePdfTranslationLayout(); });
+  }
+
+  function closeTransPanel() {
+    transCard.setAttribute('hidden', '');
+    transCard.classList.remove('is-focus');
+    transToggleBtn.classList.remove('is-on');
+    transToggleBtn.textContent = '译文栏';
+    transToggleBtn.title = '打开固定译文栏';
+    pdfXBar.hidden = true;
+    updatePdfTranslationLayout();
+  }
+
+  function toggleTransFocus(button) {
+    const focused = transCard.classList.toggle('is-focus');
+    button.textContent = focused ? '收窄' : '专注放大';
+    button.title = focused ? '恢复普通宽度' : '放大译文栏，集中阅读译文';
+    requestAnimationFrame(updatePdfTranslationLayout);
+  }
+
+  function transOpacityControl() {
+    const input = h('input', {
+      class: 'lit__trans-opacity-input',
+      type: 'range', min: '15', max: '100', step: '1', value: String(Math.round(transOpacity * 100)),
+      title: '调整译文背景透明度',
+      oninput: (event) => {
+        transOpacity = Number(event.currentTarget.value) / 100;
+        transCard.style.setProperty('--lit-trans-opacity', String(transOpacity));
+        config.set('research.lit.transOpacity', transOpacity);
+      },
+    });
+    return h('label', { class: 'lit__trans-opacity' }, '背景', input);
+  }
+
+  function toggleTransPanel() {
+    if (!current) return toast('先打开一篇文献', 'info');
+    if (!transCard.hasAttribute('hidden')) return closeTransPanel();
+    if (lastTransResult) return showTransResult(lastTransResult.srcText, lastTransResult.translation, lastTransResult.via);
+    transCard.textContent = '';
+    transCard.append(
+      h('div', { class: 'lit__trans-panel-head' },
+        h('strong', {}, '专注译文栏'),
+        transOpacityControl(),
         h('span', { style: { flex: 1 } }),
-        translation && h('button', {
+        h('button', { class: 'lit__anno-del', title: '关闭', onclick: closeTransPanel }, '×'),
+      ),
+      h('div', { class: 'lit__trans-empty' }, '选中文字后点旁边的「译」，或使用「翻译选中 / 圈译」。译文会固定显示在这里。'),
+    );
+    openTransPanel();
+    transToggleBtn.textContent = '译文已显示';
+    transToggleBtn.title = '译文已显示在阅读器右侧浮层';
+  }
+
+  function showTransResult(srcText, translation, via = '') {
+    const value = String(translation || '').trim();
+    const isError = /^(翻译失败|圈译失败|豆包翻译失败)/.test(value);
+    lastTransResult = { srcText: srcText || '', translation: value, via };
+    transCard.textContent = '';
+    transCard.classList.toggle('is-error', isError);
+    const focusBtn = h('button', { class: 'btn btn--sm', onclick: (e) => toggleTransFocus(e.currentTarget) }, '专注放大');
+    transCard.append(
+      h('div', { class: 'lit__trans-panel-head' },
+        h('strong', {}, isError ? '翻译出错' : '专注译文'),
+        via && h('span', { class: 'tag tag--good' }, viaLabel(via)),
+        transOpacityControl(),
+        h('span', { style: { flex: 1 } }),
+        focusBtn,
+        h('button', { class: 'lit__anno-del', title: '关闭', onclick: closeTransPanel }, '×'),
+      ),
+      h('div', { class: 'lit__trans-content' },
+        h('div', { class: 'lit__trans-label' }, isError ? '错误信息' : '译文'),
+        h('div', { class: 'lit__trans-dst' }, value || '没有收到译文'),
+        srcText && h('details', { class: 'lit__trans-source' },
+          h('summary', {}, '查看原文'),
+          h('div', { class: 'lit__trans-src' }, srcText),
+        ),
+      ),
+      h('div', { class: 'lit__trans-actions' },
+        !isError && value && h('button', {
           class: 'btn btn--sm',
-          onclick: async () => { await window.toolbox.clipboard.write(translation); toast('译文已复制', 'good'); },
+          onclick: async () => { await window.toolbox.clipboard.write(value); toast('译文已复制', 'good'); },
         }, '复制译文'),
-        translation && h('button', {
+        !isError && value && h('button', {
           class: 'btn btn--sm',
           onclick: async () => {
             annoQuote.value = srcText || '';
-            annoNote.value = `【译文】${translation}`;
+            annoNote.value = `【译文】${value}`;
+            closeTransPanel();
+            chatPanel.setAttribute('hidden', '');
             annoPanel.removeAttribute('hidden');
             renderAnnos();
             toast('已填进批注栏，补一句想法再点「记下」', 'info');
           },
         }, '存为批注'),
-        h('button', { class: 'lit__anno-del', title: '关闭', onclick: () => transCard.setAttribute('hidden', '') }, '×'),
       ),
-      srcText && h('div', { class: 'lit__trans-src faint' }, srcText),
-      translation && h('div', { class: 'lit__trans-dst' }, translation),
     );
+    openTransPanel();
   }
 
   function showTransBusy(text) {
     transCard.textContent = '';
-    transCard.removeAttribute('hidden');
-    transCard.appendChild(h('div', { class: 'lit__trans-head' },
-      h('span', { class: 'spinner' }), ` ${text}`,
-      h('span', { style: { flex: 1 } }),
-      h('button', { class: 'lit__anno-del', title: '关闭', onclick: () => transCard.setAttribute('hidden', '') }, '×'),
-    ));
+    transCard.classList.remove('is-error');
+    transCard.append(
+      h('div', { class: 'lit__trans-panel-head' },
+        h('strong', {}, '正在翻译'),
+        h('span', { style: { flex: 1 } }),
+        h('button', { class: 'lit__anno-del', title: '关闭', onclick: closeTransPanel }, '×'),
+      ),
+      h('div', { class: 'lit__trans-busy' }, h('span', { class: 'spinner' }), h('span', {}, text)),
+    );
+    openTransPanel();
   }
 
-  /** 记住最近一次非空选区：点「划词」按钮那一下会把选区塌掉，必须提前存 */
+  function normalizeSelection(text) {
+    return String(text || '')
+      .replace(/([A-Za-z])-\s*\n\s*([a-z])/g, '$1$2')
+      .replace(/[ \t]*\n[ \t]*/g, ' ')
+      .replace(/\s{2,}/g, ' ')
+      .trim();
+  }
+
+  function selectionInsideViewer(selection) {
+    if (!selection?.rangeCount) return false;
+    const range = selection.getRangeAt(0);
+    const node = range.commonAncestorContainer.nodeType === Node.TEXT_NODE
+      ? range.commonAncestorContainer.parentElement
+      : range.commonAncestorContainer;
+    return Boolean(node && viewerEl.contains(node));
+  }
+
+  function hideSelectionAction() {
+    selectionAction.setAttribute('hidden', '');
+  }
+
+  function updateSelectionAction() {
+    const selection = window.getSelection();
+    const selected = normalizeSelection(selection?.toString());
+    if (!selected || !selectionInsideViewer(selection)) return hideSelectionAction();
+    lastSelection = selected;
+    try {
+      const rect = selection.getRangeAt(0).getBoundingClientRect();
+      const box = viewerEl.getBoundingClientRect();
+      selectionAction.style.left = `${Math.max(8, Math.min(box.width - 44, rect.right - box.left + 8))}px`;
+      selectionAction.style.top = `${Math.max(8, Math.min(box.height - 38, rect.top - box.top - 4))}px`;
+      selectionAction.removeAttribute('hidden');
+    } catch {
+      hideSelectionAction();
+    }
+  }
+
+  /** 记住最近一次非空选区：点按钮会让选区塌掉，必须提前存。 */
   let lastSelection = '';
   document.addEventListener('selectionchange', () => {
-    const s = String(window.getSelection()?.toString() || '').trim();
-    if (s) lastSelection = s;
+    const selection = window.getSelection();
+    const selected = normalizeSelection(selection?.toString());
+    if (selected && selectionInsideViewer(selection)) lastSelection = selected;
+  });
+  viewerEl.addEventListener('mouseup', () => setTimeout(updateSelectionAction, 0));
+  viewerEl.addEventListener('scroll', hideSelectionAction, true);
+  viewerEl.addEventListener('contextmenu', (event) => {
+    if (!pdfDoc || snipping) return;
+    event.preventDefault();
+    startSnip();
+  });
+
+  function syncPdfXSlider() {
+    if (!pdfScrollEl) return;
+    const max = Math.max(0, pdfScrollEl.scrollWidth - pdfScrollEl.clientWidth);
+    pdfXSlider.max = String(Math.round(max));
+    pdfXSlider.value = String(Math.round(pdfScrollEl.scrollLeft));
+    pdfXSlider.disabled = max <= 0;
+    pdfXValue.textContent = max > 0 ? `${Math.round((pdfScrollEl.scrollLeft / max) * 100)}%` : '0%';
+  }
+
+  function updatePdfTranslationLayout() {
+    if (!pdfScrollEl || !pdfPagesWrap) return;
+    const open = !transCard.hasAttribute('hidden');
+    if (!open) {
+      pdfPagesWrap.style.minWidth = '';
+      pdfPagesWrap.style.alignItems = '';
+      pdfScrollEl.scrollLeft = 0;
+    } else {
+      const extra = Math.min(transCard.offsetWidth || 390, Math.round(viewerEl.clientWidth * 0.55));
+      pdfPagesWrap.style.minWidth = `${Math.max(viewerEl.clientWidth, viewerEl.clientWidth + extra)}px`;
+      pdfPagesWrap.style.alignItems = 'flex-start';
+    }
+    requestAnimationFrame(syncPdfXSlider);
+  }
+
+  pdfXSlider.addEventListener('input', () => {
+    if (!pdfScrollEl) return;
+    pdfScrollEl.scrollLeft = Number(pdfXSlider.value) || 0;
+    syncPdfXSlider();
   });
 
   /** 双击翻译：文本阅读器里双击单词/短语直接翻。浏览器双击自动选中，直接取选区 */
   viewerEl.addEventListener('dblclick', async () => {
     if (!current) return;
-    if (pdfDoc) return; // PDF 画布没有文本层，双击选不中，圈译干这个
-    const word = String(window.getSelection()?.toString() || '').trim();
+    const word = normalizeSelection(window.getSelection()?.toString());
     if (!word || word.length > 120) return; // 不是点词，是整段拖选，走「划词」按钮
     if (translating) return;
     translating = true;
     const short = word.length > 24 ? `${word.slice(0, 24)}…` : word;
     showTransBusy(`翻译「${short}」…`);
     try {
-      const result = await translateSmart(word);
+      const result = isSingleWord(word) ? await translateWordFast(word) : await translateSmart(word);
       if (!result.ok) return showTransResult(word, `翻译失败：${result.error}`);
-      showTransResult(word, result.translation);
+      showTransResult(word, result.translation, result.via);
+      toast(`「${short}」的译文已显示在阅读器右侧`, 'good');
     } catch (err) {
       showTransResult(word, `翻译失败：${err.message}`);
     } finally {
@@ -401,21 +614,24 @@ export function createLiterature(root, ctx) {
     }
   });
 
-  /** 划词翻译：文本阅读器里选中的一段（PDF 没文本层，用圈译） */
+  /** 划词翻译：TXT/MD/PDF 共用；PDF 在指针模式下由文本层提供原生选区。 */
   async function translateSelection() {
     if (translating || !current) return;
-    const selected = String(window.getSelection()?.toString() || '').trim() || lastSelection;
+    const selection = window.getSelection();
+    const live = selectionInsideViewer(selection) ? normalizeSelection(selection?.toString()) : '';
+    const selected = live || lastSelection;
     if (!selected) {
-      toast(pdfDoc ? 'PDF 选不了字，用「圈译」圈住要翻的内容' : '先在左边原文里选中一段文字', 'info');
+      toast(pdfDoc ? '先切到「➤」指针模式，再拖选文字；扫描版 PDF 请用圈译' : '先在原文里拖选或双击文字', 'info');
       return;
     }
+    hideSelectionAction();
     translating = true;
     showTransBusy(`正在翻译（${selected.length} 字）…`);
     try {
-      const result = await translateSmart(selected);
+      const result = isSingleWord(selected) ? await translateWordFast(selected) : await translateSmart(selected);
       if (!result.ok) return showTransResult(selected, `翻译失败：${result.error}`);
-      showTransResult(selected, result.translation);
-      toast(`翻译好了（走${result.via === 'ai' ? 'AI 接口' : '有道'}），译文在右下角浮卡`, 'good');
+      showTransResult(selected, result.translation, result.via);
+      toast(`翻译好了（${viaLabel(result.via)}），译文在阅读器右侧`, 'good');
     } catch (err) {
       showTransResult(selected, `翻译失败：${err.message}`);
     } finally {
@@ -512,8 +728,8 @@ export function createLiterature(root, ctx) {
           // OCR 原文还在的话也亮出来，方便看是识别问题还是翻译问题
           return showTransResult(srcText, `翻译失败：${tr.error}`);
         }
-        showTransResult(srcText, tr.translation + (ocrErrs.length ? `\n（${ocrErrs.join('；')}）` : ''));
-        toast(`翻译好了（走${tr.via === 'ai' ? 'AI 接口' : '有道'}），原文+译文都在右下角浮卡`, 'good');
+        showTransResult(srcText, tr.translation + (ocrErrs.length ? `\n（${ocrErrs.join('；')}）` : ''), tr.via);
+        toast(`翻译好了（${viaLabel(tr.via)}）`, 'good');
       } catch (err) {
         showTransResult(null, `圈译失败：${err.message}`);
       }
@@ -527,106 +743,204 @@ export function createLiterature(root, ctx) {
     viewerEl.appendChild(overlay);
   }
 
-  /** 对照翻译：TXT/MD 按段落原文/译文上下排，缓存到 config。
-   *  有道免费配额约每分钟 5 条新翻译，所以把多段打包成 ≤850 字的批
-   *  （有道保留换行结构），按批请求再按行拆回去；拆不齐的批退回逐段翻。 */
-  function paragraphs() {
-    return String(rawText || '').split(/\n+/).map((p) => p.trim()).filter(Boolean).slice(0, 60);
+  async function paragraphs() {
+    if (rawText != null) {
+      const all = String(rawText).split(/\n+/).map((source) => source.trim()).filter(Boolean);
+      return { items: all.slice(0, 180).map((source) => ({ source })), truncated: all.length > 180 };
+    }
+    if (!pdfDoc) return { items: [], truncated: false };
+    const items = [];
+    let chars = 0;
+    let truncated = false;
+    for (let pageNo = 1; pageNo <= pdfDoc.numPages; pageNo += 1) {
+      const page = await pdfDoc.getPage(pageNo);
+      const content = await page.getTextContent();
+      let line = '';
+      for (const item of content.items) {
+        const value = String(item.str || '').trim();
+        if (value) line += `${line ? ' ' : ''}${value}`;
+        if ((item.hasEOL || line.length >= 700) && line) {
+          items.push({ source: line, page: pageNo });
+          chars += line.length;
+          line = '';
+        }
+      }
+      if (line) {
+        items.push({ source: line, page: pageNo });
+        chars += line.length;
+      }
+      if (items.length >= 220 || chars >= 60000) {
+        truncated = pageNo < pdfDoc.numPages;
+        break;
+      }
+    }
+    return { items, truncated };
   }
 
   function transCacheKey() {
-    return `research.litTrans.${current.file}`;
+    return `research.litTransV2.${current.file}`;
   }
 
-  function makeParaBatches(paras, pendingIdx) {
+  function makeParaBatches(items, pendingIdx) {
     const batches = [];
     let cur = [];
     let chars = 0;
     for (const i of pendingIdx) {
-      if (cur.length && (chars + paras[i].length > 850 || cur.length >= 6)) {
+      if (cur.length && (chars + items[i].source.length > 5000 || cur.length >= 8)) {
         batches.push(cur);
         cur = [];
         chars = 0;
       }
       cur.push(i);
-      chars += paras[i].length;
+      chars += items[i].source.length;
     }
     if (cur.length) batches.push(cur);
     return batches;
   }
 
-  async function toggleBilingual() {
-    if (!current || !rawText || translating) return;
-    bilingual = !bilingual;
-    bilingBtn.classList.toggle('is-on', bilingual);
-    if (!bilingual) return renderTextPlain();
+  function parseBatchTranslations(text) {
+    const cleaned = String(text || '').trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '');
+    const start = cleaned.indexOf('{');
+    const end = cleaned.lastIndexOf('}');
+    if (start < 0 || end <= start) return null;
+    try {
+      const parsed = JSON.parse(cleaned.slice(start, end + 1));
+      if (!Array.isArray(parsed.items)) return null;
+      return new Map(parsed.items.map((item) => [Number(item.id), cleanTranslation(item.translation)]));
+    } catch {
+      return null;
+    }
+  }
 
-    const paras = paragraphs();
+  async function translateBatch(items, batch) {
+    const payload = batch.map((id) => ({ id, text: items[id].source }));
+    const to = targetLang(payload.map((item) => item.text).join('\n'));
+    const result = await window.toolbox.ai.translate({
+      messages: [
+        { role: 'system', content: '你是专业学术翻译引擎。保持术语、公式、引用编号准确。严格输出 JSON，不要 markdown。' },
+        {
+          role: 'user',
+          content: `把 input 中每条 text 翻译成${to}。id 必须原样返回，不能合并、遗漏或新增。输出格式：{"items":[{"id":0,"translation":"译文"}]}\ninput=${JSON.stringify(payload)}`,
+        },
+      ],
+      temperature: 0.1,
+      timeout: 120000,
+    });
+    if (!result.ok) throw new Error(result.error);
+    const parsed = parseBatchTranslations(result.text);
+    if (!parsed || batch.some((id) => !parsed.get(id))) throw new Error('豆包没有按段落返回完整 JSON');
+    return parsed;
+  }
+
+  function closeBilingual() {
+    bilingualRunId += 1;
+    bilingual = false;
+    bilingualPanel?.remove();
+    bilingualPanel = null;
+    bilingBtn.classList.remove('is-on');
+    bilingBtn.textContent = '一键对照';
+  }
+
+  async function toggleBilingual() {
+    if (!current) return;
+    if (bilingual) return closeBilingual();
+    if (!config.get('research.translation.hasKey', false) || !config.get('research.translation.model', '')) {
+      toast('先在「设置 → 豆包翻译」保存 API Key 和模型/接入点，已为你打开设置', 'info', 6000);
+      ctx.goto('settings');
+      return;
+    }
+    const runId = ++bilingualRunId;
+    bilingual = true;
+    bilingBtn.classList.add('is-on');
+    bilingBtn.textContent = '准备对照…';
+    const { items, truncated } = await paragraphs();
+    if (runId !== bilingualRunId) return;
+    if (!items.length) {
+      closeBilingual();
+      return toast('这篇 PDF 没有可选文本，可能是扫描版；请使用圈译', 'bad', 5000);
+    }
+
     const cache = config.get(transCacheKey()) || {};
-    viewerEl.textContent = '';
     const wrap = h('div', { class: 'lit__biling' });
-    viewerEl.appendChild(wrap);
-    const cells = paras.map((p, i) => {
+    bilingualPanel = h('div', { class: 'lit__biling-panel' },
+      h('div', { class: 'lit__biling-head' },
+        h('strong', {}, '豆包全文对照'),
+        h('span', { class: 'faint' }, truncated ? '文献较长，先展示前 6 万字' : `${items.length} 段`),
+        h('span', { style: { flex: 1 } }),
+        h('button', { class: 'btn btn--sm', onclick: closeBilingual }, '返回原文'),
+      ),
+      wrap,
+    );
+    viewerEl.appendChild(bilingualPanel);
+    const cells = items.map((item, i) => {
+      const cached = cache[i];
+      const valid = cached && cached.source === item.source && cached.translation;
       const cell = h('div', { class: 'lit__biling-item' },
-        h('div', { class: 'lit__biling-src' }, p),
-        h('div', { class: 'lit__biling-dst faint' }, cache[i] || '（待翻译）'),
+        h('div', { class: 'lit__biling-meta faint' }, item.page ? `第 ${item.page} 页` : `第 ${i + 1} 段`),
+        h('div', { class: 'lit__biling-cols' },
+          h('section', { class: 'lit__biling-col lit__biling-col--src' },
+            h('div', { class: 'lit__biling-col-label' }, '原文'),
+            h('div', { class: 'lit__biling-src' }, item.source),
+          ),
+          h('section', { class: 'lit__biling-col lit__biling-col--dst' },
+            h('div', { class: 'lit__biling-col-label' }, '译文'),
+            h('div', { class: 'lit__biling-dst' }, valid ? cached.translation : '等待翻译…'),
+          ),
+        ),
       );
       wrap.appendChild(cell);
       return cell;
     });
 
-    // 以前失败的条目不算已翻译，重开时自动重试
-    const pendingIdx = paras.map((_, i) => i).filter((i) => !cache[i] || String(cache[i]).startsWith('（失败'));
-    if (!pendingIdx.length) return;
-    translating = true;
-    const batches = makeParaBatches(paras, pendingIdx);
+    const pendingIdx = items.map((_, i) => i)
+      .filter((i) => !cache[i] || cache[i].source !== items[i].source || !cache[i].translation);
+    if (!pendingIdx.length) {
+      bilingBtn.textContent = '一键对照';
+      return;
+    }
+    bilingualTranslating = true;
+    const batches = makeParaBatches(items, pendingIdx);
     let done = 0;
     try {
       for (const batch of batches) {
-        if (!bilingual || current == null) break; // 中途切走了
-        for (const i of batch) cells[i].querySelector('.lit__biling-dst').textContent = '翻译中…';
-        let ok = false;
+        if (!bilingual || runId !== bilingualRunId || current == null) break;
+        for (const i of batch) cells[i].querySelector('.lit__biling-dst').textContent = '豆包翻译中…';
         try {
-          const result = await lit.translate(batch.map((i) => paras[i]).join('\n'));
-          if (result.ok) {
-            const lines = result.translation.split('\n');
-            if (lines.length === batch.length) {
-              batch.forEach((i, k) => { cache[i] = lines[k].trim(); cells[i].querySelector('.lit__biling-dst').textContent = lines[k].trim(); });
-              ok = true;
-            }
-          } else if (result.error) {
-            toast(result.error, 'bad');
+          const translations = await translateBatch(items, batch);
+          for (const i of batch) {
+            cache[i] = { source: items[i].source, translation: translations.get(i), via: 'doubao' };
+            cells[i].querySelector('.lit__biling-dst').textContent = cache[i].translation;
           }
-        } catch { /* 落到逐段兜底 */ }
-        if (!ok) {
-          // 行拆不齐（模型偶发合并/拆分）：逐段兜底
+        } catch (batchErr) {
           for (const i of batch) {
             try {
-              const one = await lit.translate(paras[i]);
-              cache[i] = one.ok ? one.translation : `（失败：${one.error}）`;
+              const one = await translateSmart(items[i].source);
+              cache[i] = {
+                source: items[i].source,
+                translation: one.ok ? one.translation : `翻译失败：${one.error}`,
+                via: one.via || 'error',
+              };
             } catch (err) {
-              cache[i] = `（失败：${err.message}）`;
+              cache[i] = { source: items[i].source, translation: `翻译失败：${err.message}`, via: 'error' };
             }
-            cells[i].querySelector('.lit__biling-dst').textContent = cache[i];
-            await new Promise((r) => setTimeout(r, 1200));
+            cells[i].querySelector('.lit__biling-dst').textContent = cache[i].translation;
           }
+          toast(`豆包批量翻译失败，已逐段降级：${batchErr.message}`, 'info', 5000);
         }
         done += batch.length;
-        bilingBtn.textContent = `对照 ${done}/${pendingIdx.length}`;
-        await config.set(transCacheKey(), cache); // 边翻边存，中断不丢
-        if (batches.indexOf(batch) < batches.length - 1) {
-          await new Promise((r) => setTimeout(r, 13000)); // 免费配额 ~5 条新内容/分钟
-        }
+        bilingBtn.textContent = `对照 ${Math.min(done, pendingIdx.length)}/${pendingIdx.length}`;
+        await config.set(transCacheKey(), cache);
       }
     } finally {
-      translating = false;
-      bilingBtn.textContent = '对照';
+      bilingualTranslating = false;
+      if (runId === bilingualRunId) bilingBtn.textContent = '一键对照';
     }
   }
 
   function renderTextPlain() {
     viewerEl.textContent = '';
     viewerEl.appendChild(h('div', { class: 'lit__text' }, rawText));
+    viewerEl.appendChild(selectionAction);
     zoom(0);
   }
 
@@ -719,6 +1033,8 @@ export function createLiterature(root, ctx) {
     viewerEl.style.position = 'relative';
     viewerEl.appendChild(scrollEl);
     pdfScrollEl = scrollEl;
+    scrollEl.addEventListener('scroll', syncPdfXSlider, { passive: true });
+    updatePdfTranslationLayout();
     // 窗口/面板尺寸变化后按新宽度重新适配，页面永远保持居中
     if (!pdfResizeHandler) {
       pdfResizeHandler = () => { if (pdfDoc) schedulePdfRerender(true); };
@@ -732,6 +1048,7 @@ export function createLiterature(root, ctx) {
       const vp = (await pdfDoc.getPage(n)).getViewport({ scale: pdfRenderedScale });
       const pageEl = h('div', { class: 'lit__page', dataset: { page: String(n) } },
         h('canvas', {}),
+        h('div', { class: 'textLayer lit__text-layer' }),
         h('div', { class: 'lit__page-no faint' }, String(n)),
       );
       pageEl.style.width = `${Math.round(vp.width)}px`;
@@ -748,7 +1065,9 @@ export function createLiterature(root, ctx) {
       }
     }, { root: scrollEl, rootMargin: '600px 0px' });
     for (const el of Object.values(pdfPageEls)) pdfObserver.observe(el);
+    requestAnimationFrame(syncPdfXSlider);
 
+    viewerEl.appendChild(selectionAction);
     applyCursorMode();
   }
 
@@ -758,14 +1077,25 @@ export function createLiterature(root, ctx) {
     try {
       const page = await pdfDoc.getPage(n);
       const dpr = window.devicePixelRatio || 1;
-      const viewport = page.getViewport({ scale: pdfRenderedScale * dpr });
-      const canvas = pdfPageEls[n]?.querySelector('canvas');
-      if (!canvas) return;
-      canvas.width = Math.round(viewport.width);
-      canvas.height = Math.round(viewport.height);
-      canvas.style.width = `${Math.round(viewport.width / dpr)}px`;
-      canvas.style.height = `${Math.round(viewport.height / dpr)}px`;
-      await page.render({ canvasContext: canvas.getContext('2d'), viewport }).promise;
+      const cssViewport = page.getViewport({ scale: pdfRenderedScale });
+      const renderViewport = page.getViewport({ scale: pdfRenderedScale * dpr });
+      const pageEl = pdfPageEls[n];
+      const canvas = pageEl?.querySelector('canvas');
+      const textLayerEl = pageEl?.querySelector('.lit__text-layer');
+      if (!canvas || !textLayerEl) return;
+      canvas.width = Math.round(renderViewport.width);
+      canvas.height = Math.round(renderViewport.height);
+      canvas.style.width = `${Math.round(cssViewport.width)}px`;
+      canvas.style.height = `${Math.round(cssViewport.height)}px`;
+      await page.render({ canvasContext: canvas.getContext('2d'), viewport: renderViewport }).promise;
+      textLayerEl.textContent = '';
+      const pdfjsLib = await loadPdfJs();
+      const textLayer = new pdfjsLib.TextLayer({
+        textContentSource: await page.getTextContent(),
+        container: textLayerEl,
+        viewport: cssViewport,
+      });
+      await textLayer.render();
       pdfRendered.add(n);
     } finally {
       pdfRendering.delete(n);
@@ -797,6 +1127,7 @@ export function createLiterature(root, ctx) {
         canvas.width = 0; // 清掉旧内容，防拉伸模糊
         canvas.style.width = '100%';
         canvas.style.height = '100%';
+        el.querySelector('.lit__text-layer').textContent = '';
       }
       pdfRendered.clear();
       pdfRenderedScale = pdfViewScale;
@@ -807,6 +1138,7 @@ export function createLiterature(root, ctx) {
         const r = el.getBoundingClientRect();
         if (r.bottom > box.top - 600 && r.top < box.bottom + 600) renderPdfPage(Number(el.dataset.page));
       }
+      requestAnimationFrame(syncPdfXSlider);
     }, 260);
   }
 
@@ -877,6 +1209,9 @@ export function createLiterature(root, ctx) {
   }
 
   function viewerIdle() {
+    closeBilingual();
+    closeTransPanel();
+    lastTransResult = null;
     viewerBar.setAttribute('hidden', '');
     annoPanel.setAttribute('hidden', '');
     resetChat();
@@ -892,9 +1227,9 @@ export function createLiterature(root, ctx) {
   async function openReader(item) {
     current = item;
     rawText = null;
-    bilingual = false;
-    bilingBtn.textContent = '对照';
-    bilingBtn.classList.remove('is-on');
+    closeBilingual();
+    lastSelection = '';
+    hideSelectionAction();
     // 释放上一个 PDF
     if (pdfObserver) { pdfObserver.disconnect(); pdfObserver = null; }
     if (pdfLoadingTask) { try { pdfLoadingTask.destroy(); } catch { /* 已销毁 */ } pdfLoadingTask = null; }
@@ -905,7 +1240,8 @@ export function createLiterature(root, ctx) {
     pdfRendered = new Set();
     pdfRendering = new Set();
     panOverlay = null; // viewerEl 马上要清空，旧拖拽层引用作废
-    transCard.setAttribute('hidden', '');
+    closeTransPanel();
+    lastTransResult = null;
     zoomIndex = 2;
     zoomLabel.textContent = '100%';
     viewerBar.removeAttribute('hidden');
@@ -917,11 +1253,13 @@ export function createLiterature(root, ctx) {
     bilingBtn.setAttribute('hidden', '');
     handBtn.setAttribute('hidden', '');
     selectBtn.setAttribute('hidden', '');
+    selBtn.setAttribute('hidden', '');
 
     if (item.format === 'pdf') {
       handBtn.removeAttribute('hidden');
       selectBtn.removeAttribute('hidden');
-      selBtn.setAttribute('hidden', ''); // PDF 没有文本层，划词用圈译替代
+      selBtn.removeAttribute('hidden');
+      bilingBtn.removeAttribute('hidden');
       viewerEl.style.position = 'relative';
       try {
         await openPdfJs(item);
@@ -936,6 +1274,7 @@ export function createLiterature(root, ctx) {
       if (!result.ok) return viewerFail(result.error);
       rawText = result.content;
       bilingBtn.removeAttribute('hidden');
+      selBtn.removeAttribute('hidden');
       renderTextPlain();
       return;
     }
@@ -999,8 +1338,19 @@ export function createLiterature(root, ctx) {
   async function fixNames(btn) {
     btn.disabled = true;
     try {
-      const renames = await lit.fixNames();
-      if (!renames.length) return toast('没有需要整理的编号命名 PDF', 'info');
+      const result = await lit.fixNames();
+      const renames = Array.isArray(result) ? result : (result?.renames || []);
+      if (!renames.length) {
+        const checked = Number(result?.checked || 0);
+        const skipped = Number(result?.skipped?.length || 0);
+        return toast(
+          checked && skipped
+            ? `检查了 ${checked} 个编号 PDF，但暂时读不出可用标题`
+            : '没有需要整理的编号命名 PDF',
+          'info',
+          5000,
+        );
+      }
       const metaMap = meta();
       for (const r of renames) {
         if (metaMap[r.from]) {
@@ -1010,7 +1360,8 @@ export function createLiterature(root, ctx) {
       }
       await config.set('research.litMeta', metaMap);
       renderList();
-      toast(`已重命名 ${renames.length} 篇：${renames[0].title || renames[0].to}${renames.length > 1 ? ' 等' : ''}`, 'good', 5000);
+      const skipped = Number(result?.skipped?.length || 0);
+      toast(`已重命名 ${renames.length} 篇：${renames[0].title || renames[0].to}${renames.length > 1 ? ' 等' : ''}${skipped ? `；${skipped} 篇暂时跳过` : ''}`, 'good', 5000);
     } catch (err) {
       toast(`整理失败：${err.message}`, 'bad');
     } finally {
@@ -1033,9 +1384,23 @@ export function createLiterature(root, ctx) {
   }
 
   async function renderList() {
-    files = await lit.list();
+    const all = await lit.list();
+    // 文献库里勾了文献，这里就只显示那批（工作集）；没勾就显示全部
+    const picked = new Set(config.get('research.libChecked') || []);
+    const inLibrary = picked.size ? all.filter((f) => picked.has(f.file)) : all;
+    files = inLibrary.length ? inLibrary : all;
+    const filtered = picked.size && inLibrary.length;
     const metaMap = meta();
     listEl.textContent = '';
+    if (filtered) {
+      listEl.appendChild(h('div', { class: 'lit__workset faint' },
+        `工作集：文献库里勾选的 ${files.length} 篇`,
+        h('button', {
+          class: 'btn btn--sm btn--ghost',
+          onclick: async () => { await config.set('research.libChecked', []); renderList(); },
+        }, '显示全部'),
+      ));
+    }
     if (!files.length) {
       listEl.appendChild(h('div', { class: 'empty' },
         h('span', { class: 'empty__icon' }, '📚'),
@@ -1073,6 +1438,269 @@ export function createLiterature(root, ctx) {
           ),
         ),
       );
+    }
+  }
+
+  function paperMeta(paper) {
+    const authors = (paper.authors || []).slice(0, 2).join('、');
+    const bits = [paper.year, paper.venue, authors, `被引 ${paper.citedBy || 0}`].filter(Boolean);
+    return bits.join(' · ') || paper.source || '论文元数据';
+  }
+
+  function syncLibraryActions() {
+    const selected = libraryCandidates.filter((item) => item.selected).length;
+    batchDownloadBtn.disabled = !selected;
+    batchDownloadBtn.textContent = selected ? `下载已选 ${selected} 篇` : '下载已选论文';
+  }
+
+  function renderLibraryCandidates() {
+    libraryList.textContent = '';
+    if (!libraryCandidates.length) {
+      libraryList.appendChild(h('div', { class: 'faint lit__library-empty' }, '打开已登录的检索结果页后，点「扫描当前列表」。'));
+      syncLibraryActions();
+      return;
+    }
+    for (const paper of libraryCandidates) {
+      const check = h('input', {
+        type: 'checkbox',
+        checked: Boolean(paper.selected),
+        onchange: (event) => { paper.selected = event.currentTarget.checked; syncLibraryActions(); },
+      });
+      libraryList.appendChild(h('label', { class: 'lit__library-item' },
+        check,
+        h('span', { class: 'lit__library-item-main' },
+          h('strong', { class: 'lit__library-title' }, paper.title),
+          h('span', { class: 'lit__meta faint' }, paper.url),
+        ),
+      ));
+    }
+    syncLibraryActions();
+  }
+
+  async function openLibraryBrowser() {
+    const url = libraryUrlInput.value.trim();
+    if (!url) return toast('先填写知网或学校图书馆的检索结果页地址', 'info');
+    const result = await lit.openAccessBrowser(url);
+    if (!result?.ok) return toast(result?.error || '打开登录浏览器失败', 'bad');
+    libraryStatus.textContent = '浏览器已打开：登录并完成检索后，回到这里点「扫描当前列表」';
+  }
+
+  async function scanLibraryBrowser() {
+    scanLibraryBtn.disabled = true;
+    libraryStatus.textContent = '正在读取当前检索结果页…';
+    try {
+      const result = await lit.scanBrowserPage();
+      if (!result.ok) {
+        libraryStatus.textContent = result.error;
+        return;
+      }
+      libraryCandidates = (result.candidates || []).map((item) => ({ ...item, selected: false }));
+      libraryStatus.textContent = libraryCandidates.length
+        ? `当前页识别到 ${libraryCandidates.length} 篇，勾选后批量下载（最多 30 篇）`
+        : '没有识别到论文链接：请打开检索结果列表，不要停留在登录页或首页。';
+      renderLibraryCandidates();
+    } catch (err) {
+      libraryStatus.textContent = `扫描失败：${err.message}`;
+    } finally {
+      scanLibraryBtn.disabled = false;
+    }
+  }
+
+  async function downloadSelectedFromLibrary() {
+    const selected = libraryCandidates.filter((item) => item.selected);
+    if (!selected.length) return toast('先勾选要下载的论文', 'info');
+    batchDownloadBtn.disabled = true;
+    libraryStatus.textContent = `准备下载 ${selected.length} 篇…`;
+    try {
+      const result = await lit.downloadBatch(selected);
+      const completed = Number(result.completed || 0);
+      libraryStatus.textContent = result.ok
+        ? `批量下载完成：${completed}/${result.total} 篇已入库`
+        : `批量下载暂停：已完成 ${completed}/${result.total} 篇。请按提示处理后重新扫描。`;
+      if (completed) toast(`已自动入库 ${completed} 篇论文`, 'good', 5000);
+      if (!result.ok && result.results?.at(-1)?.error) showFetchNotice({ code: 'download-failed', error: result.results.at(-1).error });
+    } catch (err) {
+      libraryStatus.textContent = `批量下载失败：${err.message}`;
+    } finally {
+      syncLibraryActions();
+    }
+  }
+
+  async function importDownloaded(item) {
+    if (!item?.file) return;
+    const metaMap = meta();
+    metaMap[item.file] = {
+      note: '浏览器登录下载',
+      addedAt: new Date().toISOString(),
+    };
+    await config.set('research.litMeta', metaMap);
+    await renderList();
+    toast(`已自动导入：${item.file}`, 'good', 5000);
+  }
+
+  async function downloadCandidate(paper, button) {
+    button.disabled = true;
+    button.textContent = '获取中…';
+    try {
+      const result = await lit.downloadCandidate(paper);
+      if (result.ok) {
+        paper.downloadState = 'done';
+        paper.selected = false;
+        const metaMap = meta();
+        // 下载这一刻元数据就在手上，一并存进库，省得事后手填或再查一遍
+        metaMap[result.file] = { ...paperToMeta(paper), note: `方向检索 · ${result.source}`, addedAt: new Date().toISOString() };
+        await config.set('research.litMeta', metaMap);
+        await renderList();
+        toast(`已下载入库：${result.title}`, 'good', 5000);
+      } else if (result.url) {
+        paper.downloadState = 'failed';
+        showFetchNotice(result);
+        await lit.openAccessBrowser(result.url);
+      } else {
+        paper.downloadState = 'failed';
+        showFetchNotice(result);
+      }
+    } catch (err) {
+      toast(`获取失败：${err.message}`, 'bad');
+    } finally {
+      button.disabled = false;
+      button.textContent = paper.downloadState === 'done' ? '已入库' : paper.downloadState === 'failed' ? '重试下载' : paper.pdfUrl ? '下载 PDF' : '登录下载';
+      renderDiscovery();
+    }
+  }
+
+  function syncDiscoveryActions() {
+    const openCandidates = paperCandidates.filter((paper) => paper.pdfUrl && paper.downloadState !== 'done');
+    const selected = openCandidates.filter((paper) => paper.selected).length;
+    downloadOpenBtn.disabled = autoDownloadBusy || !openCandidates.length;
+    downloadOpenBtn.textContent = openCandidates.length ? `下载开放全文 ${openCandidates.length} 篇` : '下载开放全文';
+    downloadSelectedBtn.disabled = autoDownloadBusy || !selected;
+    downloadSelectedBtn.textContent = selected ? `下载已选 ${selected} 篇` : '下载已选';
+    selectOpenBtn.disabled = autoDownloadBusy || !openCandidates.length;
+  }
+
+  function renderDiscovery() {
+    discoveryList.textContent = '';
+    if (!paperCandidates.length) {
+      syncDiscoveryActions();
+      return;
+    }
+    syncDiscoveryActions();
+    discoveryList.appendChild(h('div', { class: 'lit__discovery-summary' },
+      h('strong', {}, `找到 ${paperCandidates.length} 篇候选`),
+      h('span', { class: 'faint' }, `${paperCandidates.filter((paper) => paper.pdfUrl && paper.downloadState !== 'done').length} 篇待自动下载；已按标题相关性筛选`),
+    ));
+    for (const paper of paperCandidates) {
+      const selectable = Boolean(paper.pdfUrl);
+      const select = h('input', {
+        type: 'checkbox',
+        class: 'lit__discovery-select',
+        checked: Boolean(paper.selected),
+        disabled: !selectable || autoDownloadBusy,
+        onchange: (event) => { paper.selected = event.currentTarget.checked; syncDiscoveryActions(); },
+      });
+      const downloadBtn = h('button', {
+        class: 'btn btn--sm btn--primary',
+        disabled: autoDownloadBusy,
+        onclick: (event) => downloadCandidate(paper, event.currentTarget),
+      }, paper.downloadState === 'done' ? '已入库' : paper.downloadState === 'failed' ? '重试下载' : paper.pdfUrl ? '下载 PDF' : '登录下载');
+      discoveryList.appendChild(h('article', { class: 'lit__discovery-item' },
+        h('div', { class: 'lit__discovery-head' },
+          select,
+          h('strong', { class: 'lit__discovery-title', title: paper.title }, paper.title),
+          h('span', { class: `tag ${paper.downloadState === 'done' ? 'tag--good' : paper.isOpenAccess ? 'tag--good' : 'tag--warn'}` }, paper.downloadState === 'done' ? '已入库' : paper.isOpenAccess ? '开放全文' : '需登录/机构权限'),
+        ),
+        h('div', { class: 'lit__meta faint' }, [paper.relevanceReason, paperMeta(paper)].filter(Boolean).join(' · ')),
+        paper.abstract && h('p', { class: 'lit__discovery-abstract' }, paper.abstract),
+        h('div', { class: 'lit__discovery-actions' },
+          downloadBtn,
+          paper.landingUrl && h('button', {
+            class: 'btn btn--sm btn--ghost',
+            title: '打开论文页面',
+            onclick: () => lit.openAccessBrowser(paper.landingUrl),
+          }, '打开页面'),
+          paper.doi && h('button', {
+            class: 'btn btn--sm btn--ghost',
+            title: '复制 DOI',
+            onclick: async () => { await window.toolbox.clipboard.write(`https://doi.org/${paper.doi}`); toast('DOI 已复制', 'good'); },
+          }, '复制 DOI'),
+        ),
+      ));
+    }
+  }
+
+  async function discoverByDirection() {
+    const direction = directionInput.value.trim();
+    if (!direction) return toast('先写一个研究方向，例如：多模态大模型的幻觉评测', 'info');
+    discoverBtn.disabled = true;
+    discoveryStatus.textContent = '正在 OpenAlex / Europe PMC 收集论文…';
+    paperCandidates = [];
+    renderDiscovery();
+    try {
+      const result = await lit.discover({
+        direction,
+        yearFrom: Number(yearFromInput.value),
+        yearTo: Number(yearToInput.value),
+        openAccessOnly: openOnlyInput.checked,
+        limit: 20,
+      });
+      if (!result.ok) {
+        discoveryStatus.textContent = result.error;
+        return;
+      }
+      paperCandidates = result.papers || [];
+      discoveryStatus.textContent = paperCandidates.length
+        ? `${result.sources.join(' + ')} · ${result.yearFrom}-${result.yearTo} · 已过滤标题低相关结果`
+        : '没有找到标题高度相关的论文。请减少泛词，改用 2-5 个核心主题词，或扩大年份范围。';
+      renderDiscovery();
+    } catch (err) {
+      discoveryStatus.textContent = `检索失败：${err.message}`;
+    } finally {
+      discoverBtn.disabled = false;
+    }
+  }
+
+  function selectOpenCandidates() {
+    const openCandidates = paperCandidates.filter((paper) => paper.pdfUrl && paper.downloadState !== 'done');
+    const allSelected = openCandidates.length > 0 && openCandidates.every((paper) => paper.selected);
+    for (const paper of openCandidates) paper.selected = !allSelected;
+    renderDiscovery();
+  }
+
+  async function downloadOpenCandidates(selectedOnly = false) {
+    if (autoDownloadBusy) return;
+    const candidates = paperCandidates.filter((paper) => paper.pdfUrl && paper.downloadState !== 'done' && (!selectedOnly || paper.selected));
+    if (!candidates.length) return toast(selectedOnly ? '先勾选开放全文论文' : '当前没有可自动下载的开放全文', 'info');
+    autoDownloadBusy = true;
+    syncDiscoveryActions();
+    discoveryStatus.textContent = `正在自动下载 ${candidates.length} 篇…`;
+    try {
+      const result = await lit.downloadCandidates(candidates);
+      const successes = new Map((result.results || []).filter((item) => item.ok).map((item) => [item.title, item]));
+      const metaMap = meta();
+      for (const paper of paperCandidates) {
+        const got = successes.get(paper.title);
+        if (!got) continue;
+        paper.downloadState = 'done';
+        paper.selected = false;
+        metaMap[got.file] = { ...paperToMeta(paper), note: `方向检索 · ${got.source}`, addedAt: new Date().toISOString() };
+      }
+      await config.set('research.litMeta', metaMap);
+      discoveryStatus.textContent = result.failed
+        ? `自动下载完成 ${result.completed}/${result.total} 篇，${result.failed} 篇需要打开论文页面处理。`
+        : `自动下载完成：${result.completed} 篇已入库。`;
+      if (result.completed) {
+        await renderList();
+        toast(`已自动入库 ${result.completed} 篇论文`, 'good', 5000);
+      }
+      const failed = (result.results || []).find((item) => !item.ok && item.url);
+      if (failed) showFetchNotice(failed);
+      renderDiscovery();
+    } catch (err) {
+      discoveryStatus.textContent = `自动下载失败：${err.message}`;
+    } finally {
+      autoDownloadBusy = false;
+      renderDiscovery();
     }
   }
 
@@ -1119,7 +1747,8 @@ export function createLiterature(root, ctx) {
         return;
       }
       const metaMap = meta();
-      metaMap[result.file] = { note: `自动下载自 ${result.source}`, addedAt: new Date().toISOString() };
+      // 这条路只拿得到标题，别的字段留给文献库的「自动识别」从 PDF 里抠
+      metaMap[result.file] = { title: result.title || '', note: `自动下载自 ${result.source}`, addedAt: new Date().toISOString() };
       await config.set('research.litMeta', metaMap);
       fetchInput.value = '';
       fetchStatus.textContent = '';
@@ -1143,6 +1772,79 @@ export function createLiterature(root, ctx) {
   const fetchBtn = h('button', { class: 'btn btn--sm btn--primary', onclick: () => doFetch() }, '查找下载');
   const fetchStatus = h('span', { class: 'faint lit__fetch-status' }, '');
 
+  const directionInput = h('textarea', {
+    class: 'field lit__direction-input',
+    rows: '2',
+    placeholder: '输入具体主题关键词，例如：多模态大模型 幻觉评测；建议 2-5 个核心词',
+    onkeydown: (event) => {
+      if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
+        event.preventDefault();
+        discoverByDirection();
+      }
+    },
+  });
+  const currentYear = new Date().getFullYear();
+  const yearFromInput = h('input', { class: 'field field--sm lit__year', type: 'number', min: '1900', max: '2100', value: String(currentYear - 3) });
+  const yearToInput = h('input', { class: 'field field--sm lit__year', type: 'number', min: '1900', max: '2100', value: String(currentYear) });
+  const openOnlyInput = h('input', { type: 'checkbox', checked: false });
+  const discoveryStatus = h('span', { class: 'faint lit__discovery-status' }, '按方向找论文，结果会保留在左侧');
+  const discoverBtn = h('button', { class: 'btn btn--sm btn--primary', onclick: discoverByDirection }, '找这个方向');
+  const selectOpenBtn = h('button', { class: 'btn btn--sm', onclick: selectOpenCandidates }, '全选开放全文');
+  const downloadSelectedBtn = h('button', { class: 'btn btn--sm btn--primary', disabled: true, onclick: () => downloadOpenCandidates(true) }, '下载已选');
+  const downloadOpenBtn = h('button', { class: 'btn btn--sm', disabled: true, onclick: () => downloadOpenCandidates(false) }, '下载开放全文');
+  const discoveryPanel = h('details', {
+    class: 'lit__discovery lit__collapsible',
+    open: Boolean(config.get('research.lit.discoveryOpen', false)),
+  },
+    h('summary', { class: 'lit__collapse-summary' },
+      h('strong', {}, '按研究方向发现'),
+      h('span', { class: 'faint' }, '展开检索、筛选和批量下载'),
+    ),
+    h('div', { class: 'lit__collapsible-body' },
+      h('div', { class: 'lit__discovery-titlebar' },
+        h('span', { class: 'faint' }, '元数据来自开放学术索引'),
+        h('div', { class: 'lit__discovery-title-actions' }, selectOpenBtn, downloadSelectedBtn, downloadOpenBtn),
+      ),
+      directionInput,
+      h('div', { class: 'lit__discovery-filters' },
+        h('span', { class: 'faint' }, '年份'), yearFromInput, h('span', { class: 'faint' }, '至'), yearToInput,
+        h('label', { class: 'lit__oa-label' }, openOnlyInput, '只看开放全文'),
+        discoverBtn,
+      ),
+      discoveryStatus,
+      discoveryList,
+    ),
+  );
+  discoveryPanel.addEventListener('toggle', () => config.set('research.lit.discoveryOpen', discoveryPanel.open));
+
+  const libraryUrlInput = h('input', {
+    class: 'field lit__library-url',
+    placeholder: '已登录的知网/学校图书馆检索结果页 URL',
+  });
+  const libraryStatus = h('span', { class: 'faint lit__library-status' }, '登录后扫描当前结果页，下载完成自动入库');
+  const openLibraryBtn = h('button', { class: 'btn btn--sm', onclick: openLibraryBrowser }, '打开登录页');
+  const scanLibraryBtn = h('button', { class: 'btn btn--sm', onclick: scanLibraryBrowser }, '扫描当前列表');
+  const batchDownloadBtn = h('button', { class: 'btn btn--sm btn--primary', disabled: true, onclick: downloadSelectedFromLibrary }, '下载已选论文');
+  const libraryPanel = h('details', {
+    class: 'lit__library lit__collapsible',
+    open: Boolean(config.get('research.lit.libraryOpen', false)),
+  },
+    h('summary', { class: 'lit__collapse-summary' },
+      h('strong', {}, '登录站点批量下载'),
+      h('span', { class: 'faint' }, '知网 / 学校图书馆 / 机构权限'),
+    ),
+    h('div', { class: 'lit__collapsible-body' },
+      h('div', { class: 'lit__library-titlebar' },
+        h('span', { class: 'faint' }, '只执行你当前会话有权限的下载'),
+      ),
+      h('div', { class: 'lit__library-open' }, libraryUrlInput, openLibraryBtn),
+      h('div', { class: 'lit__library-actions' }, scanLibraryBtn, batchDownloadBtn),
+      libraryStatus,
+      libraryList,
+    ),
+  );
+  libraryPanel.addEventListener('toggle', () => config.set('research.lit.libraryOpen', libraryPanel.open));
+
   const importBtn = h('button', { class: 'btn btn--primary', onclick: (e) => doImport(e.currentTarget) }, '导入文献');
   const fixBtn = h('button', {
     class: 'btn btn--sm',
@@ -1160,11 +1862,12 @@ export function createLiterature(root, ctx) {
       h('span', { class: 'faint lit__hint' }, '点「阅读」右侧直接看，不用开 WPS'),
     ),
     h('div', { class: 'lit__body' },
-      h('div', { class: 'lit__side' }, noticeEl, listEl),
+      h('div', { class: 'lit__side' }, discoveryPanel, libraryPanel, noticeEl, listEl),
       h('div', { class: 'lit__reader' },
         viewerBar,
-        h('div', { class: 'lit__reader-body' },
+      h('div', { class: 'lit__reader-body' },
           viewerEl,
+          pdfXBar,
           transCard,
           chatPanel,
           annoPanel,
@@ -1174,4 +1877,19 @@ export function createLiterature(root, ctx) {
   );
   viewerIdle();
   renderList();
+  lit.onDownloaded(importDownloaded);
+  lit.onBatchProgress((state) => {
+    if (state.state === 'opening') libraryStatus.textContent = `正在处理 ${state.index + 1}/${state.total}：${state.title}`;
+    if (state.state === 'paused') libraryStatus.textContent = `已暂停：${state.error || state.title}`;
+    if (state.state === 'failed') libraryStatus.textContent = `下载失败：${state.title}`;
+  });
+  lit.onAutoProgress((state) => {
+    if (state.state === 'opening') {
+      discoveryStatus.textContent = `正在下载 ${state.index + 1}/${state.total}：${state.title}`;
+    }
+    if (state.state === 'failed') {
+      const paper = paperCandidates.find((item) => item.title === state.title);
+      if (paper) paper.downloadState = 'failed';
+    }
+  });
 }

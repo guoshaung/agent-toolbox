@@ -7,7 +7,7 @@ import { h, toast } from '../../core/ui.js';
 export default {
   id: 'history',
   title: '记录',
-  icon: '🗂',
+  icon: 'archive',
   hint: '导出各 AI 工具的本地聊天记录，打包给另一个 AI 继续聊',
 
   create(root, ctx) {

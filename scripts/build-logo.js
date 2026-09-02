@@ -30,7 +30,7 @@ function spark(cx, cy, r, waist = 0.09) {
 }
 
 /** 芯片引脚。每边 2 根 —— 3 根在 32px 下会糊成一圈毛边 */
-function pins(bodyInset, { stick = 80, overlap = 34, thick = 54, spread = 132 } = {}) {
+function pins(bodyInset, { stick = 96, overlap = 36, thick = 60, spread = 150 } = {}) {
   const near = bodyInset;
   const far = 1024 - bodyInset;
   const len = stick + overlap;              // 露在外面的 + 埋进芯片体的
@@ -47,8 +47,8 @@ function pins(bodyInset, { stick = 80, overlap = 34, thick = 54, spread = 132 } 
 
 /** @param p.prefix 给 id 加前缀，防止内联进页面时和别的 SVG 撞 id */
 function build({ prefix = '', withBackground = true, palette = NEON,
-                 outlined = true, bodyInset = 262, sparkR = 190, glow = 0.6,
-                 stroke = 84 } = {}) {
+                 outlined = true, bodyInset = 224, sparkR = 236, glow = 0.6,
+                 stroke = 92 } = {}) {
   const id = (name) => `${prefix}${name}`;
   const bodySize = 1024 - bodyInset * 2;
   const body = outlined

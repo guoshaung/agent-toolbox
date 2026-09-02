@@ -43,24 +43,42 @@ function createDigest(host, ctx) {
   const items = new Map(); // link -> item（含来源名）
   let activeFeed = 'all';
   let view = 'unread'; // unread | read
+  let query = '';
   let reader = null;
   let thumbObserver = null;
-
   const readMap = config.get('focus.newsRead') || {};
 
   const listEl = h('div', { class: 'news__list' });
   const chipsEl = h('div', { class: 'news__chips' });
   const statusEl = h('span', { class: 'faint' }, '');
-  const readerHost = h('div', { class: 'research__views', hidden: true });
-  const readerBar = h('div', { class: 'bar research__viewbar', hidden: true },
-    h('button', { class: 'btn btn--icon', title: '返回列表', onclick: () => closeReader() }, '‹'),
-    h('span', { class: 'faint news__reader-title' }),
+  const countEl = h('span', { class: 'news__count mono' }, '0');
+  const searchEl = h('input', {
+    class: 'field news__search',
+    type: 'search',
+    placeholder: '搜索标题或来源…',
+    oninput: () => { query = searchEl.value.trim().toLowerCase(); render(); },
+  });
+  const readerEmpty = h('div', { class: 'news__reader-empty' },
+    h('div', { class: 'news__reader-empty-mark' }, '↗'),
+    h('strong', {}, '选择一条新闻开始阅读'),
+    h('span', {}, '文章会在右侧打开，列表仍然保留。'),
+  );
+  const readerHost = h('div', { class: 'research__views news__reader-webview', hidden: true });
+  const readerTitle = h('strong', { class: 'news__reader-title' });
+  const readerSource = h('span', { class: 'faint news__reader-source' });
+  const readerBar = h('div', { class: 'news__reader-bar', hidden: true },
+    h('button', { class: 'btn btn--icon', title: '清空阅读区', onclick: () => closeReader() }, '‹'),
+    h('div', { class: 'news__reader-heading' },
+      readerTitle,
+      readerSource,
+    ),
     h('span', { style: { flex: 1 } }),
     h('button', {
       class: 'btn btn--sm btn--ghost', title: '用系统浏览器打开',
       onclick: () => readerUrl && window.toolbox.shell.openExternal(readerUrl),
     }, '↗'),
   );
+  const readerPane = h('section', { class: 'news__reader' }, readerEmpty, readerBar, readerHost);
   let readerUrl = null;
 
   // 缩略图懒加载：进视口才向主进程要图（代取 + 缩放 + 磁盘缓存都在那边）
@@ -94,32 +112,49 @@ function createDigest(host, ctx) {
     }
   }
 
+  function markUnread(item, event) {
+    event.stopPropagation();
+    delete readMap[item.link];
+    persistRead();
+    render();
+    toast('已放回未读', 'info');
+  }
+
+  async function injectBypass() {
+    try {
+      const script = await window.toolbox.site.bypassScript();
+      if (script) await reader.executeJavaScript(script, false);
+    } catch (err) {
+      console.error('[news] inject bypass failed:', err);
+    }
+  }
+
   function openReader(item) {
     markRead(item);
     readerUrl = item.link;
-    readerBar.children[1].textContent = item.title;
+    readerTitle.textContent = item.title;
+    readerSource.textContent = `${item.source} · ${timeAgo(item.at)}`;
     if (!reader) {
       reader = h('webview', { partition: PARTITION });
+      reader.addEventListener('dom-ready', injectBypass);
       readerHost.appendChild(reader);
     }
     if (reader.getAttribute('src') !== item.link) reader.src = item.link;
     readerBar.removeAttribute('hidden');
     readerHost.removeAttribute('hidden');
-    listEl.setAttribute('hidden', '');
-    chipsEl.setAttribute('hidden', '');
-    render(); // 未读流里去掉它
+    readerEmpty.setAttribute('hidden', '');
+    render();
   }
 
   function closeReader() {
     readerUrl = null;
     readerBar.setAttribute('hidden', '');
     readerHost.setAttribute('hidden', '');
-    listEl.removeAttribute('hidden');
-    chipsEl.removeAttribute('hidden');
+    readerEmpty.removeAttribute('hidden');
   }
 
   function renderItem(item, readAt) {
-    const row = h('div', { class: 'news__item', onclick: () => openReader(item) });
+    const row = h('div', { class: `news__item ${readerUrl === item.link ? 'is-selected' : ''}`, onclick: () => openReader(item) });
     if (item.image) {
       row.appendChild(h('img', { class: 'news__thumb', 'data-src': item.image, alt: '' }));
     } else {
@@ -132,27 +167,37 @@ function createDigest(host, ctx) {
       ),
       h('span', { class: 'news__title' }, item.title),
     ));
+    if (view === 'read') {
+      row.appendChild(h('button', {
+        class: 'btn btn--icon news__item-action',
+        title: '标为未读',
+        onclick: (event) => markUnread(item, event),
+      }, '↶'));
+    }
     return row;
   }
 
   function render() {
     listEl.textContent = '';
     const sourceFiltered = (item) => activeFeed === 'all' || item.source === activeFeed;
+    const queryFiltered = (item) => !query || `${item.title} ${item.source}`.toLowerCase().includes(query);
     let shown;
     if (view === 'unread') {
-      shown = [...items.values()].filter((item) => !readMap[item.link] && sourceFiltered(item))
+      shown = [...items.values()].filter((item) => !readMap[item.link] && sourceFiltered(item) && queryFiltered(item))
         .sort((a, b) => b.at - a.at)
         .slice(0, 120);
     } else {
       shown = Object.entries(readMap)
-        .filter(([, r]) => activeFeed === 'all' || r.s === activeFeed)
+        .filter(([, r]) => (activeFeed === 'all' || r.s === activeFeed) && queryFiltered({ title: r.t, source: r.s }))
         .sort((a, b) => b[1].at - a[1].at)
         .slice(0, 200)
         .map(([link, r]) => ({ link, title: r.t, source: r.s, at: r.at, image: r.img }));
     }
+    const unreadCount = [...items.values()].filter((item) => !readMap[item.link]).length;
+    countEl.textContent = view === 'unread' ? `${shown.length} / ${unreadCount}` : `${shown.length}`;
     if (!shown.length) {
       listEl.appendChild(h('div', { class: 'faint', style: { padding: '24px 18px' } },
-        view === 'unread' ? '没有未读。点「刷新」抓最新的，或去「已读回溯」翻旧账。' : '还没有读过的条目。'));
+        query ? '没有匹配的新闻。' : view === 'unread' ? '没有未读。点「刷新」抓最新的，或去「已读回溯」翻旧账。' : '还没有读过的条目。'));
       return;
     }
     for (const item of shown) {
@@ -180,8 +225,8 @@ function createDigest(host, ctx) {
     }, '全部源'));
     for (const feed of FEEDS) {
       chipsEl.appendChild(h('button', {
-        class: `btn btn--sm ${activeFeed === feed.id ? 'is-active' : ''}`,
-        onclick: () => { activeFeed = feed.id; renderChips(); render(); },
+        class: `btn btn--sm ${activeFeed === feed.name ? 'is-active' : ''}`,
+        onclick: () => { activeFeed = feed.name; renderChips(); render(); },
       }, feed.name));
     }
     viewActionBtn.textContent = view === 'unread' ? '全部已读' : '清空回溯';
@@ -234,16 +279,36 @@ function createDigest(host, ctx) {
   });
 
   host.append(
-    h('div', { class: 'bar' },
+    h('div', { class: 'news__intro' },
+      h('div', { class: 'news__intro-copy' },
+        h('span', { class: 'news__eyebrow' }, 'AI SIGNALS'),
+        h('h2', {}, '今天读什么'),
+        h('p', { class: 'faint' }, '把零散热点收成一条能读完的线索。'),
+      ),
+      h('div', { class: 'news__summary' },
+        h('span', { class: 'faint' }, '待读'),
+        countEl,
+        h('span', { class: 'faint' }, '条'),
+      ),
+    ),
+    h('div', { class: 'news__toolbar' },
+      searchEl,
       chipsEl,
       h('span', { style: { flex: 1 } }),
       statusEl,
       viewActionBtn,
       h('button', { class: 'btn btn--sm btn--primary', onclick: () => refresh() }, '刷新'),
     ),
-    readerBar,
-    listEl,
-    readerHost,
+    h('div', { class: 'news__workspace' },
+      h('section', { class: 'news__inbox' },
+        h('div', { class: 'news__list-head' },
+          h('strong', {}, '新闻列表'),
+          h('span', { class: 'faint' }, '点击后在右侧阅读'),
+        ),
+        listEl,
+      ),
+      readerPane,
+    ),
   );
 
   renderChips();

@@ -155,10 +155,18 @@ function collectSubtitleFiles(dir) {
   } catch { /* 目录不存在 */ }
   const out = [];
   for (const f of files) {
-    const page = parseInt(f, 10);
+    const pageMatch = f.match(/^(\d+)/);
+    // 单视频不是播放列表时，yt-dlp 会把 playlist_index 写成 NA；它就是第 1 集。
+    const page = pageMatch ? Number(pageMatch[1]) : /^NA\./i.test(f) ? 1 : NaN;
     if (!Number.isFinite(page)) continue;
     try {
-      out.push({ page, ai: /\.ai[-.]/i.test(f) || /ai-zh/i.test(f), text: subtitleFileToText(path.join(dir, f)) });
+      const text = subtitleFileToText(path.join(dir, f));
+      if (!text.trim()) continue;
+      out.push({
+        page,
+        ai: /\.ai[-.]/i.test(f) || /ai-zh/i.test(f) || /\.auto(?:\.|-)/i.test(f),
+        text,
+      });
     } catch { /* 跳过坏文件 */ }
   }
   const byPage = new Map();
@@ -171,19 +179,25 @@ function collectSubtitleFiles(dir) {
 }
 
 async function runYtDlp(ytdlp, args, timeout) {
-  await execFileAsync(ytdlp, args, {
-    encoding: 'utf8',
-    maxBuffer: 8 * 1024 * 1024,
-    timeout,
-    env: process.env,
-  });
+  try {
+    await execFileAsync(ytdlp, args, {
+      encoding: 'utf8',
+      maxBuffer: 8 * 1024 * 1024,
+      timeout,
+      env: process.env,
+    });
+    return { ok: true, error: '' };
+  } catch (err) {
+    const detail = String(err.stderr || err.stdout || err.message || '').replace(/\s+/g, ' ').trim();
+    return { ok: false, error: detail.slice(-500) };
+  }
 }
 
 /**
  * 拉字幕。返回 { ok, kind: 'official'|'ai'|'mixed', episodes: [{page, text, chars}], error? }
  * 依次借各浏览器的登录态跑 yt-dlp，哪个浏览器下到文件就用哪个。
  */
-async function fetchSubtitles(url, scope) {
+async function fetchSubtitles(url, scope, options = {}) {
   const bvid = extractBvid(url);
   if (!bvid) return { ok: false, error: '没认出来 BV 号。' };
   const sc = SUB_SCOPES[scope] || SUB_SCOPES.p1;
@@ -195,31 +209,49 @@ async function fetchSubtitles(url, scope) {
   const videoUrl = `https://www.bilibili.com/video/${bvid}/`;
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'toolbox-subs-'));
   const outTpl = path.join(dir, '%(playlist_index)s.%(ext)s');
-  const baseArgs = ['--skip-download', '--no-warnings', '--socket-timeout', '20', '-o', outTpl];
+  const baseArgs = [
+    '--skip-download', '--no-warnings', '--ignore-errors', '--socket-timeout', '20',
+    '--output-na-placeholder', '1', '-o', outTpl,
+  ];
   if (sc.items) baseArgs.push('--playlist-items', sc.items);
 
   try {
-    for (const browser of SUB_BROWSERS) {
-      try {
-        await runYtDlp(
+    const sources = [];
+    if (options.cookieFile) sources.push({ label: '内置 B 站会话', args: ['--cookies', options.cookieFile] });
+    for (const browser of SUB_BROWSERS) sources.push({ label: browser, args: ['--cookies-from-browser', browser] });
+    const failures = [];
+    for (const source of sources) {
+      // B 站 AI 字幕有两种暴露方式：有些版本归在 subtitles（ai-zh），
+      // 有些版本归在 automatic_captions；两种开关都跑一遍。
+      const modes = [
+        ['--write-subs', '字幕'],
+        ['--write-auto-subs', '自动字幕'],
+      ];
+      for (const [mode, modeLabel] of modes) {
+        const run = await runYtDlp(
           ytdlp,
-          [...baseArgs, '--cookies-from-browser', browser, '--write-subs', '--sub-langs', SUB_LANGS, videoUrl],
+          [...baseArgs, ...source.args, mode, '--sub-langs', SUB_LANGS, videoUrl],
           sc.timeout,
         );
-      } catch { continue; /* 这个浏览器取 Cookie 失败或网络问题，换下一个 */ }
-      const episodes = collectSubtitleFiles(dir);
-      if (episodes.length) {
+        if (!run.ok && run.error) failures.push(`${source.label}/${modeLabel}：${run.error}`);
+        const episodes = collectSubtitleFiles(dir);
+        if (!episodes.length) continue;
         const aiCount = episodes.filter((e) => e.ai).length;
         const kind = aiCount === 0 ? 'official' : aiCount === episodes.length ? 'ai' : 'mixed';
         return {
           ok: true,
           kind,
-          browser,
+          browser: source.label,
           episodes: episodes.map((e) => ({ page: e.page, text: e.text, chars: e.text.length })),
         };
       }
     }
-    return { ok: false, error: '没拿到字幕。这个视频可能既没开官方字幕也没开 AI 字幕，或者浏览器里没登录 B 站（试过 Edge/Chrome/Firefox/Safari 的 Cookie）。' };
+    const diagnostic = failures.length ? `最近一次尝试：${failures.at(-1)}` : '';
+    return {
+      ok: false,
+      code: 'subtitle-not-found',
+      error: `没有拿到 B 站字幕（已尝试官方字幕和 AI 字幕）。请确认左侧 B 站页面已登录，并打开具体视频页面后重试。${diagnostic}`,
+    };
   } finally {
     try { fs.rmSync(dir, { recursive: true, force: true }); } catch { /* 临时目录清不掉就算了 */ }
   }
@@ -231,6 +263,45 @@ function reportsDir(userDataDir) {
   return dir;
 }
 
+function publishMarkdown(userDataDir, file, { title, markdown, bvid }) {
+  const found = findLarkCli();
+  if (!found) {
+    return { ok: false, publishError: '没找到 lark-cli。报告已存本地，请先安装或登录 lark-cli。' };
+  }
+  try {
+    const out = execFileSync(
+      found.cli,
+      ['docs', '+create', '--doc-format', 'markdown', '--content', '-', '--title', title],
+      { encoding: 'utf8', input: markdown, maxBuffer: 16 * 1024 * 1024, timeout: 120000, env: found.env },
+    );
+    const parsed = JSON.parse(out);
+    const docUrl = parsed?.data?.document?.url || '';
+    if (!parsed?.ok || !docUrl) {
+      return { ok: false, publishError: `lark-cli 创建文档返回异常：${out.slice(0, 300)}` };
+    }
+    const grant = parsed?.data?.permission_grant;
+    const warnings = parsed?.data?.warnings;
+    try {
+      fs.writeFileSync(
+        `${file}.json`,
+        JSON.stringify({ title, docUrl, bvid: bvid || '', publishedAt: new Date().toISOString() }, null, 2),
+        'utf8',
+      );
+    } catch { /* 存不上也不影响报告本身 */ }
+    return {
+      ok: true,
+      docUrl,
+      publishNote: [
+        grant && grant.status !== 'granted' ? `权限授予：${grant.status}（${grant.message || ''}）` : '',
+        Array.isArray(warnings) && warnings.length ? `警告：${warnings.join('；')}` : '',
+      ].filter(Boolean).join(' '),
+    };
+  } catch (err) {
+    const stderr = String(err.stderr || err.message || '').slice(0, 300);
+    return { ok: false, publishError: `lark-cli 执行失败：${stderr}` };
+  }
+}
+
 function saveReport(userDataDir, { title, markdown, bvid, publish }) {
   const dir = reportsDir(userDataDir);
   const stamp = new Date().toISOString().replace(/[-:T]/g, '').slice(0, 12); // 202608310145
@@ -240,44 +311,25 @@ function saveReport(userDataDir, { title, markdown, bvid, publish }) {
 
   const result = { ok: true, localPath: file, docUrl: '' };
   if (!publish) return result;
+  return { ...result, ...publishMarkdown(userDataDir, file, { title, markdown, bvid }) };
+}
 
-  const found = findLarkCli();
-  if (!found) {
-    return { ...result, publishError: '没找到 lark-cli（查过 PATH、nvm、/usr/local/bin、/opt/homebrew/bin）。报告已存本地，登录发布后的问题解决后再发。' };
-  }
+function publishReport(userDataDir, fileName, force = false) {
+  const dir = reportsDir(userDataDir);
+  const safe = path.basename(String(fileName || ''));
+  if (!safe.endsWith('.md')) return { ok: false, publishError: '报告文件名不对。' };
+  const file = path.join(dir, safe);
   try {
-    const out = execFileSync(
-      found.cli,
-      // @file 只收相对路径，改成 stdin 管道喂内容
-      ['docs', '+create', '--doc-format', 'markdown', '--content', '-', '--title', title],
-      { encoding: 'utf8', input: markdown, maxBuffer: 16 * 1024 * 1024, timeout: 120000, env: found.env },
-    );
-    const parsed = JSON.parse(out);
-    const docUrl = parsed?.data?.document?.url || '';
-    if (!parsed?.ok || !docUrl) {
-      return { ...result, publishError: `lark-cli 创建文档返回异常：${out.slice(0, 300)}` };
-    }
-    const grant = parsed?.data?.permission_grant;
-    const warnings = parsed?.data?.warnings;
-    // 飞书链接持久化：不然重开应用后历史报告里就没法打开飞书版了
-    try {
-      fs.writeFileSync(
-        `${file}.json`,
-        JSON.stringify({ title, docUrl, bvid: bvid || '', publishedAt: new Date().toISOString() }, null, 2),
-        'utf8',
-      );
-    } catch { /* 存不上也不影响报告本身 */ }
-    return {
-      ...result,
-      docUrl,
-      publishNote: [
-        grant && grant.status !== 'granted' ? `权限授予：${grant.status}（${grant.message || ''}）` : '',
-        Array.isArray(warnings) && warnings.length ? `警告：${warnings.join('；')}` : '',
-      ].filter(Boolean).join(' '),
-    };
-  } catch (err) {
-    const stderr = String(err.stderr || err.message || '').slice(0, 300);
-    return { ...result, publishError: `lark-cli 执行失败：${stderr}` };
+    const markdown = fs.readFileSync(file, 'utf8');
+    const title = markdown.match(/^#\s+(.+)$/m)?.[1]?.trim() || safe.replace(/\.md$/, '');
+    let bvid = '';
+    try { bvid = JSON.parse(fs.readFileSync(`${file}.json`, 'utf8')).bvid || ''; } catch { /* 旧报告没有元数据 */ }
+    let existing = '';
+    try { existing = JSON.parse(fs.readFileSync(`${file}.json`, 'utf8')).docUrl || ''; } catch { /* 未发布 */ }
+    if (existing && !force) return { ok: true, docUrl: existing, alreadyPublished: true };
+    return publishMarkdown(userDataDir, file, { title, markdown, bvid });
+  } catch {
+    return { ok: false, publishError: '报告文件读不到，可能被删了。' };
   }
 }
 
@@ -334,4 +386,12 @@ function readReport(userDataDir, fileName) {
   }
 }
 
-module.exports = { fetchBilibiliInfo, fetchSubtitles, saveReport, listReports, readReport };
+module.exports = {
+  collectSubtitleFiles,
+  fetchBilibiliInfo,
+  fetchSubtitles,
+  saveReport,
+  publishReport,
+  listReports,
+  readReport,
+};

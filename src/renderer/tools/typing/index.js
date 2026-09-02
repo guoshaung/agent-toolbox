@@ -6,7 +6,7 @@ const MAX_HISTORY = 30;
 export default {
   id: 'typing',
   title: '纠错',
-  icon: '✍️',
+  icon: 'pen',
   hint: '读懂打错的中文，拿不准就反问你（Cmd+3）',
 
   create(root, ctx) {

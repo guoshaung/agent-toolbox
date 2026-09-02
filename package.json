@@ -7,14 +7,74 @@
   "scripts": {
     "start": "electron .",
     "dev": "electron . --dev",
+    "dist": "electron-builder --mac dmg",
+    "dist:dir": "electron-builder --mac dir",
+    "dist:win": "electron-builder --win portable --x64",
     "icon": "electron scripts/build-icon.js",
-    "check": "node --check src/main/main.js && node --check src/main/preload.js && node --check src/main/quick-explain.js && node --check src/main/ai-config.js && node --test test/*.test.js",
+    "check": "node --check src/main/main.js && node --check src/main/preload.js && node --check src/main/window-dock.js && node --check src/main/dock-divider-preload.js && node --check src/main/skill-factory.js && node --check src/main/mcp-factory.js && node --check src/main/site-bypass-preload.js && node --check src/main/edge-cookies.js && node --check src/renderer/dock-divider.js && node --check src/renderer/tools/dock/index.js && node --check src/main/quick-explain.js && node --check src/main/ai-config.js && node --test test/*.test.js",
     "logo": "node scripts/build-logo.js"
   },
   "devDependencies": {
-    "electron": "^33.2.0"
+    "electron": "^33.2.0",
+    "electron-builder": "^26.15.3"
   },
   "dependencies": {
+    "katex": "^0.18.5",
     "pdfjs-dist": "^4.10.38"
+  },
+  "build": {
+    "appId": "cn.macpe.agenttoolbox",
+    "productName": "Agent 工具箱",
+    "asar": true,
+    "files": [
+      "src/**/*",
+      "assets/**/*",
+      "package.json",
+      "!assets/coach-extension/defaults.local.json",
+      "!test/**",
+      "!docs/**",
+      "!work/**"
+    ],
+    "mac": {
+      "category": "public.app-category.productivity",
+      "icon": "assets/icon.icns",
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "arm64"
+          ]
+        }
+      ]
+    },
+    "dmg": {
+      "title": "Agent 工具箱",
+      "icon": "assets/icon.icns",
+      "backgroundColor": "#0f1116",
+      "contents": [
+        {
+          "x": 190,
+          "y": 250
+        },
+        {
+          "x": 510,
+          "y": 250,
+          "type": "link",
+          "path": "/Applications"
+        }
+      ]
+    },
+    "win": {
+      "icon": "assets/icon.png",
+      "target": [
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "artifactName": "Agent-Toolbox-${version}-win-${arch}.${ext}"
+    }
   }
 }

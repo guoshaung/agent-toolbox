@@ -28,7 +28,7 @@ async function downscale({ base64, mime }) {
 export default {
   id: 'ask',
   title: '快问',
-  icon: '⚡',
+  icon: 'zap',
   hint: 'DeepSeek 网页版，常驻热会话（Cmd+1）',
 
   create(root, ctx) {

@@ -4,7 +4,7 @@ import { PROVIDERS } from '../../core/ai.js';
 export default {
   id: 'settings',
   title: '设置',
-  icon: '⚙︎',
+  icon: 'settings',
   hint: 'AI 接口、桥接自检与维护（Cmd+7）',
 
   create(root, ctx) {
@@ -151,6 +151,178 @@ export default {
         'API Key 由系统安全存储加密，保存后不回显，也不会进入页面配置。查询模型失败不影响手工填写模型名。'),
     );
 
+    // ---- 学习出题专用模型：与全局 AI 分开，避免出题时切换整套工具 ----
+    const quizBaseUrl = h('input', {
+      class: 'field mono',
+      value: config.get('study.quiz.baseUrl', 'https://dashscope.aliyuncs.com/compatible-mode/v1'),
+      onchange: () => config.set('study.quiz.baseUrl', quizBaseUrl.value.trim()),
+    });
+    const quizKey = h('input', {
+      class: 'field mono', type: 'password', placeholder: '输入通义千问 / DashScope API Key（保存后不回显）',
+      autocomplete: 'new-password', value: '',
+    });
+    const quizModel = h('input', {
+      class: 'field mono', placeholder: 'qwen3.5-flash',
+      value: config.get('study.quiz.model', 'qwen3.5-flash'),
+      list: 'quiz-model-list',
+      onchange: () => config.set('study.quiz.model', quizModel.value.trim()),
+    });
+    const quizModelList = h('datalist', { id: 'quiz-model-list' });
+    const quizCredentialState = h('span', { class: 'tag' }, '检查中');
+    async function refreshQuizCredential() {
+      const state = await window.toolbox.ai.credentialStatus('quiz');
+      config.cache.study ||= {};
+      config.cache.study.quiz ||= {};
+      config.cache.study.quiz.hasKey = state.hasKey;
+      quizCredentialState.textContent = state.hasKey ? '出题 Key 已保存' : '出题 Key 未保存';
+      quizCredentialState.className = `tag ${state.hasKey ? 'tag--good' : 'tag--warn'}`;
+    }
+    const saveQuizKeyBtn = h('button', {
+      class: 'btn btn--sm',
+      onclick: async () => {
+        if (!quizKey.value.trim()) return toast('请输入学习出题模型的 API Key', 'bad');
+        const result = await window.toolbox.ai.saveCredential(quizKey.value, 'quiz');
+        quizKey.value = '';
+        if (!result.ok) return toast(result.error, 'bad');
+        await refreshQuizCredential();
+        toast('学习出题 Key 已安全保存', 'good');
+      },
+    }, '安全保存');
+    const clearQuizKeyBtn = h('button', {
+      class: 'btn btn--sm',
+      onclick: async () => {
+        await window.toolbox.ai.clearCredential('quiz');
+        await refreshQuizCredential();
+        toast('已移除学习出题 Key', 'good');
+      },
+    }, '移除');
+    const loadQuizModelsBtn = h('button', {
+      class: 'btn btn--sm',
+      onclick: async () => {
+        loadQuizModelsBtn.disabled = true;
+        const result = await window.toolbox.ai.listModels(quizBaseUrl.value.trim(), 'quiz');
+        loadQuizModelsBtn.disabled = false;
+        if (!result.ok) return toast(result.error, 'bad', 5000);
+        quizModelList.replaceChildren(...result.models.map((id) => h('option', { value: id })));
+        toast(result.models.length ? `找到 ${result.models.length} 个模型` : '未返回模型列表，可手工填写', result.models.length ? 'good' : 'info');
+      },
+    }, '查询模型');
+    const testQuizBtn = h('button', {
+      class: 'btn btn--primary',
+      onclick: async () => {
+        testQuizBtn.disabled = true;
+        await config.set('study.quiz.baseUrl', quizBaseUrl.value.trim());
+        await config.set('study.quiz.model', quizModel.value.trim());
+        try {
+          const result = await window.toolbox.ai.quiz({
+            messages: [
+              { role: 'system', content: '你是测试助手，只输出 JSON：{"ok":true}' },
+              { role: 'user', content: '返回测试结果。' },
+            ],
+            temperature: 0,
+            timeout: 60000,
+          });
+          if (!result.ok) throw new Error(result.error);
+          toast(`学习出题模型已接通：${String(result.text).slice(0, 40)}`, 'good', 5000);
+        } catch (err) {
+          toast(`学习出题模型测试失败：${err.message}`, 'bad', 6000);
+        } finally { testQuizBtn.disabled = false; }
+      },
+    }, '测试出题模型');
+
+    const quizSettingsCard = h('section', { class: 'card', id: 'settings-quiz' },
+      h('h3', { class: 'card__title' }, '学习出题模型'),
+      h('p', { class: 'faint settings__hint' },
+        '学习工具单独使用低成本的 Qwen3.5-Flash：每轮先讲一个范围内知识点，再生成选择题考察基础、边界和迁移。不会改变快问、纠错等工具的模型。'),
+      h('label', { class: 'settings__field' }, h('span', {}, '兼容接口地址'), quizBaseUrl),
+      h('label', { class: 'settings__field' }, h('span', {}, 'API Key'), quizKey),
+      h('div', { class: 'settings__inline-actions' }, quizCredentialState, saveQuizKeyBtn, clearQuizKeyBtn),
+      h('label', { class: 'settings__field' }, h('span', {}, '模型名'), quizModel, quizModelList, loadQuizModelsBtn),
+      h('div', { class: 'faint settings__hint' }, '默认：`qwen3.5-flash`。如果你的账号或自建服务提供 `qwen3.5-35b-a3b`，也可以直接填那个模型名。'),
+      h('div', { class: 'settings__actions' }, testQuizBtn),
+    );
+
+    // ---- 文献翻译专用豆包：与全局 AI 分开，避免用户切模型后翻译质量跟着漂 ----
+    const doubaoBaseUrl = h('input', {
+      class: 'field mono',
+      value: config.get('research.translation.baseUrl', 'https://ark.cn-beijing.volces.com/api/v3'),
+      onchange: () => config.set('research.translation.baseUrl', doubaoBaseUrl.value.trim()),
+    });
+    const doubaoKey = h('input', {
+      class: 'field mono', type: 'password', placeholder: '输入方舟 API Key（保存后不回显）',
+      autocomplete: 'new-password', value: '',
+    });
+    const doubaoModel = h('input', {
+      class: 'field mono', placeholder: 'ep-xxxxxxxx 或豆包模型 ID',
+      value: config.get('research.translation.model', ''),
+      list: 'doubao-model-list',
+      onchange: () => config.set('research.translation.model', doubaoModel.value.trim()),
+    });
+    const doubaoModelList = h('datalist', { id: 'doubao-model-list' });
+    const doubaoCredentialState = h('span', { class: 'tag' }, '检查中');
+    async function refreshDoubaoCredential() {
+      const state = await window.toolbox.ai.credentialStatus('translation');
+      config.cache.research ||= {};
+      config.cache.research.translation ||= {};
+      config.cache.research.translation.hasKey = state.hasKey;
+      doubaoCredentialState.textContent = state.hasKey ? '豆包 Key 已保存' : '豆包 Key 未保存';
+      doubaoCredentialState.className = `tag ${state.hasKey ? 'tag--good' : 'tag--warn'}`;
+    }
+    const saveDoubaoKeyBtn = h('button', {
+      class: 'btn btn--sm',
+      onclick: async () => {
+        if (!doubaoKey.value.trim()) return toast('请输入豆包/方舟 API Key', 'bad');
+        const result = await window.toolbox.ai.saveCredential(doubaoKey.value, 'translation');
+        doubaoKey.value = '';
+        if (!result.ok) return toast(result.error, 'bad');
+        await refreshDoubaoCredential();
+        toast('豆包翻译 Key 已安全保存', 'good');
+      },
+    }, '安全保存');
+    const clearDoubaoKeyBtn = h('button', {
+      class: 'btn btn--sm',
+      onclick: async () => {
+        await window.toolbox.ai.clearCredential('translation');
+        await refreshDoubaoCredential();
+        toast('已移除豆包翻译 Key', 'good');
+      },
+    }, '移除');
+    const loadDoubaoModelsBtn = h('button', {
+      class: 'btn btn--sm',
+      onclick: async () => {
+        loadDoubaoModelsBtn.disabled = true;
+        const result = await window.toolbox.ai.listModels(doubaoBaseUrl.value.trim(), 'translation');
+        loadDoubaoModelsBtn.disabled = false;
+        if (!result.ok) return toast(result.error, 'bad', 5000);
+        doubaoModelList.replaceChildren(...result.models.map((id) => h('option', { value: id })));
+        toast(result.models.length ? `找到 ${result.models.length} 个可用模型` : '未返回模型列表，可手工填 ep- 接入点', result.models.length ? 'good' : 'info');
+      },
+    }, '查询模型');
+    const testDoubaoBtn = h('button', {
+      class: 'btn btn--primary',
+      onclick: async () => {
+        testDoubaoBtn.disabled = true;
+        await config.set('research.translation.baseUrl', doubaoBaseUrl.value.trim());
+        await config.set('research.translation.model', doubaoModel.value.trim());
+        try {
+          const result = await window.toolbox.ai.translate({
+            messages: [
+              { role: 'system', content: '你是专业翻译引擎，只输出译文。' },
+              { role: 'user', content: 'Translate into Chinese: Attention is all you need.' },
+            ],
+            temperature: 0.1,
+            timeout: 60000,
+          });
+          if (!result.ok) throw new Error(result.error);
+          toast(`豆包翻译已接通：${String(result.text).slice(0, 40)}`, 'good', 5000);
+        } catch (err) {
+          toast(`豆包翻译测试失败：${err.message}`, 'bad', 6000);
+        } finally {
+          testDoubaoBtn.disabled = false;
+        }
+      },
+    }, '测试豆包翻译');
+
     root.append(
       h('div', { class: 'bar bar--drag' }, h('strong', {}, '设置')),
       h('div', { class: 'settings__body' },
@@ -166,6 +338,19 @@ export default {
           apiFields,
           h('div', { class: 'settings__actions' }, testBtn),
           testOut,
+        ),
+        quizSettingsCard,
+        h('section', { class: 'card', id: 'settings-translation' },
+          h('h3', { class: 'card__title' }, '豆包翻译'),
+          h('p', { class: 'faint settings__hint' },
+            '文献的一键对照、划词和圈译优先走这里。它使用独立的豆包配置，不会因为你把全局 AI 切到别的模型而变化；豆包不可用时才退回全局 AI 和有道。'),
+          h('label', { class: 'settings__field' }, h('span', {}, '方舟 Base URL'), doubaoBaseUrl),
+          h('label', { class: 'settings__field' }, h('span', {}, 'API Key'), doubaoKey),
+          h('div', { class: 'settings__inline-actions' }, doubaoCredentialState, saveDoubaoKeyBtn, clearDoubaoKeyBtn),
+          h('label', { class: 'settings__field' }, h('span', {}, '模型 / 接入点'), doubaoModel, doubaoModelList, loadDoubaoModelsBtn),
+          h('div', { class: 'faint settings__hint' },
+            '默认地址已经填好。模型可填方舟控制台里的 `ep-...` 推理接入点，或账号可直接调用的豆包模型 ID。'),
+          h('div', { class: 'settings__actions' }, testDoubaoBtn),
         ),
         h('section', { class: 'card' },
           h('h3', { class: 'card__title' }, 'DeepSeek 桥接'),
@@ -207,6 +392,8 @@ export default {
 
     syncProvider();
     refreshCredentialState();
+    refreshQuizCredential();
+    refreshDoubaoCredential();
 
     return {};
   },

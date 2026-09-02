@@ -1,14 +1,15 @@
 import { h } from '../../core/ui.js';
+import { iconLabel } from '../../core/icons.js';
 import { createTimer } from './timer.js';
 import { createGames } from './games.js';
 import { createNews } from './news.js';
 import { createWatch } from './watch.js';
 
 const SUB_SECTIONS = [
-  { id: 'timer', label: '专注' },
-  { id: 'games', label: '醒脑' },
-  { id: 'news', label: '情报' },
-  { id: 'watch', label: '大佬动态' },
+  { id: 'timer', label: '专注', icon: 'target' },
+  { id: 'games', label: '醒脑', icon: 'zap' },
+  { id: 'news', label: '情报', icon: 'scan' },
+  { id: 'watch', label: '大佬动态', icon: 'x' },
 ];
 
 /**
@@ -19,7 +20,7 @@ const SUB_SECTIONS = [
 export default {
   id: 'focus',
   title: '专注',
-  icon: '🎯',
+  icon: 'target',
   hint: '番茄钟 / 醒脑小游戏 / AI 情报 / 大佬动态（Cmd+4）',
 
   create(root, ctx) {
@@ -61,7 +62,7 @@ export default {
         class: 'btn btn--sm research__subbtn',
         dataset: { sub: s.id },
         onclick: () => selectSub(s.id),
-      }, s.label));
+      }, iconLabel(s.icon, s.label, 'subnav-label')));
     }
 
     root.append(

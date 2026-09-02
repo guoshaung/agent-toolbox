@@ -1,5 +1,7 @@
 import { h, toast } from '../../core/ui.js';
 
+const BILIBILI_STUDY_URL = 'https://www.bilibili.com/v/knowledge/learning/';
+
 /**
  * 视频报告：贴一个 B 站链接 → 抓公开信息 → 拉字幕（官方优先，AI 兜底）→
  * AI 按字幕写逐集笔记 → 本地存 Markdown，顺手用 lark-cli 发到飞书。
@@ -11,7 +13,7 @@ import { h, toast } from '../../core/ui.js';
 export default {
   id: 'video',
   title: '视频',
-  icon: '📺',
+  icon: 'monitor',
   hint: '贴 B 站链接，拉字幕生成内容级总结报告，存本地并可一键发到飞书',
 
   create(root, ctx) {
@@ -21,6 +23,7 @@ export default {
 
     let info = null; // 抓到的视频信息
     let busy = false;
+    let currentView = config.get('video.view', 'study');
 
     const linkInput = h('input', {
       class: 'field video__link',
@@ -50,6 +53,41 @@ export default {
 
     const body = h('div', { class: 'video__body' });
     const historyEl = h('div', { class: 'video__history' });
+    const studyView = h('webview', {
+      class: 'video__study-view',
+      partition: 'persist:bilibili-study',
+      src: BILIBILI_STUDY_URL,
+      allowpopups: true,
+    });
+    const studyStatus = h('span', { class: 'faint video__study-status' }, '固定入口：B 站学习区');
+    const studyUrl = h('input', {
+      class: 'field video__study-url',
+      readonly: true,
+      spellcheck: false,
+      placeholder: '当前页面 URL',
+      value: BILIBILI_STUDY_URL,
+    });
+
+    function syncStudyUrl(url) {
+      studyUrl.value = String(url || BILIBILI_STUDY_URL);
+    }
+
+    async function copyStudyUrl() {
+      const url = studyView.getURL();
+      if (!url || !/^https?:\/\//i.test(url)) return toast('当前页面还没有可复制的 URL', 'info');
+      await clipboard.write(url);
+      toast('当前页面 URL 已复制', 'good');
+    }
+
+    async function captureCurrentPage() {
+      const url = studyView.getURL();
+      if (!/^https?:\/\/www\.bilibili\.com\/video\/BV[0-9A-Za-z]+/i.test(url)) {
+        return toast('请先在 B 站打开具体视频页面，再抓取当前页', 'info', 5000);
+      }
+      linkInput.value = url;
+      setView('report');
+      await fetchInfo();
+    }
 
     function fmtDuration(seconds) {
       const s = Math.max(0, Math.round(seconds));
@@ -63,11 +101,14 @@ export default {
       return n >= 10000 ? `${(n / 10000).toFixed(1)}万` : String(n);
     }
 
-    function showError(message, needLogin) {
+    function showError(message, needLogin, retry) {
       body.textContent = '';
       body.appendChild(h('div', { class: 'empty' },
         h('span', { class: 'empty__icon' }, needLogin ? '🔑' : '⚠️'),
         message,
+        retry && h('div', { style: { marginTop: '14px' } },
+          h('button', { class: 'btn btn--primary', onclick: retry }, '重试字幕'),
+        ),
         needLogin && h('div', { style: { marginTop: '14px' } },
           h('button', { class: 'btn btn--primary', onclick: () => ctx.goto('ask') }, '去登录 DeepSeek'),
         ),
@@ -101,6 +142,35 @@ export default {
         fetchBtn.disabled = false;
       }
     }
+
+    function setView(view) {
+      currentView = view === 'report' ? 'report' : 'study';
+      config.set('video.view', currentView);
+      studyShell.hidden = currentView !== 'study';
+      reportShell.hidden = currentView !== 'report';
+      studyTab.classList.toggle('is-active', currentView === 'study');
+      reportTab.classList.toggle('is-active', currentView === 'report');
+      if (currentView === 'study') studyView.focus();
+    }
+
+    function resetStudyArea() {
+      studyView.loadURL(BILIBILI_STUDY_URL);
+      syncStudyUrl(BILIBILI_STUDY_URL);
+      studyStatus.textContent = '正在回到固定的 B 站学习区…';
+    }
+
+    studyView.addEventListener('did-navigate', (event) => {
+      syncStudyUrl(event.url);
+      studyStatus.textContent = event.url === BILIBILI_STUDY_URL || /\/c\/knowledge\/?$/i.test(event.url)
+        ? '固定入口：B 站学习区'
+        : '当前在 B 站学习区内浏览 · 评论已关闭';
+    });
+    studyView.addEventListener('did-navigate-in-page', (event) => syncStudyUrl(event.url));
+    studyView.addEventListener('did-finish-load', () => syncStudyUrl(studyView.getURL()));
+    studyView.addEventListener('did-fail-load', (event) => {
+      if (event.errorCode === -3) return;
+      studyStatus.textContent = `B 站学习区加载失败：${event.errorDescription || '网络错误'}`;
+    });
 
     function renderInfo() {
       body.textContent = '';
@@ -141,7 +211,7 @@ export default {
       lines.push(`- 播放/弹幕/点赞/投币/收藏：${fmtCount(info.stat.view)} / ${fmtCount(info.stat.danmaku)} / ${fmtCount(info.stat.like)} / ${fmtCount(info.stat.coin)} / ${fmtCount(info.stat.favorite)}`);
       lines.push('');
       if (notes && notes.length) {
-        const kindLabel = subsKind === 'official' ? '官方字幕' : 'B 站 AI 生成字幕';
+        const kindLabel = subsKind === 'official' ? '官方字幕' : subsKind === 'mixed' ? '官方 + B 站 AI 字幕' : 'B 站 AI 生成字幕';
         lines.push(`## 逐集内容笔记（基于${kindLabel}）`, '');
         for (const n of notes) {
           const t = partTitle(n.page);
@@ -162,7 +232,7 @@ export default {
       if (aiParts?.audience) lines.push('## 适合人群', '', aiParts.audience, '');
       lines.push('---');
       lines.push(notes && notes.length
-        ? `> 由 Agent 工具箱「视频」生成。内容基于${subsKind === 'official' ? '官方字幕' : 'B 站 AI 字幕'}全文总结，AI 字幕可能有个别错别字。`
+        ? `> 由 Agent 工具箱「视频」生成。内容基于${subsKind === 'official' ? '官方字幕' : subsKind === 'mixed' ? '官方 + B 站 AI 字幕' : 'B 站 AI 字幕'}全文总结，AI 字幕可能有个别错别字。`
         : '> 由 Agent 工具箱「视频」生成。未获取到字幕，本报告为内容地图型摘要（标题/简介/分集大纲），非逐句转写。');
       return lines.join('\n');
     }
@@ -226,17 +296,29 @@ export default {
       showProgress('正在生成报告…', aiToggle.checked ? `AI 摘要走 ${ai.describe()}，要慢一些。` : '未开 AI 摘要，用视频简介顶上。');
       try {
         let subs = null;
+        let subtitleError = '';
         if (useSubs) {
           showProgress('正在拉取字幕…', '优先官方字幕，没有再拉 B 站 AI 字幕（借浏览器登录态）。');
           try {
             const result = await video.fetchSubs({ url: info.url, scope: subsScope.value });
             if (result.ok && result.episodes?.length) {
               subs = result;
+              showProgress('字幕已获取，正在准备 AI 分析…', `${result.kind === 'ai' ? 'B 站 AI 字幕' : result.kind === 'mixed' ? '官方 + AI 字幕' : '官方字幕'} · ${result.episodes.length} 集`);
             } else {
-              toast(result.error || '没拿到字幕，改用大纲生成', 'info');
+              subtitleError = result.error || '没有拿到字幕。';
+              if (aiToggle.checked) {
+                showError(`字幕获取失败，报告未生成空摘要。${subtitleError}`, false, () => generate());
+                return;
+              }
+              toast(`${subtitleError} 当前关闭了 AI 写摘要，将继续生成内容地图。`, 'info', 6000);
             }
           } catch (err) {
-            toast(`字幕拉取失败（${err.message}），改用大纲生成`, 'bad');
+            subtitleError = `字幕拉取失败：${err.message}`;
+            if (aiToggle.checked) {
+              showError(`字幕获取失败，报告未生成空摘要。${subtitleError}`, false, () => generate());
+              return;
+            }
+            toast(`${subtitleError} 当前关闭了 AI 写摘要，将继续生成内容地图。`, 'bad', 6000);
           }
         }
 
@@ -323,15 +405,61 @@ export default {
     }
 
     let lastResultView = null; // 记最近一屏，内嵌飞书返回时用
+    let feishuLoadTimer = null;
 
     /** 飞书文档内嵌打开：webview + 独立分区，扫码登录一次后保持 */
     function openFeishuDoc(url) {
+      window.toolbox.video.openFeishuWindow(url).then((result) => {
+        if (!result?.ok) toast(result?.error || '飞书窗口打开失败', 'bad', 6000);
+      }).catch((err) => toast(`飞书窗口打开失败：${err.message}`, 'bad', 6000));
+      return;
+
+      clearTimeout(feishuLoadTimer);
       body.textContent = '';
+      body.classList.add('video__body--feishu');
+      historyEl.setAttribute('hidden', '');
       const view = h('webview', {
         class: 'video__feishu',
         partition: 'persist:feishu',
         src: url,
+        allowpopups: true,
       });
+      const status = h('span', { class: 'faint video__feishu-status' }, '正在加载飞书报告…');
+      const loginBtn = h('button', {
+        class: 'btn btn--sm btn--primary',
+        title: '在应用内打开飞书官方登录页',
+        onclick: () => {
+          status.textContent = '请在飞书官方页面扫码或授权登录，完成后再打开报告。';
+          view.loadURL('https://www.feishu.cn/');
+        },
+      }, '飞书登录');
+      const reportBtn = h('button', {
+        class: 'btn btn--sm',
+        title: '登录后重新打开当前报告',
+        onclick: () => {
+          status.textContent = '正在重新打开飞书报告…';
+          view.loadURL(url);
+        },
+      }, '重新打开报告');
+      const fallbackLocal = (message) => {
+        const snapshot = lastResultView;
+        if (!snapshot) return;
+        clearTimeout(feishuLoadTimer);
+        toast(message, 'bad', 6000);
+        renderResult(snapshot.markdown, { ...snapshot.result, docUrl: '', feishuUrl: url }, { ...snapshot.opts, fromHistory: true });
+      };
+      view.addEventListener('did-fail-load', (event) => {
+        if (event.errorCode === -3) return;
+        status.textContent = '飞书报告加载失败，可点击右上角用系统浏览器打开；本地报告仍保存在本机。';
+        fallbackLocal(`飞书文档加载失败：${event.errorDescription || '网络错误'}，已退回本地报告。`);
+      });
+      view.addEventListener('did-finish-load', () => {
+        clearTimeout(feishuLoadTimer);
+        status.textContent = '飞书页面已打开；如果显示登录页，请在这里扫码或授权，登录态会保存在应用内。';
+      });
+      feishuLoadTimer = setTimeout(() => {
+        status.textContent = '飞书加载较慢；请等待登录页出现，或点击右上角用系统浏览器打开。';
+      }, 12000);
       body.appendChild(
         h('div', { class: 'video__reader-bar' },
           h('button', {
@@ -342,6 +470,9 @@ export default {
             },
           }, '‹ 返回报告'),
           h('span', { class: 'faint' }, '内嵌飞书文档（首次需扫码登录一次，之后保持登录态）'),
+          status,
+          loginBtn,
+          reportBtn,
           h('span', { style: { flex: 1 } }),
           h('button', {
             class: 'btn btn--sm btn--ghost',
@@ -351,12 +482,22 @@ export default {
         ),
         view,
       );
+      window.toolbox.site.syncCookies('persist:feishu', 'feishu.cn').then((result) => {
+        if (result.ok && result.count > 0) {
+          status.textContent = `已同步 Edge 飞书登录态（${result.count} 个 Cookie），正在刷新…`;
+          view.reload();
+        } else if (!result.ok) {
+          status.textContent = '未同步到 Edge 登录态；可在此页面扫码登录，或点击右上角用系统浏览器打开。';
+        }
+      }).catch(() => {});
     }
 
     function renderResult(markdown, result, opts = {}) {
       const { fromHistory = false } = opts;
       lastResultView = { markdown, result, opts };
       body.textContent = '';
+      body.classList.remove('video__body--feishu');
+      historyEl.removeAttribute('hidden');
       if (fromHistory) {
         body.appendChild(h('div', { class: 'video__reader-bar' },
           h('button', {
@@ -384,15 +525,53 @@ export default {
           ),
           result.docUrl && h('div', { class: 'video__result-head' },
             h('span', { class: 'tag tag--good' }, '已发飞书'),
-            h('a', {
-              class: 'video__doc-link', href: '#',
+            h('button', {
+              class: 'btn btn--sm btn--primary',
               title: '在应用内打开这篇飞书文档',
-              onclick: (e) => { e.preventDefault(); openFeishuDoc(result.docUrl); },
-            }, result.docUrl),
+              onclick: () => openFeishuDoc(result.docUrl),
+            }, '打开内置飞书报告'),
+            h('a', { class: 'video__doc-link', href: '#', title: result.docUrl, onclick: (e) => { e.preventDefault(); openFeishuDoc(result.docUrl); } }, result.docUrl),
             h('button', {
               class: 'btn btn--sm',
               onclick: async () => { await clipboard.write(result.docUrl); toast('链接已复制', 'good'); },
             }, '复制链接'),
+            h('button', {
+              class: 'btn btn--sm btn--ghost',
+              onclick: async (event) => {
+                event.currentTarget.disabled = true;
+                const published = await video.publishReport(result.localPath, true);
+                if (!published.ok) {
+                  event.currentTarget.disabled = false;
+                  return toast(published.publishError || '重新发布失败', 'bad', 6000);
+                }
+                toast('已重新发布到飞书', 'good');
+                renderResult(markdown, { ...result, docUrl: published.docUrl }, opts);
+                openFeishuDoc(published.docUrl);
+              },
+            }, '重新发布'),
+          ),
+          !result.docUrl && result.localPath && h('div', { class: 'video__result-head' },
+            h('span', { class: 'tag tag--warn' }, '仅本地'),
+            h('span', { class: 'faint' }, '这篇报告还没有飞书版本'),
+            result.feishuUrl && h('span', { class: 'faint video__stale-feishu' }, '原飞书链接可能已失效'),
+            result.feishuUrl && h('button', {
+              class: 'btn btn--sm btn--ghost',
+              onclick: () => window.toolbox.shell.openExternal(result.feishuUrl),
+            }, '浏览器试打开'),
+            h('button', {
+              class: 'btn btn--sm btn--primary',
+              onclick: async (event) => {
+                event.currentTarget.disabled = true;
+                const published = await video.publishReport(result.localPath, Boolean(result.feishuUrl));
+                if (!published.ok) {
+                  event.currentTarget.disabled = false;
+                  return toast(published.publishError || '发布失败', 'bad', 6000);
+                }
+                toast(published.alreadyPublished ? '已找到飞书版本' : '已发布到飞书', 'good');
+                renderResult(markdown, { ...result, docUrl: published.docUrl }, opts);
+                renderHistory();
+              },
+            }, result.feishuUrl ? '重新发布到飞书' : '发布到飞书'),
           ),
           result.publishError && h('div', { class: 'video__publish-error' },
             h('span', { class: 'tag tag--warn' }, '飞书未发'), result.publishError),
@@ -415,19 +594,47 @@ export default {
       if (!reports.length) return;
       historyEl.appendChild(h('div', { class: 'video__history-head faint' }, '历史报告（本地留底）'));
       for (const r of reports) {
+        const cloudBtn = h('button', {
+          class: `btn btn--sm ${r.docUrl ? 'btn--primary' : 'btn--ghost'}`,
+          title: r.docUrl ? '打开内置飞书报告' : '发布这篇报告到飞书',
+          onclick: async (event) => {
+            event.stopPropagation();
+            if (r.docUrl) return openFeishuDoc(r.docUrl);
+            cloudBtn.disabled = true;
+            cloudBtn.textContent = '发布中…';
+            const published = await video.publishReport(r.name);
+            if (!published.ok) {
+              cloudBtn.disabled = false;
+              cloudBtn.textContent = '发布到飞书';
+              return toast(published.publishError || '发布失败', 'bad', 6000);
+            }
+            toast(published.alreadyPublished ? '已找到飞书版本' : '已发布到飞书', 'good');
+            await renderHistory();
+            openFeishuDoc(published.docUrl);
+          },
+        }, r.docUrl ? '打开飞书' : '发布到飞书');
         historyEl.appendChild(h('div', {
           class: 'video__history-item',
-          onclick: () => openReport(r),
+          title: r.docUrl ? '点击打开内置飞书报告' : '点击查看本地报告',
+          onclick: () => openReport(r, Boolean(r.docUrl)),
         },
           h('div', { class: 'video__history-title' }, r.title),
           h('div', { class: 'faint' },
             new Date(r.mtime).toLocaleString('zh-CN', { hour12: false }),
-            r.docUrl && h('span', { class: 'tag tag--good video__history-feishu' }, '飞书')),
+            r.docUrl && h('span', { class: 'tag tag--good video__history-feishu' }, '点击进入飞书'),
+            !r.docUrl && h('span', { class: 'tag tag--warn video__history-feishu' }, '仅本地'),
+          ),
+          cloudBtn,
+          r.docUrl && h('button', {
+            class: 'btn btn--sm video__history-local',
+            title: '查看本地报告',
+            onclick: (event) => { event.stopPropagation(); openReport(r); },
+          }, '本地'),
         ));
       }
     }
 
-    async function openReport(r) {
+    async function openReport(r, openFeishu = false) {
       const result = await video.readReport(r.name);
       if (!result.ok) return toast(result.error, 'bad');
       renderResult(
@@ -435,15 +642,43 @@ export default {
         { localPath: result.path, docUrl: result.docUrl },
         { fromHistory: true },
       );
+      if (openFeishu && result.docUrl) openFeishuDoc(result.docUrl);
     }
 
-    root.append(
-      h('div', { class: 'bar bar--drag' },
-        h('strong', {}, '视频报告'),
-        linkInput,
-        fetchBtn,
-      ),
+    const studyTab = h('button', { class: 'btn btn--sm video__mode-tab', onclick: () => setView('study') }, '学习区');
+    const reportTab = h('button', { class: 'btn btn--sm video__mode-tab', onclick: () => setView('report') }, '视频报告');
+    const modeBar = h('div', { class: 'bar bar--drag video__modebar' },
+      h('strong', {}, '视频'),
+      h('div', { class: 'video__mode-tabs' }, studyTab, reportTab),
+      h('span', { class: 'faint' }, 'B 站学习、自由浏览与报告抓取'),
+    );
+    const studyBar = h('div', { class: 'bar video__studybar' },
+      h('button', { class: 'btn btn--icon', title: '后退', onclick: () => studyView.goBack() }, '‹'),
+      h('button', { class: 'btn btn--icon', title: '前进', onclick: () => studyView.goForward() }, '›'),
+      h('button', { class: 'btn btn--icon', title: '刷新学习区', onclick: () => studyView.reload() }, '⟳'),
+      h('button', { class: 'btn btn--sm btn--primary', title: '回到固定的 B 站学习区入口', onclick: resetStudyArea }, '回到学习区'),
+      studyStatus,
+      h('span', { style: { flex: 1 } }),
+      studyUrl,
+      h('button', { class: 'btn btn--sm', title: '复制当前 B 站页面 URL', onclick: copyStudyUrl }, '复制 URL'),
+      h('button', { class: 'btn btn--sm btn--primary', title: '抓取当前视频并生成报告', onclick: captureCurrentPage }, '抓取当前页'),
+      h('button', { class: 'btn btn--sm btn--ghost', title: '用系统浏览器打开当前 B 站页面', onclick: () => studyView.getURL() && window.toolbox.shell.openExternal(studyView.getURL()) }, '↗'),
+    );
+    const studyShell = h('div', { class: 'video__study-shell' }, studyBar, studyView);
+    const reportBar = h('div', { class: 'bar bar--drag' },
+      h('strong', {}, '视频报告'),
+      linkInput,
+      fetchBtn,
+    );
+    const reportShell = h('div', { class: 'video__report-shell' },
+      reportBar,
       h('div', { class: 'video__scroll' }, body, historyEl),
+    );
+
+    root.append(
+      modeBar,
+      studyShell,
+      reportShell,
     );
 
     body.appendChild(h('div', { class: 'empty' },
@@ -453,7 +688,8 @@ export default {
       h('span', { class: 'faint' }, '有字幕就按字幕写内容级总结（官方字幕优先，没有再拉 AI 字幕）；报告永远存到本地 reports/ 目录，开了「发飞书」就顺手建一篇飞书文档。'),
     ));
     renderHistory();
+    setView(currentView);
 
-    return { activate: () => setTimeout(() => linkInput.focus(), 30) };
+    return { activate: () => setTimeout(() => currentView === 'report' && linkInput.focus(), 30) };
   },
 };

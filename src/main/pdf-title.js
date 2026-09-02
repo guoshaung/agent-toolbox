@@ -117,9 +117,19 @@ function pickTitle(buffer) {
   return null;
 }
 
-/** 文件名是否像编号：2301.12345 / 2301.12345v2 / 一长串 hash / 纯数字 */
+/** 从文件名提取 arXiv 编号，兼容 arXiv 2410.06153 / arxiv:2410.06153 / 2410.06153v2。 */
+function extractArxivId(fileName) {
+  const stem = String(fileName || '').replace(/\.[a-z]{1,5}$/i, '');
+  const modern = stem.match(/(?:arxiv[\s:_-]*)?(\d{4}\.\d{4,5})(?:v\d+)?/i);
+  if (modern) return modern[1];
+  const legacy = stem.match(/\b([a-z][a-z-]+\/\d{7})(?:v\d+)?\b/i);
+  return legacy ? legacy[1] : null;
+}
+
+/** 文件名是否像编号：2301.12345 / arXiv 2301.12345 / 一长串 hash / 纯数字 */
 function looksLikeId(fileName) {
-  const stem = fileName.replace(/\.[^.]+$/, '');
+  const stem = fileName.replace(/\.[a-z]{1,5}$/i, '');
+  if (extractArxivId(fileName)) return true;
   if (/^\d{4}\.\d{4,5}(v\d+)?$/i.test(stem)) return true;          // arxiv 新式
   if (/^\d{7}$/.test(stem)) return true;                           // arxiv 旧式
   if (/^\d{4}\.\d{4,5}v\d+_.*$/i.test(stem)) return true;          // arxiv + 后缀（翻译件等）
@@ -153,4 +163,4 @@ function extractPdfTitle(filePath) {
   }
 }
 
-module.exports = { extractPdfTitle, looksLikeId, sanitizeFileStem };
+module.exports = { extractArxivId, extractPdfTitle, looksLikeId, sanitizeFileStem };

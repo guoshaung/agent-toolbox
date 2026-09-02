@@ -1,4 +1,52 @@
 import { h, toast } from '../../core/ui.js';
+import katex from '../../../../node_modules/katex/dist/katex.mjs';
+
+const katexStyle = document.createElement('link');
+katexStyle.rel = 'stylesheet';
+katexStyle.href = '../../node_modules/katex/dist/katex.min.css';
+if (!document.querySelector('link[data-katex]')) {
+  katexStyle.dataset.katex = 'true';
+  document.head.appendChild(katexStyle);
+}
+
+function richText(value) {
+  const text = String(value || '');
+  const parts = [];
+  const pattern = /(\$\$([\s\S]+?)\$\$|\\\[([\s\S]+?)\\\]|\\\(([\s\S]+?)\\\)|\$([^$\n]+)\$)/g;
+  let cursor = 0;
+  let match;
+  const formula = (source, display) => h('span', {
+    class: `ideas__math${display ? ' ideas__math--display' : ''}`,
+    html: katex.renderToString(source.trim(), { displayMode: display, throwOnError: false, trust: false }),
+  });
+  while ((match = pattern.exec(text))) {
+    if (match.index > cursor) parts.push(text.slice(cursor, match.index));
+    parts.push(formula(match[2] || match[3] || match[4] || match[5], Boolean(match[2] || match[3])));
+    cursor = match.index + match[0].length;
+  }
+  if (cursor < text.length) parts.push(text.slice(cursor));
+  if (!parts.some((part) => part?.classList?.contains('ideas__math'))) {
+    return /\\(?:text|frac|underbrace|begin|sum|int|alpha|beta|lambda)\b/.test(text)
+      ? formula(text, true)
+      : text;
+  }
+  return parts;
+}
+
+async function compressImage(data) {
+  const image = await new Promise((resolve, reject) => {
+    const node = new Image();
+    node.onload = () => resolve(node);
+    node.onerror = () => reject(new Error('截图无法读取，请重新复制。'));
+    node.src = `data:${data.mime};base64,${data.base64}`;
+  });
+  const scale = Math.min(1, 1800 / Math.max(image.naturalWidth, image.naturalHeight));
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
+  canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
+  canvas.getContext('2d').drawImage(image, 0, 0, canvas.width, canvas.height);
+  return canvas.toDataURL('image/jpeg', 0.82);
+}
 
 /**
  * 想法区：随手记科研想法，点「AI 拆解」让模型把它落成
@@ -17,6 +65,46 @@ export function createIdeas(root, ctx) {
     class: 'field ideas__detail',
     placeholder: '补充细节：背景、已有条件、卡点…（可空）',
   });
+  let pendingImage = '';
+  const imageAttachment = h('div', { class: 'ideas__attachment', hidden: true });
+
+  function showImage(source) {
+    let overlay;
+    const remove = () => { overlay.remove(); document.removeEventListener('keydown', close); };
+    function close(event) {
+      if (event.key === 'Escape') remove();
+    }
+    overlay = h('div', { class: 'ideas__lightbox', onclick: remove },
+      h('img', { src: source, alt: '放大截图', onclick: (event) => event.stopPropagation() }),
+      h('button', { class: 'ideas__lightbox-close', title: '关闭', onclick: remove }, '×'),
+    );
+    document.body.appendChild(overlay);
+    document.addEventListener('keydown', close);
+  }
+
+  async function readPastedImage(event) {
+    const hasImage = [...(event.clipboardData?.items || [])].some((item) => item.type.startsWith('image/'));
+    if (hasImage) event.preventDefault();
+    const image = await window.toolbox.clipboard.readImage();
+    if (!image?.ok) {
+      if (image?.error) toast(image.error, 'bad');
+      return;
+    }
+    try {
+      pendingImage = await compressImage(image);
+      imageAttachment.textContent = '';
+      imageAttachment.removeAttribute('hidden');
+      imageAttachment.append(
+        h('img', { src: pendingImage, alt: '待保存的截图', title: '点击放大', onclick: () => showImage(pendingImage) }),
+        h('span', {}, '截图已附加'),
+        h('button', { class: 'btn btn--sm btn--ghost', onclick: () => { pendingImage = ''; imageAttachment.setAttribute('hidden', ''); } }, '移除'),
+      );
+    } catch (err) {
+      toast(err.message, 'bad');
+    }
+  }
+  titleInput.addEventListener('paste', readPastedImage);
+  detailInput.addEventListener('paste', readPastedImage);
 
   let filter = config.get('research.ideas.filter', 'all'); // all | starred
 
@@ -32,7 +120,7 @@ export function createIdeas(root, ctx) {
     await save(ideas().map((x) => (x.id === id ? { ...x, ...patch } : x)));
   }
 
-  function addIdea() {
+  async function addIdea() {
     const title = titleInput.value.trim();
     if (!title) return toast('先写一句话', 'info');
     const next = ideas();
@@ -40,13 +128,16 @@ export function createIdeas(root, ctx) {
       id: `idea-${Date.now()}`,
       title,
       detail: detailInput.value.trim(),
+      image: pendingImage,
       starred: false,
       createdAt: new Date().toISOString(),
       plan: null,
     });
-    save(next);
+    await save(next);
     titleInput.value = '';
     detailInput.value = '';
+    pendingImage = '';
+    imageAttachment.setAttribute('hidden', '');
     renderList();
     toast('已记下', 'good');
   }
@@ -216,17 +307,18 @@ export function createIdeas(root, ctx) {
       }, idea.starred ? '⭐' : '☆');
       const card = h('div', { class: `card ideas__card${idea.starred ? ' is-starred' : ''}` },
         h('div', { class: 'ideas__head' },
-          h('div', { class: 'ideas__title' }, idea.title),
+          h('div', { class: 'ideas__title' }, richText(idea.title)),
           h('span', { class: 'faint' }, new Date(idea.createdAt).toLocaleDateString('zh-CN')),
         ),
-        idea.detail && h('div', { class: 'ideas__detail-text faint' }, idea.detail),
+        idea.detail && h('div', { class: 'ideas__detail-text faint' }, richText(idea.detail)),
+        idea.image && h('img', { class: 'ideas__image', src: idea.image, alt: '想法截图', title: '点击放大', onclick: () => showImage(idea.image) }),
         h('div', { class: 'ideas__actions' },
           h('button', {
-            class: 'btn btn--sm btn--primary',
+            class: 'btn btn--sm btn--primary ideas__action-ai',
             onclick: (e) => { e.currentTarget.disabled = true; breakdown(idea, card).finally(() => { e.currentTarget.disabled = false; }); },
           }, idea.plan ? '重新拆解' : 'AI 拆解落实'),
-          h('button', { class: 'btn btn--sm', onclick: () => renderEdit(idea, card) }, '编辑'),
-          h('button', { class: 'btn btn--sm', onclick: () => renderAppend(idea, card) }, '追加'),
+          h('button', { class: 'btn btn--sm ideas__action-edit', onclick: () => renderEdit(idea, card) }, '编辑'),
+          h('button', { class: 'btn btn--sm ideas__action-append', onclick: () => renderAppend(idea, card) }, '追加'),
           idea.plan && h('button', {
             class: 'btn btn--sm',
             onclick: () => {
@@ -235,10 +327,10 @@ export function createIdeas(root, ctx) {
               else planEl.setAttribute('hidden', '');
             },
           }, '收起/展开'),
-          h('span', { style: { flex: 1 } }),
+          h('span', { class: 'ideas__actions-spacer' }),
           starBtn,
           h('button', {
-            class: 'btn btn--sm btn--ghost',
+            class: 'btn btn--sm btn--ghost ideas__action-delete',
             onclick: async () => { await save(ideas().filter((x) => x.id !== idea.id)); renderList(); },
           }, '删除'),
         ),
@@ -255,10 +347,14 @@ export function createIdeas(root, ctx) {
   root.append(
     h('div', { class: 'bar research__viewbar ideas__bar' },
       titleInput,
-      h('button', { class: 'btn btn--primary', onclick: () => addIdea() }, '记下来'),
+      h('button', { class: 'btn btn--primary ideas__action-save', onclick: () => addIdea() }, '记下来'),
     ),
     h('div', { class: 'ideas__scroll' },
-      h('div', { class: 'ideas__detail-wrap' }, detailInput),
+      h('div', { class: 'ideas__detail-wrap' },
+        detailInput,
+        imageAttachment,
+        h('div', { class: 'ideas__paste-tip' }, '支持直接粘贴截图：⌘V；LaTeX 可用 $...$、$$...$$，或直接粘贴完整公式。'),
+      ),
       listEl,
     ),
   );

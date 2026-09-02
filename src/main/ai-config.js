@@ -8,7 +8,8 @@ function buildCompatibleEndpoints(value) {
 
   let path = url.pathname.replace(/\/+$/, '');
   if (/\/chat\/completions$/i.test(path)) path = path.replace(/\/chat\/completions$/i, '');
-  if (!/\/v1$/i.test(path)) path = `${path}/v1`;
+  // 常见 OpenAI 兼容地址是 /v1；火山方舟豆包使用 /api/v3，不能再错误拼成 /api/v3/v1。
+  if (!/(?:^|\/)v\d+$/i.test(path) && !/\/api\/v\d+$/i.test(path)) path = `${path}/v1`;
   path = path.replace(/\/{2,}/g, '/');
   const root = `${url.origin}${path}`;
   return { root, chat: `${root}/chat/completions`, models: `${root}/models` };
