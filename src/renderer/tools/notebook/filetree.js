@@ -140,6 +140,13 @@ export function createFileTree({ onOpenFile }) {
   return {
     el,
     open,
+    async refresh() {
+      if (!root) return;
+      cache.clear();
+      await loadLevel('');
+      for (const relPath of expanded) await loadLevel(relPath);
+      await render();
+    },
     get root() { return root; },
     clear() {
       root = null;

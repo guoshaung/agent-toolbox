@@ -93,6 +93,7 @@ export function createFigureboard(root, ctx) {
   function applyBackground() {
     const spec = bgSpec();
     board.style.backgroundColor = spec.color || 'transparent';
+    board.style.backgroundImage = spec.pattern || !spec.color ? '' : 'none';
     board.classList.toggle('is-grid', spec.pattern === 'grid');
     board.classList.toggle('is-dots', spec.pattern === 'dots');
     board.classList.toggle('is-transparent', !spec.color);
@@ -137,6 +138,7 @@ export function createFigureboard(root, ctx) {
     if (item && typeof fontSelect !== 'undefined') fontSelect.value = item.fontFamily || 'Arial, Helvetica, sans-serif';
     if (item && typeof curveBendInput !== 'undefined') curveBendInput.value = String(item.curveBend ?? 0);
     if (item?.route && typeof routeSelect !== 'undefined') routeSelect.value = item.route;
+    if (item && typeof arrowStyleSelect !== 'undefined') arrowStyleSelect.value = item.arrowStyle || 'standard';
     // 锚点和连线选中态都画在连线层上，选中一变就得重画
     if (typeof renderWires === 'function') renderWires();
   }
@@ -326,6 +328,7 @@ export function createFigureboard(root, ctx) {
       text: '',
       fontSize: 18,
       strokeWidth: line ? 3 : type === 'container' ? 2 : 3,
+      arrowStyle: 'standard',
       radius: type === 'roundRect' ? 16 : 0,
       dash: type === 'container' ? 'dashed' : 'solid',
       opacity: 1,
@@ -360,12 +363,13 @@ export function createFigureboard(root, ctx) {
       toPoint: null, x: 0, y: 0, width: 0, height: 0,
       fill: 'transparent', stroke: '#1d2738', strokeWidth: 1.7,
       arrowEnd: true, arrowStart: false, route: 'straight', curveBend: 0, label: '',
+      arrowStyle: 'standard',
       ...props,
     });
   }
 
   function buildPreset(kind, offset = 0) {
-    const title = kind === 'pipeline' ? '研究流程图' : kind === 'architecture' ? '模型架构图' : kind === 'experiment' ? '实验对比图' : kind === 'agentarchive' ? 'Agent Archive 发现与迭代' : 'AgentSquare 模块化智能体框架';
+    const title = kind === 'pipeline' ? '研究流程图' : kind === 'architecture' ? '模型架构图' : kind === 'experiment' ? '实验对比图' : kind === 'paper-architecture' ? '论文架构图 · Data Prune / Collaborative Structure / Semantic Fusion' : kind === 'agentarchive' ? 'Agent Archive 发现与迭代' : 'AgentSquare 模块化智能体框架';
     if (kind === 'agentarchive') {
       const agentAsset = FIGURE_ASSETS.find((asset) => asset.id === 'agent-square');
       const eagleAsset = FIGURE_ASSETS.find((asset) => asset.id === 'eagle-solid');
@@ -415,6 +419,145 @@ export function createFigureboard(root, ctx) {
         presetWire(pie.id, stackFront.id, { stroke: '#182234', strokeWidth: 2.6, route: 'straight' }), presetWire(stackFront.id, pool.id, { stroke: '#40506b', strokeWidth: 2.1, route: 'straight' }), presetWire(pool.id, cardA.id, { stroke: '#2b66d9', strokeWidth: 3, route: 'straight' }), presetWire(cardA.id, cardB.id, { stroke: '#4a5870', strokeWidth: 1.8, route: 'straight' }), presetWire(cardB.id, cardC.id, { stroke: '#4a5870', strokeWidth: 1.4, route: 'straight' }),
         presetText('△ Planning    ◇ Reasoning    □ Tooluse    ○ Memory', 300 + offset, 450 + offset, { width: 680, fontSize: 12, color: '#152b59' })];
     }
+    if (kind === 'paper-architecture') {
+      const green = '#3d7837';
+      const greenLine = '#82b56e';
+      const blue = '#3e6f9e';
+      const blueLine = '#6d91b5';
+      const orange = '#e67f43';
+      const orangeLine = '#efa16f';
+      const ink = '#263238';
+      const softInk = '#68727d';
+      const paleGreen = '#f3faef';
+      const paleBlue = '#edf5fc';
+      const paleOrange = '#fff5ec';
+      const objects = [];
+      const add = (item) => { objects.push(item); return item; };
+      const box = (type, props) => add(presetShape(type, props));
+      const text = (value, x, y, props = {}) => add(presetText(value, x + offset, y + offset, {
+        fontFamily: props.fontFamily || 'Arial, Helvetica, sans-serif',
+        ...props,
+      }));
+      const wire = (from, to, props = {}) => add(presetWire(from.id, to.id, {
+        route: props.route || 'elbow',
+        from: { id: from.id, port: props.fromPort || 'auto' },
+        to: { id: to.id, port: props.toPort || 'auto' },
+        stroke: props.stroke || '#71808b',
+        strokeWidth: props.strokeWidth || 1.8,
+        dash: props.dash || 'solid',
+        label: props.label || '',
+        arrowStyle: props.arrowStyle || 'standard',
+        ...props,
+      }));
+      const X = (value) => value + offset;
+
+      box('container', { x: X(22), y: X(34), width: 1500, height: 720, fill: '#ffffff', stroke: '#cbd4dc', strokeWidth: 2, radius: 18, dash: 'solid', effect: 'soft' });
+      text('Data\nPrune', 54, 62, { width: 120, height: 66, fontSize: 24, color: green, fontFamily: 'Georgia, Times New Roman, serif' });
+      text('Collaborative Structure', 570, 62, { width: 330, fontSize: 24, color: blue, fontFamily: 'Georgia, Times New Roman, serif' });
+      text('Semantic fusion', 1115, 62, { width: 260, fontSize: 24, color: orange, fontFamily: 'Georgia, Times New Roman, serif' });
+
+      const dataset = box('cylinder', { x: X(118), y: X(92), width: 300, height: 62, fill: '#ffffff', stroke: green, strokeWidth: 2.2 });
+      text('▤  Full Dataset U', 174, 111, { width: 190, fontSize: 17, color: ink, fontFamily: 'Georgia, Times New Roman, serif' });
+      const zeroShot = box('roundRect', { x: X(42), y: X(172), width: 134, height: 74, fill: '#dceeff', stroke: '#4d86b4', strokeWidth: 2, radius: 12 });
+      text('❄  Zero-shot\nLLM', 56, 187, { width: 108, height: 48, fontSize: 15, color: ink });
+      const topK = box('capsule', { x: X(153), y: X(174), width: 230, height: 40, fill: '#dff1d4', stroke: greenLine, strokeWidth: 2 });
+      text('Candidate Top-K selection', 172, 185, { width: 190, fontSize: 14, color: '#456238' });
+      const pool = box('capsule', { x: X(183), y: X(225), width: 170, height: 40, fill: '#e6f7dd', stroke: greenLine, strokeWidth: 2 });
+      text('Candidate Pool', 206, 236, { width: 125, fontSize: 14, color: '#456238' });
+      const surrogate = box('roundRect', { x: X(418), y: X(172), width: 124, height: 74, fill: '#e5f3dc', stroke: greenLine, strokeWidth: 2, radius: 12 });
+      text('◈\nSurrogate Model', 430, 181, { width: 100, height: 54, fontSize: 14, color: ink });
+      const effort = box('roundRect', { x: X(52), y: X(300), width: 110, height: 44, fill: '#f1f3f5', stroke: '#aab3b9', strokeWidth: 1.5, radius: 10 });
+      text('Effort\nScore Eᵤ', 63, 306, { width: 88, height: 32, fontSize: 13, color: ink });
+      const influence = box('roundRect', { x: X(420), y: X(300), width: 126, height: 44, fill: '#f1f3f5', stroke: '#aab3b9', strokeWidth: 1.5, radius: 10 });
+      text('Influence\nScore Iᵤ', 435, 306, { width: 98, height: 32, fontSize: 13, color: ink });
+      const normalize = box('roundRect', { x: X(147), y: X(291), width: 242, height: 62, fill: '#f3f5f6', stroke: '#aab3b9', strokeWidth: 1.7, radius: 18 });
+      text('Min-Max Normalization\n& Linear Combo λ', 171, 301, { width: 195, height: 40, fontSize: 15, color: ink, fontFamily: 'Georgia, Times New Roman, serif' });
+      text('Sorted Queue by Quality Qᵤ', 146, 364, { width: 250, fontSize: 13, color: softInk, fontFamily: 'Georgia, Times New Roman, serif' });
+
+      const pruneGroup = box('container', { x: X(38), y: X(388), width: 510, height: 312, fill: '#fbfff9', stroke: greenLine, strokeWidth: 2, radius: 16, dash: 'dashed' });
+      const truncate = box('roundRect', { x: X(58), y: X(429), width: 216, height: 190, fill: paleGreen, stroke: greenLine, strokeWidth: 1.8, radius: 18 });
+      const tail = box('roundRect', { x: X(294), y: X(429), width: 234, height: 190, fill: '#fff9e9', stroke: '#e0b454', strokeWidth: 1.8, radius: 18 });
+      text('Structure-aware\nAdaptive Data Prune', 57, 663, { width: 300, height: 34, fontSize: 15, color: green });
+      text('Dynamic Truncation', 82, 445, { width: 170, fontSize: 16, color: '#638b52' });
+      text('Cumulative Quality\nThreshold γ', 88, 480, { width: 140, height: 40, fontSize: 12, color: '#638b52', fontFamily: 'Georgia, Times New Roman, serif' });
+      text('✂  Truncation point', 83, 535, { width: 160, fontSize: 13, color: '#638b52' });
+      text('▥\nTruncate TOP T\nHigh-value\nUsers', 100, 555, { width: 150, height: 68, fontSize: 14, color: '#638b52' });
+      text('CV-aware Tail Sampling', 310, 445, { width: 205, fontSize: 16, color: '#c18a00' });
+      text('Long-Tail Users Pool', 327, 480, { width: 170, fontSize: 12, color: '#c18a00', fontFamily: 'Georgia, Times New Roman, serif' });
+      text('▥  Data Bins     ◇ CV Calculator', 309, 520, { width: 210, fontSize: 13, color: '#c18a00' });
+      text('Adaptive Sampling Rate ρᵦ', 310, 557, { width: 205, fontSize: 13, color: '#c18a00', fontFamily: 'Georgia, Times New Roman, serif' });
+      text('Randomly Sampling Long-Tail Users', 307, 595, { width: 220, fontSize: 12, color: '#c18a00' });
+      const coreset = box('roundRect', { x: X(153), y: X(630), width: 230, height: 36, fill: '#eef0ed', stroke: '#9aa49c', strokeWidth: 1.4, radius: 12 });
+      text('▤  Adaptive Pruned Coreset S', 169, 639, { width: 200, fontSize: 13, color: ink, fontFamily: 'Georgia, Times New Roman, serif' });
+
+      const prompt = box('roundRect', { x: X(570), y: X(94), width: 770, height: 92, fill: '#f4f4f3', stroke: '#9b9d9c', strokeWidth: 1.6, radius: 14, dash: 'dashed' });
+      text('▤  Discrete Prompts T_disc', 598, 104, { width: 310, fontSize: 16, color: ink, fontFamily: 'Georgia, Times New Roman, serif' });
+      text('#Question: A user has given high ratings to the following movies: <ItemTitleList>.\nAdditionally, we have …… in the feature <UserID>……<TargetItemTitle> with the feature <TargetItemID>?\nAnswer with “Yes” or “No”.', 590, 132, { width: 710, height: 44, fontSize: 12, color: ink, fontFamily: 'Georgia, Times New Roman, serif' });
+
+      const lowerGroup = box('container', { x: X(568), y: X(210), width: 465, height: 178, fill: paleBlue, stroke: blueLine, strokeWidth: 2, radius: 16, dash: 'dashed' });
+      text('Lower Branch', 584, 221, { width: 160, fontSize: 18, color: blue });
+      const teacher = box('roundRect', { x: X(598), y: X(252), width: 170, height: 60, fill: '#d7edff', stroke: '#4d8fc5', strokeWidth: 1.7, radius: 12 });
+      const student = box('roundRect', { x: X(598), y: X(326), width: 170, height: 60, fill: '#d7edff', stroke: '#4d8fc5', strokeWidth: 1.7, radius: 12 });
+      text('❄  Teacher\nLLM', 620, 263, { width: 125, height: 40, fontSize: 15, color: ink });
+      text('❄  Student\nLLM', 620, 337, { width: 125, height: 40, fontSize: 15, color: ink });
+      const distill = box('roundRect', { x: X(831), y: X(288), width: 128, height: 58, fill: '#ffffff', stroke: '#526170', strokeWidth: 1.6, radius: 11 });
+      text('MSE Loss\nL_distill', 849, 298, { width: 92, height: 38, fontSize: 14, color: ink, fontFamily: 'Georgia, Times New Roman, serif' });
+      text('Teacher\nLogits O_T', 775, 253, { width: 78, height: 38, fontSize: 12, color: ink, fontFamily: 'Georgia, Times New Roman, serif' });
+      text('Student\nLogits O_S', 775, 328, { width: 78, height: 38, fontSize: 12, color: ink, fontFamily: 'Georgia, Times New Roman, serif' });
+
+      const upperGroup = box('container', { x: X(568), y: X(418), width: 465, height: 178, fill: paleBlue, stroke: blueLine, strokeWidth: 2, radius: 16, dash: 'dashed' });
+      text('Upper Branch', 584, 429, { width: 160, fontSize: 18, color: blue });
+      const lora = box('roundRect', { x: X(598), y: X(463), width: 190, height: 70, fill: '#ffe5d6', stroke: '#eb8650', strokeWidth: 1.8, radius: 14 });
+      text('❄  LLM   +   ◉ LoRA', 616, 480, { width: 160, fontSize: 16, color: ink });
+      text('Frozen LLM with Active LoRA', 616, 545, { width: 250, fontSize: 15, color: ink });
+      const bce = box('roundRect', { x: X(831), y: X(477), width: 128, height: 58, fill: '#ffffff', stroke: '#526170', strokeWidth: 1.6, radius: 11 });
+      text('Calculate Loss\nL_BCE', 847, 487, { width: 98, height: 38, fontSize: 14, color: ink, fontFamily: 'Georgia, Times New Roman, serif' });
+      const softPrompt = box('roundRect', { x: X(1040), y: X(317), width: 118, height: 42, fill: '#dff3e3', stroke: '#8ab79a', strokeWidth: 1.5, radius: 9 });
+      text('Soft Prompt P', 1052, 328, { width: 95, fontSize: 14, color: ink, fontFamily: 'Georgia, Times New Roman, serif' });
+      text('θ*LoRA', 1017, 519, { width: 90, fontSize: 15, color: ink, fontFamily: 'Georgia, Times New Roman, serif' });
+
+      const fusion = box('container', { x: X(1070), y: X(210), width: 425, height: 490, fill: paleOrange, stroke: orangeLine, strokeWidth: 2, radius: 18, dash: 'dashed' });
+      const mapping = box('roundRect', { x: X(1124), y: X(242), width: 260, height: 42, fill: '#fff0e2', stroke: orangeLine, strokeWidth: 1.6, radius: 10 });
+      text('MLP Mapping Layer ψ', 1150, 253, { width: 210, fontSize: 15, color: '#aa5a2e', fontFamily: 'Georgia, Times New Roman, serif' });
+      const embedding = box('roundRect', { x: X(1212), y: X(300), width: 105, height: 40, fill: '#ffe6d6', stroke: orangeLine, strokeWidth: 1.5, radius: 8 });
+      text('eᵤ, eᵢ', 1232, 310, { width: 65, fontSize: 16, color: ink, fontFamily: 'Georgia, Times New Roman, serif' });
+      const mixed = box('roundRect', { x: X(1100), y: X(365), width: 320, height: 62, fill: '#fffaf6', stroke: '#c96022', strokeWidth: 2, radius: 12 });
+      text('Mixed Sequence:\nE_mixed = [P; eᵤ; eᵢ]', 1130, 375, { width: 260, height: 40, fontSize: 16, color: '#9f4a1e', fontFamily: 'Georgia, Times New Roman, serif' });
+      const projector = box('roundRect', { x: X(1118), y: X(461), width: 120, height: 68, fill: '#ffd9c5', stroke: '#d56b32', strokeWidth: 1.8, radius: 13 });
+      const llm = box('roundRect', { x: X(1295), y: X(461), width: 128, height: 68, fill: '#d8efff', stroke: '#4d8fc5', strokeWidth: 1.8, radius: 13 });
+      text('▲\nProjector', 1142, 469, { width: 75, height: 44, fontSize: 15, color: '#d15d27', fontFamily: 'Georgia, Times New Roman, serif' });
+      text('❄  ◉\nLLM', 1320, 469, { width: 80, height: 44, fontSize: 16, color: ink });
+      const prediction = box('roundRect', { x: X(1118), y: X(574), width: 140, height: 50, fill: '#fff7ef', stroke: orangeLine, strokeWidth: 1.5, radius: 10 });
+      const cie = box('roundRect', { x: X(1295), y: X(574), width: 150, height: 50, fill: '#fff7ef', stroke: orangeLine, strokeWidth: 1.5, radius: 10 });
+      text('Prediction\nyᵤ,ᵢ', 1138, 582, { width: 100, height: 36, fontSize: 14, color: '#9f4a1e', fontFamily: 'Georgia, Times New Roman, serif' });
+      text('Compute L_CIE', 1315, 590, { width: 110, fontSize: 14, color: '#9f4a1e', fontFamily: 'Georgia, Times New Roman, serif' });
+      text('Rec. Probability', 1120, 640, { width: 140, fontSize: 12, color: orange, fontFamily: 'Georgia, Times New Roman, serif' });
+      text('CIE Loss Calculation', 1290, 640, { width: 170, fontSize: 12, color: softInk, fontFamily: 'Georgia, Times New Roman, serif' });
+
+      wire(dataset, topK, { fromPort: 'bottom', toPort: 'top', stroke: greenLine, strokeWidth: 2.2, route: 'straight', arrowStyle: 'bold' });
+      wire(topK, pool, { fromPort: 'bottom', toPort: 'top', stroke: greenLine, strokeWidth: 2.2, route: 'straight', arrowStyle: 'bold' });
+      wire(pool, normalize, { fromPort: 'bottom', toPort: 'top', stroke: greenLine, strokeWidth: 2.2, route: 'straight', arrowStyle: 'bold' });
+      wire(zeroShot, effort, { fromPort: 'bottom', toPort: 'top', stroke: '#82939f', route: 'straight', arrowStyle: 'fine' });
+      wire(surrogate, influence, { fromPort: 'bottom', toPort: 'top', stroke: '#82939f', route: 'straight', arrowStyle: 'fine' });
+      wire(effort, normalize, { fromPort: 'right', toPort: 'left', stroke: '#82939f', route: 'straight', arrowStyle: 'fine' });
+      wire(influence, normalize, { fromPort: 'left', toPort: 'right', stroke: '#82939f', route: 'straight', arrowStyle: 'fine' });
+      wire(normalize, coreset, { fromPort: 'bottom', toPort: 'top', stroke: greenLine, strokeWidth: 2.2, route: 'straight', arrowStyle: 'bold' });
+      wire(coreset, lowerGroup, { fromPort: 'right', toPort: 'left', stroke: greenLine, strokeWidth: 2.2, label: 'S', arrowStyle: 'bold' });
+      wire(prompt, lowerGroup, { fromPort: 'bottom', toPort: 'top', stroke: blueLine, dash: 'dashed', label: 'T_disc', arrowStyle: 'fine' });
+      wire(teacher, distill, { fromPort: 'right', toPort: 'left', stroke: blue, strokeWidth: 2, arrowStyle: 'standard' });
+      wire(student, distill, { fromPort: 'right', toPort: 'left', stroke: blue, strokeWidth: 2, arrowStyle: 'standard' });
+      wire(distill, softPrompt, { fromPort: 'right', toPort: 'left', stroke: blueLine, dash: 'dashed', label: 'distill', arrowStyle: 'fine' });
+      wire(lora, bce, { fromPort: 'right', toPort: 'left', stroke: blue, strokeWidth: 2, arrowStyle: 'standard' });
+      wire(bce, softPrompt, { fromPort: 'right', toPort: 'bottom', stroke: blueLine, dash: 'dashed', arrowStyle: 'fine' });
+      wire(softPrompt, mapping, { fromPort: 'right', toPort: 'left', stroke: orange, strokeWidth: 2, label: 'P', arrowStyle: 'bold' });
+      wire(mapping, embedding, { fromPort: 'bottom', toPort: 'top', stroke: orangeLine, route: 'straight', arrowStyle: 'standard' });
+      wire(embedding, mixed, { fromPort: 'bottom', toPort: 'top', stroke: orangeLine, route: 'straight', arrowStyle: 'standard' });
+      wire(mixed, projector, { fromPort: 'bottom', toPort: 'top', stroke: orange, strokeWidth: 2, arrowStyle: 'bold' });
+      wire(projector, llm, { fromPort: 'right', toPort: 'left', stroke: orange, strokeWidth: 2, arrowStyle: 'bold' });
+      wire(llm, prediction, { fromPort: 'bottom', toPort: 'top', stroke: orangeLine, arrowStyle: 'standard' });
+      wire(llm, cie, { fromPort: 'bottom', toPort: 'top', stroke: '#9da5ab', dash: 'dashed', label: 'L_CIE', arrowStyle: 'fine' });
+      return objects;
+    }
     const container = presetShape('container', { x: 70 + offset, y: 120 + offset, width: 900, height: kind === 'experiment' ? 390 : 300 });
     const titleItem = presetText(title, 88 + offset, 54 + offset, { width: 360, height: 44, fontSize: 26, color: '#1f396d' });
     if (kind === 'pipeline') {
@@ -458,11 +601,16 @@ export function createFigureboard(root, ctx) {
     const offset = items.length ? 24 : 0;
     const added = buildPreset(kind, offset);
     items = [...items, ...added];
+    if (kind === 'paper-architecture') {
+      background = 'white';
+      config.set('research.figureBg', background);
+      applyBackground();
+    }
     selectedIds = new Set();
     selectedId = null;
     persist();
     renderBoard();
-    toast(`已插入${kind === 'pipeline' ? '流程图' : kind === 'architecture' ? '模型架构图' : kind === 'experiment' ? '实验对比图' : kind === 'agentarchive' ? 'Agent Archive 复合图' : 'AgentSquare 复合图'}，可继续拖动和改层级`, 'good');
+    toast(`已插入${kind === 'pipeline' ? '流程图' : kind === 'architecture' ? '模型架构图' : kind === 'experiment' ? '实验对比图' : kind === 'paper-architecture' ? '论文三段式架构图' : kind === 'agentarchive' ? 'Agent Archive 复合图' : 'AgentSquare 复合图'}，可继续拖动和改层级`, 'good');
   }
 
   function addText() {
@@ -721,7 +869,7 @@ export function createFigureboard(root, ctx) {
       }
       if (isLine(item.type)) {
         const markerId = `fbA${String(item.id).replace(/[^a-zA-Z0-9]/g, '')}`;
-        defs.push(arrowDefs(item.stroke || '#3d6fe8', markerId));
+      defs.push(arrowDefs(item.stroke || '#3d6fe8', markerId, item.arrowStyle));
         return g(lineMarkup(item, markerId));
       }
       const filterId = `fbE${String(item.id).replace(/[^a-zA-Z0-9]/g, '')}`;
@@ -734,7 +882,7 @@ export function createFigureboard(root, ctx) {
     let wireBody = '';
     for (const wire of items.filter(isWire)) {
       const markerId = `fbW${String(wire.id).replace(/[^a-zA-Z0-9]/g, '')}`;
-      defs.push(arrowDefs(wire.stroke || '#3d6fe8', markerId));
+      defs.push(arrowDefs(wire.stroke || '#3d6fe8', markerId, wire.arrowStyle));
       wireBody += wireMarkup(wire, byId, { markerId }).replace(/<path class="fb-wire-hit"[^>]*\/>/g, '');
     }
     for (const wire of items.filter(isWire)) wireBody += wireLabelMarkup(wire, byId);
@@ -814,7 +962,7 @@ export function createFigureboard(root, ctx) {
     let body = '';
     for (const wire of wires) {
       const markerId = `fbW${String(wire.id).replace(/[^a-zA-Z0-9]/g, '')}`;
-      defs.push(arrowDefs(wire.stroke || '#3d6fe8', markerId));
+      defs.push(arrowDefs(wire.stroke || '#3d6fe8', markerId, wire.arrowStyle));
       body += wireMarkup(wire, byId, { markerId, selected: selectedIds.has(wire.id) });
     }
     labelLayer.setAttribute('viewBox', `0 0 ${size.width} ${size.height}`);
@@ -864,7 +1012,7 @@ export function createFigureboard(root, ctx) {
         // 形状和线条走同一份几何定义，所见即所得地对应导出的 SVG
         const markerId = `fbA${String(item.id).replace(/[^a-zA-Z0-9]/g, '')}`;
         const inner = isLine(item.type)
-          ? `<defs>${arrowDefs(item.stroke || '#3d6fe8', markerId)}</defs>${lineMarkup(item, markerId)}`
+          ? `<defs>${arrowDefs(item.stroke || '#3d6fe8', markerId, item.arrowStyle)}</defs>${lineMarkup(item, markerId)}`
           : shapeMarkup(item);
         const effectId = `fbE${String(item.id).replace(/[^a-zA-Z0-9]/g, '')}`;
         content = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
@@ -1294,6 +1442,11 @@ export function createFigureboard(root, ctx) {
   );
   const routeSelect = h('select', { class: 'field field--sm figureboard__select', title: '连接线走向（选中连线可改，也决定新连线的默认）', onchange: (event) => { config.set('research.figureRoute', event.currentTarget.value); updateSelected({ route: event.currentTarget.value }); } },
     ...Object.entries(ROUTES).map(([key, meta]) => h('option', { value: key }, meta.label)));
+  const arrowStyleSelect = h('select', { class: 'field field--sm figureboard__select', title: '箭头头部粗细（选中连线可改）', onchange: (event) => updateSelected({ arrowStyle: event.currentTarget.value }) },
+    h('option', { value: 'fine' }, '细箭头'),
+    h('option', { value: 'standard' }, '标准箭头'),
+    h('option', { value: 'bold' }, '粗箭头'),
+  );
   const curveBendInput = h('input', { class: 'figureboard__range figureboard__curve-range', type: 'range', min: '-120', max: '160', step: '1', value: '0', title: '曲线弯曲程度（选中曲线后调整）', oninput: (event) => updateSelected({ curveBend: Number(event.currentTarget.value) }) });
   const arrowEndBtn = toolBtn('lineArrow', '这条连线的箭头开关', () => {
     const wire = items.find((entry) => selectedIds.has(entry.id) && isWire(entry));
@@ -1318,6 +1471,7 @@ export function createFigureboard(root, ctx) {
   const presetSelect = h('select', { class: 'field field--sm figureboard__select', title: '插入一套已排好层级的科研图结构' },
     h('option', { value: 'pipeline' }, '流程图模板'),
     h('option', { value: 'architecture' }, '架构图模板'),
+    h('option', { value: 'paper-architecture' }, '论文三段式架构图'),
     h('option', { value: 'experiment' }, '实验图模板'),
     h('option', { value: 'agentsquare' }, 'AgentSquare 复合图'),
     h('option', { value: 'agentarchive' }, 'Agent Archive 复合图'),
@@ -1402,7 +1556,7 @@ export function createFigureboard(root, ctx) {
       h('div', { class: 'figureboard__tools' },
         h('div', { class: 'figureboard__group', title: '形状' }, ...shapeButtons),
         h('span', { class: 'figureboard__tool-sep' }),
-        h('div', { class: 'figureboard__group', title: '连线与文字' }, ...lineButtons, textBtn, routeSelect, curveBendInput, arrowEndBtn, wireLabelBtn),
+        h('div', { class: 'figureboard__group', title: '连线与文字' }, ...lineButtons, textBtn, routeSelect, arrowStyleSelect, curveBendInput, arrowEndBtn, wireLabelBtn),
         h('span', { class: 'figureboard__tool-sep' }),
         h('div', { class: 'figureboard__group', title: '样式' },
           fillInput, strokeInput, transparentFillBtn, transparentStrokeBtn,

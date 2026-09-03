@@ -275,6 +275,38 @@ async function readFile({ root, relPath }) {
   }
 }
 
+function validateWritePath(root, relPath) {
+  if (!root || typeof relPath !== 'string' || !relPath.trim()) throw new Error('缺少项目根目录或文件路径。');
+  const normalized = relPath.replace(/\\/g, '/').trim();
+  if (normalized.startsWith('/') || normalized.split('/').some((part) => part === '..' || part === '.')) throw new Error('文件路径必须位于项目目录以内。');
+  const target = path.resolve(root, normalized);
+  const relative = path.relative(path.resolve(root), target);
+  if (relative.startsWith('..' + path.sep) || path.isAbsolute(relative) || !path.basename(target)) throw new Error('文件路径必须位于项目目录以内。');
+  return { normalized, target };
+}
+
+async function writeFile({ root, relPath, content = '', create = false }) {
+  let targetInfo;
+  try { targetInfo = validateWritePath(root, relPath); } catch (err) { return { ok: false, error: err.message }; }
+  try {
+    const realRoot = await fsp.realpath(root);
+    await fsp.mkdir(path.dirname(targetInfo.target), { recursive: true });
+    const realParent = await fsp.realpath(path.dirname(targetInfo.target));
+    if (realParent !== realRoot && !realParent.startsWith(realRoot + path.sep)) return { ok: false, error: '拒绝写入项目目录以外的路径。' };
+    if (create && fs.existsSync(targetInfo.target)) return { ok: false, error: `文件已经存在：${targetInfo.normalized}` };
+    if (fs.existsSync(targetInfo.target)) {
+      const realTarget = await fsp.realpath(targetInfo.target);
+      if (realTarget !== realRoot && !realTarget.startsWith(realRoot + path.sep)) return { ok: false, error: '拒绝写入项目目录以外的文件。' };
+    }
+    const text = String(content ?? '');
+    if (Buffer.byteLength(text, 'utf8') > TEXT_MAX) return { ok: false, error: '文件内容超过 2MB，暂不写入。' };
+    await fsp.writeFile(targetInfo.target, text, 'utf8');
+    return { ok: true, relPath: targetInfo.normalized, name: path.basename(targetInfo.target), code: text, lines: text.split('\n').length, ext: path.extname(targetInfo.target).slice(1).toLowerCase() };
+  } catch (err) {
+    return { ok: false, error: `写入失败：${err.message}` };
+  }
+}
+
 function registerNotebookIpc(ipcMain, { dialog, getWindow }) {
   ipcMain.handle('notebook:pickFolder', async () => {
     const result = await dialog.showOpenDialog(getWindow?.(), {
@@ -288,6 +320,8 @@ function registerNotebookIpc(ipcMain, { dialog, getWindow }) {
 
   ipcMain.handle('notebook:listDir', (_e, payload) => listDir(payload || {}));
   ipcMain.handle('notebook:readFile', (_e, payload) => readFile(payload || {}));
+  ipcMain.handle('notebook:createFile', (_e, payload) => writeFile({ ...(payload || {}), create: true }));
+  ipcMain.handle('notebook:writeFile', (_e, payload) => writeFile(payload || {}));
   ipcMain.handle('notebook:folderInfo', (_e, root) => ({
     root, name: path.basename(root || ''), hasGraph: !!(root && graphPathIn(root)),
   }));
@@ -311,4 +345,4 @@ function registerNotebookIpc(ipcMain, { dialog, getWindow }) {
   ipcMain.handle('notebook:readSource', (_e, payload) => readSource(payload || {}));
 }
 
-module.exports = { registerNotebookIpc, findGraphs, loadGraph, readSource, describeGraph, listDir, readFile };
+module.exports = { registerNotebookIpc, findGraphs, loadGraph, readSource, describeGraph, listDir, readFile, writeFile };

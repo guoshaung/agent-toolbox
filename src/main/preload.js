@@ -208,6 +208,10 @@ contextBridge.exposeInMainWorld('toolbox', {
     listDir: (payload) => ipcRenderer.invoke('notebook:listDir', payload),
     /** 点开某个文件才读它的内容 */
     readFile: (payload) => ipcRenderer.invoke('notebook:readFile', payload),
+    /** 在项目目录内新建文本文件 */
+    createFile: (payload) => ipcRenderer.invoke('notebook:createFile', payload),
+    /** 保存已打开的项目文件 */
+    writeFile: (payload) => ipcRenderer.invoke('notebook:writeFile', payload),
   },
 
   biblio: {

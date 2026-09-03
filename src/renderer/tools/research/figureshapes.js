@@ -101,7 +101,7 @@ export function shapeMarkup(item) {
     case 'capsule':
       return `<rect x="${inset}" y="${inset}" width="${iw}" height="${ih}" rx="${ih / 2}" ${common}/>`;
     case 'container':
-      return `<rect x="${inset}" y="${inset}" width="${iw}" height="${ih}" rx="${radius || 14}" fill="${fill}" stroke="${stroke}" stroke-width="${sw || 2}" stroke-dasharray="${dash || `${(sw || 2) * 4} ${(sw || 2) * 3}`}"/>`;
+      return `<rect x="${inset}" y="${inset}" width="${iw}" height="${ih}" rx="${radius || 14}" fill="${fill}" stroke="${stroke}" stroke-width="${sw || 2}"${dash ? ` stroke-dasharray="${dash}"` : ''}/>`;
     case 'ellipse':
       return `<ellipse cx="${w / 2}" cy="${h / 2}" rx="${iw / 2}" ry="${ih / 2}" ${common}/>`;
     case 'diamond':
@@ -158,15 +158,18 @@ export function lineMarkup(item, markerId = 'fbArrow') {
 }
 
 /** 箭头 marker 定义，画布和导出都要用；颜色跟着线条走 */
-export function arrowDefs(color = '#3d6fe8', id = 'fbArrow') {
-  // markerUnits="strokeWidth" 时箭头长度 = markerWidth × 线宽。
-  // 原来给 9，线宽 4 就是 36 单位长的头，画在短箭头上会糊成一坨三角形。
-  // 收到 4，头长约等于 4 倍线宽，长短箭头都还协调。
-  const head = '<path d="M0,0 L0,5 L4.5,2.5 z"';
-  return `<marker id="${id}" markerWidth="4.5" markerHeight="5" refX="4.2" refY="2.5" orient="auto" markerUnits="strokeWidth">`
-    + `${head} fill="${color}"/></marker>`
-    + `<marker id="${id}Start" markerWidth="4.5" markerHeight="5" refX="0.3" refY="2.5" orient="auto-start-reverse" markerUnits="strokeWidth">`
-    + `${head} fill="${color}"/></marker>`;
+export function arrowDefs(color = '#3d6fe8', id = 'fbArrow', style = 'standard') {
+  const heads = {
+    fine: { width: 3.6, height: 4.2, refX: 3.3, path: 'M0,0 L0,4.2 L3.6,2.1 z' },
+    standard: { width: 4.5, height: 5, refX: 4.2, path: 'M0,0 L0,5 L4.5,2.5 z' },
+    bold: { width: 6.4, height: 7.2, refX: 5.8, path: 'M0,0 L0,7.2 L6.4,3.6 z' },
+  };
+  const head = heads[style] || heads.standard;
+  const path = `<path d="${head.path}"`;
+  return `<marker id="${id}" markerWidth="${head.width}" markerHeight="${head.height}" refX="${head.refX}" refY="${head.height / 2}" orient="auto" markerUnits="strokeWidth">`
+    + `${path} fill="${color}"/></marker>`
+    + `<marker id="${id}Start" markerWidth="${head.width}" markerHeight="${head.height}" refX="0.3" refY="${head.height / 2}" orient="auto-start-reverse" markerUnits="strokeWidth">`
+    + `${path} fill="${color}"/></marker>`;
 }
 
 /** 画布背景：纯色 / 网格 / 点阵 / 透明 */

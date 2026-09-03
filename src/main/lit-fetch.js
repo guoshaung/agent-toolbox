@@ -293,6 +293,17 @@ function sanitizeFileStem(title) {
   return s.slice(0, 120) || 'paper';
 }
 
+function titleFromPdfUrl(value) {
+  try {
+    const url = new URL(value);
+    const name = decodeURIComponent(path.basename(url.pathname)).replace(/\.pdf$/i, '').trim();
+    if (name && !/^[0-9a-f-]{20,}$/i.test(name)) return name;
+    return `直链文献-${url.hostname}`;
+  } catch {
+    return '直链文献';
+  }
+}
+
 function normalizeDoi(value) {
   return String(value || '').trim().replace(/^https?:\/\/(?:dx\.)?doi\.org\//i, '').replace(/^doi:\s*/i, '');
 }
@@ -544,6 +555,21 @@ async function fetchPaperByTitle(litDir, query) {
   fs.mkdirSync(litDir, { recursive: true });
 
   let hits = [];
+  const directUrl = safeHttpUrl(q);
+  if (directUrl) {
+    const title = titleFromPdfUrl(directUrl);
+    const buf = await downloadPdf(directUrl);
+    if (!buf) {
+      return { ok: false, code: 'direct-download-failed', title, url: directUrl, error: '这个地址没有返回可读取的 PDF，可能需要登录、Cookie 或人工验证。可以先在登录浏览器打开后，再用「导入文献」入库。' };
+    }
+    const stem = sanitizeFileStem(title);
+    let file = `${stem}.pdf`;
+    let n = 1;
+    while (fs.existsSync(path.join(litDir, file))) file = `${stem}-${n++}.pdf`;
+    fs.writeFileSync(path.join(litDir, file), buf);
+    const stat = fs.statSync(path.join(litDir, file));
+    return { ok: true, file, title, source: directUrl, size: stat.size, format: 'pdf' };
+  }
   const directId = extractArxivId(q);
   if (directId) {
     hits = [{ title: `arXiv ${directId}`, pdfUrl: `https://arxiv.org/pdf/${directId}`, score: 1 }];

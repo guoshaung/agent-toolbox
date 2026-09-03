@@ -741,6 +741,7 @@
 .figureboard__board-hint:hover { border-color: var(--accent); color: var(--accent); }
 .figureboard__marquee { position: absolute; z-index: 30; border: 1px solid #3d6fe8; background: rgba(61,111,232,.15); pointer-events: none; }
 .figureboard__item { position: absolute; min-width: 120px; min-height: 80px; border: 2px solid transparent; border-radius: 4px; cursor: move; box-shadow: 0 5px 18px rgba(0,0,0,.2); }
+.figureboard__item--container { z-index: 0; }
 .figureboard__item img { display: block; width: 100%; height: 100%; object-fit: contain; border-radius: 2px; pointer-events: none; }
 .figureboard__item--text { padding: 8px 10px; border-width: 1px; white-space: pre-wrap; overflow: hidden; font-weight: 650; }
 .figureboard__text { display: block; width: 100%; height: 100%; overflow: hidden; }
@@ -1448,12 +1449,14 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .nb__bar { flex-wrap: wrap; row-gap: 4px; }
 .nb__mode-toggle { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 35%, var(--line)); }
 .nb__code-controls { display: contents; }
+.nb__appearance-select { max-width: 116px; }
+.nb__font-size { width: 64px; }
 .nb__counter { font-family: var(--mono); font-size: 12px; min-width: 54px; text-align: center; }
 .nb__graph-label { font-size: 11.5px; max-width: 210px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 .nb__body { flex: 1; min-height: 0; display: flex; }
 .nb__side { width: 210px; flex: 0 0 auto; min-width: 28px; border-right: 1px solid var(--line-soft); background: var(--bg-sunken); overflow: hidden auto; padding: 10px 8px 24px; }
-.nb__main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.nb__main { flex: 1; min-width: 0; display: flex; flex-direction: column; --nb-editor-bg: #10151e; --nb-editor-fg: #d9e3f2; --nb-editor-line: #273750; --nb-editor-font: JetBrains Mono, SFMono-Regular, Menlo, monospace; --nb-editor-size: 13px; }
 .nb__main--markdown { background: var(--bg-sunken); }
 .nb__detail-pane { width: 330px; flex: 0 0 auto; min-width: 28px; border-left: 1px solid var(--line-soft); background: var(--bg-sunken); overflow: hidden auto; }
 .nb__side.is-collapsed > *, .nb__detail-pane.is-collapsed > * { visibility: hidden; }
@@ -1465,11 +1468,11 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 
 /* 编辑态和阅读态用同一套排版，切换时不再"换了个世界"；聚焦时才浮出边框 */
 .nb__editor {
-  flex: 1; margin: 12px; min-height: 0; font-family: var(--mono); font-size: 12.5px;
-  line-height: 1.8; padding: 12px 14px; resize: none; background: transparent; border: 1px solid transparent; border-radius: var(--radius);
+  flex: 1; margin: 12px; min-height: 0; font-family: var(--nb-editor-font); font-size: var(--nb-editor-size);
+  line-height: 1.8; padding: 12px 14px; resize: none; background: var(--nb-editor-bg); color: var(--nb-editor-fg); border: 1px solid var(--nb-editor-line); border-radius: var(--radius);
   transition: border-color .18s, background .18s, box-shadow .18s;
 }
-.nb__editor:focus { border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); background: var(--bg-sunken); box-shadow: 0 0 0 3px rgba(91,140,255,.08); }
+.nb__editor:focus { border-color: color-mix(in srgb, var(--accent) 45%, var(--nb-editor-line)); box-shadow: 0 0 0 3px rgba(91,140,255,.08); }
 .nb__markdown-shell { flex: 1; min-height: 0; display: flex; flex-direction: column; background: var(--bg-sunken); }
 .nb__markdown-toolbar { flex: 0 0 auto; display: flex; align-items: center; gap: 5px; flex-wrap: wrap; padding: 9px 14px; border-bottom: 1px solid var(--line-soft); background: var(--bg-raised); }
 .nb__md-tool { min-height: 28px; color: var(--text-dim); }
@@ -1501,6 +1504,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .nb__markdown-preview th, .nb__markdown-preview td { padding: 8px 10px; border: 1px solid var(--line); text-align: left; }
 .nb__markdown-preview th { color: var(--text); background: var(--bg-raised); font-weight: 650; }
 .nb__markdown-preview hr { margin: 22px 0; border: 0; border-top: 1px solid var(--line-soft); }
+.nb__main .nb__markdown-preview { background: var(--nb-editor-bg); color: var(--nb-editor-fg); font-family: var(--nb-editor-font); font-size: calc(var(--nb-editor-size) + 2px); }
 
 /* ---------- 任务模式 ---------- */
 .nb__tasks {
@@ -1535,9 +1539,10 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 
 .nb__code {
   flex: 1; min-height: 0; overflow: auto; padding: 12px 0 40px;
-  font-family: var(--mono); font-size: 12.5px; line-height: 1.8;
+  background: var(--nb-editor-bg); color: var(--nb-editor-fg); font-family: var(--nb-editor-font); font-size: var(--nb-editor-size); line-height: 1.8;
 }
 .nb__line { display: flex; white-space: pre; padding: 0 14px; }
+.nb__code.is-wrap .nb__line { white-space: pre-wrap; overflow-wrap: anywhere; }
 .nb__line:hover { background: rgba(255,255,255,.025); }
 .nb__line.is-flash { background: rgba(91,140,255,.18); transition: background .8s; }
 .nb__ln { flex: 0 0 auto; min-width: 3ch; margin-right: 16px; text-align: right; color: #444c5c; user-select: none; }
@@ -1699,6 +1704,12 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .nb__tree-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--mono); }
 .nb__tree-size { font-size: 10px; flex: 0 0 auto; }
 .nb__tree-empty { padding: 16px 12px; display: flex; flex-direction: column; gap: 10px; align-items: flex-start; }
+.nb__new-file { position: absolute; inset: 0; z-index: 40; display: flex; align-items: center; justify-content: center; padding: 20px; background: rgba(7,9,14,.68); }
+.nb__new-file[hidden] { display: none; }
+.nb__new-file-card { width: min(430px, 94vw); display: flex; flex-direction: column; gap: 10px; padding: 20px; border: 1px solid var(--line); border-radius: 14px; background: var(--bg-raised); box-shadow: 0 20px 60px rgba(0,0,0,.45); }
+.nb__new-file-card h3 { margin: 0; font-size: 17px; }
+.nb__new-file-card .field { width: 100%; }
+.nb__new-file-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 4px; }
 
 /* ---------- 记事本：调用关系图 ---------- */
 

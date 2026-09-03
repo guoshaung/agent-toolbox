@@ -9,6 +9,26 @@ import { htmlToMarkdown, markdownToHtml } from './markdown.js';
 import { SLASH_COMMANDS, filterCommands, outlineToTree } from './slash.js';
 
 const MAX_CHARS = 400_000;
+const NOTEBOOK_THEMES = {
+  midnight: { label: '深海蓝', bg: '#10151e', fg: '#d9e3f2', line: '#273750' },
+  graphite: { label: '石墨灰', bg: '#17191d', fg: '#e4e7ec', line: '#363b45' },
+  paper: { label: '纸张米色', bg: '#f6f0e4', fg: '#253044', line: '#d8cdb9' },
+  sage: { label: '柔和鼠尾草', bg: '#edf3ee', fg: '#20352c', line: '#bfd1c4' },
+  lavender: { label: '淡紫雾', bg: '#f1eff8', fg: '#302d49', line: '#cec8e1' },
+};
+const NOTEBOOK_FONTS = {
+  jetbrains: { label: 'JetBrains Mono', value: 'JetBrains Mono, SFMono-Regular, Menlo, monospace' },
+  sf: { label: 'SF Mono', value: 'SFMono-Regular, Menlo, Monaco, monospace' },
+  ibm: { label: 'IBM Plex Mono', value: 'IBM Plex Mono, SFMono-Regular, monospace' },
+  avenir: { label: 'Avenir Next', value: 'Avenir Next, Arial, sans-serif' },
+};
+const NOTEBOOK_TEMPLATES = {
+  blank: { label: '空白文件', name: 'untitled.txt', content: '' },
+  python: { label: 'Python 脚本', name: 'main.py', content: '#!/usr/bin/env python3\n\ndef main():\n    pass\n\n\nif __name__ == "__main__":\n    main()\n' },
+  javascript: { label: 'JavaScript 模块', name: 'index.js', content: "export function main() {\n  return true;\n}\n" },
+  markdown: { label: 'Markdown 文档', name: 'notes.md', content: '# 新文档\n\n## 目标\n\n' },
+  json: { label: 'JSON 配置', name: 'config.json', content: '{\n  "name": "new-project"\n}\n' },
+};
 const escapeHtml = (text) => text
   .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
@@ -29,6 +49,10 @@ export default {
     let hitIndex = 0;         // 在出现列表里的游标
     let editing = false;
     let editorMode = config.get('notebook.editorMode', 'code'); // code | markdown
+    let notebookTheme = config.get('notebook.theme', 'midnight');
+    let notebookFont = config.get('notebook.font', 'jetbrains');
+    let notebookFontSize = Number(config.get('notebook.fontSize', 13)) || 13;
+    let wordWrap = Boolean(config.get('notebook.wordWrap', false));
 
     const current = () => snippets.find((s) => s.id === currentId) || snippets[0] || null;
 
@@ -38,6 +62,7 @@ export default {
       config.set('notebook.currentId', currentId);
       selected = null;
       loadCurrent();
+      syncFileActions();
     } });
 
     const langSelect = h('select', { class: 'field field--sm', onchange: () => {
@@ -359,6 +384,7 @@ export default {
         snippet.langLocked = false;
         persist();
         loadCurrent();
+        syncFileActions();
         toast(`已读入 ${relPath}`, 'good');
       },
     });
@@ -422,7 +448,59 @@ export default {
       persist();
       selected = null;
       loadCurrent();
+      syncFileActions();
       return snippet;
+    }
+
+    function syncFileActions() {
+      if (typeof saveFileBtn === 'undefined') return;
+      const hasOrigin = Boolean(current()?.origin?.root && current()?.origin?.relPath);
+      saveFileBtn.disabled = !hasOrigin;
+      saveFileBtn.textContent = hasOrigin ? '保存文件' : '保存文件（先打开项目文件）';
+    }
+
+    async function saveCurrentFile() {
+      const snippet = current();
+      if (!snippet?.origin?.root || !snippet.origin.relPath) return toast('请先打开项目里的文件，再保存回项目', 'info');
+      const source = editorMode === 'markdown' ? markdownEditor.value : editor.value;
+      const result = await window.toolbox.notebook.writeFile({ root: snippet.origin.root, relPath: snippet.origin.relPath, content: source });
+      if (!result.ok) return toast(result.error, 'bad');
+      snippet.code = source;
+      snippet.at = Date.now();
+      persist();
+      await tree.refresh();
+      toast(`已保存：${snippet.origin.relPath}`, 'good');
+      reanalyze();
+    }
+
+    function openNewFile() {
+      if (!tree.root) return toast('先打开一个项目文件夹，新文件会默认放在项目根目录', 'info');
+      const originPath = current()?.origin?.relPath || '';
+      newFileFolderInput.value = originPath.includes('/') ? originPath.split('/').slice(0, -1).join('/') : '';
+      newFileNameInput.value = NOTEBOOK_TEMPLATES[newFileTemplateSelect.value]?.name || 'untitled.txt';
+      newFileModal.removeAttribute('hidden');
+      newFileNameInput.focus();
+      newFileNameInput.select();
+    }
+
+    function closeNewFile() { newFileModal.setAttribute('hidden', ''); }
+
+    async function createProjectFile() {
+      const name = newFileNameInput.value.trim();
+      const folder = newFileFolderInput.value.trim().replace(/\\/g, '/').replace(/^\/+|\/+$/g, '');
+      if (!name || name === '.' || name === '..' || /[\\/:*?"<>|]/.test(name)) return toast('文件名不能为空，也不能包含路径分隔符或特殊字符', 'info');
+      const relPath = folder ? `${folder}/${name}` : name;
+      const template = NOTEBOOK_TEMPLATES[newFileTemplateSelect.value] || NOTEBOOK_TEMPLATES.blank;
+      const result = await window.toolbox.notebook.createFile({ root: tree.root, relPath, content: template.content });
+      if (!result.ok) return toast(result.error, 'bad');
+      closeNewFile();
+      const snippet = newSnippet(result.code, result.name);
+      snippet.origin = { root: tree.root, relPath: result.relPath };
+      snippet.langLocked = false;
+      persist();
+      await tree.refresh();
+      syncFileActions();
+      toast(`已在项目内新建：${result.relPath}`, 'good');
     }
 
     function renderSnippetOptions() {
@@ -1306,20 +1384,73 @@ export default {
 
     // ---------- 组装 ----------
     const sideEl = h('aside', { class: 'nb__side' }, sideTabs, sideBody);
+    const themeSelect = h('select', { class: 'field field--sm nb__appearance-select', title: '编辑器背景主题', onchange: () => { notebookTheme = themeSelect.value; config.set('notebook.theme', notebookTheme); applyEditorAppearance(); } },
+      Object.entries(NOTEBOOK_THEMES).map(([id, theme]) => h('option', { value: id }, theme.label)));
+    const fontSelect = h('select', { class: 'field field--sm nb__appearance-select', title: '编辑器字体', onchange: () => { notebookFont = fontSelect.value; config.set('notebook.font', notebookFont); applyEditorAppearance(); } },
+      Object.entries(NOTEBOOK_FONTS).map(([id, font]) => h('option', { value: id }, font.label)));
+    const fontSizeSelect = h('select', { class: 'field field--sm nb__font-size', title: '编辑器字号', onchange: () => { notebookFontSize = Number(fontSizeSelect.value); config.set('notebook.fontSize', notebookFontSize); applyEditorAppearance(); } },
+      [12, 13, 14, 16, 18].map((size) => h('option', { value: String(size) }, `${size}px`)));
+    const wrapBtn = h('button', { class: 'btn btn--sm', title: '切换代码自动换行', onclick: () => { wordWrap = !wordWrap; config.set('notebook.wordWrap', wordWrap); applyEditorAppearance(); } }, '换行');
+    const newFileBtn = h('button', { class: 'btn btn--sm btn--primary', title: '在当前项目目录中新建文件', onclick: openNewFile }, '新建文件');
+    const saveFileBtn = h('button', { class: 'btn btn--sm', title: '保存当前项目文件（⌘S）', onclick: saveCurrentFile }, '保存文件');
+    const newFileFolderInput = h('input', { class: 'field field--sm', placeholder: '项目内文件夹（可留空）' });
+    const newFileNameInput = h('input', { class: 'field field--sm', placeholder: '文件名，例如 main.py' });
+    const newFileTemplateSelect = h('select', { class: 'field field--sm' }, Object.entries(NOTEBOOK_TEMPLATES).map(([id, template]) => h('option', { value: id }, template.label)));
+    const newFileModal = h('div', { class: 'nb__new-file', hidden: true },
+      h('div', { class: 'nb__new-file-card' },
+        h('h3', {}, '在项目内新建文件'),
+        h('p', { class: 'faint nb__hint' }, '默认写入已打开的项目根目录；需要时填写项目内的相对文件夹。'),
+        newFileFolderInput, newFileNameInput, newFileTemplateSelect,
+        h('div', { class: 'nb__new-file-actions' },
+          h('button', { class: 'btn btn--sm btn--primary', onclick: createProjectFile }, '创建并打开'),
+          h('button', { class: 'btn btn--sm btn--ghost', onclick: closeNewFile }, '取消'),
+        ),
+      ),
+    );
+    newFileTemplateSelect.addEventListener('change', () => {
+      const defaultNames = new Set(Object.values(NOTEBOOK_TEMPLATES).map((template) => template.name));
+      if (!newFileNameInput.value.trim() || defaultNames.has(newFileNameInput.value.trim())) newFileNameInput.value = NOTEBOOK_TEMPLATES[newFileTemplateSelect.value]?.name || 'untitled.txt';
+    });
+    newFileNameInput.addEventListener('keydown', (event) => { if (event.key === 'Enter') createProjectFile(); if (event.key === 'Escape') closeNewFile(); });
+    themeSelect.value = NOTEBOOK_THEMES[notebookTheme] ? notebookTheme : 'midnight';
+    fontSelect.value = NOTEBOOK_FONTS[notebookFont] ? notebookFont : 'jetbrains';
+    fontSizeSelect.value = String([12, 13, 14, 16, 18].includes(notebookFontSize) ? notebookFontSize : 13);
+    wrapBtn.classList.toggle('is-active', wordWrap);
     const codeControls = h('span', { class: 'nb__code-controls' },
       langSelect,
       editToggle,
       taskToggle,
+      newFileBtn,
+      saveFileBtn,
       h('span', { class: 'subbar__sep' }),
       symbolInput,
       h('button', { class: 'btn btn--icon', title: '上一处 (Shift+Enter)', onclick: () => step(-1) }, '‹'),
       h('button', { class: 'btn btn--icon', title: '下一处 (Enter)', onclick: () => step(1) }, '›'),
       hitCounter,
       h('span', { class: 'subbar__sep' }),
+      themeSelect,
+      fontSelect,
+      fontSizeSelect,
+      wrapBtn,
+      h('span', { class: 'subbar__sep' }),
       graphLabel,
       graphButton,
     );
     const mainEl = h('div', { class: 'nb__main' }, editor, codeView, markdownShell, tasksPanel);
+    function applyEditorAppearance() {
+      const theme = NOTEBOOK_THEMES[notebookTheme] || NOTEBOOK_THEMES.midnight;
+      const font = NOTEBOOK_FONTS[notebookFont] || NOTEBOOK_FONTS.jetbrains;
+      mainEl.style.setProperty('--nb-editor-bg', theme.bg);
+      mainEl.style.setProperty('--nb-editor-fg', theme.fg);
+      mainEl.style.setProperty('--nb-editor-line', theme.line);
+      mainEl.style.setProperty('--nb-editor-font', font.value);
+      mainEl.style.setProperty('--nb-editor-size', `${notebookFontSize}px`);
+      editor.style.whiteSpace = wordWrap ? 'pre-wrap' : 'pre';
+      codeView.classList.toggle('is-wrap', wordWrap);
+      markdownCanvas.style.fontFamily = font.value;
+      markdownCanvas.style.fontSize = `${Math.max(14, notebookFontSize + 2)}px`;
+      wrapBtn.classList.toggle('is-active', wordWrap);
+    }
     const detailEl = h('aside', { class: 'nb__detail-pane' }, detail);
     const nbBody = h('div', { class: 'nb__body' });
 
@@ -1414,10 +1545,13 @@ export default {
       ),
       symbolList,
       nbBody,
+      newFileModal,
     );
 
     applyPaneWidths();
     syncEditorMode();
+    applyEditorAppearance();
+    syncFileActions();
 
     // 窗口（或吸附分隔条）变宽变窄时，两栏跟着重新夹取，代码区保底 MAIN_MIN
     window.addEventListener('resize', debounce(applyPaneWidths, 80));

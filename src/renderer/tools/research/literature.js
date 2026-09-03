@@ -1872,7 +1872,7 @@ export function createLiterature(root, ctx) {
     noticeEl.removeAttribute('hidden');
     noticeEl.appendChild(
       h('div', { class: 'lit__notice-head' },
-        h('strong', {}, result.code === 'download-failed' ? '找到了，但自动下载没成功' : '没找到免费下载源'),
+        h('strong', {}, result.code === 'direct-download-failed' ? 'PDF 直链无法读取' : result.code === 'download-failed' ? '找到了，但自动下载没成功' : '没找到免费下载源'),
         h('span', { style: { flex: 1 } }),
         h('button', { class: 'lit__anno-del', title: '关闭', onclick: () => showFetchNotice(null) }, '×'),
       ),
@@ -1893,13 +1893,13 @@ export function createLiterature(root, ctx) {
     );
   }
 
-  /** 按名字自动下载：优先 arXiv 免费源，找不到就提示用户自己去找 */
+  /** 支持 PDF 直链直接入库；普通文献名再走开放学术索引检索。 */
   async function doFetch() {
     const query = fetchInput.value.trim();
-    if (!query) return toast('先粘贴文献名或 arXiv 号', 'info');
+    if (!query) return toast('先粘贴文献名、PDF 直链或 arXiv 号', 'info');
     fetchBtn.disabled = true;
     showFetchNotice(null);
-    fetchStatus.textContent = '正在 arXiv / dblp / OpenAlex 上找免费 PDF…';
+    fetchStatus.textContent = /^https?:\/\//i.test(query) ? '正在读取 PDF 直链并校验文件…' : '正在 arXiv / dblp / OpenAlex 上找免费 PDF…';
     try {
       const result = await lit.fetchByTitle(query);
       if (!result.ok) {
@@ -1925,7 +1925,7 @@ export function createLiterature(root, ctx) {
 
   const fetchInput = h('input', {
     class: 'field lit__fetch-input',
-    placeholder: '粘贴文献名 / arXiv 号，回车自动下载（arXiv 免费）',
+    placeholder: '粘贴文献名 / PDF直链 / arXiv号，回车自动下载',
     onkeydown: (e) => {
       if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); doFetch(); }
     },
