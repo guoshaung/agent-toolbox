@@ -264,8 +264,11 @@ export default {
     );
 
     showDetailIdle();
-    initSources().then(() => refresh());
+    // activate 可能比 initSources 先跑完，那时 sourceSelect.value 还是空的，
+    // 扫出来是 0 条；而 refresh 里的 loading 锁又会把随后正确的那次直接挡掉，
+    // 结果就是明明有几百条会话、界面却显示「没扫到」。所以让两边都排在同一个 promise 后面。
+    const ready = initSources().then(() => refresh());
 
-    return { activate: () => { if (!sessions.length) refresh(); } };
+    return { activate: () => { ready.then(() => { if (!sessions.length) refresh(); }); } };
   },
 };

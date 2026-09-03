@@ -52,6 +52,7 @@ let store;
 let mainWindow;
 let petWindow;
 let petExpanded = false;
+let petMode = false; // false | 'card' | 'memory'
 let termPopupWindow;
 let pendingTermRequest;
 let literatureBrowserWindow;
@@ -298,6 +299,8 @@ const DOCK_SHORTCUT_LABEL = process.platform === 'darwin' ? '⌥⇧D' : 'Ctrl+Al
 
 const PET_SIZE = { width: 124, height: 138 };
 const PET_CARD_SIZE = { width: 390, height: 548 };
+// 记忆栈要装整段对话，390 宽根本排不下，长文会挤成一条竖线。
+const PET_MEMORY_SIZE = { width: 880, height: 620 };
 const PET_DEFAULTS = {
   enabled: false,
   skin: 'study-buddy',
@@ -1044,7 +1047,10 @@ function applyPetSettings() {
   if (!petWindow || petWindow.isDestroyed()) return;
   const settings = petSettings();
   petWindow.setAlwaysOnTop(Boolean(settings.alwaysOnTop), 'floating');
-  petWindow.setOpacity(Math.min(1, Math.max(0.35, Number(settings.opacity) || PET_DEFAULTS.opacity)));
+  // 记忆栈展开时不动窗口透明度，否则正在读的长文会跟着变淡
+  if (petMode !== 'memory') {
+    petWindow.setOpacity(Math.min(1, Math.max(0.35, Number(settings.opacity) || PET_DEFAULTS.opacity)));
+  }
   if (!petExpanded) {
     const old = petWindow.getBounds();
     const size = petAvatarSize(settings.size);
@@ -1375,11 +1381,19 @@ function registerIpc() {
     applyPetSettings();
     return true;
   });
-  ipcMain.handle('pet:resize', (_e, expanded) => {
+  // mode: false = 收起头像，'card' / true = 四行解释卡，'memory' = 记忆栈大窗
+  ipcMain.handle('pet:resize', (_e, mode) => {
     if (!petWindow || petWindow.isDestroyed()) return false;
     const old = petWindow.getBounds();
-    petExpanded = Boolean(expanded);
-    const size = expanded ? PET_CARD_SIZE : petAvatarSize();
+    petExpanded = Boolean(mode);
+    petMode = mode === 'memory' ? 'memory' : (mode ? 'card' : false);
+    // 记忆栈是要长时间读的，允许拖边框改大小；头像和小卡片保持固定。
+    petWindow.setResizable(mode === 'memory');
+    const size = mode === 'memory' ? PET_MEMORY_SIZE : (mode ? PET_CARD_SIZE : petAvatarSize());
+    // 记忆栈里全是要读的长文字。窗口级 setOpacity 会把文字一起变淡，
+    // 那正是「看不清」的来源，所以这里强制不透明，半透明交给 CSS 只作用在底板上。
+    petWindow.setOpacity(mode === 'memory' ? 1 : Math.min(1, Math.max(0.35,
+      Number(petSettings().opacity) || PET_DEFAULTS.opacity)));
     const display = screen.getDisplayMatching(old);
     const work = display.workArea;
     const rightDocked = old.x + old.width / 2 >= work.x + work.width / 2;
@@ -1440,6 +1454,38 @@ function registerIpc() {
       mime,
       base64: fs.readFileSync(filePath).toString('base64'),
     };
+  });
+
+  ipcMain.handle('files:saveImage', async (_event, payload = {}) => {
+    const match = String(payload.dataUrl || '').match(/^data:(image\/(?:png|jpeg|webp));base64,([A-Za-z0-9+/=]+)$/);
+    if (!match) return { ok: false, error: '图片数据无效，只支持 PNG / JPEG / WebP。' };
+    const buffer = Buffer.from(match[2], 'base64');
+    if (!buffer.length || buffer.length > 40 * 1024 * 1024) return { ok: false, error: '图片为空或超过 40MB。' };
+    const extension = match[1] === 'image/jpeg' ? 'jpg' : match[1].split('/')[1];
+    const defaultName = path.basename(String(payload.defaultName || `科研图板.${extension}`));
+    const result = await dialog.showSaveDialog(mainWindow, {
+      title: '导出科研图片',
+      defaultPath: path.join(app.getPath('downloads'), defaultName),
+      filters: [{ name: extension.toUpperCase(), extensions: [extension] }],
+    });
+    if (result.canceled || !result.filePath) return { ok: false, canceled: true };
+    fs.writeFileSync(result.filePath, buffer);
+    return { ok: true, path: result.filePath, size: buffer.length };
+  });
+
+  ipcMain.handle('files:saveText', async (_event, payload = {}) => {
+    const content = String(payload.content || '');
+    if (!content || content.length > 30 * 1024 * 1024) return { ok: false, error: '文本为空或超过 30MB。' };
+    const extension = String(payload.extension || 'txt').replace(/[^a-z0-9]/gi, '').toLowerCase() || 'txt';
+    const defaultName = path.basename(String(payload.defaultName || `科研图板.${extension}`));
+    const result = await dialog.showSaveDialog(mainWindow, {
+      title: '导出科研文件',
+      defaultPath: path.join(app.getPath('downloads'), defaultName),
+      filters: [{ name: extension.toUpperCase(), extensions: [extension] }],
+    });
+    if (result.canceled || !result.filePath) return { ok: false, canceled: true };
+    fs.writeFileSync(result.filePath, content, 'utf8');
+    return { ok: true, path: result.filePath, size: Buffer.byteLength(content) };
   });
 
   ipcMain.handle('files:pickPetSkin', async () => {
@@ -1826,19 +1872,36 @@ function registerIpc() {
     return { file: target, renamed: true, from: fileName, title };
   }
 
-  ipcMain.handle('lit:import', async () => {
-    const result = await dialog.showOpenDialog(mainWindow, {
-      title: '导入文献',
-      properties: ['openFile', 'multiSelections'],
-      filters: [
-        { name: '文献', extensions: LIT_EXTENSIONS },
-        { name: '所有文件', extensions: ['*'] },
-      ],
-    });
-    if (result.canceled || !result.filePaths.length) return [];
+  function collectLiteratureSources(sources) {
+    const result = [];
+    const seen = new Set();
+    const visit = (source) => {
+      if (result.length >= 300 || typeof source !== 'string') return;
+      let stat;
+      try { stat = fs.statSync(source); } catch { return; }
+      if (stat.isDirectory()) {
+        let entries;
+        try { entries = fs.readdirSync(source, { withFileTypes: true }); } catch { return; }
+        for (const entry of entries) {
+          if (entry.isSymbolicLink()) continue;
+          visit(path.join(source, entry.name));
+          if (result.length >= 300) return;
+        }
+        return;
+      }
+      const ext = path.extname(source).slice(1).toLowerCase();
+      if (!LIT_EXTENSIONS.includes(ext) || seen.has(source)) return;
+      seen.add(source);
+      result.push(source);
+    };
+    for (const source of Array.isArray(sources) ? sources : []) visit(source);
+    return result;
+  }
+
+  async function importLiteratureSources(sources) {
     const dir = litDir();
     const imported = [];
-    for (const src of result.filePaths) {
+    for (const src of collectLiteratureSources(sources)) {
       const base = path.basename(src);
       const ext = path.extname(base);
       const stem = path.basename(base, ext);
@@ -1851,17 +1914,31 @@ function registerIpc() {
         const extName = ext.slice(1).toLowerCase();
         let finalName = path.basename(dest);
         let renamed = false;
-        // arxiv 这类编号命名的 PDF：读正文标题重命名
         if (extName === 'pdf') {
-          const r = await maybeRenamePdf(dir, finalName);
-          finalName = r.file;
-          renamed = r.renamed;
+          const renamedPdf = await maybeRenamePdf(dir, finalName);
+          finalName = renamedPdf.file;
+          renamed = renamedPdf.renamed;
         }
         imported.push({ file: finalName, size: stat.size, format: extName, renamed });
       } catch { /* 单个失败不拖垮整批 */ }
     }
     return imported;
+  }
+
+  ipcMain.handle('lit:import', async () => {
+    const result = await dialog.showOpenDialog(mainWindow, {
+      title: '导入文献',
+      properties: ['openFile', 'multiSelections'],
+      filters: [
+        { name: '文献', extensions: LIT_EXTENSIONS },
+        { name: '所有文件', extensions: ['*'] },
+      ],
+    });
+    if (result.canceled || !result.filePaths.length) return [];
+    return importLiteratureSources(result.filePaths);
   });
+
+  ipcMain.handle('lit:importFiles', (_e, sources) => importLiteratureSources(sources));
 
   /** 整理库里已有的编号命名 PDF（不重新导入） */
   ipcMain.handle('lit:fixNames', async () => {

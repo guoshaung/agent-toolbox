@@ -31,6 +31,26 @@ export function createTimer(root, ctx) {
   let phase = 'idle'; // idle | focus | break
   let remaining = 0;
   let ticker = null;
+  let sessionTask = config.get('focus.sessionTask', '');
+
+  const intentInput = h('input', {
+    class: 'field field--sm focus__intent-input',
+    value: config.get('focus.intent', ''),
+    placeholder: '今天想把哪件事想清楚？',
+    onchange: () => config.set('focus.intent', intentInput.value.trim()),
+  });
+  const missionInput = h('input', {
+    class: 'field field--sm focus__mission-input',
+    value: sessionTask,
+    placeholder: '本轮只做一件事，例如：读完论文方法部分',
+    onchange: () => { sessionTask = missionInput.value.trim(); config.set('focus.sessionTask', sessionTask); },
+  });
+  const progressEl = h('div', { class: 'focus__progress' });
+  const metricMinutes = h('strong', { class: 'focus__metric-value' }, '0');
+  const metricSessions = h('strong', { class: 'focus__metric-value' }, '0');
+  const metricStreak = h('strong', { class: 'focus__metric-value' }, '0');
+  const weekBars = h('div', { class: 'focus__week-bars' });
+  const recentList = h('div', { class: 'focus__recent-list' });
 
   const timeEl = h('div', { class: 'focus__time' }, mmss(config.get('focus.focusMin', 25) * 60));
   const phaseEl = h('div', { class: 'focus__phase faint' }, '准备好了就开始');
@@ -54,14 +74,26 @@ export function createTimer(root, ctx) {
     phase = next;
     remaining = Math.round(minutes * 60);
     timeEl.textContent = mmss(remaining);
-    phaseEl.textContent = next === 'focus' ? '专注中 —— 别开新标签页' : next === 'break' ? '休息一下，站起来走两步' : '准备好了就开始';
+    phaseEl.textContent = next === 'focus'
+      ? sessionTask ? `专注中 · ${sessionTask}` : '专注中 —— 别开新标签页'
+      : next === 'break' ? '休息一下，站起来走两步' : '准备好了就开始';
     startBtn.textContent = next === 'idle' ? '开始专注' : '暂停';
     root.classList.toggle('is-focusing', next === 'focus');
+    root.classList.remove('is-paused');
+    updateProgress();
+  }
+
+  function updateProgress() {
+    const total = phase === 'break' ? (Number(breakMin.value) || 5) * 60 : (Number(focusMin.value) || 25) * 60;
+    const ratio = phase === 'idle' ? 0 : Math.max(0, Math.min(1, 1 - remaining / total));
+    progressEl.style.setProperty('--focus-progress', String(ratio));
+    progressEl.setAttribute('aria-label', `当前阶段完成 ${Math.round(ratio * 100)}%`);
   }
 
   function tick() {
     remaining -= 1;
     timeEl.textContent = mmss(remaining);
+    updateProgress();
     if (remaining > 0) return;
     clearInterval(ticker);
     ticker = null;
@@ -85,12 +117,14 @@ export function createTimer(root, ctx) {
       ticker = null;
       startBtn.textContent = '继续';
       phaseEl.textContent = '已暂停';
+      root.classList.add('is-paused');
       return;
     }
     if (phase === 'idle') setPhase('focus', Number(focusMin.value) || 25);
     else phaseEl.textContent = phase === 'focus' ? '专注中 —— 别开新标签页' : '休息中';
     ticker = setInterval(tick, 1000);
     startBtn.textContent = '暂停';
+    root.classList.remove('is-paused');
     if (Notification.permission === 'default') Notification.requestPermission();
   }
 
@@ -102,7 +136,7 @@ export function createTimer(root, ctx) {
 
   async function logSession(minutes) {
     const log = config.get('focus.log') || [];
-    log.unshift({ at: Date.now(), minutes });
+    log.unshift({ at: Date.now(), minutes, task: sessionTask, intent: intentInput.value.trim() });
     await config.set('focus.log', log.slice(0, 200));
     renderStats();
   }
@@ -116,6 +150,75 @@ export function createTimer(root, ctx) {
     statsEl.textContent = todays.length
       ? `今天 ${todays.length} 个番茄，共 ${minutes} 分钟`
       : '今天还没开始';
+    metricMinutes.textContent = String(minutes);
+    metricSessions.textContent = String(todays.length);
+    const days = new Set(log.map((item) => new Date(item.at).toISOString().slice(0, 10)));
+    let streak = 0;
+    const cursor = new Date();
+    while (days.has(cursor.toISOString().slice(0, 10))) {
+      streak += 1;
+      cursor.setDate(cursor.getDate() - 1);
+    }
+    metricStreak.textContent = String(streak);
+    renderWeekBars(log);
+    renderRecent(log);
+  }
+
+  function renderWeekBars(log) {
+    weekBars.textContent = '';
+    const today = new Date();
+    const values = [];
+    for (let offset = 6; offset >= 0; offset -= 1) {
+      const date = new Date(today);
+      date.setHours(0, 0, 0, 0);
+      date.setDate(today.getDate() - offset);
+      const start = date.getTime();
+      const total = log.filter((item) => item.at >= start && item.at < start + 86400000)
+        .reduce((sum, item) => sum + item.minutes, 0);
+      values.push({ date, total });
+    }
+    const max = Math.max(60, ...values.map((item) => item.total));
+    for (const item of values) {
+      const column = h('div', { class: 'focus__week-column', title: `${item.date.toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric' })} · ${item.total} 分钟` },
+        h('div', { class: 'focus__week-track' }, h('div', { class: 'focus__week-fill', style: { height: `${Math.max(item.total ? 8 : 2, Math.round(item.total / max * 100))}%` } })),
+        h('span', {}, item.date.toLocaleDateString('zh-CN', { weekday: 'short' }).replace('周', '')),
+      );
+      weekBars.append(column);
+    }
+  }
+
+  function renderRecent(log) {
+    recentList.textContent = '';
+    const recent = log.slice(0, 4);
+    if (!recent.length) {
+      recentList.append(h('div', { class: 'faint focus__note' }, '完成一轮后，这里会留下最近的专注痕迹。'));
+      return;
+    }
+    for (const item of recent) {
+      recentList.append(h('div', { class: 'focus__recent-item' },
+        h('span', { class: 'focus__recent-dot' }),
+        h('div', { class: 'focus__recent-copy' },
+          h('strong', {}, item.task || '未填写本轮任务'),
+          h('span', { class: 'faint' }, `${item.minutes} 分钟 · ${new Date(item.at).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: 'numeric', minute: '2-digit', hour12: false })}`),
+        ),
+      ));
+    }
+  }
+
+  const presetWrap = h('div', { class: 'focus__presets' });
+  for (const preset of [{ focus: 25, rest: 5 }, { focus: 50, rest: 10 }, { focus: 90, rest: 20 }]) {
+    presetWrap.append(h('button', {
+      class: 'btn btn--sm',
+      onclick: (event) => {
+        if (phase !== 'idle') return toast('当前计时进行中，结束或重置后再换方案', 'info');
+        focusMin.value = String(preset.focus);
+        breakMin.value = String(preset.rest);
+        config.set('focus.focusMin', preset.focus);
+        config.set('focus.breakMin', preset.rest);
+        setPhase('idle', preset.focus);
+        for (const button of presetWrap.children) button.classList.toggle('is-active', button === event.currentTarget);
+      },
+    }, `${preset.focus}/${preset.rest}`));
   }
 
   // ---------- 白噪音 ----------
@@ -275,11 +378,33 @@ export function createTimer(root, ctx) {
       h('section', { class: 'focus__timer card' },
         timeEl,
         phaseEl,
+        progressEl,
         h('div', { class: 'focus__controls' },
           startBtn,
           h('label', { class: 'subbar__label' }, '专注', focusMin, '分'),
           h('label', { class: 'subbar__label' }, '休息', breakMin, '分'),
         ),
+      ),
+      h('section', { class: 'card focus__mission' },
+        h('div', { class: 'focus__card-kicker' }, 'TODAY / ONE THING'),
+        h('h3', { class: 'card__title' }, '把注意力放在一件事上'),
+        h('label', { class: 'focus__field-label' }, '今日意图', intentInput),
+        h('label', { class: 'focus__field-label' }, '本轮任务', missionInput),
+        h('div', { class: 'focus__preset-label faint' }, '快速方案：专注 / 休息（分钟）'),
+        presetWrap,
+        h('div', { class: 'faint focus__mission-note' }, '先写下完成后的可见结果，再开始计时。'),
+      ),
+      h('section', { class: 'card focus__activity' },
+        h('div', { class: 'focus__card-kicker' }, 'RECENT RHYTHM'),
+        h('h3', { class: 'card__title' }, '专注节奏'),
+        h('div', { class: 'focus__metrics' },
+          h('div', { class: 'focus__metric' }, metricMinutes, h('span', {}, '今日分钟')),
+          h('div', { class: 'focus__metric' }, metricSessions, h('span', {}, '今日轮数')),
+          h('div', { class: 'focus__metric' }, metricStreak, h('span', {}, '连续天数')),
+        ),
+        h('div', { class: 'focus__week-title faint' }, '最近 7 天'),
+        weekBars,
+        recentList,
       ),
       h('section', { class: 'card' },
         h('h3', { class: 'card__title' }, '背景音'),

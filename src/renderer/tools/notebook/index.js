@@ -6,6 +6,7 @@ import { MODES, MODE_LIST, sliceLines, buildTaskPlan, buildTaskCheck } from './m
 import { createFileTree } from './filetree.js';
 import { renderCallGraph } from './callgraph.js';
 import { htmlToMarkdown, markdownToHtml } from './markdown.js';
+import { SLASH_COMMANDS, filterCommands, outlineToTree } from './slash.js';
 
 const MAX_CHARS = 400_000;
 const escapeHtml = (text) => text
@@ -134,6 +135,12 @@ export default {
             return;
           }
         }
+        if (event.key === '\\' && !event.isComposing) {
+          // 敲反斜杠唤出命令面板，反斜杠本身不进正文
+          event.preventDefault();
+          openSlash();
+          return;
+        }
         if (event.key === 'Tab') {
           event.preventDefault();
           document.execCommand('insertText', false, '  ');
@@ -154,6 +161,94 @@ export default {
         }
       },
     });
+
+    // ---------- 反斜杠命令面板 ----------
+    //
+    // 做成"敲 \ 弹面板 + 面板里自带输入框"而不是在 contenteditable 里边打边匹配：
+    // contenteditable 的光标和文本节点很难稳定地读出"刚才敲了什么"，
+    // 换成独立输入框后，过滤、方向键选择、回车确认都简单可靠。
+    let slashRange = null;         // 敲 \ 那一刻的光标位置，插入时要还原回去
+    let slashIndex = 0;
+
+    const slashInput = h('input', {
+      class: 'field field--sm nb__slash-input',
+      placeholder: '输入命令名，回车插入',
+      oninput: () => { slashIndex = 0; renderSlashList(); },
+      onkeydown: (event) => {
+        const list = filterCommands(slashInput.value);
+        if (event.key === 'Escape') { event.preventDefault(); closeSlash(); return; }
+        if (event.key === 'ArrowDown') { event.preventDefault(); slashIndex = Math.min(list.length - 1, slashIndex + 1); renderSlashList(); return; }
+        if (event.key === 'ArrowUp') { event.preventDefault(); slashIndex = Math.max(0, slashIndex - 1); renderSlashList(); return; }
+        if (event.key === 'Enter' && !event.isComposing) {
+          event.preventDefault();
+          if (list[slashIndex]) applySlash(list[slashIndex]);
+        }
+      },
+    });
+    const slashList = h('div', { class: 'nb__slash-list' });
+    const slashPanel = h('div', { class: 'nb__slash', hidden: true }, slashInput, slashList);
+
+    function renderSlashList() {
+      const list = filterCommands(slashInput.value);
+      slashList.textContent = '';
+      if (!list.length) {
+        slashList.append(h('div', { class: 'faint nb__hint' }, '没有匹配的命令'));
+        return;
+      }
+      list.forEach((cmd, index) => {
+        slashList.append(h('button', {
+          class: `nb__slash-item${index === slashIndex ? ' is-active' : ''}`,
+          onmouseenter: () => { slashIndex = index; renderSlashList(); },
+          onclick: () => applySlash(cmd),
+        },
+          h('span', { class: 'nb__slash-name' }, `\\${cmd.id}`),
+          h('span', { class: 'nb__slash-label' }, cmd.label),
+          h('span', { class: 'faint nb__slash-hint' }, cmd.hint),
+        ));
+      });
+    }
+
+    function openSlash() {
+      const selection = window.getSelection();
+      slashRange = selection && selection.rangeCount ? selection.getRangeAt(0).cloneRange() : null;
+      slashIndex = 0;
+      slashInput.value = '';
+      renderSlashList();
+      slashPanel.removeAttribute('hidden');
+      slashInput.focus();
+    }
+
+    function closeSlash() {
+      slashPanel.setAttribute('hidden', '');
+      markdownCanvas.focus();
+    }
+
+    /** 把光标还原到敲 \ 的位置 —— 面板抢过焦点，不还原就会插到文档开头 */
+    function restoreSlashRange() {
+      if (!slashRange) return;
+      const selection = window.getSelection();
+      selection.removeAllRanges();
+      selection.addRange(slashRange);
+    }
+
+    function applySlash(cmd) {
+      closeSlash();
+      restoreSlashRange();
+
+      if (cmd.transform) {                     // 大纲转结构树：作用于选中的文本
+        const selection = window.getSelection();
+        const text = String(selection || '').trim();
+        if (!text) {
+          toast('先选中要转换的缩进大纲，再用这个命令', 'info');
+          return;
+        }
+        const tree = outlineToTree(text);
+        document.execCommand('insertHTML', false, markdownToHtml('```\n' + tree + '\n```\n'));
+      } else {
+        document.execCommand('insertHTML', false, markdownToHtml(cmd.markdown()));
+      }
+      markdownCanvas.dispatchEvent(new Event('input', { bubbles: true }));
+    }
 
     function renderMarkdownPreview() {
       markdownCanvas.innerHTML = markdownToHtml(markdownEditor.value);
@@ -224,11 +319,16 @@ export default {
       markdownToolbarButton('1. 列表', '插入有序列表', () => markdownCommand('insertOrderedList')),
       markdownToolbarButton('引用', '插入引用', () => markdownCommand('formatBlock', 'blockquote')),
       markdownToolbarButton('表格', '插入三列表格', insertMarkdownTable),
-      h('span', { class: 'faint nb__md-hint' }, '⌘1–⌘6 标题 · ⌘B 加粗 · ⌘K 链接'),
+      markdownToolbarButton('\\ 命令', '插入代码块 / 结构树 / 表格等；也可直接在正文敲反斜杠', () => {
+        markdownCanvas.focus();
+        openSlash();
+      }),
+      h('span', { class: 'faint nb__md-hint' }, '敲 \\ 唤出命令 · ⌘1–⌘6 标题 · ⌘B 加粗 · ⌘K 链接'),
     );
     const markdownShell = h('div', { class: 'nb__markdown-shell', hidden: true },
       markdownToolbar,
       markdownCanvas,
+      slashPanel,
     );
 
     const codeView = h('div', { class: 'nb__code' });

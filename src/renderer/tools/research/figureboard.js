@@ -8,6 +8,7 @@ import {
   ROUTES, PORTS, portPoint, wireMarkup, wireLabelMarkup, isWire,
   wireMidpoint as wireMidpointOf,
 } from './figurewires.js';
+import { FIGURE_ASSETS, FIGURE_SOURCE_LINKS } from './figureassets.js';
 
 const DEFAULT_SITES = [
   { name: 'BioRender', url: 'https://www.biorender.com/', desc: '生命科学插图素材', emoji: '🧬' },
@@ -15,9 +16,18 @@ const DEFAULT_SITES = [
   { name: 'diagrams.net', url: 'https://app.diagrams.net/', desc: '架构图 / 流程图', emoji: '🔷' },
   { name: 'Excalidraw', url: 'https://excalidraw.com/', desc: '手绘风图示', emoji: '✏️' },
   { name: 'Figma', url: 'https://www.figma.com/', desc: '界面与矢量设计', emoji: '◈' },
+  ...FIGURE_SOURCE_LINKS,
 ];
 
 const MAX_IMAGE_EDGE = 2400;
+const AI_DRAWING_URL = 'https://chatgpt.com/';
+const AI_PROMPT_PRESETS = [
+  { id: 'pixel-person', label: '像素风人物', prompt: '科研图板素材：一个单独的像素风研究员人物，半身，正面，干净轮廓，有限配色，透明背景，无文字，无阴影，适合作为科研流程图 icon。' },
+  { id: 'pixel-tool', label: '像素风工具', prompt: '科研图板素材：一个单独的像素风实验室工具图标（试管、烧杯和小型传感器组合），正面，清晰像素边缘，透明背景，无文字，适合作为科研流程图节点。' },
+  { id: 'realistic-device', label: '真实风格设备', prompt: '科研图板素材：一个单独的真实风格科研仪器，棚拍产品视图，柔和均匀光线，边缘清晰，透明背景，无文字，无 logo，适合论文配图。' },
+  { id: 'flat-icon', label: '扁平科研图标', prompt: '科研图板素材：一个单独的现代扁平矢量科研图标，主题是数据分析与神经网络，蓝绿色配色，透明背景，无文字，无渐变，适合论文图示。' },
+  { id: 'medical-illustration', label: '医学插图', prompt: '科研图板素材：一个单独的医学科研插图元素，主题是细胞与分子结构，简洁准确，白色和蓝绿色配色，透明背景，无文字，适合论文流程图。' },
+];
 
 function imageDataUrl(data) {
   return `data:${data.mime};base64,${data.base64}`;
@@ -42,9 +52,13 @@ export function createFigureboard(root, ctx) {
   const { config } = ctx;
   const siteViewHost = h('div', { class: 'figureboard__site-view' });
   const siteList = h('div', { class: 'figureboard__site-list' });
+  const localAssetList = h('div', { class: 'figureboard__asset-list' });
   const sources = h('aside', { class: 'figureboard__sources' });
   const browserPane = h('section', { class: 'figureboard__browser', hidden: true });
+  const browserTitle = h('strong', {}, '素材浏览区');
+  const browserHint = h('span', { class: 'faint' }, '再点一次同一个网站也能收起');
   const board = h('div', { class: 'figureboard__canvas', tabindex: '0' });
+  const contextMenu = h('div', { class: 'figureboard__context-menu', hidden: true });
   const empty = h('div', { class: 'figureboard__empty' },
     h('span', { class: 'empty__icon' }, '🖼️'),
     '把科研截图、图表或公式粘贴到这里',
@@ -56,6 +70,7 @@ export function createFigureboard(root, ctx) {
   let selectedIds = new Set();
   let activeSite = null;
   let sites = [...DEFAULT_SITES, ...(config.get('research.figureSites') || [])];
+  let customAssets = config.get('research.figureCustomAssets') || [];
   let items = (config.get('research.figureItems') || []).map((item) => (
     ['rect', 'ellipse', 'diamond'].includes(item.type) && item.stroke === '#3d6fe8' && item.fill === '#dce8ff'
       ? { ...item, stroke: 'transparent', fill: 'transparent' }
@@ -118,9 +133,64 @@ export function createFigureboard(root, ctx) {
     if (item?.stroke?.startsWith('#')) strokeInput.value = item.stroke;
     if (item && typeof opacityInput !== 'undefined') opacityInput.value = String(Math.round((item.opacity ?? 1) * 100));
     if (item && typeof strokeWidthInput !== 'undefined') strokeWidthInput.value = String(item.strokeWidth ?? 3);
+    if (item && typeof effectSelect !== 'undefined') effectSelect.value = item.effect || 'none';
+    if (item && typeof fontSelect !== 'undefined') fontSelect.value = item.fontFamily || 'Arial, Helvetica, sans-serif';
+    if (item && typeof curveBendInput !== 'undefined') curveBendInput.value = String(item.curveBend ?? 0);
     if (item?.route && typeof routeSelect !== 'undefined') routeSelect.value = item.route;
     // 锚点和连线选中态都画在连线层上，选中一变就得重画
     if (typeof renderWires === 'function') renderWires();
+  }
+
+  function closeContextMenu() {
+    contextMenu.setAttribute('hidden', '');
+  }
+
+  function contextAction(label, action, disabled = false) {
+    return h('button', {
+      class: 'figureboard__context-action',
+      disabled,
+      onclick: () => { closeContextMenu(); action(); },
+    }, label);
+  }
+
+  function openContextMenu(event) {
+    event.preventDefault();
+    event.stopPropagation();
+    const target = event.target.closest?.('.figureboard__item');
+    if (target) {
+      const id = target.dataset.id;
+      if (!selectedIds.has(id)) selectItem(id);
+    }
+    const hasSelection = selectedIds.size > 0;
+    const hasMultiple = selectedIds.size > 1;
+    contextMenu.replaceChildren(
+      h('div', { class: 'figureboard__context-title' }, target ? '对象操作' : '画布操作'),
+      h('div', { class: 'figureboard__context-group' },
+        contextAction('上移一层', () => moveLayer(1), !hasSelection),
+        contextAction('置顶', () => moveLayer('top'), !hasSelection),
+        contextAction('下移一层', () => moveLayer(-1), !hasSelection),
+        contextAction('置底', () => moveLayer('bottom'), !hasSelection),
+      ),
+      h('div', { class: 'figureboard__context-group' },
+        contextAction('组合选中对象', groupSelected, !hasMultiple),
+        contextAction('取消组合', ungroupSelected, !hasSelection),
+        contextAction('复制选中对象', duplicateSelected, !hasSelection),
+        contextAction('删除选中对象', () => selectedId && removeItem(selectedId), !hasSelection),
+      ),
+      h('div', { class: 'figureboard__context-group' },
+        contextAction('添加矩形', () => addShape('rect')),
+        contextAction('添加文字', addText),
+        contextAction('粘贴图片', pasteImage),
+      ),
+    );
+    contextMenu.removeAttribute('hidden');
+    const margin = 8;
+    const menuWidth = 190;
+    const menuHeight = contextMenu.offsetHeight || 300;
+    const left = Math.min(event.clientX, window.innerWidth - menuWidth - margin);
+    const top = Math.min(event.clientY, window.innerHeight - menuHeight - margin);
+    contextMenu.style.left = `${Math.max(margin, left)}px`;
+    contextMenu.style.top = `${Math.max(margin, top)}px`;
   }
 
   function removeItem(id) {
@@ -148,12 +218,66 @@ export function createFigureboard(root, ctx) {
       y: 28 + (items.length % 4) * 18,
       width: Math.round(naturalWidth * scale),
       height: Math.round(naturalHeight * scale),
+      effect: 'none',
     };
     items = [...items, item];
     selectedId = item.id;
     selectedIds = new Set([item.id]);
     persist();
     renderBoard();
+  }
+
+  function addAsset(asset) {
+    addImage(asset.dataUrl, asset.width, asset.height);
+    toast(`已加入素材：${asset.label}`, 'good');
+  }
+
+  async function saveAsCustomAsset(image) {
+    const name = assetNameInput.value.trim() || `科研素材 ${customAssets.length + 1}`;
+    const category = assetCategoryInput.value.trim() || '我的素材';
+    const asset = {
+      id: `custom-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+      label: name,
+      category,
+      width: image.width,
+      height: image.height,
+      dataUrl: image.dataUrl,
+      source: '用户导入 / 网页版 AI 绘图',
+      custom: true,
+    };
+    customAssets = [...customAssets, asset];
+    await config.set('research.figureCustomAssets', customAssets);
+    assetNameInput.value = '';
+    renderLocalAssets();
+    addAsset(asset);
+    toast(`已保存到我的素材包：${asset.label}`, 'good', 4500);
+  }
+
+  async function saveClipboardAsAsset() {
+    const data = await window.toolbox.clipboard.readImage();
+    if (!data?.ok) return toast(data?.error || '剪贴板里没有图片', 'info');
+    try {
+      await saveAsCustomAsset(await compressImage(data));
+    } catch (err) {
+      toast(err.message, 'bad');
+    }
+  }
+
+  async function importAsAsset() {
+    const data = await window.toolbox.files.pickImage();
+    if (!data || data.error) return data?.error && toast(data.error, 'bad');
+    try {
+      await saveAsCustomAsset(await compressImage(data));
+    } catch (err) {
+      toast(err.message, 'bad');
+    }
+  }
+
+  async function removeCustomAsset(id) {
+    customAssets = customAssets.filter((asset) => asset.id !== id);
+    await config.set('research.figureCustomAssets', customAssets);
+    renderLocalAssets();
+    toast('已从我的素材包移除', 'good');
   }
 
   function addShape(type) {
@@ -178,6 +302,7 @@ export function createFigureboard(root, ctx) {
       slices: type === 'pie' ? 6 : undefined,
       sliceColors: type === 'pie' ? [...PIE_COLORS] : undefined,
       opacity: 1,
+      effect: 'none',
       angle: 0,
     };
     items = [...items, item];
@@ -185,6 +310,159 @@ export function createFigureboard(root, ctx) {
     selectedIds = new Set([item.id]);
     persist();
     renderBoard();
+  }
+
+  function presetShape(type, props = {}) {
+    const line = isLine(type);
+    return {
+      id: `figure-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+      type,
+      x: 0, y: 0,
+      width: line ? 160 : type === 'container' ? 860 : 180,
+      height: line ? 6 : type === 'container' ? 300 : 100,
+      fill: line || type === 'container' ? 'transparent' : '#e8f0ff',
+      stroke: type === 'container' ? '#6e809f' : '#3d6fe8',
+      color: '#14213d',
+      text: '',
+      fontSize: 18,
+      strokeWidth: line ? 3 : type === 'container' ? 2 : 3,
+      radius: type === 'roundRect' ? 16 : 0,
+      dash: type === 'container' ? 'dashed' : 'solid',
+      opacity: 1,
+      effect: 'none',
+      angle: 0,
+      ...props,
+    };
+  }
+
+  function presetText(text, x, y, props = {}) {
+    return presetShape('text', {
+      x, y, width: props.width || 210, height: props.height || 42,
+      color: props.color || '#14213d', fontSize: props.fontSize || 20, text,
+      fontFamily: props.fontFamily || 'Arial, Helvetica, sans-serif',
+      fill: 'transparent', stroke: 'transparent', strokeWidth: 0,
+      ...props,
+    });
+  }
+
+  function presetImage(asset, x, y, width = 72, height = 72, props = {}) {
+    return {
+      id: `figure-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+      type: 'image', dataUrl: asset.dataUrl, x, y, width, height,
+      fill: 'transparent', stroke: 'transparent', opacity: 1, effect: 'none', angle: 0, ...props,
+    };
+  }
+
+  function presetWire(from, to, props = {}) {
+    return presetShape('wire', {
+      from: { id: from, port: 'right' },
+      to: { id: to, port: 'left' },
+      toPoint: null, x: 0, y: 0, width: 0, height: 0,
+      fill: 'transparent', stroke: '#1d2738', strokeWidth: 1.7,
+      arrowEnd: true, arrowStart: false, route: 'straight', curveBend: 0, label: '',
+      ...props,
+    });
+  }
+
+  function buildPreset(kind, offset = 0) {
+    const title = kind === 'pipeline' ? '研究流程图' : kind === 'architecture' ? '模型架构图' : kind === 'experiment' ? '实验对比图' : kind === 'agentarchive' ? 'Agent Archive 发现与迭代' : 'AgentSquare 模块化智能体框架';
+    if (kind === 'agentarchive') {
+      const agentAsset = FIGURE_ASSETS.find((asset) => asset.id === 'agent-square');
+      const eagleAsset = FIGURE_ASSETS.find((asset) => asset.id === 'eagle-solid');
+      const moduleAsset = FIGURE_ASSETS.find((asset) => asset.id === 'module-pool');
+      const memoryAsset = FIGURE_ASSETS.find((asset) => asset.id === 'memory-node');
+      const frame = presetShape('container', { x: 35 + offset, y: 55 + offset, width: 1000, height: 420, fill: '#fff', stroke: '#17202f', strokeWidth: 2.5, radius: 22, effect: 'soft' });
+      const meta = presetShape('roundRect', { x: 70 + offset, y: 115 + offset, width: 190, height: 78, fill: '#fff', stroke: '#18334b', strokeWidth: 2, radius: 14, effect: 'lift' });
+      const archive = presetShape('roundRect', { x: 355 + offset, y: 225 + offset, width: 220, height: 82, fill: '#fff', stroke: '#31566e', strokeWidth: 2, radius: 14, effect: 'lift' });
+      const note = presetShape('container', { x: 700 + offset, y: 85 + offset, width: 290, height: 115, fill: '#fafafa', stroke: '#9aa4ad', strokeWidth: 1.5, radius: 8, dash: 'dashed', effect: 'soft' });
+      const examples = presetShape('container', { x: 85 + offset, y: 320 + offset, width: 900, height: 130, fill: '#fff', stroke: '#b8c0c7', strokeWidth: 1.5, radius: 10, effect: 'soft' });
+      const cardA = presetShape('roundRect', { x: 105 + offset, y: 340 + offset, width: 250, height: 90, fill: '#f8fbff', stroke: '#527b98', strokeWidth: 1.5, radius: 12 });
+      const cardB = presetShape('roundRect', { x: 390 + offset, y: 340 + offset, width: 250, height: 90, fill: '#f8fcf9', stroke: '#4b8d78', strokeWidth: 1.5, radius: 12 });
+      const cardC = presetShape('roundRect', { x: 675 + offset, y: 340 + offset, width: 250, height: 90, fill: '#fffaf3', stroke: '#b58145', strokeWidth: 1.5, radius: 12 });
+      return [frame, presetText(title, 55 + offset, 10 + offset, { width: 520, fontSize: 24, color: '#17202f' }), presetText('Next interesting agent', 355 + offset, 25 + offset, { width: 250, fontSize: 15, color: '#17202f' }),
+        meta, archive, note, examples, cardA, cardB, cardC,
+        presetImage(agentAsset, 135 + offset, 130 + offset, 45, 45), presetImage(eagleAsset, 420 + offset, 240 + offset, 38, 38), presetImage(moduleAsset, 175 + offset, 352 + offset, 32, 32), presetImage(agentAsset, 460 + offset, 352 + offset, 32, 32), presetImage(memoryAsset, 745 + offset, 352 + offset, 32, 32),
+        presetText('Meta Agent', 110 + offset, 165 + offset, { width: 145, fontSize: 19 }), presetText('Agent Archive', 390 + offset, 275 + offset, { width: 180, fontSize: 19 }), presetText('New Agent', 620 + offset, 160 + offset, { width: 150, fontSize: 19 }),
+        presetText('Summary and motivation:\n“Based on previous agents …”\nName: Divide and Conquer Agent\nCode: def forward(Task): …', 715 + offset, 105 + offset, { width: 250, height: 90, fontSize: 11 }),
+        presetText('Multi-step Peer Review Agent', 125 + offset, 432 + offset, { width: 210, fontSize: 11 }), presetText('Verified Multimodal Agent', 410 + offset, 432 + offset, { width: 210, fontSize: 11 }), presetText('Divide and Conquer Agent', 695 + offset, 432 + offset, { width: 210, fontSize: 11 }),
+        presetWire(meta.id, archive.id, { stroke: '#15202d', strokeWidth: 2.3, route: 'straight', from: { id: meta.id, port: 'bottom' }, to: { id: archive.id, port: 'left' } }), presetWire(archive.id, note.id, { stroke: '#26384b', strokeWidth: 1.6, route: 'elbow', from: { id: archive.id, port: 'right' }, to: { id: note.id, port: 'bottom' } }), presetShape('arrow', { x: 160 + offset, y: 85 + offset, width: 680, height: 4, fill: 'transparent', stroke: '#15202d', strokeWidth: 2.5, arrowEnd: true, dash: 'solid' }), presetWire(meta.id, meta.id, { stroke: '#1e6585', strokeWidth: 2.8, route: 'curve', curveBend: 18, from: { id: meta.id, port: 'top' }, to: { id: meta.id, port: 'right' } }),
+        presetText('Input', 235 + offset, 210 + offset, { width: 70, fontSize: 14 }), presetText('Test performance on tasks\nand add to archive', 575 + offset, 245 + offset, { width: 220, fontSize: 13 }), presetText('Refine until novel\nand error-free', 265 + offset, 100 + offset, { width: 160, fontSize: 13 }), presetText('Examples of Discovered Agents', 400 + offset, 450 + offset, { width: 300, fontSize: 15, color: '#17202f' })];
+    }
+    if (kind === 'agentsquare') {
+      const eagleAsset = FIGURE_ASSETS.find((asset) => asset.id === 'eagle-solid');
+      const agentAsset = FIGURE_ASSETS.find((asset) => asset.id === 'agent-square');
+      const moduleAsset = FIGURE_ASSETS.find((asset) => asset.id === 'module-pool');
+      const memoryAsset = FIGURE_ASSETS.find((asset) => asset.id === 'memory-node');
+      const frame = presetShape('container', { x: 20 + offset, y: 65 + offset, width: 1000, height: 420, fill: '#fffaf0', stroke: '#152b59', strokeWidth: 3, radius: 28, dash: 'solid', effect: 'soft' });
+      const pie = presetShape('pie', { x: 48 + offset, y: 145 + offset, width: 190, height: 190, slices: 6, stroke: '#354b86', strokeWidth: 2, effect: 'soft', sliceColors: ['#d5e7ff', '#f7d5df', '#d8f0d7', '#f8e1b6', '#dcd3f2', '#ccebee'] });
+      const pool = presetShape('roundRect', { x: 480 + offset, y: 190 + offset, width: 145, height: 120, fill: '#d7e7ff', stroke: '#2b66d9', strokeWidth: 3, radius: 18, effect: 'glow' });
+      const stackBack = presetShape('roundRect', { x: 290 + offset, y: 152 + offset, width: 150, height: 174, fill: '#f4f6fa', stroke: '#7b8799', strokeWidth: 1.5, radius: 14, angle: -2, effect: 'soft' });
+      const stackMid = presetShape('roundRect', { x: 302 + offset, y: 144 + offset, width: 150, height: 174, fill: '#fafbfc', stroke: '#68768a', strokeWidth: 1.5, radius: 14, angle: 1, effect: 'soft' });
+      const stackFront = presetShape('roundRect', { x: 314 + offset, y: 136 + offset, width: 150, height: 174, fill: '#fff', stroke: '#152b59', strokeWidth: 2, radius: 14, effect: 'lift' });
+      const evaluation = presetShape('container', { x: 745 + offset, y: 80 + offset, width: 250, height: 105, fill: '#fffdf8', stroke: '#33466d', strokeWidth: 2, radius: 18, dash: 'dashed', effect: 'soft' });
+      const cardA = presetShape('roundRect', { x: 650 + offset, y: 270 + offset, width: 105, height: 155, fill: '#fff', stroke: '#3e66b3', strokeWidth: 2, radius: 16, effect: 'soft' });
+      const cardB = presetShape('roundRect', { x: 775 + offset, y: 270 + offset, width: 105, height: 155, fill: '#fff', stroke: '#7657a8', strokeWidth: 2, radius: 16, effect: 'soft' });
+      const cardC = presetShape('roundRect', { x: 900 + offset, y: 270 + offset, width: 105, height: 155, fill: '#fff', stroke: '#c7833d', strokeWidth: 2, radius: 16, effect: 'soft' });
+      return [frame, presetText(title, 60 + offset, 38 + offset, { width: 650, fontSize: 25, color: '#152b59' }),
+        presetText('Diverse agents', 75 + offset, 90 + offset, { fontSize: 15 }), presetText('Standardized agents', 285 + offset, 90 + offset, { fontSize: 15 }), presetText('Module pool', 495 + offset, 125 + offset, { fontSize: 15 }),
+        presetText('Agent Square', 660 + offset, 210 + offset, { width: 130, fontSize: 15 }), presetText('Evaluation', 840 + offset, 100 + offset, { fontSize: 15 }),
+        pie, stackBack, stackMid, stackFront, pool, evaluation, cardA, cardB, cardC,
+        presetShape('triangle', { x: 338 + offset, y: 176 + offset, width: 28, height: 28, fill: '#fff', stroke: '#152b59', strokeWidth: 1.5 }), presetShape('diamond', { x: 385 + offset, y: 214 + offset, width: 28, height: 28, fill: '#fff', stroke: '#152b59', strokeWidth: 1.5 }), presetShape('rect', { x: 338 + offset, y: 255 + offset, width: 28, height: 28, fill: '#fff', stroke: '#152b59', strokeWidth: 1.5 }), presetShape('ellipse', { x: 387 + offset, y: 258 + offset, width: 28, height: 28, fill: '#fff', stroke: '#152b59', strokeWidth: 1.5 }),
+        presetImage(agentAsset, 80 + offset, 155 + offset, 34, 34), presetImage(eagleAsset, 185 + offset, 170 + offset, 28, 28), presetImage(memoryAsset, 105 + offset, 275 + offset, 28, 28),
+        presetImage(moduleAsset, 335 + offset, 175 + offset, 42, 42), presetImage(agentAsset, 375 + offset, 245 + offset, 40, 40), presetImage(moduleAsset, 505 + offset, 210 + offset, 52, 52), presetImage(agentAsset, 660 + offset, 135 + offset, 64, 64), presetImage(agentAsset, 665 + offset, 290 + offset, 48, 48), presetImage(eagleAsset, 790 + offset, 290 + offset, 48, 48), presetImage(memoryAsset, 915 + offset, 290 + offset, 48, 48),
+        presetText('Game\nVoyager  ·  DEPS', 72 + offset, 195 + offset, { width: 160, fontSize: 11 }), presetText('Simulation', 190 + offset, 225 + offset, { fontSize: 11 }), presetText('Tool use', 68 + offset, 255 + offset, { fontSize: 11 }), presetText('Self-driving', 165 + offset, 340 + offset, { fontSize: 11 }), presetText('General-purpose\nReasoning', 68 + offset, 375 + offset, { width: 160, fontSize: 11 }),
+        presetText('Planning  ·  Reasoning\nTooluse  ·  Memory', 330 + offset, 285 + offset, { width: 140, fontSize: 11 }), presetText('🙂  😐  ☹️', 765 + offset, 130 + offset, { width: 200, fontSize: 12 }), presetText('Planning', 655 + offset, 360 + offset, { fontSize: 11 }), presetText('Reasoning', 780 + offset, 360 + offset, { fontSize: 11 }), presetText('Memory', 905 + offset, 360 + offset, { fontSize: 11 }),
+        presetWire(pie.id, stackFront.id, { stroke: '#182234', strokeWidth: 2.6, route: 'straight' }), presetWire(stackFront.id, pool.id, { stroke: '#40506b', strokeWidth: 2.1, route: 'straight' }), presetWire(pool.id, cardA.id, { stroke: '#2b66d9', strokeWidth: 3, route: 'straight' }), presetWire(cardA.id, cardB.id, { stroke: '#4a5870', strokeWidth: 1.8, route: 'straight' }), presetWire(cardB.id, cardC.id, { stroke: '#4a5870', strokeWidth: 1.4, route: 'straight' }),
+        presetText('△ Planning    ◇ Reasoning    □ Tooluse    ○ Memory', 300 + offset, 450 + offset, { width: 680, fontSize: 12, color: '#152b59' })];
+    }
+    const container = presetShape('container', { x: 70 + offset, y: 120 + offset, width: 900, height: kind === 'experiment' ? 390 : 300 });
+    const titleItem = presetText(title, 88 + offset, 54 + offset, { width: 360, height: 44, fontSize: 26, color: '#1f396d' });
+    if (kind === 'pipeline') {
+      const input = presetShape('roundRect', { x: 125 + offset, y: 215 + offset, fill: '#e5efff' });
+      const process = presetShape('roundRect', { x: 405 + offset, y: 215 + offset, fill: '#e8f7f1', stroke: '#2f9a83' });
+      const output = presetShape('roundRect', { x: 685 + offset, y: 215 + offset, fill: '#fff0df', stroke: '#c7833d' });
+      return [container, titleItem, input, process, output,
+        presetWire(input.id, process.id), presetWire(process.id, output.id),
+        presetText('数据输入', 145 + offset, 247 + offset, { fontSize: 20 }),
+        presetText('特征与模型', 420 + offset, 247 + offset, { fontSize: 20 }),
+        presetText('预测输出', 710 + offset, 247 + offset, { fontSize: 20 }),
+        presetText('可复现实验流程 · 数据 → 方法 → 结果', 105 + offset, 145 + offset, { width: 600, fontSize: 15, color: '#5e6d87' })];
+    }
+    if (kind === 'architecture') {
+      const memory = presetShape('cylinder', { x: 125 + offset, y: 245 + offset, fill: '#e5efff' });
+      const encoder = presetShape('hexagon', { x: 410 + offset, y: 245 + offset, fill: '#e8f7f1', stroke: '#2f9a83' });
+      const decision = presetShape('diamond', { x: 710 + offset, y: 245 + offset, fill: '#fff0df', stroke: '#c7833d' });
+      return [container, titleItem, memory, encoder, decision,
+        presetWire(memory.id, encoder.id), presetWire(encoder.id, decision.id),
+        presetText('文献 / 数据', 145 + offset, 278 + offset, { fontSize: 19 }),
+        presetText('编码器', 458 + offset, 278 + offset, { fontSize: 20 }),
+        presetText('决策层', 755 + offset, 278 + offset, { fontSize: 20 }),
+        presetText('输入空间', 145 + offset, 170 + offset, { fontSize: 15, color: '#5e6d87' }),
+        presetText('表示学习', 455 + offset, 170 + offset, { fontSize: 15, color: '#5e6d87' }),
+        presetText('输出空间', 755 + offset, 170 + offset, { fontSize: 15, color: '#5e6d87' })];
+    }
+    const chart = presetShape('pie', { x: 150 + offset, y: 215 + offset, width: 240, height: 240, slices: 5 });
+    const barA = presetShape('roundRect', { x: 560 + offset, y: 215 + offset, width: 290, height: 58, fill: '#e5efff' });
+    const barB = presetShape('roundRect', { x: 560 + offset, y: 315 + offset, width: 230, height: 58, fill: '#e8f7f1', stroke: '#2f9a83' });
+    const barC = presetShape('roundRect', { x: 560 + offset, y: 415 + offset, width: 170, height: 58, fill: '#fff0df', stroke: '#c7833d' });
+    return [container, titleItem, chart, barA, barB, barC,
+      presetText('方法占比', 195 + offset, 305 + offset, { fontSize: 20 }),
+      presetText('Ours    0.87', 580 + offset, 227 + offset, { fontSize: 18 }),
+      presetText('Baseline  0.69', 580 + offset, 327 + offset, { fontSize: 18 }),
+      presetText('Ablation  0.54', 580 + offset, 427 + offset, { fontSize: 18 }),
+      presetText('结果对比 · 条件、指标和结论分层呈现', 105 + offset, 145 + offset, { width: 620, fontSize: 15, color: '#5e6d87' })];
+  }
+
+  function insertPreset(kind) {
+    record(cloneItems());
+    const offset = items.length ? 24 : 0;
+    const added = buildPreset(kind, offset);
+    items = [...items, ...added];
+    selectedIds = new Set();
+    selectedId = null;
+    persist();
+    renderBoard();
+    toast(`已插入${kind === 'pipeline' ? '流程图' : kind === 'architecture' ? '模型架构图' : kind === 'experiment' ? '实验对比图' : kind === 'agentarchive' ? 'Agent Archive 复合图' : 'AgentSquare 复合图'}，可继续拖动和改层级`, 'good');
   }
 
   function addText() {
@@ -196,7 +474,7 @@ export function createFigureboard(root, ctx) {
       id: `figure-${Date.now()}-${Math.random().toString(16).slice(2)}`,
       type: 'text', x: 80, y: 80 + items.length * 18, width: 240, height: 54,
       fill: 'transparent', stroke: 'transparent', color: '#14213d', text, fontSize: 22, angle: 0,
-      strokeWidth: 0, opacity: 1,
+      strokeWidth: 0, opacity: 1, fontFamily: 'Arial, Helvetica, sans-serif',
     };
     items = [...items, item];
     selectedId = item.id;
@@ -337,6 +615,15 @@ export function createFigureboard(root, ctx) {
     renderBoard();
   }
 
+  function nudgeSelected(dx, dy) {
+    const selected = items.filter((entry) => selectedIds.has(entry.id) && !isWire(entry));
+    if (!selected.length) return;
+    record(cloneItems());
+    selected.forEach((item) => { item.x += dx; item.y += dy; });
+    persist();
+    renderBoard();
+  }
+
   function rotateSelected() {
     const item = items.find((entry) => entry.id === selectedId);
     if (!item) return toast('先选中一个图形或素材', 'info');
@@ -386,6 +673,25 @@ export function createFigureboard(root, ctx) {
     return String(value || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
   }
 
+  function effectSpec(effect) {
+    return {
+      soft: { dx: 0, dy: 4, blur: 7, color: '#53627a66' },
+      lift: { dx: 0, dy: 8, blur: 12, color: '#152b594d' },
+      glow: { dx: 0, dy: 0, blur: 10, color: '#3d6fe866' },
+    }[effect] || null;
+  }
+
+  function effectFilter(effect, id) {
+    const spec = effectSpec(effect);
+    if (!spec) return '';
+    return `<filter id="${id}" x="-25%" y="-25%" width="150%" height="160%"><feDropShadow dx="${spec.dx}" dy="${spec.dy}" stdDeviation="${spec.blur}" flood-color="${spec.color}"/></filter>`;
+  }
+
+  function cssEffect(effect) {
+    const spec = effectSpec(effect);
+    return spec ? `drop-shadow(${spec.dx}px ${spec.dy}px ${spec.blur}px ${spec.color})` : 'none';
+  }
+
   function canvasSize() {
     const maxX = Math.max(board.clientWidth, ...items.map((item) => item.x + item.width + 40), 900);
     const maxY = Math.max(board.clientHeight, ...items.map((item) => item.y + item.height + 40), 650);
@@ -402,21 +708,25 @@ export function createFigureboard(root, ctx) {
       const g = (inner) => `<g transform="translate(${item.x} ${item.y}) rotate(${item.angle || 0} ${item.width / 2} ${item.height / 2})" opacity="${item.opacity ?? 1}">${inner}</g>`;
 
       if (item.type === 'image') {
-        return g(`<image href="${item.dataUrl}" x="0" y="0" width="${item.width}" height="${item.height}" preserveAspectRatio="xMidYMid meet"/>`);
+        const filterId = `fbE${String(item.id).replace(/[^a-zA-Z0-9]/g, '')}`;
+        if (item.effect) defs.push(effectFilter(item.effect, filterId));
+        return g(`<image href="${item.dataUrl}" x="0" y="0" width="${item.width}" height="${item.height}" preserveAspectRatio="xMidYMid meet"${item.effect ? ` filter="url(#${filterId})"` : ''}/>`);
       }
       if (item.type === 'text') {
         // 逐行输出，导出的换行才和画布一致
         const lines = String(item.text || '').split('\n');
         const size = item.fontSize || 22;
         const tspans = lines.map((line, i) => `<tspan x="0" dy="${i === 0 ? 0 : size * 1.35}">${escapeXml(line)}</tspan>`).join('');
-        return g(`<text x="0" y="${size}" font-family="'PingFang SC','Microsoft YaHei',Arial,sans-serif" font-size="${size}" font-weight="600" fill="${item.color}">${tspans}</text>`);
+        return g(`<text x="0" y="${size}" font-family="${escapeXml(item.fontFamily || 'Arial, Helvetica, sans-serif')}" font-size="${size}" font-weight="600" fill="${item.color}">${tspans}</text>`);
       }
       if (isLine(item.type)) {
         const markerId = `fbA${String(item.id).replace(/[^a-zA-Z0-9]/g, '')}`;
         defs.push(arrowDefs(item.stroke || '#3d6fe8', markerId));
         return g(lineMarkup(item, markerId));
       }
-      return g(shapeMarkup(item));
+      const filterId = `fbE${String(item.id).replace(/[^a-zA-Z0-9]/g, '')}`;
+      if (item.effect) defs.push(effectFilter(item.effect, filterId));
+      return g(item.effect ? `<g filter="url(#${filterId})">${shapeMarkup(item)}</g>` : shapeMarkup(item));
     }).join('');
 
     // 连线也要进导出，而且和画布共用同一份路径算法
@@ -439,18 +749,9 @@ export function createFigureboard(root, ctx) {
       + `<defs>${bgDef}${defs.join('')}</defs>${bgRect}${bgPattern}${wireBody}${body}</svg>`;
   }
 
-  function downloadBlob(blob, name) {
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = name;
-    link.click();
-    setTimeout(() => URL.revokeObjectURL(url), 1000);
-  }
-
-  function exportSvg() {
-    downloadBlob(new Blob([toSvg()], { type: 'image/svg+xml' }), '科研图板.svg');
-    toast('SVG 已导出', 'good');
+  async function exportSvg() {
+    const result = await window.toolbox.files.saveText({ content: toSvg(), extension: 'svg', defaultName: '科研图板.svg' });
+    if (result.ok) toast(`SVG 已保存：${result.path}`, 'good', 5000);
   }
 
   async function exportPng() {
@@ -464,7 +765,8 @@ export function createFigureboard(root, ctx) {
     canvas.height = height * 2;
     canvas.getContext('2d').scale(2, 2);
     canvas.getContext('2d').drawImage(image, 0, 0);
-    canvas.toBlob((blob) => { if (blob) { downloadBlob(blob, '科研图板.png'); toast('PNG 已导出', 'good'); } }, 'image/png');
+    const result = await window.toolbox.files.saveImage({ dataUrl: canvas.toDataURL('image/png'), defaultName: '科研图板.png' });
+    if (result.ok) toast(`PNG 已保存：${result.path}`, 'good', 5000);
   }
 
   async function pasteImage() {
@@ -564,19 +866,20 @@ export function createFigureboard(root, ctx) {
         const inner = isLine(item.type)
           ? `<defs>${arrowDefs(item.stroke || '#3d6fe8', markerId)}</defs>${lineMarkup(item, markerId)}`
           : shapeMarkup(item);
+        const effectId = `fbE${String(item.id).replace(/[^a-zA-Z0-9]/g, '')}`;
         content = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
         content.setAttribute('class', 'figureboard__svg');
         content.setAttribute('viewBox', `0 0 ${Math.max(1, item.width)} ${Math.max(1, item.height)}`);
         content.setAttribute('width', '100%');
         content.setAttribute('height', '100%');
-        content.innerHTML = inner;
+        content.innerHTML = `${item.effect ? `<defs>${effectFilter(item.effect, effectId)}</defs><g filter="url(#${effectId})">${inner}</g>` : inner}`;
       }
-      const resize = h('span', { class: 'figureboard__resize' });
+      const resizeHandles = ['nw', 'n', 'ne', 'e', 'se', 's', 'sw', 'w'].map((direction) => h('span', { class: `figureboard__resize figureboard__resize--${direction}`, dataset: { resize: direction } }));
       const rotate = h('span', { class: 'figureboard__rotate', title: '旋转' });
       const element = h('div', {
         class: `figureboard__item figureboard__item--${item.type}${selectedIds.has(item.id) ? ' is-selected' : ''}`,
         dataset: { id: item.id },
-        style: { left: `${item.x}px`, top: `${item.y}px`, width: `${item.width}px`, height: `${item.height}px`, background: item.type === 'image' ? item.fill : 'transparent', borderColor: 'transparent', color: ['line', 'dashed', 'arrow', 'double-arrow'].includes(item.type) ? item.stroke : item.color, '--figure-fill': item.fill, '--figure-stroke': item.stroke, '--figure-stroke-width': `${item.strokeWidth || 0}px`, fontSize: `${item.fontSize}px`, opacity: item.opacity ?? 1, transform: `rotate(${item.angle || 0}deg)` },
+        style: { left: `${item.x}px`, top: `${item.y}px`, width: `${item.width}px`, height: `${item.height}px`, background: item.type === 'image' ? item.fill : 'transparent', borderColor: 'transparent', color: ['line', 'dashed', 'arrow', 'double-arrow'].includes(item.type) ? item.stroke : item.color, '--figure-fill': item.fill, '--figure-stroke': item.stroke, '--figure-stroke-width': `${item.strokeWidth || 0}px`, fontSize: `${item.fontSize}px`, fontFamily: item.fontFamily || 'Arial, Helvetica, sans-serif', opacity: item.opacity ?? 1, filter: item.type === 'image' ? cssEffect(item.effect) : 'none', transform: `rotate(${item.angle || 0}deg)` },
         onpointerdown: (event) => { if (editingId !== item.id) startDrag(event, item, element); },
         ondblclick: (event) => {
           if (item.type !== 'text') return;
@@ -585,11 +888,12 @@ export function createFigureboard(root, ctx) {
           renderBoard();
         },
         onclick: (event) => { event.stopPropagation(); selectItem(item.id); },
-      }, content, resize, rotate);
+      }, content, ...resizeHandles, rotate);
       board.appendChild(element);
     }
     board.appendChild(labelLayer);
     board.appendChild(boardHint);
+    boardHint.hidden = Boolean(items.length || activeSite || sources.classList.contains('is-open'));
     renderWires();
 
     if (editingId) {
@@ -634,7 +938,7 @@ export function createFigureboard(root, ctx) {
       from: { id: ownerId, port },
       to: null,
       toPoint: boardPoint(event),
-      route: config.get('research.figureRoute', 'elbow'),
+      route: config.get('research.figureRoute', 'elbow'), curveBend: 0,
       stroke: '#3d6fe8', strokeWidth: 2, dash: 'solid',
       arrowEnd: true, arrowStart: false, label: '', color: '#14213d', fontSize: 13,
       x: 0, y: 0, width: 0, height: 0, opacity: 1, angle: 0,
@@ -723,12 +1027,29 @@ export function createFigureboard(root, ctx) {
     const startY = event.clientY;
     const startWidth = item.width;
     const startHeight = item.height;
+    const startLeft = item.x;
+    const startTop = item.y;
+    const direction = event.target.dataset.resize || 'se';
+    const moveLeft = direction.includes('w');
+    const moveTop = direction.includes('n');
+    const moveRight = direction.includes('e');
+    const moveBottom = direction.includes('s');
     const before = cloneItems();
     const move = (moveEvent) => {
-      item.width = Math.max(120, Math.round(startWidth + moveEvent.clientX - startX));
-      item.height = Math.max(40, Math.round(startHeight + moveEvent.clientY - startY));
+      const dx = moveEvent.clientX - startX;
+      const dy = moveEvent.clientY - startY;
+      let nextWidth = startWidth + (moveRight ? dx : moveLeft ? -dx : 0);
+      let nextHeight = startHeight + (moveBottom ? dy : moveTop ? -dy : 0);
+      nextWidth = Math.max(40, Math.round(nextWidth));
+      nextHeight = Math.max(30, Math.round(nextHeight));
+      item.width = nextWidth;
+      item.height = nextHeight;
+      if (moveLeft) item.x = Math.round(startLeft + startWidth - nextWidth);
+      if (moveTop) item.y = Math.round(startTop + startHeight - nextHeight);
       element.style.width = `${item.width}px`;
       element.style.height = `${item.height}px`;
+      element.style.left = `${item.x}px`;
+      element.style.top = `${item.y}px`;
       renderWires();
     };
     const end = () => {
@@ -775,10 +1096,12 @@ export function createFigureboard(root, ctx) {
     browserPane.setAttribute('hidden', '');
     workspace.classList.remove('has-browser');
     siteViewHost.replaceChildren();          // 顺手销毁 webview，别让它在后台跑
+    browserTitle.textContent = '素材浏览区';
+    browserHint.textContent = '再点一次同一个网站也能收起';
     for (const button of siteList.querySelectorAll('.figureboard__site-button')) {
       button.classList.remove('is-active');
     }
-    boardHint.hidden = sources.classList.contains('is-open');
+    boardHint.hidden = Boolean(items.length || sources.classList.contains('is-open'));
   }
 
   function openSite(site) {
@@ -787,8 +1110,28 @@ export function createFigureboard(root, ctx) {
     browserPane.removeAttribute('hidden');
     workspace.classList.add('has-browser');
     boardHint.hidden = true;
+    browserTitle.textContent = site.name;
+    browserHint.textContent = '网页素材可复制后回到左侧保存';
     siteViewHost.replaceChildren(h('webview', { class: 'figureboard__webview', partition: 'persist:research-figure', src: site.url, allowpopups: true }));
     for (const button of siteList.querySelectorAll('.figureboard__site-button')) button.classList.toggle('is-active', button.dataset.url === site.url);
+  }
+
+  function openAiDrawing() {
+    const site = { name: '网页版 AI 绘图', url: AI_DRAWING_URL };
+    if (activeSite?.url === site.url) return closeSite();
+    activeSite = site;
+    browserPane.removeAttribute('hidden');
+    workspace.classList.add('has-browser');
+    boardHint.hidden = true;
+    browserTitle.textContent = '网页版 AI 绘图';
+    browserHint.textContent = '在网页内登录并生成图片，复制图片后点左侧“存入我的素材包”';
+    siteViewHost.replaceChildren(h('webview', {
+      class: 'figureboard__webview',
+      partition: 'persist:figure-ai',
+      src: AI_DRAWING_URL,
+      allowpopups: true,
+    }));
+    for (const button of siteList.querySelectorAll('.figureboard__site-button')) button.classList.remove('is-active');
   }
 
   async function addSite() {
@@ -815,8 +1158,58 @@ export function createFigureboard(root, ctx) {
     }, iconFor(site.emoji || 'globe', 'ui-icon figureboard__site-icon'), h('span', {}, h('strong', {}, site.name), h('small', {}, site.desc || site.url)))));
   }
 
+  function renderLocalAssets() {
+    localAssetList.replaceChildren(...[...FIGURE_ASSETS, ...customAssets].map((asset) => {
+      const card = h('div', { class: `figureboard__asset-card${asset.custom ? ' is-custom' : ''}` });
+      const button = h('button', {
+        class: 'figureboard__asset-button',
+        title: `${asset.label} · 点击加入画布`,
+        onclick: () => addAsset(asset),
+      }, h('img', { src: asset.dataUrl, alt: asset.label }), h('span', {}, h('strong', {}, asset.label), h('small', {}, asset.category)));
+      card.appendChild(button);
+      if (asset.custom) card.appendChild(h('button', {
+        class: 'figureboard__asset-delete',
+        title: '从我的素材包移除',
+        'aria-label': `删除 ${asset.label}`,
+        onclick: (event) => { event.stopPropagation(); removeCustomAsset(asset.id); },
+      }, '×'));
+      return card;
+    }));
+  }
+
   const siteName = h('input', { class: 'field field--sm', placeholder: '网站名称' });
   const siteUrl = h('input', { class: 'field field--sm', placeholder: 'https://素材网站…' });
+  const assetNameInput = h('input', { class: 'field field--sm', placeholder: '素材名称（可选）' });
+  const assetCategoryInput = h('input', { class: 'field field--sm', placeholder: '分类，如：像素风 / 设备' });
+  const aiPresetSelect = h('select', { class: 'field field--sm figureboard__select' }, ...AI_PROMPT_PRESETS.map((preset) => h('option', { value: preset.id }, preset.label)));
+  const aiPromptInput = h('textarea', { class: 'field figureboard__ai-prompt', rows: '4', placeholder: '选择预设后可继续补充科研对象、颜色和构图…' });
+  function syncAiPrompt() {
+    const preset = AI_PROMPT_PRESETS.find((item) => item.id === aiPresetSelect.value) || AI_PROMPT_PRESETS[0];
+    aiPromptInput.value = preset.prompt;
+  }
+  aiPresetSelect.addEventListener('change', syncAiPrompt);
+  syncAiPrompt();
+  const copyPromptBtn = h('button', {
+    class: 'btn btn--sm',
+    onclick: async () => {
+      const prompt = aiPromptInput.value.trim();
+      if (!prompt) return toast('先输入绘图提示词', 'info');
+      await window.toolbox.clipboard.write(prompt);
+      toast('科研素材提示词已复制，打开网页后直接粘贴', 'good');
+    },
+  }, '复制提示词');
+  const openAiBtn = h('button', {
+    class: 'btn btn--sm btn--primary',
+    onclick: async () => {
+      const prompt = aiPromptInput.value.trim();
+      if (!prompt) return toast('先输入绘图提示词', 'info');
+      await window.toolbox.clipboard.write(prompt);
+      openAiDrawing();
+      toast('提示词已复制，进入网页版后直接粘贴', 'good');
+    },
+  }, '复制提示词并打开');
+  const clipboardAssetBtn = h('button', { class: 'btn btn--sm btn--primary', onclick: saveClipboardAsAsset }, '粘贴并存入素材包');
+  const importAssetBtn = h('button', { class: 'btn btn--sm', onclick: importAsAsset }, '导入并存入素材包');
   /** 连线标签：浮在线中点的小输入框。同样不用 window.prompt —— Electron 不支持 */
   function openWireLabel(wire) {
     document.querySelector('.figureboard__wire-label-input')?.remove();
@@ -848,7 +1241,8 @@ export function createFigureboard(root, ctx) {
   /** 图标按钮：只放图标，说明走 tooltip —— 一排中文按钮又长又难认 */
   const toolBtn = (icon, title, onClick, extra = '') => h('button', {
     class: `btn btn--sm figureboard__tool-btn ${extra}`.trim(),
-    title,
+    'data-tooltip': title,
+    'aria-label': title,
     onclick: onClick,
   }, iconFor(icon, 'ui-icon figureboard__tool-icon'));
 
@@ -864,15 +1258,15 @@ export function createFigureboard(root, ctx) {
   const copyBtn = toolBtn('copy', '复制选中对象 (Cmd+C)', copySelected);
   const cutBtn = toolBtn('cut', '剪切 (Cmd+X)', cutSelected);
   const pasteObjectBtn = toolBtn('paste', '粘贴对象 (Cmd+V)', pasteSelected);
-  const layerUpBtn = toolBtn('layerUp', '上移一层', () => moveLayer(1));
-  const layerTopBtn = toolBtn('layerTop', '置顶', () => moveLayer('top'));
-  const rotateBtn = toolBtn('rotateCw', '旋转 15°', rotateSelected);
-  const groupBtn = toolBtn('group', '组合选中对象', groupSelected);
-  const ungroupBtn = toolBtn('ungroup', '取消组合', ungroupSelected);
-  const alignLeftBtn = toolBtn('alignLeft', '左对齐', () => alignSelected('left'));
-  const alignCenterBtn = toolBtn('alignCenterH', '水平居中对齐', () => alignSelected('center'));
-  const alignTopBtn = toolBtn('alignTop', '顶端对齐', () => alignSelected('top'));
-  const deleteBtn = toolBtn('trash', '删除选中', () => selectedId && removeItem(selectedId), 'figureboard__danger');
+  const layerUpBtn = toolBtn('layerUp', '上移一层：让选中对象盖住下面一层', () => moveLayer(1));
+  const layerTopBtn = toolBtn('layerTop', '置顶：让选中对象盖住所有对象', () => moveLayer('top'));
+  const rotateBtn = toolBtn('rotateCw', '旋转 15°：让选中对象顺时针转动', rotateSelected);
+  const groupBtn = toolBtn('group', '组合：把多个对象当成一个整体移动和缩放', groupSelected);
+  const ungroupBtn = toolBtn('ungroup', '取消组合：拆开刚才组合的对象', ungroupSelected);
+  const alignLeftBtn = toolBtn('alignLeft', '左对齐：按最左边对象的边缘对齐', () => alignSelected('left'));
+  const alignCenterBtn = toolBtn('alignCenterH', '水平居中：让选中对象的中心线重合', () => alignSelected('center'));
+  const alignTopBtn = toolBtn('alignTop', '顶端对齐：按最上方对象的边缘对齐', () => alignSelected('top'));
+  const deleteBtn = toolBtn('trash', '删除：移除选中的对象和关联连线', () => selectedId && removeItem(selectedId), 'figureboard__danger');
   const pasteBtn = toolBtn('image', '把剪贴板里的图片贴进画布', pasteImage);
   const importBtn = toolBtn('image', '从文件导入图片', importImage);
   const addSiteBtn = h('button', { class: 'btn btn--sm btn--primary', onclick: addSite }, '添加网站');
@@ -886,8 +1280,21 @@ export function createFigureboard(root, ctx) {
     h('option', { value: 'dashed' }, '虚线'),
     h('option', { value: 'dotted' }, '点线'),
   );
+  const effectSelect = h('select', { class: 'field field--sm figureboard__select', title: '边框效果', onchange: (event) => updateSelected({ effect: event.currentTarget.value }) },
+    h('option', { value: 'none' }, '无效果'),
+    h('option', { value: 'soft' }, '柔和阴影'),
+    h('option', { value: 'lift' }, '悬浮阴影'),
+    h('option', { value: 'glow' }, '边框光晕'),
+  );
+  const fontSelect = h('select', { class: 'field field--sm figureboard__select', title: '文字字体', onchange: (event) => updateSelected({ fontFamily: event.currentTarget.value }) },
+    h('option', { value: 'Arial, Helvetica, sans-serif' }, '论文无衬线'),
+    h('option', { value: 'Avenir Next, Arial, sans-serif' }, 'Avenir Next'),
+    h('option', { value: 'Inter, Arial, sans-serif' }, 'Inter'),
+    h('option', { value: 'Nunito Sans, Avenir Next, sans-serif' }, 'Nunito Sans（圆润）'),
+  );
   const routeSelect = h('select', { class: 'field field--sm figureboard__select', title: '连接线走向（选中连线可改，也决定新连线的默认）', onchange: (event) => { config.set('research.figureRoute', event.currentTarget.value); updateSelected({ route: event.currentTarget.value }); } },
     ...Object.entries(ROUTES).map(([key, meta]) => h('option', { value: key }, meta.label)));
+  const curveBendInput = h('input', { class: 'figureboard__range figureboard__curve-range', type: 'range', min: '-120', max: '160', step: '1', value: '0', title: '曲线弯曲程度（选中曲线后调整）', oninput: (event) => updateSelected({ curveBend: Number(event.currentTarget.value) }) });
   const arrowEndBtn = toolBtn('lineArrow', '这条连线的箭头开关', () => {
     const wire = items.find((entry) => selectedIds.has(entry.id) && isWire(entry));
     if (!wire) return toast('先选中一条连线', 'info');
@@ -908,6 +1315,14 @@ export function createFigureboard(root, ctx) {
 
   const exportSvgBtn = h('button', { class: 'btn btn--sm', title: '矢量，投稿和 LaTeX 用这个', onclick: exportSvg }, 'SVG');
   const exportPngBtn = h('button', { class: 'btn btn--sm btn--primary', title: '位图，贴进 PPT / Word', onclick: exportPng }, 'PNG');
+  const presetSelect = h('select', { class: 'field field--sm figureboard__select', title: '插入一套已排好层级的科研图结构' },
+    h('option', { value: 'pipeline' }, '流程图模板'),
+    h('option', { value: 'architecture' }, '架构图模板'),
+    h('option', { value: 'experiment' }, '实验图模板'),
+    h('option', { value: 'agentsquare' }, 'AgentSquare 复合图'),
+    h('option', { value: 'agentarchive' }, 'Agent Archive 复合图'),
+  );
+  const presetBtn = h('button', { class: 'btn btn--sm', title: '插入一套有容器、边框、节点和标签的科研图', onclick: () => insertPreset(presetSelect.value) }, '插入结构');
 
   const opacityInput = h('input', { class: 'figureboard__range', type: 'range', min: '10', max: '100', step: '1', value: '100', title: '对象透明度', oninput: (event) => updateSelected({ opacity: Number(event.currentTarget.value) / 100 }) });
   function toggleSources() {
@@ -915,40 +1330,83 @@ export function createFigureboard(root, ctx) {
     sources.classList.toggle('is-open', opening);
     // 收起素材库时把浏览区一并收掉，否则画布仍被挤在一边
     if (!opening && activeSite) closeSite();
-    boardHint.hidden = activeSite || sources.classList.contains('is-open');
+    boardHint.hidden = Boolean(items.length || activeSite || sources.classList.contains('is-open'));
   }
 
   const sourcesToggle = h('button', { class: 'figureboard__sources-toggle', title: '展开/收起素材库', onclick: toggleSources }, '素材');
   const boardHint = h('button', { class: 'figureboard__board-hint', onclick: () => { sources.classList.add('is-open'); boardHint.hidden = true; } }, '素材库已收起 · 点击打开素材网站');
   const workspace = h('div', { class: 'figureboard__workspace' });
+  const tooltip = h('div', { class: 'figureboard__tooltip', role: 'tooltip', hidden: true });
+
+  function hideTooltip() {
+    tooltip.setAttribute('hidden', '');
+  }
+
+  function showTooltip(target) {
+    const text = target?.dataset?.tooltip || target?.getAttribute?.('title');
+    if (!text || target === tooltip || target.matches?.('option')) return;
+    tooltip.textContent = text;
+    tooltip.removeAttribute('hidden');
+    const rect = target.getBoundingClientRect();
+    const margin = 10;
+    const top = rect.bottom + margin + tooltip.offsetHeight > window.innerHeight
+      ? rect.top - tooltip.offsetHeight - margin
+      : rect.bottom + margin;
+    const left = Math.max(8, Math.min(window.innerWidth - tooltip.offsetWidth - 8, rect.left + (rect.width - tooltip.offsetWidth) / 2));
+    tooltip.style.left = `${left}px`;
+    tooltip.style.top = `${Math.max(8, top)}px`;
+  }
+
+  function isEditableTarget(target) {
+    return target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || target.isContentEditable;
+  }
+
+  function handleShortcut(event) {
+    if (!root.isConnected) return;
+    if (isEditableTarget(event.target)) return;
+    const key = event.key.toLowerCase();
+    const modifier = event.metaKey || event.ctrlKey;
+    if (modifier && key === 'z') { event.preventDefault(); event.shiftKey ? redo() : undo(); return; }
+    if (modifier && key === 'y') { event.preventDefault(); redo(); return; }
+    if (modifier && key === 'c') { event.preventDefault(); copySelected(); return; }
+    if (modifier && key === 'x') { event.preventDefault(); cutSelected(); return; }
+    if (modifier && key === 'v') { if (event.target !== board) { event.preventDefault(); pasteSelected(); } return; }
+    if (modifier && key === 'd') { event.preventDefault(); duplicateSelected(); return; }
+    if (modifier && key === 'g') { event.preventDefault(); event.shiftKey ? ungroupSelected() : groupSelected(); return; }
+    if (!modifier && (event.key === 'Delete' || event.key === 'Backspace')) { event.preventDefault(); if (selectedId) removeItem(selectedId); return; }
+    if (!modifier && event.key === 'Escape') { closeContextMenu(); selectItem(null); return; }
+    if (!modifier && event.key === 'ArrowLeft') { event.preventDefault(); nudgeSelected(event.shiftKey ? -10 : -1, 0); return; }
+    if (!modifier && event.key === 'ArrowRight') { event.preventDefault(); nudgeSelected(event.shiftKey ? 10 : 1, 0); return; }
+    if (!modifier && event.key === 'ArrowUp') { event.preventDefault(); nudgeSelected(0, event.shiftKey ? -10 : -1); return; }
+    if (!modifier && event.key === 'ArrowDown') { event.preventDefault(); nudgeSelected(0, event.shiftKey ? 10 : 1); return; }
+    if (!modifier && key === 'r') { event.preventDefault(); addShape('rect'); return; }
+    if (!modifier && key === 't') { event.preventDefault(); addText(); return; }
+    if (!modifier && key === 'l') { event.preventDefault(); addShape('arrow'); }
+  }
 
   board.addEventListener('paste', (event) => { if ([...(event.clipboardData?.items || [])].some((item) => item.type.startsWith('image/'))) { event.preventDefault(); pasteImage(); } });
+  board.addEventListener('contextmenu', openContextMenu);
   board.addEventListener('pointerdown', (event) => { if (event.target === board) startMarquee(event); });
-  board.addEventListener('keydown', (event) => { if ((event.key === 'Delete' || event.key === 'Backspace') && selectedId) { event.preventDefault(); removeItem(selectedId); } });
-  board.addEventListener('keydown', (event) => {
-    if (!(event.metaKey || event.ctrlKey)) return;
-    if (event.key.toLowerCase() === 'z') { event.preventDefault(); event.shiftKey ? redo() : undo(); }
-    if (event.key.toLowerCase() === 'y') { event.preventDefault(); redo(); }
-    if (event.key.toLowerCase() === 'c') { event.preventDefault(); copySelected(); }
-    if (event.key.toLowerCase() === 'x') { event.preventDefault(); cutSelected(); }
-    if (event.key.toLowerCase() === 'v') { event.preventDefault(); pasteSelected(); }
-    if (event.key.toLowerCase() === 'd') { event.preventDefault(); duplicateSelected(); }
+  document.addEventListener('keydown', handleShortcut);
+  document.addEventListener('pointerdown', (event) => {
+    if (!contextMenu.hidden && !contextMenu.contains(event.target)) closeContextMenu();
   });
+  document.addEventListener('keydown', (event) => { if (event.key === 'Escape') closeContextMenu(); });
 
   root.append(
     h('div', { class: 'bar bar--drag figureboard__bar' },
       h('strong', {}, 'PPT图板'),
-      h('span', { class: 'faint' }, '单页科研图片工作台'),
+      h('span', { class: 'faint' }, '单页科研图片工作台 · ⌘Z 撤销 · ⌘G 组合 · 方向键微调 · R/T/L 快速插入'),
       sourcesToggle,
       h('span', { class: 'figureboard__bar-spacer' }),
       h('div', { class: 'figureboard__tools' },
         h('div', { class: 'figureboard__group', title: '形状' }, ...shapeButtons),
         h('span', { class: 'figureboard__tool-sep' }),
-        h('div', { class: 'figureboard__group', title: '连线与文字' }, ...lineButtons, textBtn, routeSelect, arrowEndBtn, wireLabelBtn),
+        h('div', { class: 'figureboard__group', title: '连线与文字' }, ...lineButtons, textBtn, routeSelect, curveBendInput, arrowEndBtn, wireLabelBtn),
         h('span', { class: 'figureboard__tool-sep' }),
         h('div', { class: 'figureboard__group', title: '样式' },
           fillInput, strokeInput, transparentFillBtn, transparentStrokeBtn,
-          dashSelect, strokeWidthInput, radiusInput, sliceInput, opacityInput),
+          dashSelect, effectSelect, fontSelect, strokeWidthInput, radiusInput, sliceInput, opacityInput),
         h('span', { class: 'figureboard__tool-sep' }),
         h('div', { class: 'figureboard__group', title: '排列' },
           alignLeftBtn, alignCenterBtn, alignTopBtn, groupBtn, ungroupBtn,
@@ -958,11 +1416,26 @@ export function createFigureboard(root, ctx) {
           undoBtn, redoBtn, copyBtn, cutBtn, pasteObjectBtn, duplicateBtn, deleteBtn),
         h('span', { class: 'figureboard__tool-sep' }),
         h('div', { class: 'figureboard__group', title: '画布与导出' },
-          pasteBtn, importBtn, iconFor('canvasBg', 'ui-icon figureboard__tool-icon'), bgSelect, exportSvgBtn, exportPngBtn),
+          presetSelect, presetBtn, pasteBtn, importBtn, iconFor('canvasBg', 'ui-icon figureboard__tool-icon'), bgSelect, exportSvgBtn, exportPngBtn),
       ),
     ),
     workspace,
   );
+  document.body.appendChild(tooltip);
+  root.addEventListener('pointerover', (event) => {
+    const target = event.target.closest?.('[data-tooltip], [title]');
+    if (target && root.contains(target)) showTooltip(target);
+  });
+  root.addEventListener('pointerout', (event) => {
+    const target = event.target.closest?.('[data-tooltip], [title]');
+    if (!target || !root.contains(target)) return;
+    if (!event.relatedTarget || !target.contains(event.relatedTarget)) hideTooltip();
+  });
+  root.addEventListener('focusin', (event) => {
+    const target = event.target.closest?.('[data-tooltip], [title]');
+    if (target && root.contains(target)) showTooltip(target);
+  });
+  root.addEventListener('focusout', hideTooltip);
   workspace.append(
     sources,
     browserPane,
@@ -971,22 +1444,40 @@ export function createFigureboard(root, ctx) {
       board,
     ),
   );
+  document.body.appendChild(contextMenu);
   browserPane.append(
     h('div', { class: 'figureboard__pane-head' },
-      h('strong', {}, '素材浏览区'),
-      h('span', { class: 'faint' }, '再点一次同一个网站也能收起'),
+      browserTitle,
+      browserHint,
       h('span', { class: 'figureboard__bar-spacer' }),
       h('button', { class: 'btn btn--sm btn--ghost', title: '收起素材浏览区，把画布还回来', onclick: closeSite }, '收起 ✕'),
     ),
     siteViewHost,
   );
   sources.append(
+    h('div', { class: 'figureboard__section-title' }, '内置素材包'),
+    localAssetList,
+    h('div', { class: 'figureboard__asset-save' },
+      assetNameInput,
+      assetCategoryInput,
+      h('div', { class: 'figureboard__asset-save-actions' }, clipboardAssetBtn, importAssetBtn),
+      h('small', { class: 'faint' }, '网页生成图或截图可复制 / 导入，保存后下次启动仍在。'),
+    ),
     h('div', { class: 'figureboard__section-title' }, '素材网站'),
     h('div', { class: 'figureboard__site-form' }, siteName, siteUrl, addSiteBtn),
     siteList,
+    h('div', { class: 'figureboard__section-title' }, 'AI 素材工坊'),
+    h('div', { class: 'figureboard__ai-box' },
+      h('div', { class: 'figureboard__ai-title' }, '网页版 GPT Image'),
+      h('small', { class: 'faint' }, '无需 API Key；首次在网页内登录，生成后复制图片。'),
+      aiPresetSelect,
+      aiPromptInput,
+      h('div', { class: 'figureboard__ai-actions' }, copyPromptBtn, openAiBtn),
+    ),
   );
   bgSelect.value = background;
   applyBackground();
+  renderLocalAssets();
   renderSites();
   renderBoard();
 }

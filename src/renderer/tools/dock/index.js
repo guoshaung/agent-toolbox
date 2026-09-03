@@ -12,6 +12,37 @@ export default {
   hint: '把 Edge、Chrome 等窗口贴到工具箱左侧，自由调节宽度',
 
   create(root) {
+    // 窗口吸附靠 macOS 的辅助功能 API（编译 Swift 助手调 AXIsProcessTrusted）实现，
+    // 其它系统上根本不存在这条路。默认值以前写死 true，导致 Windows 上照样
+    // 弹出"请授权隐私权限"——而 Windows 压根没有这个概念。
+    const isMac = window.toolbox.platform === 'darwin';
+
+    if (!isMac) {
+      root.append(
+        h('div', { class: 'bar bar--drag' },
+          h('strong', {}, '窗口吸附'),
+          h('span', { class: 'faint' }, '仅 macOS 可用'),
+        ),
+        h('div', { class: 'dock__body' },
+          h('section', { class: 'card dock__unsupported' },
+            h('h2', {}, '这个功能在当前系统上用不了'),
+            h('p', { class: 'faint' },
+              '窗口吸附需要「移动其它应用窗口」的系统能力。macOS 通过辅助功能（Accessibility）'
+              + '接口提供，本工具为此编译了一个 Swift 助手程序 —— 这条路只有 macOS 有。'),
+            h('div', { class: 'dock__unsupported-tip' },
+              h('strong', {}, 'Windows 自带更好的方案：'),
+              h('p', {},
+                '按 ', h('kbd', {}, 'Win'), ' + ', h('kbd', {}, '←'), ' / ', h('kbd', {}, '→'),
+                ' 可以把当前窗口贴到屏幕一侧，系统会自动提示你选另一半放什么（Snap Assist）。'),
+              h('p', {},
+                '把工具箱贴一侧、浏览器贴另一侧，效果和这里想做的事一样，而且是系统原生的，更稳。'),
+            ),
+          ),
+        ),
+      );
+      return {};
+    }
+
     let state = {
       supported: true,
       active: false,

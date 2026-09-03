@@ -18,6 +18,8 @@ contextBridge.exposeInMainWorld('toolbox', {
     /** 打开选图对话框，返回 { path, name, mime, base64 } 或 null（用户取消） */
     pickImage: () => ipcRenderer.invoke('files:pickImage'),
     pickPetSkin: () => ipcRenderer.invoke('files:pickPetSkin'),
+    saveImage: (payload) => ipcRenderer.invoke('files:saveImage', payload),
+    saveText: (payload) => ipcRenderer.invoke('files:saveText', payload),
   },
 
   chat: {
@@ -127,6 +129,8 @@ contextBridge.exposeInMainWorld('toolbox', {
   lit: {
     /** 弹文件选择框导入文献到 userData/literature/，返回导入的文件列表 */
     import: () => ipcRenderer.invoke('lit:import'),
+    /** 接收文件管理器拖入的文件或文件夹，文件夹会递归导入支持的文献格式 */
+    importFiles: (sources) => ipcRenderer.invoke('lit:importFiles', sources),
     /** 列出已导入的文献（文件名/大小/格式/时间） */
     list: () => ipcRenderer.invoke('lit:list'),
     /** 用系统默认程序打开 */

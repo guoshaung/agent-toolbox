@@ -105,7 +105,8 @@ export function wirePath(wire, byId) {
 
   if (route === 'curve') {
     // 控制点沿各自端口的法线外推，出入口都垂直于图形边缘，看着才顺
-    const dist = Math.max(48, Math.hypot(b.point.x - a.point.x, b.point.y - a.point.y) * 0.45);
+    const bend = Number(wire.curveBend) || 0;
+    const dist = Math.max(16, Math.hypot(b.point.x - a.point.x, b.point.y - a.point.y) * 0.45 + bend);
     const na = normal(a.port);
     const nb = normal(b.port);
     const c1 = { x: a.point.x + na.x * dist, y: a.point.y + na.y * dist };
@@ -167,7 +168,7 @@ function collectObstacles(byId, wire) {
   const skip = new Set([wire.from?.id, wire.to?.id].filter(Boolean));
   const out = [];
   for (const item of byId.values()) {
-    if (item.type === 'wire' || item.type === 'text' || skip.has(item.id)) continue;
+    if (item.type === 'wire' || item.type === 'text' || item.type === 'container' || skip.has(item.id)) continue;
     if (!(item.width > 0 && item.height > 0)) continue;
     out.push({ x: item.x, y: item.y, w: item.width, h: item.height });
   }

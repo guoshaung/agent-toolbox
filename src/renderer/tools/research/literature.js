@@ -1449,7 +1449,16 @@ export function createLiterature(root, ctx) {
     btn.disabled = true;
     try {
       const imported = await lit.import();
-      if (!imported.length) return;
+      await finishImport(imported);
+    } catch (err) {
+      toast(`导入失败：${err.message}`, 'bad');
+    } finally {
+      btn.disabled = false;
+    }
+  }
+
+  async function finishImport(imported) {
+    if (!imported?.length) return toast('没有找到支持的文献文件', 'info');
       const metaMap = meta();
       for (const item of imported) {
         if (!metaMap[item.file]) {
@@ -1464,11 +1473,25 @@ export function createLiterature(root, ctx) {
           : `导入 ${imported.length} 篇`,
         'good',
       );
-      renderList();
+      await renderList();
+  }
+
+  async function importDropped(event) {
+    event.preventDefault();
+    dropZone.classList.remove('is-dragover');
+    const paths = [...(event.dataTransfer?.files || [])]
+      .map((file) => file.path)
+      .filter(Boolean);
+    if (!paths.length) return toast('没有读到拖入的文件路径，请从 Finder 或文件管理器拖入', 'bad');
+    dropZone.classList.add('is-busy');
+    dropZone.querySelector('.lit__dropzone-status').textContent = '正在导入文件/文件夹…';
+    try {
+      await finishImport(await lit.importFiles(paths));
     } catch (err) {
-      toast(`导入失败：${err.message}`, 'bad');
+      toast(`拖入导入失败：${err.message}`, 'bad');
     } finally {
-      btn.disabled = false;
+      dropZone.classList.remove('is-busy');
+      dropZone.querySelector('.lit__dropzone-status').textContent = '支持拖入文件，也支持拖入整个文件夹';
     }
   }
 
@@ -1989,6 +2012,16 @@ export function createLiterature(root, ctx) {
     title: 'arxiv 这类编号命名的 PDF，读正文标题自动重命名',
     onclick: (e) => fixNames(e.currentTarget),
   }, '整理编号名');
+  const dropZone = h('div', { class: 'lit__dropzone' },
+    h('span', { class: 'lit__dropzone-icon' }, '↓'),
+    h('strong', {}, '拖入文献'),
+    h('span', { class: 'lit__dropzone-status' }, '支持拖入文件，也支持拖入整个文件夹'),
+    h('span', { class: 'faint' }, 'PDF / Word / TXT / MD / EPUB / CAJ 等'),
+  );
+  dropZone.addEventListener('dragenter', (event) => { event.preventDefault(); dropZone.classList.add('is-dragover'); });
+  dropZone.addEventListener('dragover', (event) => { event.preventDefault(); event.dataTransfer.dropEffect = 'copy'; dropZone.classList.add('is-dragover'); });
+  dropZone.addEventListener('dragleave', (event) => { if (!dropZone.contains(event.relatedTarget)) dropZone.classList.remove('is-dragover'); });
+  dropZone.addEventListener('drop', importDropped);
 
   root.append(
     h('div', { class: 'bar research__viewbar' },
@@ -2000,7 +2033,7 @@ export function createLiterature(root, ctx) {
       h('span', { class: 'faint lit__hint' }, '点「阅读」右侧直接看，不用开 WPS'),
     ),
     h('div', { class: 'lit__body' },
-      h('div', { class: 'lit__side' }, discoveryPanel, libraryPanel, noticeEl, listEl),
+      h('div', { class: 'lit__side' }, dropZone, discoveryPanel, libraryPanel, noticeEl, listEl),
       h('div', { class: 'lit__reader' },
         viewerBar,
       h('div', { class: 'lit__reader-body' },

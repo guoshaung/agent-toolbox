@@ -11,8 +11,46 @@
   <main id="shell" class="shell">
     <button id="avatar" class="avatar" title="拖动；点击打开快速解释" aria-label="打开快速解释">
       <img id="skin" src="assets/study-buddy.svg" alt="蓝白学习助手" draggable="false" />
-      <span class="avatar__hint">解释</span>
+      <span class="avatar__hint">记忆</span>
     </button>
+    <section id="memory" class="memory" hidden>
+      <header id="mem-dragbar" class="memory__header">
+        <div class="memory__brand"><span class="eyebrow">MEMORY STACK</span><strong>记忆栈</strong></div>
+        <div class="memory__actions">
+          <button id="mem-eat-clip" title="把剪贴板里的内容吃下去">吃剪贴板</button>
+          <button id="mem-open-session">从会话里吃…</button>
+          <button id="mem-to-notebook" title="导出到工具箱的记事本">收进记事本</button>
+          <label class="memory__alpha" title="底板透明度">
+            <span>透明</span><input id="mem-alpha" type="range" min="0.35" max="1" step="0.05" />
+          </label>
+          <button id="mem-card" title="切回四行快速解释">解释</button>
+          <button id="mem-collapse" title="收起">×</button>
+        </div>
+      </header>
+
+      <div class="memory__body">
+        <aside class="memory__list-pane">
+          <input id="mem-search" class="memory__search" placeholder="搜已经吃下的内容…（代替往上翻）" />
+          <div id="mem-list" class="memory__list"></div>
+          <div id="mem-count" class="memory__count"></div>
+        </aside>
+        <section class="memory__detail-pane">
+          <div id="mem-detail" class="memory__detail"></div>
+        </section>
+      </div>
+
+      <div id="mem-session" class="memory__session" hidden>
+        <div class="memory__session-bar">
+          <select id="mem-source" class="memory__select"></select>
+          <select id="mem-sessions" class="memory__select memory__select--wide"></select>
+          <label class="memory__filter"><input id="mem-only-assistant" type="checkbox" checked /><span>只看回答</span></label>
+          <button id="mem-eat-checked" class="primary">吃掉勾选的</button>
+          <button id="mem-session-close">关闭</button>
+        </div>
+        <div id="mem-turns" class="memory__turns"></div>
+      </div>
+    </section>
+
     <section id="card" class="card" hidden>
       <header id="dragbar" class="card__header">
         <div><span class="eyebrow">CURRENT LAYER</span><strong>快速解释</strong></div>

@@ -1,6 +1,9 @@
 import { h, toast } from '../../core/ui.js';
 import { PAGE_AGENT } from '../../core/page-agent.js';
 import { DEEPSEEK_URL, DEEPSEEK_PARTITION } from '../../core/deepseek-bridge.js';
+import { CAPTURE_AGENT } from '../../core/capture-agent.js';
+import { createStore } from '../anchor/store.js';
+import { createRail } from '../anchor/rail.js';
 
 /** 背景图先压到这个尺寸再存，原图动辄几十 MB，塞进配置文件不合适。 */
 const MAX_EDGE = 2560;
@@ -56,6 +59,8 @@ export default {
           if (!ok) return toast('页面还没准备好（可能需要先登录）', 'bad');
           await new Promise((r) => setTimeout(r, 120));
           await view.executeJavaScript('window.__tbx.send()', true);
+          // 从这里问出去的，直接进主线栈——不然又要你手动记一遍。
+          store.push(text);
           quick.value = '';
         } catch (err) {
           toast(`发送失败：${err.message}`, 'bad');
@@ -110,6 +115,47 @@ export default {
       }, '清除背景'),
     );
 
+    // ---- 对话锚点：主线栈 / 追问队列 / 摘录 ----
+    const store = createStore(config);
+
+    /** 把一句话填回网页的输入框，不自动发——让你还能改两笔再发。 */
+    async function fillInput(text) {
+      try {
+        await inject();
+        await view.executeJavaScript(`window.__tbx.setText(${JSON.stringify(text)})`, true);
+      } catch {
+        // 填不进去就退而求其次，至少让你能粘
+        await window.toolbox.clipboard.writeText(text);
+        toast('输入框还没就绪，已复制到剪贴板', 'info');
+      }
+    }
+
+    const rail = createRail(store, {
+      fill: fillInput,
+      toNotebook: (title, markdown) => {
+        const snippets = config.get('notebook.snippets') || [];
+        const snippet = {
+          id: `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`,
+          title: title.slice(0, 40),
+          code: markdown,
+          kind: 'markdown',
+          createdAt: Date.now(),
+        };
+        config.set('notebook.snippets', [snippet, ...snippets].slice(0, 60));
+        config.set('notebook.currentId', snippet.id);
+        toast('已收进记事本。想看成结构树就在「问过的路径」上选中，用 \\outline。', 'good');
+      },
+    });
+
+    const railToggle = h('button', {
+      class: 'btn btn--sm',
+      onclick: () => {
+        const hidden = rail.root.toggleAttribute('hidden');
+        config.set('ask.rail.hidden', hidden);
+      },
+    }, '⚓ 锚点');
+    if (config.get('ask.rail.hidden')) rail.root.setAttribute('hidden', '');
+
     const bar = h('div', { class: 'bar bar--drag' },
       h('button', {
         class: 'btn btn--icon', title: '新会话',
@@ -124,15 +170,42 @@ export default {
         class: 'btn btn--sm',
         onclick: () => panel.toggleAttribute('hidden'),
       }, '🖼 背景'),
+      railToggle,
     );
 
-    root.append(bar, panel, view);
+    const stage = h('div', { class: 'ask__stage' }, view, rail.root);
+    root.append(bar, panel, stage);
 
     let injected = false;
     async function inject() {
       if (injected) return;
       await view.executeJavaScript(PAGE_AGENT);
+      await view.executeJavaScript(CAPTURE_AGENT);
       injected = true;
+    }
+
+    // 摘录探针在网页里攒，宿主定期取。webview 没挂 preload，
+    // 走轮询比为它单开一条 IPC 通道简单，400ms 一次的开销可以忽略。
+    let drainTimer = null;
+    function startDraining() {
+      if (drainTimer) return;
+      drainTimer = setInterval(async () => {
+        if (rail.root.hasAttribute('hidden')) return;
+        try {
+          const got = await view.executeJavaScript(
+            'window.__tbxCap ? window.__tbxCap.drain() : null', true);
+          if (!got || !got.clips || !got.clips.length) return;
+          for (const clip of got.clips) store.addClip(clip);
+          toast(`摘了 ${got.clips.length} 段`, 'good', 1400);
+        } catch {
+          // 页面正在跳转或还没注入，下一轮再说
+        }
+      }, 400);
+    }
+
+    function stopDraining() {
+      if (drainTimer) clearInterval(drainTimer);
+      drainTimer = null;
     }
 
     async function applyBackground() {
@@ -152,6 +225,8 @@ export default {
     view.addEventListener('dom-ready', async () => {
       injected = false;
       await applyBackground();
+      await inject();
+      startDraining();
     });
     view.addEventListener('did-fail-load', (e) => {
       if (e.errorCode === -3) return;
@@ -159,7 +234,12 @@ export default {
     });
 
     return {
-      activate: () => setTimeout(() => quick.focus(), 30),
+      activate: () => {
+        setTimeout(() => quick.focus(), 30);
+        startDraining();
+      },
+      // 切到别的工具就别再轮询了，回来时 activate 会重新起。
+      deactivate: () => stopDraining(),
     };
   },
 };

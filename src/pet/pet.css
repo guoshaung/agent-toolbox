@@ -63,3 +63,175 @@ textarea { height: 106px; resize: none; font: var(--code-font)/1.52 ui-monospace
 .trace { width: 100%; margin-top: 8px; color: #89b7ff; border-color: #31558d; background: rgba(61,111,198,.1); }
 @keyframes hello { 45% { transform: rotate(-3deg) translateY(-3px); } 75% { transform: rotate(2deg); } }
 @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
+
+/* ================= 记忆栈 ================= */
+/* 半透明只作用在底板上，文字保持完全不透明——
+   窗口级 opacity 会把文字一起变淡，长文就读不下去了。 */
+
+.memory {
+  --mem-alpha: 0.82;
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border-radius: 14px;
+  border: 1px solid rgba(255, 255, 255, .14);
+  background: rgba(17, 20, 26, var(--mem-alpha));
+  backdrop-filter: blur(22px) saturate(1.15);
+  -webkit-backdrop-filter: blur(22px) saturate(1.15);
+  box-shadow: 0 18px 50px rgba(0, 0, 0, .45);
+  color: #e8ecf2;
+  font-size: 13px;
+}
+.memory[hidden] { display: none; }
+
+.memory__header {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 10px; padding: 8px 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, .1);
+  -webkit-app-region: drag;
+  flex: none;
+}
+.memory__brand { display: flex; flex-direction: column; line-height: 1.15; }
+.memory__brand .eyebrow { font-size: 9px; letter-spacing: .14em; opacity: .5; }
+.memory__brand strong { font-size: 14px; }
+
+.memory__actions { display: flex; align-items: center; gap: 6px; -webkit-app-region: no-drag; }
+.memory__actions button {
+  padding: 4px 9px; font-size: 12px;
+  color: #e8ecf2;
+  background: rgba(255, 255, 255, .08);
+  border: 1px solid rgba(255, 255, 255, .14);
+  border-radius: 7px; cursor: pointer;
+}
+.memory__actions button:hover { background: rgba(255, 255, 255, .16); }
+.memory__alpha { display: flex; align-items: center; gap: 4px; font-size: 11px; opacity: .75; }
+.memory__alpha input { width: 62px; }
+
+.memory__body { flex: 1; min-height: 0; display: flex; }
+
+.memory__list-pane {
+  width: 258px; flex: none;
+  display: flex; flex-direction: column; gap: 6px;
+  padding: 8px;
+  border-right: 1px solid rgba(255, 255, 255, .1);
+  min-height: 0;
+}
+.memory__search {
+  flex: none;
+  padding: 5px 8px; font-size: 12px;
+  color: #e8ecf2;
+  background: rgba(0, 0, 0, .28);
+  border: 1px solid rgba(255, 255, 255, .14);
+  border-radius: 7px;
+}
+.memory__list { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 4px; }
+.memory__count { flex: none; font-size: 10px; opacity: .45; }
+
+.memory__item {
+  padding: 6px 8px; border-radius: 8px; cursor: pointer;
+  border: 1px solid transparent;
+  background: rgba(255, 255, 255, .04);
+}
+.memory__item:hover { background: rgba(255, 255, 255, .1); }
+.memory__item.is-active { background: rgba(110, 231, 183, .16); border-color: rgba(110, 231, 183, .4); }
+.memory__item-title {
+  font-size: 12px; line-height: 1.4;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+.memory__item-meta { margin-top: 3px; font-size: 10px; opacity: .5; display: flex; gap: 6px; }
+
+/* 右栏是读长文的地方：给足行高和最大宽度，别让一行拉到 800px 那么长 */
+.memory__detail-pane { flex: 1; min-width: 0; display: flex; padding: 10px 12px; }
+.memory__detail { flex: 1; min-width: 0; overflow-y: auto; }
+.memory__detail-head { display: flex; align-items: flex-start; gap: 8px; margin-bottom: 8px; }
+.memory__detail-title { flex: 1; font-size: 14px; font-weight: 600; line-height: 1.4; }
+.memory__detail-meta { font-size: 11px; opacity: .55; margin-bottom: 8px; }
+.memory__detail-text {
+  white-space: pre-wrap; word-break: break-word;
+  font-size: 13px; line-height: 1.7;
+  max-width: 62em;
+}
+.memory__detail-note {
+  width: 100%; margin-top: 10px; padding: 6px 8px;
+  /* 全局 textarea 定死了 height:106px，不覆盖成 auto 的话 min-height 不起作用 */
+  height: auto; min-height: 52px; resize: vertical;
+  color: #e8ecf2; font-size: 12px;
+  background: rgba(0, 0, 0, .25);
+  border: 1px solid rgba(255, 255, 255, .14);
+  border-radius: 7px;
+}
+.memory__empty { opacity: .5; font-size: 12px; line-height: 1.7; padding: 16px 4px; }
+
+/* 从会话里挑：盖在上面，不挤掉主布局 */
+.memory__session {
+  position: absolute; inset: 44px 0 0 0;
+  display: flex; flex-direction: column;
+  background: rgba(14, 17, 22, .97);
+  backdrop-filter: blur(18px);
+}
+.memory__session[hidden] { display: none; }
+.memory__session-bar {
+  display: flex; align-items: center; gap: 6px; padding: 8px 12px;
+  border-bottom: 1px solid rgba(255, 255, 255, .1);
+  flex: none;
+}
+.memory__select {
+  padding: 4px 6px; font-size: 12px; max-width: 150px;
+  color: #e8ecf2; background: rgba(0, 0, 0, .3);
+  border: 1px solid rgba(255, 255, 255, .14); border-radius: 7px;
+}
+.memory__select--wide { flex: 1; max-width: none; min-width: 0; }
+.memory__filter { display: flex; align-items: center; gap: 4px; font-size: 11px; opacity: .8; }
+.memory__session-bar button {
+  padding: 4px 9px; font-size: 12px; color: #e8ecf2;
+  background: rgba(255, 255, 255, .08);
+  border: 1px solid rgba(255, 255, 255, .14);
+  border-radius: 7px; cursor: pointer;
+}
+.memory__session-bar button.primary { background: rgba(110, 231, 183, .22); border-color: rgba(110, 231, 183, .45); }
+
+.memory__turns { flex: 1; min-height: 0; overflow-y: auto; padding: 8px 12px; display: flex; flex-direction: column; gap: 6px; }
+.memory__turn {
+  display: flex; gap: 8px; padding: 7px 9px;
+  border: 1px solid rgba(255, 255, 255, .1); border-radius: 8px;
+  background: rgba(255, 255, 255, .04);
+}
+.memory__turn input { margin-top: 2px; flex: none; }
+.memory__turn-body { flex: 1; min-width: 0; }
+.memory__turn-role { font-size: 10px; opacity: .5; margin-bottom: 2px; }
+.memory__turn-text {
+  font-size: 12px; line-height: 1.6; white-space: pre-wrap; word-break: break-word;
+  max-height: 74px; overflow: hidden; cursor: pointer;
+}
+.memory__turn-text.is-open { max-height: none; }
+.memory__mini {
+  flex: none;
+  padding: 2px 7px; font-size: 12px;
+  color: #e8ecf2;
+  background: rgba(255, 255, 255, .08);
+  border: 1px solid rgba(255, 255, 255, .14);
+  border-radius: 6px; cursor: pointer;
+}
+.memory__mini:hover { background: rgba(255, 255, 255, .18); }
+
+/* pet.css 上面为「四行解释卡」写了几条全局规则：
+   input/textarea 一律 width:100%、label>span 一律 display:block、.primary 一律满宽。
+   记忆栈是完全不同的布局，这里逐条挡掉，否则复选框会被撑成大方块、
+   行内标签会竖排、按钮会拉满一整行。 */
+.memory input[type="checkbox"] {
+  width: auto; height: auto;
+  padding: 0; margin: 2px 0 0;
+  border-radius: 3px;
+  /* .memory__turn 是 flex 容器，默认 align-items:stretch 会把复选框纵向拉长 */
+  align-self: flex-start;
+}
+.memory input[type="range"] {
+  width: 62px; padding: 0; border: 0; background: transparent;
+}
+.memory label > span { display: inline; margin: 0; color: inherit; font-size: inherit; }
+.memory .memory__search { width: 100%; }
+.memory .memory__select { width: auto; }
+.memory .memory__session-bar .primary { width: auto; margin-top: 0; font-weight: 500; }
+.memory__filter { white-space: nowrap; }

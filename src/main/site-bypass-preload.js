@@ -49,7 +49,13 @@
 
   function allowCopy() {
     const allow = (e) => { e.stopPropagation(); return true; };
-    for (const ev of ['copy', 'cut', 'selectstart', 'contextmenu', 'mousedown', 'dragstart']) {
+    // 只拦"站点用来禁止复制/选中"的那几个事件。
+    //
+    // 这里原来还包含 mousedown —— 那是致命的：capture 阶段 stopPropagation
+    // 会让事件根本到不了目标元素，页面里所有依赖 mousedown 的交互（现代 SPA
+    // 的按钮、下拉、发送键几乎都是）全部失灵，表现就是"什么都点不动"。
+    // 恢复选中靠下面 unlockScroll 里的 user-select: auto 就够了，不需要拦 mousedown。
+    for (const ev of ['copy', 'cut', 'selectstart', 'contextmenu', 'dragstart']) {
       document.addEventListener(ev, allow, true);
     }
   }

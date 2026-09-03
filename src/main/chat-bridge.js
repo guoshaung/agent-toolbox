@@ -140,7 +140,9 @@ function finalize(session, { full }) {
 
 /** 系统注入的上下文快照，不是用户手打的，导出去噪用。 */
 function looksInjected(text) {
-  return /^Current runtime context\.|^<system-reminder>/.test(text);
+  // 先 trim：这些注入块前面常带换行，直接拿 ^ 匹配原文会漏掉。
+  const t = String(text || '').trimStart();
+  return /^Current runtime context\.|^<system-reminder>|^<environment_context>|^<user_instructions>|^# Files mentioned by the user:/.test(t);
 }
 
 // ---------- codex ----------
@@ -172,6 +174,7 @@ function parseCodexFile(filePath, { full = false } = {}) {
     if (!full &&
       !line.includes('session_meta') && !line.includes('task_started') &&
       !line.includes('user_message') && !line.includes('agent_message') &&
+      !line.includes('"type":"message"') &&
       !line.includes('"role":"user"') && !line.includes('"role": "user"')) {
       if (line.includes('"role":"assistant"') || line.includes('"role": "assistant"')) session.count += 1;
       continue;
@@ -198,7 +201,7 @@ function parseCodexFile(filePath, { full = false } = {}) {
         const role = et === 'user_message' ? 'user' : 'assistant';
         if (text) {
           session.count += 1;
-          if (role === 'user' && !session.title) session.title = makeTitle(text);
+          if (role === 'user' && !session.title && !looksInjected(text)) session.title = makeTitle(text);
           if (full) session.messages.push({ role, content: text, createdAt: ts });
         }
         if (ts && (!session.updatedAt || ts > session.updatedAt)) session.updatedAt = ts;
@@ -207,14 +210,22 @@ function parseCodexFile(filePath, { full = false } = {}) {
     }
 
     if (record.type === 'response_item') {
-      const msg = payload.message;
+      // 两种格式：老的把消息包在 payload.message 里，
+      // 新的（带 ordinal 的那批）直接把 role/content 摊在 payload 上，
+      // payload.type === 'message' 是它的标志。只认前者会把新会话整条读成空。
+      const msg = (payload.message && typeof payload.message === 'object')
+        ? payload.message
+        : (payload.type === 'message' ? payload : null);
       if (!msg || typeof msg !== 'object') continue;
       if (['user', 'assistant', 'developer', 'system'].includes(msg.role)) {
         const content = extractText(msg.content);
         if (content) {
           session.count += 1;
           if (full) session.messages.push({ role: msg.role, content, createdAt: ts, model: msg.model || undefined });
-          if (msg.role === 'user' && !session.title) session.title = makeTitle(content);
+          // 注入的环境上下文也是 role:user，拿它当标题的话列表里会是一片 <environment_context>
+          if (msg.role === 'user' && !session.title && !looksInjected(content)) {
+            session.title = makeTitle(content);
+          }
           if (ts && (!session.updatedAt || ts > session.updatedAt)) session.updatedAt = ts;
         }
       }
@@ -271,42 +282,89 @@ const codex = {
 
 // ---------- claude ----------
 
-function parseClaudeHistory() {
-  const file = path.join(os.homedir(), '.claude', 'history.jsonl');
-  const byId = new Map();
-  for (const line of readLines(file)) {
+/**
+ * Claude Code 的完整转录在 ~/.claude/projects/<项目 slug>/<会话 id>.jsonl，
+ * 里面 user 和 assistant 都有。
+ * （~/.claude/history.jsonl 只有用户输入，早先这里读的是那个，所以助手回复一直是空的。）
+ */
+const CLAUDE_PROJECTS = () => path.join(os.homedir(), '.claude', 'projects');
+
+/** 转录里除了对话还混着 mode / attachment / file-history 这类事件，只挑真正的消息。 */
+function claudeMessagesFrom(filePath, { full = false }) {
+  const messages = [];
+  let createdAt = null;
+  let updatedAt = null;
+  let cwd = '';
+  let model = '';
+  let title = '';
+
+  for (const line of readLines(filePath, full ? {} : { maxBytes: 512 * 1024 })) {
     const record = parseJsonLine(line);
-    if (!record || !record.sessionId) continue;
-    if (!byId.has(record.sessionId)) byId.set(record.sessionId, []);
-    byId.get(record.sessionId).push(record);
+    if (!record) continue;
+    if (record.cwd && !cwd) cwd = record.cwd;
+    if (record.timestamp) {
+      if (!createdAt) createdAt = record.timestamp;
+      updatedAt = record.timestamp;
+    }
+    if (record.type !== 'user' && record.type !== 'assistant') continue;
+
+    const message = record.message || {};
+    if (message.model && !model) model = message.model;
+    const text = extractText(message.content).trim();
+    if (!text || looksInjected(text)) continue;
+    // 工具调用/结果块被 extractText 抽成空串或极短片段，这里再兜一层
+    if (record.type === 'user' && /^\[?tool_result/i.test(text)) continue;
+
+    if (!title && record.type === 'user') title = makeTitle(text);
+    messages.push({ role: record.type, content: text, createdAt: record.timestamp || null });
   }
-  const sessions = [];
-  for (const [id, records] of byId) {
-    records.sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
-    const texts = records.filter((r) => r.display);
-    sessions.push({
-      id,
-      source: 'claude',
-      title: makeTitle(texts[0]?.display),
-      createdAt: isoFromMs(records[0]?.timestamp),
-      updatedAt: isoFromMs(records[records.length - 1]?.timestamp),
-      cwd: records[0]?.project || '',
-      model: '',
-      path: file,
-      count: texts.length,
-      messages: texts.map((r) => ({ role: 'user', content: r.display, createdAt: isoFromMs(r.timestamp) })),
-      note: 'Claude Code 本地只保留用户输入历史；assistant 回复需从桌面端导出。',
-    });
-  }
-  return sortByUpdated(sessions);
+
+  return { messages, createdAt, updatedAt, cwd, model, title };
+}
+
+function claudeSessionFiles() {
+  return [...walk(CLAUDE_PROJECTS(), /\.jsonl$/)];
+}
+
+function parseClaudeFile(filePath, { full = false } = {}) {
+  if (!fs.existsSync(filePath)) return null;
+  const id = path.basename(filePath, '.jsonl');
+  const parsed = claudeMessagesFrom(filePath, { full });
+  let stat;
+  try { stat = fs.statSync(filePath); } catch { stat = null; }
+
+  return {
+    id,
+    source: 'claude',
+    title: parsed.title || `claude ${id.slice(0, 12)}`,
+    createdAt: parsed.createdAt || (stat ? stat.birthtime.toISOString() : null),
+    // 列表模式只读了文件头，里面的最后一条时间不是会话的最后活动时间，
+    // 拿它排序会把长会话排到很后面。列表用 mtime，载入时才用真实末条时间。
+    updatedAt: (full ? parsed.updatedAt : null) || (stat ? stat.mtime.toISOString() : parsed.updatedAt),
+    cwd: parsed.cwd,
+    model: parsed.model,
+    path: filePath,
+    // 列表模式只读了文件头，条数是下限；载入时才是准数。
+    count: parsed.messages.length,
+    messages: parsed.messages,
+  };
 }
 
 const claude = {
   id: 'claude',
   label: 'Claude',
-  list: () => parseClaudeHistory(),
+  list() {
+    const sessions = [];
+    for (const file of claudeSessionFiles()) {
+      const session = parseClaudeFile(file, { full: false });
+      if (session && session.count) sessions.push(session);
+    }
+    return sortByUpdated(sessions);
+  },
   load(id) {
-    return parseClaudeHistory().find((s) => s.id === id) || null;
+    const file = claudeSessionFiles().find((f) => path.basename(f, '.jsonl') === id);
+    if (!file) return null;
+    return finalize(parseClaudeFile(file, { full: true }), { full: true });
   },
 };
 

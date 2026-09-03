@@ -4,12 +4,14 @@ import { createTimer } from './timer.js';
 import { createGames } from './games.js';
 import { createNews } from './news.js';
 import { createWatch } from './watch.js';
+import { createBattle } from './battle.js';
 
 const SUB_SECTIONS = [
   { id: 'timer', label: '专注', icon: 'target' },
   { id: 'games', label: '醒脑', icon: 'zap' },
   { id: 'news', label: '情报', icon: 'scan' },
   { id: 'watch', label: '大佬动态', icon: 'x' },
+  { id: 'battle', label: '火柴人战斗', icon: 'zap' },
 ];
 
 /**
@@ -27,6 +29,7 @@ export default {
     const { config } = ctx;
     const panels = new Map();
     const deactivators = new Map();
+    const activators = new Map();
     let currentSub = config.get('focus.sub', 'timer');
 
     const subBar = h('div', { class: 'research__subbar' });
@@ -37,9 +40,11 @@ export default {
       games: createGames,
       news: createNews,
       watch: createWatch,
+      battle: (panel) => createBattle(panel, ctx),
     };
 
     function selectSub(id) {
+      if (currentSub !== id) deactivators.get(currentSub)?.();
       currentSub = id;
       config.set('focus.sub', id);
       for (const btn of subBar.children) {
@@ -49,12 +54,14 @@ export default {
         const panel = h('div', { class: 'research__panel' });
         const handle = factories[id](panel, ctx);
         if (handle && typeof handle.deactivate === 'function') deactivators.set(id, handle.deactivate);
+        if (handle && typeof handle.activate === 'function') activators.set(id, handle.activate);
         panels.set(id, panel);
         body.appendChild(panel);
       }
       for (const [pid, panel] of panels) {
         panel.style.display = pid === id ? 'flex' : 'none';
       }
+      activators.get(id)?.();
     }
 
     for (const s of SUB_SECTIONS) {
@@ -77,6 +84,7 @@ export default {
 
     return {
       deactivate: () => deactivators.forEach((fn) => fn()),
+      activate: () => activators.get(currentSub)?.(),
     };
   },
 };
