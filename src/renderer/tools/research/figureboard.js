@@ -5,7 +5,7 @@ import {
   BACKGROUNDS, backgroundDefs, PIE_COLORS,
 } from './figureshapes.js';
 import {
-  ROUTES, PORTS, portPoint, wireMarkup, wireLabelMarkup, isWire,
+  ROUTES, PORTS, portPoint, wireEnds, wireMarkup, wireLabelMarkup, isWire,
   wireMidpoint as wireMidpointOf,
 } from './figurewires.js';
 import { FIGURE_ASSETS, FIGURE_SOURCE_LINKS } from './figureassets.js';
@@ -58,6 +58,7 @@ export function createFigureboard(root, ctx) {
   const browserTitle = h('strong', {}, '素材浏览区');
   const browserHint = h('span', { class: 'faint' }, '再点一次同一个网站也能收起');
   const board = h('div', { class: 'figureboard__canvas', tabindex: '0' });
+  const surface = h('div', { class: 'figureboard__canvas-surface' });
   const contextMenu = h('div', { class: 'figureboard__context-menu', hidden: true });
   const empty = h('div', { class: 'figureboard__empty' },
     h('span', { class: 'empty__icon' }, '🖼️'),
@@ -65,20 +66,29 @@ export function createFigureboard(root, ctx) {
     h('br'),
     h('span', { class: 'faint' }, '⌘V 粘贴图片 · 拖动素材调整位置 · Delete 删除选中素材'),
   );
-  board.appendChild(empty);
+  surface.appendChild(empty);
+  board.appendChild(surface);
   let selectedId = null;
   let selectedIds = new Set();
   let activeSite = null;
   let sites = [...DEFAULT_SITES, ...(config.get('research.figureSites') || [])];
   let customAssets = config.get('research.figureCustomAssets') || [];
-  let items = (config.get('research.figureItems') || []).map((item) => (
+  const migratedFigureItems = migratePaperArchitectureItems((config.get('research.figureItems') || []).map((item) => (
     ['rect', 'ellipse', 'diamond'].includes(item.type) && item.stroke === '#3d6fe8' && item.fill === '#dce8ff'
       ? { ...item, stroke: 'transparent', fill: 'transparent' }
       : item
-  ));
+  )));
+  let items = migratedFigureItems.items;
+  if (migratedFigureItems.changed) config.set('research.figureItems', items);
   let undoStack = [];
   let redoStack = [];
   let internalClipboard = [];
+  let paletteDragType = null;
+  let canvasZoom = 1;
+  let pinchStartDistance = null;
+  let pinchStartZoom = 1;
+  let toolbarCollapsed = true;
+  config.set('research.figureToolbarCollapsed', true);
   let marquee = null;
   let saveTimer;
 
@@ -99,8 +109,96 @@ export function createFigureboard(root, ctx) {
     board.classList.toggle('is-transparent', !spec.color);
   }
 
+  function setCanvasZoom(nextZoom, anchor = null) {
+    const next = Math.max(0.5, Math.min(2.5, Number(nextZoom) || 1));
+    if (Math.abs(next - canvasZoom) < 0.001) return;
+    const boardRect = board.getBoundingClientRect();
+    const localX = anchor ? anchor.x - boardRect.left : board.clientWidth / 2;
+    const localY = anchor ? anchor.y - boardRect.top : board.clientHeight / 2;
+    const contentX = (localX + board.scrollLeft) / canvasZoom;
+    const contentY = (localY + board.scrollTop) / canvasZoom;
+    canvasZoom = next;
+    surface.style.zoom = String(canvasZoom);
+    if (typeof zoomLabel !== 'undefined') zoomLabel.textContent = `${Math.round(canvasZoom * 100)}%`;
+    requestAnimationFrame(() => {
+      board.scrollLeft = Math.max(0, contentX * canvasZoom - localX);
+      board.scrollTop = Math.max(0, contentY * canvasZoom - localY);
+    });
+  }
+
+  function resetCanvasZoom() {
+    setCanvasZoom(1);
+  }
+
   function cloneItems(value = items) {
     return JSON.parse(JSON.stringify(value));
+  }
+
+  function migratePaperArchitectureItems(sourceItems) {
+    const nextItems = sourceItems.map((item) => ({ ...item }));
+    const labels = nextItems.filter((item) => item.type === 'text');
+    const findLabel = (needle) => labels.find((item) => String(item.text || '').includes(needle));
+    const mixedLabel = findLabel('Mixed Sequence');
+    const projectorLabel = findLabel('Projector');
+    const predictionLabel = findLabel('Prediction');
+    const cieLabel = findLabel('Compute L_CIE');
+    if (!mixedLabel || !projectorLabel || !predictionLabel || !cieLabel) return { items: sourceItems, changed: false };
+
+    const shapes = nextItems.filter((item) => item.type !== 'text' && item.type !== 'image' && !isWire(item) && item.width > 0 && item.height > 0);
+    const shapeCandidatesForLabel = (label) => shapes
+      .filter((shape) => label.x >= shape.x - 36 && label.x <= shape.x + shape.width + 36
+        && label.y >= shape.y - 36 && label.y <= shape.y + shape.height + 36)
+      .sort((a, b) => (a.width * a.height) - (b.width * b.height))[0];
+    const shapeCandidates = (label) => shapes
+      .filter((shape) => label.x >= shape.x - 36 && label.x <= shape.x + shape.width + 36
+        && label.y >= shape.y - 36 && label.y <= shape.y + shape.height + 36);
+    const mixedCandidates = shapeCandidates(mixedLabel);
+    const projectorCandidates = shapeCandidates(projectorLabel);
+    const connectedMixed = mixedCandidates.find((shape) => nextItems.some((item) => isWire(item)
+      && item.from?.id === shape.id && projectorCandidates.some((candidate) => item.to?.id === candidate.id)));
+    const mixedShape = connectedMixed || shapeCandidatesForLabel(mixedLabel);
+    const projectorShape = shapeCandidatesForLabel(projectorLabel);
+    const predictionShape = shapeCandidatesForLabel(predictionLabel);
+    const cieShape = shapeCandidatesForLabel(cieLabel);
+    if (!mixedShape || !projectorShape || !predictionShape || !cieShape) return { items: sourceItems, changed: false };
+
+    let changed = false;
+    const set = (item, patch) => {
+      Object.entries(patch).forEach(([key, value]) => {
+        if (item[key] !== value) { item[key] = value; changed = true; }
+      });
+    };
+    const duplicateMixedIds = new Set(mixedCandidates.filter((shape) => shape.id !== mixedShape.id).map((shape) => shape.id));
+    set(mixedShape, { x: 1110, y: 365, width: 280, height: 62 });
+    set(projectorShape, { x: 1118, y: 461, width: 120, height: 68 });
+    set(predictionShape, { x: 1103, y: 574, width: 150, height: 50 });
+    set(cieShape, { x: 1324, y: 574, width: 150, height: 50 });
+    const llmLabel = labels.find((item) => String(item.text || '').includes('LLM') && item.x > 1200);
+    const llmShape = llmLabel ? shapeCandidatesForLabel(llmLabel) : null;
+    if (llmShape && llmShape !== projectorShape && llmShape.x > 1200) set(llmShape, { x: 1335, y: 461, width: 128, height: 68 });
+    set(mixedLabel, { x: mixedShape.x + 25, y: mixedShape.y + 10 });
+    set(projectorLabel, { x: projectorShape.x + 24, y: projectorShape.y + 8 });
+    set(predictionLabel, { x: predictionShape.x + 20, y: predictionShape.y + 8 });
+    set(cieLabel, { x: cieShape.x + 20, y: cieShape.y + 16 });
+    if (llmShape && llmLabel) set(llmLabel, { x: llmShape.x + 25, y: llmShape.y + 8 });
+
+    const byId = new Map(nextItems.map((item) => [item.id, item]));
+    nextItems.filter(isWire).forEach((wire) => {
+      if (duplicateMixedIds.has(wire.from?.id)) set(wire, { from: { ...wire.from, id: mixedShape.id } });
+      if (duplicateMixedIds.has(wire.to?.id)) set(wire, { to: { ...wire.to, id: mixedShape.id } });
+      const fromId = wire.from?.id;
+      const toId = wire.to?.id;
+      if (fromId === mixedShape.id && toId === projectorShape.id) {
+        set(wire, { route: 'paper', arrowStyle: 'bold', stroke: '#e67f43', strokeWidth: 2.2 });
+      } else if (llmShape && fromId === llmShape.id && toId === predictionShape.id) {
+        set(wire, { from: { ...wire.from, id: projectorShape.id, port: 'bottom' }, route: 'straight', arrowStyle: 'standard', stroke: '#efa16f' });
+      } else if (llmShape && fromId === llmShape.id && toId === cieShape.id) {
+        set(wire, { route: 'straight', arrowStyle: 'fine' });
+      }
+      if (wire.from?.id && !byId.has(wire.from.id)) changed = true;
+    });
+    const filteredItems = nextItems.filter((item) => !duplicateMixedIds.has(item.id));
+    return { items: filteredItems, changed };
   }
 
   function record(before) {
@@ -282,17 +380,20 @@ export function createFigureboard(root, ctx) {
     toast('已从我的素材包移除', 'good');
   }
 
-  function addShape(type) {
+  function addShape(type, dropPoint = null) {
     record(cloneItems());
     const line = isLine(type);
+    const width = line ? 240 : type === 'pie' ? 200 : type === 'container' ? 320 : 180;
+    const height = line ? 6 : type === 'pie' ? 200 : type === 'container' ? 220 : 110;
+    const slot = items.length % 4;
     // 新建就给能看的默认样式：以前默认透明填充 + 透明描边，加进来是"隐形"的
     const item = {
       id: `figure-${Date.now()}-${Math.random().toString(16).slice(2)}`,
       type,
-      x: 70 + (items.length % 4) * 24,
-      y: 70 + (items.length % 4) * 24,
-      width: line ? 240 : type === 'pie' ? 200 : type === 'container' ? 320 : 180,
-      height: line ? 6 : type === 'pie' ? 200 : type === 'container' ? 220 : 110,
+      x: dropPoint ? Math.max(0, Math.round((dropPoint.x - width / 2) / 8) * 8) : 70 + slot * 24,
+      y: dropPoint ? Math.max(0, Math.round((dropPoint.y - height / 2) / 8) * 8) : 70 + slot * 24,
+      width,
+      height,
       fill: line || type === 'container' || type === 'bracket' ? 'transparent' : '#dce8ff',
       stroke: type === 'container' ? '#7b8aa5' : '#3d6fe8',
       color: '#14213d',
@@ -312,6 +413,37 @@ export function createFigureboard(root, ctx) {
     selectedIds = new Set([item.id]);
     persist();
     renderBoard();
+  }
+
+  function startPaletteDrag(event, type) {
+    paletteDragType = type;
+    if (!event.dataTransfer) return;
+    event.dataTransfer.effectAllowed = 'copy';
+    event.dataTransfer.setData('application/x-agent-toolbox-figure', type);
+    event.dataTransfer.setData('text/plain', type);
+  }
+
+  function draggedShapeType(event) {
+    const type = paletteDragType || event.dataTransfer?.getData('application/x-agent-toolbox-figure')
+      || event.dataTransfer?.getData('text/plain');
+    return SHAPES[type] || LINES[type] ? type : null;
+  }
+
+  function handlePaletteDragOver(event) {
+    if (!draggedShapeType(event)) return;
+    event.preventDefault();
+    event.dataTransfer.dropEffect = 'copy';
+    board.classList.add('is-dragover');
+  }
+
+  function handlePaletteDrop(event) {
+    const type = draggedShapeType(event);
+    if (!type) return;
+    event.preventDefault();
+    board.classList.remove('is-dragover');
+    paletteDragType = null;
+    addShape(type, boardPoint(event));
+    toast('图形已放到画板，可继续拖动和调整大小', 'good');
   }
 
   function presetShape(type, props = {}) {
@@ -519,18 +651,18 @@ export function createFigureboard(root, ctx) {
       const fusion = box('container', { x: X(1070), y: X(210), width: 425, height: 490, fill: paleOrange, stroke: orangeLine, strokeWidth: 2, radius: 18, dash: 'dashed' });
       const mapping = box('roundRect', { x: X(1124), y: X(242), width: 260, height: 42, fill: '#fff0e2', stroke: orangeLine, strokeWidth: 1.6, radius: 10 });
       text('MLP Mapping Layer ψ', 1150, 253, { width: 210, fontSize: 15, color: '#aa5a2e', fontFamily: 'Georgia, Times New Roman, serif' });
-      const embedding = box('roundRect', { x: X(1212), y: X(300), width: 105, height: 40, fill: '#ffe6d6', stroke: orangeLine, strokeWidth: 1.5, radius: 8 });
-      text('eᵤ, eᵢ', 1232, 310, { width: 65, fontSize: 16, color: ink, fontFamily: 'Georgia, Times New Roman, serif' });
-      const mixed = box('roundRect', { x: X(1100), y: X(365), width: 320, height: 62, fill: '#fffaf6', stroke: '#c96022', strokeWidth: 2, radius: 12 });
-      text('Mixed Sequence:\nE_mixed = [P; eᵤ; eᵢ]', 1130, 375, { width: 260, height: 40, fontSize: 16, color: '#9f4a1e', fontFamily: 'Georgia, Times New Roman, serif' });
+      const embedding = box('roundRect', { x: X(1197), y: X(300), width: 105, height: 40, fill: '#ffe6d6', stroke: orangeLine, strokeWidth: 1.5, radius: 8 });
+      text('eᵤ, eᵢ', 1217, 310, { width: 65, fontSize: 16, color: ink, fontFamily: 'Georgia, Times New Roman, serif' });
+      const mixed = box('roundRect', { x: X(1110), y: X(365), width: 280, height: 62, fill: '#fffaf6', stroke: '#c96022', strokeWidth: 2, radius: 12 });
+      text('Mixed Sequence:\nE_mixed = [P; eᵤ; eᵢ]', 1135, 375, { width: 230, height: 40, fontSize: 16, color: '#9f4a1e', fontFamily: 'Georgia, Times New Roman, serif' });
       const projector = box('roundRect', { x: X(1118), y: X(461), width: 120, height: 68, fill: '#ffd9c5', stroke: '#d56b32', strokeWidth: 1.8, radius: 13 });
-      const llm = box('roundRect', { x: X(1295), y: X(461), width: 128, height: 68, fill: '#d8efff', stroke: '#4d8fc5', strokeWidth: 1.8, radius: 13 });
+      const llm = box('roundRect', { x: X(1335), y: X(461), width: 128, height: 68, fill: '#d8efff', stroke: '#4d8fc5', strokeWidth: 1.8, radius: 13 });
       text('▲\nProjector', 1142, 469, { width: 75, height: 44, fontSize: 15, color: '#d15d27', fontFamily: 'Georgia, Times New Roman, serif' });
-      text('❄  ◉\nLLM', 1320, 469, { width: 80, height: 44, fontSize: 16, color: ink });
-      const prediction = box('roundRect', { x: X(1118), y: X(574), width: 140, height: 50, fill: '#fff7ef', stroke: orangeLine, strokeWidth: 1.5, radius: 10 });
-      const cie = box('roundRect', { x: X(1295), y: X(574), width: 150, height: 50, fill: '#fff7ef', stroke: orangeLine, strokeWidth: 1.5, radius: 10 });
-      text('Prediction\nyᵤ,ᵢ', 1138, 582, { width: 100, height: 36, fontSize: 14, color: '#9f4a1e', fontFamily: 'Georgia, Times New Roman, serif' });
-      text('Compute L_CIE', 1315, 590, { width: 110, fontSize: 14, color: '#9f4a1e', fontFamily: 'Georgia, Times New Roman, serif' });
+      text('❄  ◉\nLLM', 1360, 469, { width: 80, height: 44, fontSize: 16, color: ink });
+      const prediction = box('roundRect', { x: X(1103), y: X(574), width: 150, height: 50, fill: '#fff7ef', stroke: orangeLine, strokeWidth: 1.5, radius: 10 });
+      const cie = box('roundRect', { x: X(1324), y: X(574), width: 150, height: 50, fill: '#fff7ef', stroke: orangeLine, strokeWidth: 1.5, radius: 10 });
+      text('Prediction\nyᵤ,ᵢ', 1123, 582, { width: 100, height: 36, fontSize: 14, color: '#9f4a1e', fontFamily: 'Georgia, Times New Roman, serif' });
+      text('Compute L_CIE', 1344, 590, { width: 110, fontSize: 14, color: '#9f4a1e', fontFamily: 'Georgia, Times New Roman, serif' });
       text('Rec. Probability', 1120, 640, { width: 140, fontSize: 12, color: orange, fontFamily: 'Georgia, Times New Roman, serif' });
       text('CIE Loss Calculation', 1290, 640, { width: 170, fontSize: 12, color: softInk, fontFamily: 'Georgia, Times New Roman, serif' });
 
@@ -549,12 +681,12 @@ export function createFigureboard(root, ctx) {
       wire(distill, softPrompt, { fromPort: 'right', toPort: 'left', stroke: blueLine, dash: 'dashed', label: 'distill', arrowStyle: 'fine' });
       wire(lora, bce, { fromPort: 'right', toPort: 'left', stroke: blue, strokeWidth: 2, arrowStyle: 'standard' });
       wire(bce, softPrompt, { fromPort: 'right', toPort: 'bottom', stroke: blueLine, dash: 'dashed', arrowStyle: 'fine' });
-      wire(softPrompt, mapping, { fromPort: 'right', toPort: 'left', stroke: orange, strokeWidth: 2, label: 'P', arrowStyle: 'bold' });
+      wire(softPrompt, mapping, { fromPort: 'right', toPort: 'left', stroke: orange, strokeWidth: 2, route: 'rounded', label: 'P', arrowStyle: 'bold' });
       wire(mapping, embedding, { fromPort: 'bottom', toPort: 'top', stroke: orangeLine, route: 'straight', arrowStyle: 'standard' });
       wire(embedding, mixed, { fromPort: 'bottom', toPort: 'top', stroke: orangeLine, route: 'straight', arrowStyle: 'standard' });
-      wire(mixed, projector, { fromPort: 'bottom', toPort: 'top', stroke: orange, strokeWidth: 2, arrowStyle: 'bold' });
+      wire(mixed, projector, { fromPort: 'bottom', toPort: 'top', stroke: orange, strokeWidth: 2, route: 'paper', arrowStyle: 'bold' });
       wire(projector, llm, { fromPort: 'right', toPort: 'left', stroke: orange, strokeWidth: 2, arrowStyle: 'bold' });
-      wire(llm, prediction, { fromPort: 'bottom', toPort: 'top', stroke: orangeLine, arrowStyle: 'standard' });
+      wire(projector, prediction, { fromPort: 'bottom', toPort: 'top', stroke: orangeLine, route: 'straight', arrowStyle: 'standard' });
       wire(llm, cie, { fromPort: 'bottom', toPort: 'top', stroke: '#9da5ab', dash: 'dashed', label: 'L_CIE', arrowStyle: 'fine' });
       return objects;
     }
@@ -610,7 +742,7 @@ export function createFigureboard(root, ctx) {
     selectedId = null;
     persist();
     renderBoard();
-    toast(`已插入${kind === 'pipeline' ? '流程图' : kind === 'architecture' ? '模型架构图' : kind === 'experiment' ? '实验对比图' : kind === 'paper-architecture' ? '论文三段式架构图' : kind === 'agentarchive' ? 'Agent Archive 复合图' : 'AgentSquare 复合图'}，可继续拖动和改层级`, 'good');
+    toast(`已插入${kind === 'pipeline' ? '流程图' : kind === 'architecture' ? '模型架构图' : kind === 'experiment' ? '实验对比图' : kind === 'paper-architecture' ? '计算机论文架构图（已保存模板）' : kind === 'agentarchive' ? 'Agent Archive 复合图' : 'AgentSquare 复合图'}，可继续拖动和改层级`, 'good');
   }
 
   function addText() {
@@ -713,16 +845,13 @@ export function createFigureboard(root, ctx) {
   }
 
   function startMarquee(event) {
-    const boardBox = board.getBoundingClientRect();
-    const startX = event.clientX - boardBox.left + board.scrollLeft;
-    const startY = event.clientY - boardBox.top + board.scrollTop;
+    const start = boardPoint(event);
     const mark = h('div', { class: 'figureboard__marquee' });
-    board.appendChild(mark);
+    surface.appendChild(mark);
     let area = null;
     const update = (moveEvent) => {
-      const currentX = moveEvent.clientX - boardBox.left + board.scrollLeft;
-      const currentY = moveEvent.clientY - boardBox.top + board.scrollTop;
-      area = { x: Math.min(startX, currentX), y: Math.min(startY, currentY), width: Math.abs(currentX - startX), height: Math.abs(currentY - startY) };
+      const current = boardPoint(moveEvent);
+      area = { x: Math.min(start.x, current.x), y: Math.min(start.y, current.y), width: Math.abs(current.x - start.x), height: Math.abs(current.y - start.y) };
       Object.assign(mark.style, { left: `${area.x}px`, top: `${area.y}px`, width: `${area.width}px`, height: `${area.height}px` });
     };
     const finish = () => {
@@ -761,6 +890,51 @@ export function createFigureboard(root, ctx) {
     selected.forEach((item) => Object.assign(item, patch));
     persist();
     renderBoard();
+  }
+
+  function autoTuneSelectedArrows() {
+    const selected = items.filter((item) => selectedIds.has(item.id));
+    if (!selected.length) return toast('先用选框选中一块图，或直接选中一条箭头', 'info');
+    const selectedShapeIds = new Set(selected.map((item) => item.id));
+    const arrows = items.filter((item) => {
+      if (isWire(item)) return selectedShapeIds.has(item.id)
+        || selectedShapeIds.has(item.from?.id) || selectedShapeIds.has(item.to?.id);
+      return selectedShapeIds.has(item.id) && (item.type === 'arrow' || item.type === 'double-arrow');
+    });
+    if (!arrows.length) return toast('选框内没有可调节的箭头', 'info');
+    const byId = itemById();
+    record(cloneItems());
+    arrows.forEach((arrow) => {
+      const dashed = arrow.dash === 'dashed' || arrow.dash === 'dotted';
+      let distance = arrow.width || 180;
+      let endpointDelta = null;
+      if (isWire(arrow)) {
+        const ends = wireEnds(arrow, byId);
+        if (ends) {
+          endpointDelta = { x: Math.abs(ends.b.x - ends.a.x), y: Math.abs(ends.b.y - ends.a.y) };
+          distance = Math.hypot(ends.b.x - ends.a.x, ends.b.y - ends.a.y);
+        }
+      }
+      const prominent = !dashed && distance >= 280;
+      arrow.strokeWidth = dashed ? 1.5 : prominent ? 3 : 2;
+      arrow.arrowStyle = dashed ? 'fine' : prominent ? 'bold' : 'standard';
+      if (isWire(arrow) && !dashed && endpointDelta && arrow.route === 'elbow') {
+        arrow.route = endpointDelta.x < 12 || endpointDelta.y < 12 ? 'straight' : 'rounded';
+      }
+    });
+    persist();
+    renderBoard();
+    toast(`已自动调节选框内 ${arrows.length} 条箭头`, 'good');
+  }
+
+  function repairPaperArchitecture() {
+    const repaired = migratePaperArchitectureItems(items);
+    if (!repaired.changed) return toast('当前画布没有识别到旧版论文架构图', 'info');
+    record(cloneItems());
+    items = repaired.items;
+    persist();
+    renderBoard();
+    toast('已修复论文架构图的折线和文字位置', 'good');
   }
 
   function nudgeSelected(dx, dy) {
@@ -902,7 +1076,7 @@ export function createFigureboard(root, ctx) {
     if (result.ok) toast(`SVG 已保存：${result.path}`, 'good', 5000);
   }
 
-  async function exportPng() {
+  async function exportRaster(format = 'png') {
     const svg = toSvg();
     const { width, height } = canvasSize();
     const image = new Image();
@@ -911,10 +1085,25 @@ export function createFigureboard(root, ctx) {
     const canvas = document.createElement('canvas');
     canvas.width = width * 2;
     canvas.height = height * 2;
-    canvas.getContext('2d').scale(2, 2);
-    canvas.getContext('2d').drawImage(image, 0, 0);
-    const result = await window.toolbox.files.saveImage({ dataUrl: canvas.toDataURL('image/png'), defaultName: '科研图板.png' });
-    if (result.ok) toast(`PNG 已保存：${result.path}`, 'good', 5000);
+    const context = canvas.getContext('2d');
+    context.scale(2, 2);
+    if (format === 'jpeg' && background === 'transparent') {
+      context.fillStyle = '#ffffff';
+      context.fillRect(0, 0, width, height);
+    }
+    context.drawImage(image, 0, 0);
+    const extension = format === 'jpeg' ? 'jpg' : 'png';
+    const quality = format === 'jpeg' ? 0.94 : undefined;
+    const result = await window.toolbox.files.saveImage({ dataUrl: canvas.toDataURL(`image/${format}`, quality), defaultName: `科研图板.${extension}` });
+    if (result.ok) toast(`${extension.toUpperCase()} 已保存：${result.path}`, 'good', 5000);
+  }
+
+  async function exportPng() {
+    return exportRaster('png');
+  }
+
+  async function exportJpg() {
+    return exportRaster('jpeg');
   }
 
   async function pasteImage() {
@@ -986,9 +1175,13 @@ export function createFigureboard(root, ctx) {
   }
 
   function renderBoard() {
-    board.replaceChildren();
-    if (!items.length) board.appendChild(empty);
-    board.appendChild(wireLayer);          // 连线在底层，图形压在上面
+    const size = canvasSize();
+    surface.style.width = `${size.width}px`;
+    surface.style.height = `${size.height}px`;
+    surface.style.zoom = String(canvasZoom);
+    surface.replaceChildren();
+    if (!items.length) surface.appendChild(empty);
+    surface.appendChild(wireLayer);          // 连线在底层，图形压在上面
     for (const item of items) {
       if (isWire(item)) continue;          // 连线不用定位 div，走 wireLayer
       let content;
@@ -1037,9 +1230,9 @@ export function createFigureboard(root, ctx) {
         },
         onclick: (event) => { event.stopPropagation(); selectItem(item.id); },
       }, content, ...resizeHandles, rotate);
-      board.appendChild(element);
+      surface.appendChild(element);
     }
-    board.appendChild(labelLayer);
+    surface.appendChild(labelLayer);
     board.appendChild(boardHint);
     boardHint.hidden = Boolean(items.length || activeSite || sources.classList.contains('is-open'));
     renderWires();
@@ -1061,7 +1254,10 @@ export function createFigureboard(root, ctx) {
   /** 把浏览器坐标换成画布坐标（画布可滚动，不能直接用 clientX） */
   function boardPoint(event) {
     const rect = board.getBoundingClientRect();
-    return { x: event.clientX - rect.x + board.scrollLeft, y: event.clientY - rect.y + board.scrollTop };
+    return {
+      x: (event.clientX - rect.x + board.scrollLeft) / canvasZoom,
+      y: (event.clientY - rect.y + board.scrollTop) / canvasZoom,
+    };
   }
 
   /** 光标下的图形（用于把线吸附到目标）。排除连线本身和正在连的源图形 */
@@ -1148,8 +1344,8 @@ export function createFigureboard(root, ctx) {
     const origins = dragged.map((entry) => ({ item: entry, x: entry.x, y: entry.y }));
     const before = cloneItems();
     const move = (moveEvent) => {
-      const dx = moveEvent.clientX - startX;
-      const dy = moveEvent.clientY - startY;
+      const dx = (moveEvent.clientX - startX) / canvasZoom;
+      const dy = (moveEvent.clientY - startY) / canvasZoom;
       for (const origin of origins) {
         origin.item.x = Math.max(0, Math.round((origin.x + dx) / 8) * 8);
         origin.item.y = Math.max(0, Math.round((origin.y + dy) / 8) * 8);
@@ -1184,8 +1380,8 @@ export function createFigureboard(root, ctx) {
     const moveBottom = direction.includes('s');
     const before = cloneItems();
     const move = (moveEvent) => {
-      const dx = moveEvent.clientX - startX;
-      const dy = moveEvent.clientY - startY;
+      const dx = (moveEvent.clientX - startX) / canvasZoom;
+      const dy = (moveEvent.clientY - startY) / canvasZoom;
       let nextWidth = startWidth + (moveRight ? dx : moveLeft ? -dx : 0);
       let nextHeight = startHeight + (moveBottom ? dy : moveTop ? -dy : 0);
       nextWidth = Math.max(40, Math.round(nextWidth));
@@ -1381,23 +1577,27 @@ export function createFigureboard(root, ctx) {
       },
       onblur: () => input.remove(),
     });
-    board.appendChild(input);
+    surface.appendChild(input);
     input.focus();
     input.select();
   }
 
   /** 图标按钮：只放图标，说明走 tooltip —— 一排中文按钮又长又难认 */
-  const toolBtn = (icon, title, onClick, extra = '') => h('button', {
+  const toolBtn = (icon, title, onClick, extra = '', dragType = '') => h('button', {
     class: `btn btn--sm figureboard__tool-btn ${extra}`.trim(),
     'data-tooltip': title,
     'aria-label': title,
+    draggable: Boolean(dragType),
+    dataset: dragType ? { dragType } : undefined,
+    ondragstart: dragType ? (event) => startPaletteDrag(event, dragType) : undefined,
+    ondragend: dragType ? () => { paletteDragType = null; board.classList.remove('is-dragover'); } : undefined,
     onclick: onClick,
   }, iconFor(icon, 'ui-icon figureboard__tool-icon'));
 
   const shapeButtons = Object.entries(SHAPES)
-    .map(([type, meta]) => toolBtn(meta.icon, meta.label, () => addShape(type)));
+    .map(([type, meta]) => toolBtn(meta.icon, `${meta.label}（点击添加，拖动到画板放置）`, () => addShape(type), 'figureboard__palette-btn', type));
   const lineButtons = Object.entries(LINES)
-    .map(([type, meta]) => toolBtn(meta.icon, meta.label, () => addShape(type)));
+    .map(([type, meta]) => toolBtn(meta.icon, `${meta.label}（点击添加，拖动到画板放置）`, () => addShape(type), 'figureboard__palette-btn', type));
 
   const textBtn = toolBtn('textTool', '文字（双击可再编辑）', addText);
   const undoBtn = toolBtn('undo', '撤销 (Cmd+Z)', undo);
@@ -1458,6 +1658,8 @@ export function createFigureboard(root, ctx) {
     if (!wire) return toast('先选中一条连线', 'info');
     openWireLabel(wire);
   });
+  const autoArrowBtn = h('button', { class: 'btn btn--sm figureboard__auto-arrow', title: '按选框内的箭头层级自动分配细 / 标准 / 粗箭头；未选中时请先框选', onclick: autoTuneSelectedArrows }, '自动调箭头');
+  const repairPaperBtn = h('button', { class: 'btn btn--sm figureboard__auto-arrow', title: '修复旧版论文架构图中 Projector 上方的多段折线和下方连线', onclick: repairPaperArchitecture }, '修复论文箭头');
 
   const sliceInput = h('input', { class: 'figureboard__range', type: 'range', min: '2', max: '12', step: '1', value: '6', title: '饼图扇区数', oninput: (event) => updateSelected({ slices: Number(event.currentTarget.value) }) });
   const transparentFillBtn = h('button', { class: 'btn btn--sm', title: '去掉填充', onclick: () => updateSelected({ fill: 'transparent' }) }, '无填充');
@@ -1468,15 +1670,29 @@ export function createFigureboard(root, ctx) {
 
   const exportSvgBtn = h('button', { class: 'btn btn--sm', title: '矢量，投稿和 LaTeX 用这个', onclick: exportSvg }, 'SVG');
   const exportPngBtn = h('button', { class: 'btn btn--sm btn--primary', title: '位图，贴进 PPT / Word', onclick: exportPng }, 'PNG');
+  const exportJpgBtn = h('button', { class: 'btn btn--sm', title: 'JPG 位图，适合普通图片和文档分享（不支持透明背景）', onclick: exportJpg }, 'JPG');
+  const zoomOutBtn = h('button', { class: 'btn btn--sm figureboard__zoom-btn', title: '缩小画布（双指捏合也可以）', onclick: () => setCanvasZoom(canvasZoom - 0.1) }, '−');
+  const zoomLabel = h('button', { class: 'btn btn--sm figureboard__zoom-label', title: '恢复画布为 100%', onclick: resetCanvasZoom }, '100%');
+  const zoomInBtn = h('button', { class: 'btn btn--sm figureboard__zoom-btn', title: '放大画布（双指张开也可以）', onclick: () => setCanvasZoom(canvasZoom + 0.1) }, '+');
   const presetSelect = h('select', { class: 'field field--sm figureboard__select', title: '插入一套已排好层级的科研图结构' },
     h('option', { value: 'pipeline' }, '流程图模板'),
     h('option', { value: 'architecture' }, '架构图模板'),
-    h('option', { value: 'paper-architecture' }, '论文三段式架构图'),
+    h('option', { value: 'paper-architecture' }, '计算机论文架构图（已保存）'),
     h('option', { value: 'experiment' }, '实验图模板'),
     h('option', { value: 'agentsquare' }, 'AgentSquare 复合图'),
     h('option', { value: 'agentarchive' }, 'Agent Archive 复合图'),
   );
-  const presetBtn = h('button', { class: 'btn btn--sm', title: '插入一套有容器、边框、节点和标签的科研图', onclick: () => insertPreset(presetSelect.value) }, '插入结构');
+  const presetBtn = h('button', { class: 'btn btn--sm', title: '插入一套有容器、边框、节点和标签的科研图；插入后可直接改文字和连线', onclick: () => insertPreset(presetSelect.value) }, '打开模板');
+
+  let figureboardBar;
+  let toolbarToggleBtn;
+  function toggleToolbar() {
+    toolbarCollapsed = !toolbarCollapsed;
+    config.set('research.figureToolbarCollapsed', toolbarCollapsed);
+    figureboardBar.classList.toggle('is-collapsed', toolbarCollapsed);
+    toolbarToggleBtn.textContent = toolbarCollapsed ? '展开工具' : '收起工具';
+    toolbarToggleBtn.title = toolbarCollapsed ? '展开顶部图形、连线和导出工具' : '向上收起顶部工具栏，给画布更多空间';
+  }
 
   const opacityInput = h('input', { class: 'figureboard__range', type: 'range', min: '10', max: '100', step: '1', value: '100', title: '对象透明度', oninput: (event) => updateSelected({ opacity: Number(event.currentTarget.value) / 100 }) });
   function toggleSources() {
@@ -1539,6 +1755,29 @@ export function createFigureboard(root, ctx) {
   }
 
   board.addEventListener('paste', (event) => { if ([...(event.clipboardData?.items || [])].some((item) => item.type.startsWith('image/'))) { event.preventDefault(); pasteImage(); } });
+  board.addEventListener('dragover', handlePaletteDragOver);
+  board.addEventListener('dragleave', (event) => { if (event.target === board) board.classList.remove('is-dragover'); });
+  board.addEventListener('drop', handlePaletteDrop);
+  board.addEventListener('wheel', (event) => {
+    if (!event.ctrlKey) return;
+    event.preventDefault();
+    const factor = Math.exp(-event.deltaY * 0.01);
+    setCanvasZoom(canvasZoom * factor, { x: event.clientX, y: event.clientY });
+  }, { passive: false });
+  board.addEventListener('touchstart', (event) => {
+    if (event.touches.length !== 2) return;
+    pinchStartDistance = Math.hypot(event.touches[1].clientX - event.touches[0].clientX, event.touches[1].clientY - event.touches[0].clientY);
+    pinchStartZoom = canvasZoom;
+    event.preventDefault();
+  }, { passive: false });
+  board.addEventListener('touchmove', (event) => {
+    if (event.touches.length !== 2 || !pinchStartDistance) return;
+    const distance = Math.hypot(event.touches[1].clientX - event.touches[0].clientX, event.touches[1].clientY - event.touches[0].clientY);
+    const center = { x: (event.touches[0].clientX + event.touches[1].clientX) / 2, y: (event.touches[0].clientY + event.touches[1].clientY) / 2 };
+    setCanvasZoom(pinchStartZoom * (distance / pinchStartDistance), center);
+    event.preventDefault();
+  }, { passive: false });
+  board.addEventListener('touchend', (event) => { if (event.touches.length < 2) pinchStartDistance = null; });
   board.addEventListener('contextmenu', openContextMenu);
   board.addEventListener('pointerdown', (event) => { if (event.target === board) startMarquee(event); });
   document.addEventListener('keydown', handleShortcut);
@@ -1547,32 +1786,36 @@ export function createFigureboard(root, ctx) {
   });
   document.addEventListener('keydown', (event) => { if (event.key === 'Escape') closeContextMenu(); });
 
-  root.append(
-    h('div', { class: 'bar bar--drag figureboard__bar' },
+  const toolbarTools = h('div', { class: 'figureboard__tools' },
+    h('div', { class: 'figureboard__group', title: '形状' }, ...shapeButtons),
+    h('span', { class: 'figureboard__tool-sep' }),
+    h('div', { class: 'figureboard__group', title: '连线与文字' }, ...lineButtons, textBtn, routeSelect, arrowStyleSelect, curveBendInput, arrowEndBtn, wireLabelBtn, autoArrowBtn, repairPaperBtn),
+    h('span', { class: 'figureboard__tool-sep' }),
+    h('div', { class: 'figureboard__group', title: '样式' },
+      fillInput, strokeInput, transparentFillBtn, transparentStrokeBtn,
+      dashSelect, effectSelect, fontSelect, strokeWidthInput, radiusInput, sliceInput, opacityInput),
+    h('span', { class: 'figureboard__tool-sep' }),
+    h('div', { class: 'figureboard__group', title: '排列' },
+      alignLeftBtn, alignCenterBtn, alignTopBtn, groupBtn, ungroupBtn,
+      layerUpBtn, layerTopBtn, rotateBtn),
+    h('span', { class: 'figureboard__tool-sep' }),
+    h('div', { class: 'figureboard__group', title: '编辑' },
+      undoBtn, redoBtn, copyBtn, cutBtn, pasteObjectBtn, duplicateBtn, deleteBtn),
+    h('span', { class: 'figureboard__tool-sep' }),
+    h('div', { class: 'figureboard__group', title: '画布与导出' },
+      presetSelect, presetBtn, pasteBtn, importBtn, iconFor('canvasBg', 'ui-icon figureboard__tool-icon'), bgSelect, zoomOutBtn, zoomLabel, zoomInBtn, exportSvgBtn, exportPngBtn, exportJpgBtn),
+  );
+  toolbarToggleBtn = h('button', { class: 'btn btn--sm figureboard__toolbar-toggle', title: toolbarCollapsed ? '展开顶部图形、连线和导出工具' : '向上收起顶部工具栏，给画布更多空间', onclick: toggleToolbar }, toolbarCollapsed ? '展开工具' : '收起工具');
+  figureboardBar = h('div', { class: `bar bar--drag figureboard__bar${toolbarCollapsed ? ' is-collapsed' : ''}` },
       h('strong', {}, 'PPT图板'),
       h('span', { class: 'faint' }, '单页科研图片工作台 · ⌘Z 撤销 · ⌘G 组合 · 方向键微调 · R/T/L 快速插入'),
       sourcesToggle,
+      toolbarToggleBtn,
       h('span', { class: 'figureboard__bar-spacer' }),
-      h('div', { class: 'figureboard__tools' },
-        h('div', { class: 'figureboard__group', title: '形状' }, ...shapeButtons),
-        h('span', { class: 'figureboard__tool-sep' }),
-        h('div', { class: 'figureboard__group', title: '连线与文字' }, ...lineButtons, textBtn, routeSelect, arrowStyleSelect, curveBendInput, arrowEndBtn, wireLabelBtn),
-        h('span', { class: 'figureboard__tool-sep' }),
-        h('div', { class: 'figureboard__group', title: '样式' },
-          fillInput, strokeInput, transparentFillBtn, transparentStrokeBtn,
-          dashSelect, effectSelect, fontSelect, strokeWidthInput, radiusInput, sliceInput, opacityInput),
-        h('span', { class: 'figureboard__tool-sep' }),
-        h('div', { class: 'figureboard__group', title: '排列' },
-          alignLeftBtn, alignCenterBtn, alignTopBtn, groupBtn, ungroupBtn,
-          layerUpBtn, layerTopBtn, rotateBtn),
-        h('span', { class: 'figureboard__tool-sep' }),
-        h('div', { class: 'figureboard__group', title: '编辑' },
-          undoBtn, redoBtn, copyBtn, cutBtn, pasteObjectBtn, duplicateBtn, deleteBtn),
-        h('span', { class: 'figureboard__tool-sep' }),
-        h('div', { class: 'figureboard__group', title: '画布与导出' },
-          presetSelect, presetBtn, pasteBtn, importBtn, iconFor('canvasBg', 'ui-icon figureboard__tool-icon'), bgSelect, exportSvgBtn, exportPngBtn),
-      ),
-    ),
+      toolbarTools,
+  );
+  root.append(
+    figureboardBar,
     workspace,
   );
   document.body.appendChild(tooltip);
@@ -1594,7 +1837,7 @@ export function createFigureboard(root, ctx) {
     sources,
     browserPane,
     h('section', { class: 'figureboard__board-pane' },
-      h('div', { class: 'figureboard__pane-head' }, h('strong', {}, '科研图片画布'), h('span', { class: 'faint' }, '右侧粘贴 / 拖动 / 缩放')),
+      h('div', { class: 'figureboard__pane-head' }, h('strong', {}, '科研图片画布'), h('span', { class: 'faint' }, '点击或拖动图形到画布 · 粘贴 / 拖动 / 缩放')),
       board,
     ),
   );

@@ -101,6 +101,8 @@ contextBridge.exposeInMainWorld('toolbox', {
     /** 在受限临时目录中运行学习实践代码，返回 stdout/stderr 和退出状态 */
     run: (payload) => ipcRenderer.invoke('practice:run', payload),
     environment: () => ipcRenderer.invoke('practice:environment'),
+    /** 用 uv 为当前 Python / 框架轨道创建隔离虚拟环境并安装依赖 */
+    setup: (payload) => ipcRenderer.invoke('practice:setup', payload),
   },
 
   dock: {

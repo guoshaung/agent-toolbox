@@ -518,6 +518,8 @@ export default {
     }
 
     function renderMain() {
+      studySide.classList.toggle('is-practice-hidden', view === 'practice');
+      main.classList.toggle('study__main--practice', view === 'practice');
       if (view === 'practice') {
         main.textContent = '';
         main.append(practice.el);
@@ -533,6 +535,8 @@ export default {
       return renderTemplateView();
     }
 
+    const studySide = h('aside', { class: 'study__side' }, moduleList, templateList);
+
     root.append(
       h('div', { class: 'bar bar--drag' },
         h('strong', {}, '学习'),
@@ -541,7 +545,7 @@ export default {
         h('span', { class: 'faint study__ai-label' }, `AI：${ai.describe()}`),
       ),
       h('div', { class: 'study__body' },
-        h('aside', { class: 'study__side' }, moduleList, templateList),
+        studySide,
         main,
       ),
     );

@@ -12,7 +12,11 @@
 
 export const ROUTES = {
   elbow: { label: '折线', icon: 'wireElbow' },
+  rounded: { label: '圆角折线', icon: 'wireElbow' },
+  paper: { label: '论文折线', icon: 'wireElbow' },
   curve: { label: '曲线', icon: 'wireCurve' },
+  wave: { label: '波浪线', icon: 'wireCurve' },
+  cartoon: { label: '卡通曲线', icon: 'wireCurve' },
   straight: { label: '直线', icon: 'wireStraight' },
 };
 
@@ -114,6 +118,14 @@ export function wirePath(wire, byId) {
     return `M${a.point.x},${a.point.y} C${c1.x},${c1.y} ${c2.x},${c2.y} ${b.point.x},${b.point.y}`;
   }
 
+  if (route === 'wave' || route === 'cartoon') {
+    return playfulPath(a.point, b.point, route);
+  }
+
+  if (route === 'paper') {
+    return paperPolylinePath(a.point, b.point, a.port, b.port);
+  }
+
   // 折线：先沿法线出去一小段，再走一个直角，最后垂直进入对端
   const stub = 22;
   const na = normal(a.port);
@@ -160,7 +172,72 @@ export function wirePath(wire, byId) {
     if (best.hits === 0 && best.pts === candidates[0]) break;   // 默认那条就不撞，直接用
   }
 
+  if (route === 'rounded') return roundedPolylinePath(best.pts, 14);
   return best.pts.map((p, i) => `${i === 0 ? 'M' : 'L'}${Math.round(p.x)},${Math.round(p.y)}`).join(' ');
+}
+
+function roundedPolylinePath(points, radius = 14) {
+  if (points.length < 2) return '';
+  let path = `M${Math.round(points[0].x)},${Math.round(points[0].y)}`;
+  for (let i = 1; i < points.length - 1; i++) {
+    const previous = points[i - 1];
+    const current = points[i];
+    const next = points[i + 1];
+    const previousLength = Math.hypot(current.x - previous.x, current.y - previous.y);
+    const nextLength = Math.hypot(next.x - current.x, next.y - current.y);
+    const inset = Math.min(radius, previousLength / 2, nextLength / 2);
+    const beforeCorner = {
+      x: current.x + ((previous.x - current.x) / (previousLength || 1)) * inset,
+      y: current.y + ((previous.y - current.y) / (previousLength || 1)) * inset,
+    };
+    const afterCorner = {
+      x: current.x + ((next.x - current.x) / (nextLength || 1)) * inset,
+      y: current.y + ((next.y - current.y) / (nextLength || 1)) * inset,
+    };
+    path += ` L${Math.round(beforeCorner.x)},${Math.round(beforeCorner.y)}`
+      + ` Q${Math.round(current.x)},${Math.round(current.y)} ${Math.round(afterCorner.x)},${Math.round(afterCorner.y)}`;
+  }
+  const last = points[points.length - 1];
+  return `${path} L${Math.round(last.x)},${Math.round(last.y)}`;
+}
+
+function paperPolylinePath(start, end, startPort, endPort) {
+  const horizontal = startPort === 'left' || startPort === 'right'
+    || (startPort === 'auto' && Math.abs(end.x - start.x) >= Math.abs(end.y - start.y));
+  if (horizontal) {
+    const middleX = Math.round(start.x + (end.x - start.x) * 0.56);
+    return roundedPolylinePath([
+      start,
+      { x: middleX, y: start.y },
+      { x: middleX, y: end.y },
+      end,
+    ], 10);
+  }
+  const middleY = Math.round(start.y + (end.y - start.y) * 0.56);
+  return roundedPolylinePath([
+    start,
+    { x: start.x, y: middleY },
+    { x: end.x, y: middleY },
+    end,
+  ], 10);
+}
+
+function playfulPath(start, end, route) {
+  const dx = end.x - start.x;
+  const dy = end.y - start.y;
+  const horizontal = Math.abs(dx) >= Math.abs(dy);
+  const distance = Math.max(24, Math.hypot(dx, dy));
+  const amplitude = Math.min(route === 'cartoon' ? 48 : 30, Math.max(12, distance * (route === 'cartoon' ? 0.12 : 0.08)));
+  if (horizontal) {
+    const direction = Math.sign(dx) || 1;
+    const bend = Math.max(22, Math.abs(dx) * 0.28);
+    const lift = route === 'cartoon' ? amplitude : -amplitude;
+    return `M${start.x},${start.y} C${start.x + direction * bend},${start.y} ${end.x - direction * bend},${end.y + lift} ${end.x},${end.y}`;
+  }
+  const direction = Math.sign(dy) || 1;
+  const bend = Math.max(22, Math.abs(dy) * 0.28);
+  const lift = route === 'cartoon' ? amplitude : -amplitude;
+  return `M${start.x},${start.y} C${start.x},${start.y + direction * bend} ${end.x + lift},${end.y - direction * bend} ${end.x},${end.y}`;
 }
 
 /** 会挡路的图形：排除连线、文字，以及这条线自己的两端 */

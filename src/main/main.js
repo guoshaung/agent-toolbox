@@ -2052,6 +2052,7 @@ function registerIpc() {
 
   ipcMain.handle('practice:environment', () => practiceRunner.environment());
   ipcMain.handle('practice:run', (_e, payload = {}) => practiceRunner.run(payload.track, payload.code, { timeout: payload.timeout }));
+  ipcMain.handle('practice:setup', (_e, payload = {}) => practiceRunner.setup(payload.track));
 
   // ---- 专注 · AI 情报：RSS 快报由主进程代取（渲染进程 CSP 不放行跨域请求） ----
   ipcMain.handle('news:fetchFeed', (_e, url) => newsFeed.fetchFeed(url));

@@ -14,10 +14,11 @@ import dock from '../tools/dock/index.js';
 import skills from '../tools/skills/index.js';
 import remote from '../tools/remote/index.js';
 import settings from '../tools/settings/index.js';
+import tasks from '../tools/tasks/index.js';
 
 /**
  * 工具注册表 —— 需求第 5 条「以后还要更多工具」就靠这里。
  * 加一个工具：写 tools/<id>/index.js，默认导出 { id, title, icon, create(root, ctx) }，
  * 然后在这个数组里加一行。详见 docs/ADD-A-TOOL.md。
  */
-export const TOOLS = [ask, docs, typing, focus, study, notebook, pet, history, video, research, coach, terms, dock, skills, remote, settings];
+export const TOOLS = [ask, docs, typing, focus, study, notebook, pet, history, video, research, coach, terms, dock, skills, remote, tasks, settings];

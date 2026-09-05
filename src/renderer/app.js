@@ -40,7 +40,7 @@ let currentId = null;
 const SETTINGS_ID = 'settings';
 const MAX_PINNED = 7;
 const DEFAULT_PINNED = ['ask', 'terms', 'docs', 'typing', 'focus', 'skills', 'research'];
-const pinEligibleTools = TOOLS.filter((tool) => tool.id !== SETTINGS_ID);
+const pinEligibleTools = TOOLS.filter((tool) => tool.id !== SETTINGS_ID && tool.id !== 'tasks');
 let pinnedIds = config.get('ui.pinnedTools', DEFAULT_PINNED)
   .filter((id, index, list) => pinEligibleTools.some((tool) => tool.id === id) && list.indexOf(id) === index)
   .slice(0, MAX_PINNED);
@@ -116,8 +116,9 @@ function activate(id) {
   void railLogo.offsetWidth;
   railLogo.classList.add('is-pulse');
 
-  moreButton.classList.toggle('is-active', id !== SETTINGS_ID && !pinnedIds.includes(id));
-  moreButton.classList.toggle('has-current', id !== SETTINGS_ID && !pinnedIds.includes(id));
+  const isLibraryTool = id !== SETTINGS_ID && id !== 'tasks' && !pinnedIds.includes(id);
+  moreButton.classList.toggle('is-active', isLibraryTool);
+  moreButton.classList.toggle('has-current', isLibraryTool);
   for (const card of libraryPanel.querySelectorAll('.rail-library__card')) {
     card.classList.toggle('is-current', card.dataset.id === id);
   }
@@ -193,7 +194,7 @@ function renderRail() {
     librarySection('全部其他', otherTools, false),
   );
   for (const btn of rail.querySelectorAll('[data-id]')) btn.classList.toggle('is-active', btn.dataset.id === currentId);
-  moreButton.classList.toggle('has-current', Boolean(currentId && !pinnedIds.includes(currentId) && currentId !== SETTINGS_ID));
+  moreButton.classList.toggle('has-current', Boolean(currentId && currentId !== 'tasks' && !pinnedIds.includes(currentId) && currentId !== SETTINGS_ID));
 }
 
 function setLibraryOpen(open) {
@@ -220,6 +221,9 @@ const dockPin = h('button', {
     if (!result.ok) toast(result.error || '无法启动窗口吸附', 'bad', 6000);
   },
 }, iconFor('paperclip'));
+
+const taskTool = TOOLS.find((tool) => tool.id === 'tasks');
+const taskButton = railButton(taskTool, 'rail__task');
 
 function renderDockPin(state) {
   dockPin.classList.toggle('is-armed', Boolean(state.armed));
@@ -252,6 +256,7 @@ railLogo.addEventListener('dblclick', async () => {
 rail.append(
   railLogo,
   dockPin,
+  taskButton,
   pinnedHost,
   h('div', { class: 'rail__spacer' }),
   moreButton,

@@ -30,6 +30,33 @@ const textToAuthors = (text) => String(text || '')
 /** 文件名去掉扩展名，当作没有元数据时的兜底标题 */
 const fallbackTitle = (file) => String(file || '').replace(/\.[^.]+$/, '');
 
+const READ_STATUS = {
+  unread: { label: '未读', tone: 'neutral' },
+  reading: { label: '阅读中', tone: 'warn' },
+  read: { label: '已读', tone: 'good' },
+  archived: { label: '暂存', tone: 'neutral' },
+};
+
+const USEFULNESS = {
+  unknown: { label: '价值未判断', tone: 'neutral' },
+  useful: { label: '值得精读', tone: 'good' },
+  maybe: { label: '待评估', tone: 'warn' },
+  irrelevant: { label: '暂不相关', tone: 'neutral' },
+};
+
+function formatBytes(bytes) {
+  const value = Number(bytes) || 0;
+  if (value >= 1024 * 1024 * 1024) return `${(value / 1024 / 1024 / 1024).toFixed(1)}GB`;
+  if (value >= 1024 * 1024) return `${(value / 1024 / 1024).toFixed(1)}MB`;
+  return `${Math.max(1, Math.round(value / 1024))}KB`;
+}
+
+function formatDate(value) {
+  if (!value) return '加入时间未知';
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? '加入时间未知' : date.toLocaleDateString('zh-CN', { year: 'numeric', month: '2-digit', day: '2-digit' });
+}
+
 /**
  * 文献库：管理层。
  *
@@ -44,6 +71,9 @@ export function createLibrary(root, ctx) {
   let files = [];
   let currentCollection = 'all';
   let search = '';
+  let statusFilter = 'all';
+  let usefulnessFilter = 'all';
+  let sortMode = 'recent';
 
   const meta = () => config.get(META_KEY) || {};
   const collections = () => config.get(COLLECTIONS_KEY) || [];
@@ -172,6 +202,31 @@ export function createLibrary(root, ctx) {
   // ---------- 列表 ----------
   const listEl = h('div', { class: 'lib__list' });
   const selectionLabel = h('span', { class: 'faint' }, '');
+  const overview = h('div', { class: 'lib__overview' });
+
+  function renderOverview() {
+    const map = meta();
+    const totalSize = files.reduce((sum, file) => sum + (Number(file.size) || 0), 0);
+    const read = files.filter((file) => (map[file.file]?.readStatus || 'unread') === 'read').length;
+    const useful = files.filter((file) => (map[file.file]?.usefulness || 'unknown') === 'useful').length;
+    const pending = files.filter((file) => {
+      const item = bibItem(file.file);
+      return (map[file.file]?.usefulness || 'unknown') === 'unknown' || missingFields(item, 'gbt7714').length;
+    }).length;
+    overview.textContent = '';
+    overview.append(
+      h('div', { class: 'lib__overview-primary' },
+        h('strong', {}, `${files.length} 篇文献`),
+        h('span', { class: 'faint' }, `占用 ${formatBytes(totalSize)}`),
+      ),
+      h('div', { class: 'lib__overview-metrics' },
+        h('span', { class: 'lib__metric lib__metric--good' }, `已读 ${read}`),
+        h('span', { class: 'lib__metric lib__metric--good' }, `值得精读 ${useful}`),
+        h('span', { class: 'lib__metric lib__metric--warn' }, `待处理 ${pending}`),
+      ),
+      h('span', { class: 'faint lib__overview-hint' }, '先判断价值，再决定是否精读；元数据不全会在导出前提醒'),
+    );
+  }
 
   function visibleFiles() {
     const map = meta();
@@ -181,9 +236,20 @@ export function createLibrary(root, ctx) {
       if (currentCollection === 'none' && (m.collections || []).length) return false;
       if (!['all', 'none'].includes(currentCollection)
         && !(m.collections || []).includes(currentCollection)) return false;
+      if (statusFilter !== 'all' && (m.readStatus || 'unread') !== statusFilter) return false;
+      if (usefulnessFilter !== 'all' && (m.usefulness || 'unknown') !== usefulnessFilter) return false;
       if (!needle) return true;
       const haystack = `${f.file} ${m.title || ''} ${authorsToText(m.authors)} ${m.journal || ''}`.toLowerCase();
       return haystack.includes(needle);
+    }).sort((left, right) => {
+      const leftMeta = map[left.file] || {};
+      const rightMeta = map[right.file] || {};
+      if (sortMode === 'title') return (leftMeta.title || fallbackTitle(left.file)).localeCompare(rightMeta.title || fallbackTitle(right.file), 'zh-CN');
+      if (sortMode === 'year') return String(rightMeta.year || '').localeCompare(String(leftMeta.year || ''));
+      if (sortMode === 'size') return (right.size || 0) - (left.size || 0);
+      if (sortMode === 'useful') return Number(rightMeta.usefulness === 'useful') - Number(leftMeta.usefulness === 'useful')
+        || Number(rightMeta.priority || 0) - Number(leftMeta.priority || 0);
+      return String(rightMeta.addedAt || right.mtime || '').localeCompare(String(leftMeta.addedAt || left.mtime || ''));
     });
   }
 
@@ -206,6 +272,7 @@ export function createLibrary(root, ctx) {
     const set = checked();
     const rows = visibleFiles();
     listEl.textContent = '';
+    renderOverview();
 
     if (!rows.length) {
       listEl.append(h('div', { class: 'empty' },
@@ -218,6 +285,10 @@ export function createLibrary(root, ctx) {
       const m = map[f.file] || {};
       const item = bibItem(f.file);
       const missing = missingFields(item, 'gbt7714');
+      const readStatus = READ_STATUS[m.readStatus] || READ_STATUS.unread;
+      const usefulness = USEFULNESS[m.usefulness] || USEFULNESS.unknown;
+      const abstract = String(m.abstract || '').trim();
+      const note = String(m.note || '').trim();
       const box = h('input', {
         type: 'checkbox',
         class: 'lib__check',
@@ -232,6 +303,12 @@ export function createLibrary(root, ctx) {
           h('div', { class: 'lib__item-sub faint' },
             [authorsToText(item.authors) || '作者未知', item.year || '年份未知', item.journal]
               .filter(Boolean).join(' · ')),
+          h('div', { class: 'lib__item-insights' },
+            h('span', { class: `tag tag--${readStatus.tone}` }, readStatus.label),
+            h('span', { class: `tag tag--${usefulness.tone}` }, usefulness.label),
+            m.priority ? h('span', { class: 'tag tag--priority' }, `优先级 ${m.priority}`) : null,
+            h('span', { class: 'faint lib__item-filemeta' }, `${String(item.type || f.format || 'file').toUpperCase()} · ${formatBytes(f.size)} · ${formatDate(m.addedAt || f.mtime)}`),
+          ),
           h('div', { class: 'lib__item-tags' },
             ...(m.collections || []).map((id) => {
               const coll = collections().find((c) => c.id === id);
@@ -242,9 +319,11 @@ export function createLibrary(root, ctx) {
                   `缺 ${missing.join('/')}`)
               : h('span', { class: 'tag tag--good' }, '可引用'),
           ),
+          h('p', { class: `lib__item-abstract${abstract ? '' : ' is-empty'}` }, abstract || '还没有摘要。点击“编辑详情”补充摘要，之后可以直接按内容判断是否值得精读。'),
+          note ? h('div', { class: 'lib__item-note' }, `笔记：${note}`) : null,
         ),
         h('div', { class: 'lib__item-actions' },
-          h('button', { class: 'btn btn--sm btn--ghost', title: '编辑书目信息', onclick: () => openEditor(f.file) }, '✎'),
+          h('button', { class: 'btn btn--sm btn--ghost', title: '编辑书目信息、摘要、价值判断和笔记', onclick: () => openEditor(f.file) }, '详情'),
           h('button', { class: 'btn btn--sm btn--ghost', title: '归到分类', onclick: (e) => openCollectionMenu(e, f.file) }, '🏷'),
           h('button', { class: 'btn btn--sm btn--ghost', title: '用系统程序打开', onclick: () => lit.open(f.file) }, '↗'),
         ),
@@ -291,6 +370,7 @@ export function createLibrary(root, ctx) {
     const item = bibItem(file);
     const values = { ...item, authorsText: authorsToText(item.authors) };
     const inputs = {};
+    const researchInputs = {};
 
     const form = h('div', { class: 'lib__editor-form' },
       ...BIB_FIELDS.map(([key, label]) => {
@@ -302,6 +382,45 @@ export function createLibrary(root, ctx) {
 
     const status = h('div', { class: 'faint lib__editor-status' }, `文件：${file}`);
     const candidateBox = h('div', { class: 'lib__cands' });
+    const readStatusInput = h('select', { class: 'field field--sm' },
+      h('option', { value: 'unread' }, '未读'),
+      h('option', { value: 'reading' }, '阅读中'),
+      h('option', { value: 'read' }, '已读'),
+      h('option', { value: 'archived' }, '暂存'),
+    );
+    readStatusInput.value = m.readStatus || 'unread';
+    researchInputs.readStatus = readStatusInput;
+    const usefulnessInput = h('select', { class: 'field field--sm' },
+      h('option', { value: 'unknown' }, '价值未判断'),
+      h('option', { value: 'useful' }, '值得精读'),
+      h('option', { value: 'maybe' }, '待评估'),
+      h('option', { value: 'irrelevant' }, '暂不相关'),
+    );
+    usefulnessInput.value = m.usefulness || 'unknown';
+    researchInputs.usefulness = usefulnessInput;
+    const priorityInput = h('select', { class: 'field field--sm' },
+      h('option', { value: '0' }, '不设优先级'),
+      h('option', { value: '1' }, '优先级 1 · 了解'),
+      h('option', { value: '2' }, '优先级 2 · 重点'),
+      h('option', { value: '3' }, '优先级 3 · 核心'),
+    );
+    priorityInput.value = String(m.priority || 0);
+    researchInputs.priority = priorityInput;
+    const abstractInput = h('textarea', { class: 'field lib__long-text', rows: '5', placeholder: '粘贴或整理摘要，之后在列表直接判断是否值得读' }, m.abstract || '');
+    const noteInput = h('textarea', { class: 'field lib__long-text', rows: '4', placeholder: '记录为什么有用、可复用的方法、需要核对的问题' }, m.note || '');
+    const keywordsInput = h('input', { class: 'field field--sm', value: (m.keywords || []).join(', '), placeholder: '关键词，用逗号分隔' });
+    researchInputs.abstract = abstractInput;
+    researchInputs.note = noteInput;
+    researchInputs.keywords = keywordsInput;
+    const researchForm = h('div', { class: 'lib__research-form' },
+      h('div', { class: 'lib__research-form-title' }, '阅读判断'),
+      h('label', { class: 'lib__field' }, h('span', {}, '阅读状态'), readStatusInput),
+      h('label', { class: 'lib__field' }, h('span', {}, '价值判断'), usefulnessInput),
+      h('label', { class: 'lib__field' }, h('span', {}, '优先级'), priorityInput),
+      h('label', { class: 'lib__field lib__field--stacked' }, h('span', {}, '关键词'), keywordsInput),
+      h('label', { class: 'lib__field lib__field--stacked' }, h('span', {}, '摘要'), abstractInput),
+      h('label', { class: 'lib__field lib__field--stacked' }, h('span', {}, '我的笔记'), noteInput),
+    );
 
     function applyMeta(best) {
       inputs.title.value = best.title || inputs.title.value;
@@ -320,6 +439,7 @@ export function createLibrary(root, ctx) {
         status,
         candidateBox,
         form,
+        researchForm,
         h('div', { class: 'lib__overlay-actions' },
           h('button', {
             class: 'btn btn--sm',
@@ -375,6 +495,12 @@ export function createLibrary(root, ctx) {
                 issue: inputs.issue.value.trim(),
                 pages: inputs.pages.value.trim(),
                 doi: inputs.doi.value.trim(),
+                readStatus: researchInputs.readStatus.value,
+                usefulness: researchInputs.usefulness.value,
+                priority: Number(researchInputs.priority.value) || 0,
+                keywords: researchInputs.keywords.value.split(/[,，]/).map((value) => value.trim()).filter(Boolean),
+                abstract: researchInputs.abstract.value.trim(),
+                note: researchInputs.note.value.trim(),
               });
               overlay.remove();
               renderList();
@@ -547,6 +673,27 @@ export function createLibrary(root, ctx) {
     class: 'btn btn--sm',
     onclick: async () => { await config.set(CHECKED_KEY, []); renderList(); },
   }, '清空勾选');
+  const statusFilterSelect = h('select', { class: 'field field--sm lib__filter', title: '按阅读状态筛选', onchange: () => { statusFilter = statusFilterSelect.value; renderList(); } },
+    h('option', { value: 'all' }, '全部状态'),
+    h('option', { value: 'unread' }, '未读'),
+    h('option', { value: 'reading' }, '阅读中'),
+    h('option', { value: 'read' }, '已读'),
+    h('option', { value: 'archived' }, '暂存'),
+  );
+  const usefulnessFilterSelect = h('select', { class: 'field field--sm lib__filter', title: '按价值判断筛选', onchange: () => { usefulnessFilter = usefulnessFilterSelect.value; renderList(); } },
+    h('option', { value: 'all' }, '全部价值'),
+    h('option', { value: 'unknown' }, '价值未判断'),
+    h('option', { value: 'useful' }, '值得精读'),
+    h('option', { value: 'maybe' }, '待评估'),
+    h('option', { value: 'irrelevant' }, '暂不相关'),
+  );
+  const sortSelect = h('select', { class: 'field field--sm lib__filter', title: '排序方式', onchange: () => { sortMode = sortSelect.value; renderList(); } },
+    h('option', { value: 'recent' }, '最近加入'),
+    h('option', { value: 'useful' }, '优先级 / 价值'),
+    h('option', { value: 'year' }, '发表年份'),
+    h('option', { value: 'title' }, '标题'),
+    h('option', { value: 'size' }, '文件大小'),
+  );
 
   const bar = h('div', { class: 'lib__bar' },
     h('button', {
@@ -562,12 +709,15 @@ export function createLibrary(root, ctx) {
     }, '全选/取消'),
     h('button', { class: 'btn btn--sm', title: '先从 PDF 正文抠 DOI / arXiv 号做精确匹配，抠不到再按标题搜', onclick: (e) => fillMissing(e.target) }, '自动识别元数据'),
     searchInput,
+    statusFilterSelect,
+    usefulnessFilterSelect,
+    sortSelect,
     selectionLabel,
     clearBtn,
     exportBtn,
   );
 
-  root.append(bar, h('div', { class: 'lib__body' }, sideEl, listEl));
+  root.append(bar, overview, h('div', { class: 'lib__body' }, sideEl, listEl));
 
   async function refresh() {
     files = await lit.list();

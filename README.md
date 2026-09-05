@@ -2,7 +2,13 @@
 
 把「查文档、打字、进入状态、问 AI、背模板」这几件每天都要干、但每次都得切窗口的事，收进同一个壳里。
 
-基于 Electron（Chrome 内核），只有 `electron` 一个依赖，没有构建步骤。
+[![Latest Release](https://img.shields.io/github/v/release/guoshaung/agent-toolbox?display_name=tag&sort=semver&logo=github)](https://github.com/guoshaung/agent-toolbox/releases)
+[![GitHub Stars](https://img.shields.io/github/stars/guoshaung/agent-toolbox?style=flat&logo=github)](https://github.com/guoshaung/agent-toolbox)
+[![Electron](https://img.shields.io/badge/Electron-33.2.0-47848F?logo=electron&logoColor=white)](https://www.electronjs.org/)
+[![JavaScript](https://img.shields.io/badge/JavaScript-Vanilla-F7DF1E?logo=javascript&logoColor=111827)](https://developer.mozilla.org/docs/Web/JavaScript)
+[![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Windows-111827)](#技术栈)
+
+基于 Electron + Chromium WebView，使用原生 JavaScript/CSS 开发，发布使用 electron-builder。
 
 ## 跑起来
 
@@ -66,7 +72,7 @@ npm run dist:win
 - **背熟标记**：每个模板可标记，侧栏显示 `已背熟 x/y`
 - **自己加模板**：任何模块下都能加，也能把 AI 从网页里提取的代码片段一键存成模板
 - **AI 出题**：专用 Qwen3.5-Flash 先讲一个范围内知识点，再考察基础、边界和迁移；选择题当场判对错并记录掌握度，代码题可让 Qwen 批改，一次 1 道或 5 道
-- **实践敲码**：Python、Linux 命令、MySQL 常用 SQL、Requests 爬虫和 MATLAB/Octave 五条轨道；代码可以修改后直接在本机运行并查看 stdout/stderr。SQL 使用临时 SQLite 数据库覆盖常用 MySQL 语法，MATLAB/Octave 需要本机另行安装
+- **实践敲码**：Notebook 单元格支持 `＋` 新增、`−` 删除、独立运行和保留输出；覆盖 Python、Linux 命令、MySQL 常用 SQL、Requests、MATLAB/Octave、uv、LangChain、PyTorch、Transformers、FastAPI、Matplotlib 和 Pandas。Python/框架轨道可用 uv 创建独立 `.venv` 并安装依赖，SQL 使用临时 SQLite 数据库覆盖常用 MySQL 语法
 - **实践里的代码提示**：光标放到当前行会显示语法和作用；`import`、`from ... import ...`、Linux 命令和 SQL 子句优先用本地规则即时解释，不消耗 Token。复杂行可点「AI 解释当前行」，相关 Python/Linux/MySQL 文档可直接联动到「文档」工具
 - **自定义 MCP**：Skill 工厂里可登记本地 stdio 或远程 HTTP/SSE 服务，生成标准配置并写入 Claude Desktop、Claude Code、OpenCode 或 Codex；已有配置会先备份为 `.bak`
 - **知识网站**：预置 28 个官方文档/经典教程；「AI 找站」按领域推荐；「分析知识点」用内置浏览器真实打开任意网址，抓正文交给 AI 整理成可复习的知识点
@@ -103,6 +109,19 @@ npm run dist:win
 科研「门户」里的站点卡片可以直接拖出。释放后会生成置顶悬浮球；双击悬浮球默认展开手机端网页，展开后可切换到 PC 端、收回悬浮球、关闭悬浮球或用系统浏览器打开。网页仍使用科研门户的持久登录分区。
 
 其它快捷键：双击左上角 Logo 重启应用，`⌘⇧E` 解释当前选词，`⌥⇧D` 直接吸附当前前台窗口（回形针拖入方式的备用入口），`Cmd+F` 页内查找，`Cmd+L` 定位地址栏，`Cmd+Enter` 触发纠错，`Cmd+W` 关标签页。
+
+## 技术栈
+
+- **桌面壳**：Electron、Chromium WebView、Node.js 主进程与 IPC 白名单
+- **界面**：原生 JavaScript、CSS、SVG；不依赖 React/Vue 等前端框架
+- **科研与文档**：KaTeX 公式排版、PDF.js 文献预览、OpenAlex / Europe PMC 检索
+- **学习运行时**：Python、Bash、SQLite；uv 管理按领域隔离的 Python `.venv` 和依赖
+- **外部能力**：DeepSeek 网页桥接、OpenAI-compatible API、DashScope、飞书 CLI
+- **发布与历史版本**：electron-builder 构建 DMG / Windows portable，GitHub Releases 按版本追加，不覆盖历史资产
+
+## 合伙人
+
+当前合伙人：**自己**。这是一个独立设计、开发和维护的个人工具箱项目。
 
 「术语」顶部的「解释领域」会同时约束内置查询和全局划词。选择 AI / 大模型、编程 / 软件工程、计算机系统、数据库、网络安全、科研等领域后，模型只能在该领域内解释；无法归类时会提示切换领域，不会自动扩展到其他领域。也可以选择「自定义领域」。
 

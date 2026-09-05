@@ -1,6 +1,50 @@
 import { h, toast } from '../../core/ui.js';
 
 const BILIBILI_STUDY_URL = 'https://www.bilibili.com/v/knowledge/learning/';
+const VIDEO_PLUGIN_KEY = 'video.plugins';
+const USERSCRIPT_KEY = 'video.userscript';
+const VIDEO_PLUGINS = [
+  {
+    id: 'subtitle-auto-open',
+    name: 'B 站字幕自动开启',
+    description: '进入视频页后自动检测播放器字幕按钮，并优先选择中文/简体字幕。',
+    defaultOn: true,
+  },
+  {
+    id: 'subtitle-ai-fallback',
+    name: '无字幕时 AI 字幕兜底',
+    description: '官方字幕不存在时，报告模式自动尝试 B 站 AI 字幕；不把第三方扩展源码注入页面。',
+    defaultOn: true,
+  },
+  {
+    id: 'playback-speed',
+    name: 'B 站倍速控制',
+    description: '仿 Btools 的学习控制条，支持 0.5×–3×、快捷键 [ / ]，只作用于当前视频。',
+    defaultOn: true,
+  },
+  {
+    id: 'swipe-back',
+    name: '双指左滑返回',
+    description: '在学习区双指向左滑，返回 B 站上一个页面；只识别明显的横向手势，不影响普通滚动。',
+    defaultOn: true,
+  },
+  {
+    id: 'userscript-compat',
+    name: '油猴脚本兼容',
+    description: '保存并运行你自己的 B 站 userscript；只在当前 B 站页面执行，运行前需要手动点击。',
+    defaultOn: false,
+  },
+  {
+    id: 'study-clean-view',
+    name: '学习区清爽视图',
+    description: '沿用工具箱的站点清理规则，关闭评论干扰并保留页面导航。',
+    defaultOn: true,
+  },
+];
+
+function defaultVideoPlugins() {
+  return Object.fromEntries(VIDEO_PLUGINS.map((plugin) => [plugin.id, plugin.defaultOn]));
+}
 
 /**
  * 视频报告：贴一个 B 站链接 → 抓公开信息 → 拉字幕（官方优先，AI 兜底）→
@@ -24,6 +68,10 @@ export default {
     let info = null; // 抓到的视频信息
     let busy = false;
     let currentView = config.get('video.view', 'study');
+    let pluginPrefs = { ...defaultVideoPlugins(), ...(config.get(VIDEO_PLUGIN_KEY) || {}) };
+    let subtitlePluginTimer = null;
+    let subtitlePluginAttempts = 0;
+    let userscriptCode = config.get(USERSCRIPT_KEY, {}).code || '';
 
     const linkInput = h('input', {
       class: 'field video__link',
@@ -60,6 +108,7 @@ export default {
       allowpopups: true,
     });
     const studyStatus = h('span', { class: 'faint video__study-status' }, '固定入口：B 站学习区');
+    const subtitleStatus = h('span', { class: 'tag tag--good video__subtitle-status' }, '字幕插件已启用');
     const studyUrl = h('input', {
       class: 'field video__study-url',
       readonly: true,
@@ -70,6 +119,214 @@ export default {
 
     function syncStudyUrl(url) {
       studyUrl.value = String(url || BILIBILI_STUDY_URL);
+    }
+
+    function pluginEnabled(id) {
+      return pluginPrefs[id] !== false;
+    }
+
+    async function applySpeedPlugin() {
+      if (!pluginEnabled('playback-speed')) {
+        try { await studyView.executeJavaScript("document.querySelector('#agent-toolbox-speed-dock')?.remove()", true); } catch {}
+        return;
+      }
+      const url = studyView.getURL();
+      if (!/bilibili\.com/i.test(url || '')) return;
+      try {
+        await studyView.executeJavaScript(`(() => {
+          const getVideo = () => document.querySelector('.bpx-player-container video, .bilibili-player-video video, video');
+          const video = getVideo();
+          if (!video) return { found: false };
+          let dock = document.querySelector('#agent-toolbox-speed-dock');
+          if (!dock) {
+            dock = document.createElement('div');
+            dock.id = 'agent-toolbox-speed-dock';
+            dock.innerHTML = '<button data-speed-action="down">−</button><strong data-speed-value title="拖动这里移动倍速条">1×</strong><button data-speed-action="up">+</button><select data-speed-select><option>0.5</option><option>0.75</option><option>1</option><option>1.25</option><option>1.5</option><option>2</option><option>3</option></select>';
+            dock.style.cssText = 'position:fixed;right:18px;bottom:84px;z-index:2147483647;display:flex;align-items:center;gap:6px;padding:7px 9px;border:1px solid rgba(255,255,255,.24);border-radius:12px;background:rgba(18,20,25,.9);box-shadow:0 8px 26px rgba(0,0,0,.35);backdrop-filter:blur(10px);font:600 12px/1 Arial,sans-serif;color:#eef3ff;touch-action:none;user-select:none;cursor:grab;';
+            dock.querySelectorAll('button,select').forEach((node) => { node.style.cssText = 'min-width:28px;height:26px;padding:0 7px;border:1px solid rgba(255,255,255,.2);border-radius:7px;background:rgba(255,255,255,.08);color:inherit;cursor:pointer;'; });
+            dock.querySelector('strong').style.cssText = 'min-width:28px;text-align:center;color:#8eb0ff;';
+            document.body.appendChild(dock);
+            const update = (rate) => {
+              const next = Math.max(.25, Math.min(4, Number(rate) || 1));
+              const activeVideo = getVideo();
+              if (activeVideo) activeVideo.playbackRate = next;
+              dock.querySelector('[data-speed-value]').textContent = next + '×';
+              dock.querySelector('[data-speed-select]').value = String(next);
+            };
+            dock.addEventListener('click', (event) => {
+              const action = event.target.closest('[data-speed-action]')?.dataset.speedAction;
+              const currentVideo = getVideo();
+              if (action === 'down') update((currentVideo?.playbackRate || 1) - .25);
+              if (action === 'up') update((currentVideo?.playbackRate || 1) + .25);
+            });
+            dock.querySelector('[data-speed-select]').addEventListener('change', (event) => update(event.target.value));
+          }
+          dock.style.touchAction = 'none';
+          dock.style.userSelect = 'none';
+          dock.style.cursor = 'grab';
+          if (!dock.dataset.dragReady) {
+            dock.dataset.dragReady = '1';
+            const positionKey = 'agent-toolbox-speed-dock-position';
+            let savedPosition = null;
+            try { savedPosition = JSON.parse(localStorage.getItem(positionKey) || 'null'); } catch {}
+            if (savedPosition && Number.isFinite(savedPosition.left) && Number.isFinite(savedPosition.top)) {
+              dock.style.left = String(savedPosition.left) + 'px';
+              dock.style.top = String(savedPosition.top) + 'px';
+              dock.style.right = 'auto';
+              dock.style.bottom = 'auto';
+            }
+            let dragState = null;
+            const clampPosition = (left, top) => ({
+              left: Math.max(8, Math.min(window.innerWidth - dock.offsetWidth - 8, left)),
+              top: Math.max(8, Math.min(window.innerHeight - dock.offsetHeight - 8, top)),
+            });
+            dock.addEventListener('pointerdown', (event) => {
+              if (event.target.closest('button,select,option')) return;
+              const rect = dock.getBoundingClientRect();
+              dragState = { pointerId: event.pointerId, offsetX: event.clientX - rect.left, offsetY: event.clientY - rect.top };
+              dock.style.cursor = 'grabbing';
+              dock.setPointerCapture?.(event.pointerId);
+            });
+            dock.addEventListener('pointermove', (event) => {
+              if (!dragState || dragState.pointerId !== event.pointerId) return;
+              event.preventDefault();
+              const next = clampPosition(event.clientX - dragState.offsetX, event.clientY - dragState.offsetY);
+              dock.style.left = String(next.left) + 'px';
+              dock.style.top = String(next.top) + 'px';
+              dock.style.right = 'auto';
+              dock.style.bottom = 'auto';
+            });
+            const finishDrag = (event) => {
+              if (!dragState || dragState.pointerId !== event.pointerId) return;
+              try { dock.releasePointerCapture?.(event.pointerId); } catch {}
+              const rect = dock.getBoundingClientRect();
+              try { localStorage.setItem(positionKey, JSON.stringify({ left: rect.left, top: rect.top })); } catch {}
+              dragState = null;
+              dock.style.cursor = 'grab';
+            };
+            dock.addEventListener('pointerup', finishDrag);
+            dock.addEventListener('pointercancel', finishDrag);
+          }
+          if (!window.__agentToolboxSpeedKeys) {
+              window.__agentToolboxSpeedKeys = true;
+              document.addEventListener('keydown', (event) => {
+                if (event.target.matches('input,textarea,select,[contenteditable="true"]')) return;
+                const current = document.querySelector('.bpx-player-container video, .bilibili-player-video video, video');
+                if (!current) return;
+                if (event.key === '[') current.playbackRate = Math.max(.25, current.playbackRate - .25);
+                if (event.key === ']') current.playbackRate = Math.min(4, current.playbackRate + .25);
+              });
+            }
+          const activeVideo = getVideo();
+          dock.querySelector('[data-speed-value]').textContent = (Number(activeVideo?.playbackRate) || 1) + '×';
+          return { found: true, rate: activeVideo?.playbackRate || 1 };
+        })()`, true);
+      } catch {}
+    }
+
+    async function applySwipeBackPlugin() {
+      try {
+        await studyView.executeJavaScript(`(() => {
+          const key = '__agentToolboxSwipeBack';
+          if (!window[key]) {
+            const state = { enabled: true, touchStart: null, wheelX: 0, wheelAt: 0 };
+            state.onTouchStart = (event) => {
+              if (!state.enabled || event.touches.length !== 2) return;
+              state.touchStart = {
+                x: (event.touches[0].clientX + event.touches[1].clientX) / 2,
+                y: (event.touches[0].clientY + event.touches[1].clientY) / 2,
+              };
+              state.touchCurrent = { ...state.touchStart };
+            };
+            state.onTouchMove = (event) => {
+              if (!state.enabled || !state.touchStart || event.touches.length !== 2) return;
+              state.touchCurrent = {
+                x: (event.touches[0].clientX + event.touches[1].clientX) / 2,
+                y: (event.touches[0].clientY + event.touches[1].clientY) / 2,
+              };
+            };
+            state.onTouchEnd = (event) => {
+              if (!state.enabled || !state.touchStart || event.touches.length > 0) return;
+              const end = state.touchCurrent || state.touchStart;
+              const dx = end.x - state.touchStart.x;
+              const dy = Math.abs(end.y - state.touchStart.y);
+              state.touchStart = null;
+              state.touchCurrent = null;
+              if (dx < -90 && dy < 65) window.history.back();
+            };
+            state.onWheel = (event) => {
+              if (!state.enabled || Math.abs(event.deltaX) < Math.abs(event.deltaY) * 1.35 || event.deltaX >= -12) return;
+              const now = Date.now();
+              state.wheelX = now - state.wheelAt < 180 ? state.wheelX + event.deltaX : event.deltaX;
+              state.wheelAt = now;
+              if (state.wheelX < -120) {
+                state.wheelX = 0;
+                window.history.back();
+              }
+            };
+            document.addEventListener('touchstart', state.onTouchStart, { passive: true });
+            document.addEventListener('touchmove', state.onTouchMove, { passive: true });
+            document.addEventListener('touchend', state.onTouchEnd, { passive: true });
+            document.addEventListener('wheel', state.onWheel, { passive: true });
+            window[key] = state;
+          }
+          window[key].enabled = ${pluginEnabled('swipe-back')};
+          return { enabled: window[key].enabled };
+        })()`, true);
+      } catch {}
+    }
+
+    async function applyStudyPlugins() {
+      await applySpeedPlugin();
+      await applySwipeBackPlugin();
+      if (!pluginEnabled('subtitle-auto-open')) {
+        subtitleStatus.textContent = '自动字幕插件已关闭';
+        subtitleStatus.className = 'tag tag--warn video__subtitle-status';
+        return;
+      }
+      const url = studyView.getURL();
+      if (!/bilibili\.com/i.test(url || '')) return;
+      try {
+        const result = await studyView.executeJavaScript(`(() => {
+          const player = document.querySelector('.bpx-player-container, .bilibili-player-video-wrap, .html5-video-player');
+          if (!player) return { found: false, reason: 'player-not-ready' };
+          const controls = [...player.querySelectorAll('button,[role="button"],[aria-label]')];
+          const subtitleButton = controls.find((node) => /字幕|subtitle/i.test(
+            [node.getAttribute('aria-label'), node.getAttribute('title'), node.textContent].filter(Boolean).join(' '),
+          ));
+          if (!subtitleButton) return { found: false, reason: 'subtitle-control-not-found' };
+          const active = subtitleButton.getAttribute('aria-pressed') === 'true'
+            || /active|on|selected/i.test(String(subtitleButton.className || ''));
+          if (!active) subtitleButton.click();
+          setTimeout(() => {
+            const options = [...document.querySelectorAll('[role="menuitem"],button,li,[class*="subtitle"]')];
+            const chinese = options.find((node) => /中文|简体|zh[-_]?cn|chinese/i.test(String(node.textContent || node.getAttribute('aria-label') || '')));
+            if (chinese && !/active|selected/i.test(String(chinese.className || ''))) chinese.click();
+          }, 120);
+          return { found: true, enabled: true };
+        })()`, true);
+        if (result?.enabled) {
+          subtitleStatus.textContent = '字幕已自动开启（优先中文）';
+          subtitleStatus.className = 'tag tag--good video__subtitle-status';
+      } else {
+          subtitleStatus.textContent = pluginEnabled('subtitle-ai-fallback') ? '未发现官方字幕 · AI 字幕兜底可用' : '未发现字幕控件';
+          subtitleStatus.className = 'tag tag--warn video__subtitle-status';
+          if (subtitlePluginAttempts < 12 && pluginEnabled('subtitle-auto-open')) {
+            subtitlePluginAttempts += 1;
+            clearTimeout(subtitlePluginTimer);
+            subtitlePluginTimer = setTimeout(applyStudyPlugins, 1500);
+          }
+        }
+      } catch {
+        subtitleStatus.textContent = '字幕插件等待页面就绪…';
+        subtitleStatus.className = 'tag tag--warn video__subtitle-status';
+      }
+    }
+
+    function scheduleStudyPlugins() {
+      clearTimeout(subtitlePluginTimer);
+      subtitlePluginAttempts = 0;
+      subtitlePluginTimer = setTimeout(applyStudyPlugins, 650);
     }
 
     async function copyStudyUrl() {
@@ -157,6 +414,30 @@ export default {
       studyView.loadURL(BILIBILI_STUDY_URL);
       syncStudyUrl(BILIBILI_STUDY_URL);
       studyStatus.textContent = '正在回到固定的 B 站学习区…';
+      scheduleStudyPlugins();
+    }
+
+    async function triggerAiSubtitle() {
+      if (!pluginEnabled('subtitle-ai-fallback')) return toast('AI 字幕兜底插件已关闭', 'info');
+      const url = studyView.getURL();
+      if (!/^https?:\/\/www\.bilibili\.com\/video\/BV[0-9A-Za-z]+/i.test(url || '')) {
+        return toast('请先在 B 站打开具体视频页面', 'info', 5000);
+      }
+      linkInput.value = url;
+      setView('report');
+      await fetchInfo();
+    }
+
+    async function runUserscript() {
+      if (!pluginEnabled('userscript-compat')) return toast('油猴脚本兼容插件已关闭', 'info');
+      if (!userscriptCode.trim()) return toast('先在插件库里粘贴一段 userscript', 'info');
+      if (!/bilibili\.com/i.test(studyView.getURL() || '')) return toast('请先打开 B 站页面', 'info');
+      try {
+        await studyView.executeJavaScript(`(() => { const source = ${JSON.stringify(userscriptCode)}; return (0, eval)(source); })()`, true);
+        toast('油猴脚本已在当前 B 站页面运行', 'good');
+      } catch (err) {
+        toast(`油猴脚本运行失败：${err.message}`, 'bad', 5000);
+      }
     }
 
     studyView.addEventListener('did-navigate', (event) => {
@@ -164,9 +445,10 @@ export default {
       studyStatus.textContent = event.url === BILIBILI_STUDY_URL || /\/c\/knowledge\/?$/i.test(event.url)
         ? '固定入口：B 站学习区'
         : '当前在 B 站学习区内浏览 · 评论已关闭';
+      scheduleStudyPlugins();
     });
-    studyView.addEventListener('did-navigate-in-page', (event) => syncStudyUrl(event.url));
-    studyView.addEventListener('did-finish-load', () => syncStudyUrl(studyView.getURL()));
+    studyView.addEventListener('did-navigate-in-page', (event) => { syncStudyUrl(event.url); scheduleStudyPlugins(); });
+    studyView.addEventListener('did-finish-load', () => { syncStudyUrl(studyView.getURL()); scheduleStudyPlugins(); });
     studyView.addEventListener('did-fail-load', (event) => {
       if (event.errorCode === -3) return;
       studyStatus.textContent = `B 站学习区加载失败：${event.errorDescription || '网络错误'}`;
@@ -645,11 +927,64 @@ export default {
       if (openFeishu && result.docUrl) openFeishuDoc(result.docUrl);
     }
 
+    const pluginPanel = h('div', { class: 'video__plugin-panel', hidden: true });
+
+    function renderPluginLibrary() {
+      pluginPanel.textContent = '';
+      const enabledCount = VIDEO_PLUGINS.filter((plugin) => pluginEnabled(plugin.id)).length;
+      pluginPanel.append(
+        h('div', { class: 'video__plugin-head' },
+          h('strong', {}, '学习区插件库'),
+          h('span', { class: 'tag tag--good' }, `${enabledCount}/${VIDEO_PLUGINS.length} 已启用`),
+          h('span', { class: 'faint' }, 'Edge 能力兼容层 · 不直接加载第三方扩展'),
+        ),
+        h('div', { class: 'video__plugin-grid' },
+          ...VIDEO_PLUGINS.map((plugin) => {
+            const toggle = h('input', { type: 'checkbox', class: 'switch__input', checked: pluginEnabled(plugin.id) });
+            toggle.addEventListener('change', async () => {
+              pluginPrefs = { ...pluginPrefs, [plugin.id]: toggle.checked };
+              await config.set(VIDEO_PLUGIN_KEY, pluginPrefs);
+              if (['subtitle-auto-open', 'playback-speed', 'swipe-back'].includes(plugin.id)) scheduleStudyPlugins();
+              renderPluginLibrary();
+            });
+            return h('div', { class: 'video__plugin-card' },
+              h('div', { class: 'video__plugin-card-top' },
+                h('strong', {}, plugin.name),
+                h('label', { class: 'switch', title: toggle.checked ? '已启用' : '已关闭' }, toggle),
+              ),
+              h('div', { class: 'faint video__plugin-desc' }, plugin.description),
+              plugin.id === 'subtitle-ai-fallback'
+                ? h('button', { class: 'btn btn--sm video__plugin-action', onclick: triggerAiSubtitle }, '当前视频用 AI 字幕') : null,
+              plugin.id === 'playback-speed'
+                ? h('button', { class: 'btn btn--sm video__plugin-action', onclick: applySpeedPlugin }, '重新显示倍速条') : null,
+              plugin.id === 'userscript-compat'
+                ? h('button', { class: 'btn btn--sm video__plugin-action', onclick: () => renderPluginLibrary() }, '编辑脚本 ↓') : null,
+            );
+          }),
+        ),
+      );
+      if (pluginEnabled('userscript-compat')) {
+        const scriptInput = h('textarea', { class: 'video__userscript-input', rows: '5', placeholder: '// ==UserScript==\n// 仅在当前 B 站页面运行\n// ==/UserScript==' }, userscriptCode);
+        pluginPanel.append(
+          h('div', { class: 'video__userscript-box' },
+            h('div', { class: 'video__userscript-title' }, '油猴脚本编辑器', h('span', { class: 'faint' }, '只在点击运行后执行')),
+            scriptInput,
+            h('div', { class: 'video__userscript-actions' },
+              h('button', { class: 'btn btn--sm', onclick: async () => { userscriptCode = scriptInput.value; await config.set(USERSCRIPT_KEY, { code: userscriptCode }); toast('油猴脚本已保存', 'good'); } }, '保存脚本'),
+              h('button', { class: 'btn btn--sm btn--primary', onclick: async () => { userscriptCode = scriptInput.value; await config.set(USERSCRIPT_KEY, { code: userscriptCode }); await runUserscript(); } }, '保存并运行'),
+            ),
+          ),
+        );
+      }
+    }
+
+    const pluginBtn = h('button', { class: 'btn btn--sm video__plugin-btn', onclick: () => { pluginPanel.hidden = !pluginPanel.hidden; if (!pluginPanel.hidden) renderPluginLibrary(); } }, '插件库');
     const studyTab = h('button', { class: 'btn btn--sm video__mode-tab', onclick: () => setView('study') }, '学习区');
     const reportTab = h('button', { class: 'btn btn--sm video__mode-tab', onclick: () => setView('report') }, '视频报告');
     const modeBar = h('div', { class: 'bar bar--drag video__modebar' },
       h('strong', {}, '视频'),
       h('div', { class: 'video__mode-tabs' }, studyTab, reportTab),
+      pluginBtn,
       h('span', { class: 'faint' }, 'B 站学习、自由浏览与报告抓取'),
     );
     const studyBar = h('div', { class: 'bar video__studybar' },
@@ -658,8 +993,10 @@ export default {
       h('button', { class: 'btn btn--icon', title: '刷新学习区', onclick: () => studyView.reload() }, '⟳'),
       h('button', { class: 'btn btn--sm btn--primary', title: '回到固定的 B 站学习区入口', onclick: resetStudyArea }, '回到学习区'),
       studyStatus,
+      subtitleStatus,
       h('span', { style: { flex: 1 } }),
       studyUrl,
+      h('button', { class: 'btn btn--sm', title: '当前视频无字幕时，尝试 B 站 AI 字幕并进入报告流程', onclick: triggerAiSubtitle }, 'AI字幕兜底'),
       h('button', { class: 'btn btn--sm', title: '复制当前 B 站页面 URL', onclick: copyStudyUrl }, '复制 URL'),
       h('button', { class: 'btn btn--sm btn--primary', title: '抓取当前视频并生成报告', onclick: captureCurrentPage }, '抓取当前页'),
       h('button', { class: 'btn btn--sm btn--ghost', title: '用系统浏览器打开当前 B 站页面', onclick: () => studyView.getURL() && window.toolbox.shell.openExternal(studyView.getURL()) }, '↗'),
@@ -677,6 +1014,7 @@ export default {
 
     root.append(
       modeBar,
+      pluginPanel,
       studyShell,
       reportShell,
     );

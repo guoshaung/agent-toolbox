@@ -165,11 +165,17 @@ export function arrowDefs(color = '#3d6fe8', id = 'fbArrow', style = 'standard')
     bold: { width: 6.4, height: 7.2, refX: 5.8, path: 'M0,0 L0,7.2 L6.4,3.6 z' },
   };
   const head = heads[style] || heads.standard;
-  const path = `<path d="${head.path}"`;
-  return `<marker id="${id}" markerWidth="${head.width}" markerHeight="${head.height}" refX="${head.refX}" refY="${head.height / 2}" orient="auto" markerUnits="strokeWidth">`
-    + `${path} fill="${color}"/></marker>`
-    + `<marker id="${id}Start" markerWidth="${head.width}" markerHeight="${head.height}" refX="0.3" refY="${head.height / 2}" orient="auto-start-reverse" markerUnits="strokeWidth">`
-    + `${path} fill="${color}"/></marker>`;
+  const mid = head.height / 2;
+  const base = Math.max(0.45, head.height * 0.12);
+  const neck = Math.max(0.8, head.width * 0.2);
+  const tip = head.width - 0.35;
+  const path = `M${base},${base} C${neck},${mid - head.height * 0.3} ${tip - head.width * 0.18},${mid - head.height * 0.14} ${tip},${mid - 0.35}`
+    + ` Q${head.width},${mid} ${tip},${mid + 0.35}`
+    + ` C${tip - head.width * 0.18},${mid + head.height * 0.14} ${neck},${mid + head.height * 0.3} ${base},${head.height - base}`
+    + ` Q${neck * 0.55},${mid} ${base},${base} Z`;
+  const marker = (markerId, refX, orientation) => `<marker id="${markerId}" markerWidth="${head.width}" markerHeight="${head.height}" refX="${refX}" refY="${mid}" orient="${orientation}" markerUnits="strokeWidth">`
+    + `<path d="${path}" fill="${color}" stroke="${color}" stroke-width="0.35" stroke-linejoin="round" stroke-linecap="round"/></marker>`;
+  return marker(id, head.refX, 'auto') + marker(`${id}Start`, 0.3, 'auto-start-reverse');
 }
 
 /** 画布背景：纯色 / 网格 / 点阵 / 透明 */

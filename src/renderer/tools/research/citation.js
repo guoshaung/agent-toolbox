@@ -282,6 +282,10 @@ export function paperToMeta(paper) {
     journal: paper.venue || '',
     doi: String(paper.doi || '').replace(/^https?:\/\/(?:dx\.)?doi\.org\//i, ''),
     url: paper.landingUrl || paper.url || '',
+    abstract: String(paper.abstract || '').replace(/<[^>]+>/g, '').slice(0, 2400),
+    citedBy: Number(paper.citedBy || 0),
+    source: paper.source || '',
+    isOpenAccess: Boolean(paper.isOpenAccess),
     type: 'article',
     metaFrom: 'download',        // 标明来源，界面上可以区分"下载时带的"和"事后补的"
   };

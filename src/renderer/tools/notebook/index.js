@@ -117,7 +117,27 @@ export default {
       },
     });
 
-    const markdownEditor = h('textarea', { hidden: true });
+    // Markdown 源码栏（上栏）。以前它是个纯藏起来的中转变量，
+    // 而 markdown 模式下留在上面的其实是代码模式没关干净的 codeView——
+    // 那栏用代码高亮渲染 markdown，看着就是一堆 bug。现在把它换成真的源码编辑器。
+    let syncingFromSource = false;   // 防止「源码 → 画布 → 源码」自己打自己
+    const markdownEditor = h('textarea', {
+      class: 'field nb__md-source',
+      spellcheck: false,
+      hidden: true,
+      oninput: debounce(() => {
+        const snippet = current();
+        if (!snippet) return;
+        syncingFromSource = true;
+        renderMarkdownPreview();
+        snippet.code = markdownEditor.value;
+        snippet.kind = 'markdown';
+        snippet.at = Date.now();
+        persist();
+        renderSnippetOptions();
+        syncingFromSource = false;
+      }, 260),
+    });
     const markdownCanvas = h('article', {
       class: 'nb__markdown-canvas nb__markdown-preview',
       contenteditable: true,
@@ -127,6 +147,7 @@ export default {
       oninput: debounce(() => {
         const snippet = current();
         if (!snippet) return;
+        if (syncingFromSource) return;   // 这一轮是源码栏发起的，别再写回去
         const source = htmlToMarkdown(markdownCanvas);
         markdownEditor.value = source;
         snippet.code = source;
@@ -172,16 +193,22 @@ export default {
           return;
         }
         if (!(event.metaKey || event.ctrlKey)) return;
+        // app.js 在 window 上绑了「⌘1-9 快速切工具」。这里只 preventDefault 是不够的——
+        // 事件照样往上冒泡，结果按 ⌘1 会一边套上标题一边把工具切走。
+        // 凡是这里已经消费掉的组合键，必须同时 stopPropagation。
         if (/^[1-6]$/.test(event.key)) {
           event.preventDefault();
+          event.stopPropagation();
           document.execCommand('formatBlock', false, `h${event.key}`);
           markdownCanvas.dispatchEvent(new Event('input', { bubbles: true }));
         } else if (event.key.toLowerCase() === 'b' || event.key.toLowerCase() === 'i') {
           event.preventDefault();
+          event.stopPropagation();
           document.execCommand(event.key.toLowerCase() === 'b' ? 'bold' : 'italic');
           markdownCanvas.dispatchEvent(new Event('input', { bubbles: true }));
         } else if (event.key.toLowerCase() === 'k') {
           event.preventDefault();
+          event.stopPropagation();
           insertMarkdownLink();
         }
       },
@@ -201,6 +228,13 @@ export default {
       oninput: () => { slashIndex = 0; renderSlashList(); },
       onkeydown: (event) => {
         const list = filterCommands(slashInput.value);
+        // 再敲一次反斜杠 = 「我就是想要这个符号」：关掉面板，把 \ 原样写进正文。
+        // 不这样留个出口的话，\ 这个字符在 markdown 模式下就彻底打不出来了。
+        if (event.key === '\\' && !slashInput.value) {
+          event.preventDefault();
+          insertLiteralBackslash();
+          return;
+        }
         if (event.key === 'Escape') { event.preventDefault(); closeSlash(); return; }
         if (event.key === 'ArrowDown') { event.preventDefault(); slashIndex = Math.min(list.length - 1, slashIndex + 1); renderSlashList(); return; }
         if (event.key === 'ArrowUp') { event.preventDefault(); slashIndex = Math.max(0, slashIndex - 1); renderSlashList(); return; }
@@ -212,6 +246,14 @@ export default {
     });
     const slashList = h('div', { class: 'nb__slash-list' });
     const slashPanel = h('div', { class: 'nb__slash', hidden: true }, slashInput, slashList);
+
+    /** 把光标还原到敲 \ 的位置，写一个真正的反斜杠进去。 */
+    function insertLiteralBackslash() {
+      closeSlash();
+      restoreSlashRange();
+      document.execCommand('insertText', false, '\\');
+      markdownCanvas.dispatchEvent(new Event('input', { bubbles: true }));
+    }
 
     function renderSlashList() {
       const list = filterCommands(slashInput.value);
@@ -350,8 +392,63 @@ export default {
       }),
       h('span', { class: 'faint nb__md-hint' }, '敲 \\ 唤出命令 · ⌘1–⌘6 标题 · ⌘B 加粗 · ⌘K 链接'),
     );
+    // ---------- Markdown 上下栏分隔条 ----------
+    //
+    // markdown 模式下上面是源码 textarea、下面是所见即所得画布，原本 flex 平分、拖不动。
+    // 实际用起来下面那栏才是主力，所以这里让它可拖，并且允许把上面那栏一路拖到收起。
+    const MD_EDITOR_MIN = 0;      // 允许彻底收起源码栏
+    const MD_CANVAS_MIN = 160;    // 但画布不能被挤没
+    const MD_EDITOR_DEFAULT = 200;
+    let mdEditorHeight = config.get('notebook.mdEditorHeight', MD_EDITOR_DEFAULT);
+
+    function applyMdSplit() {
+      const total = markdownShell.clientHeight;
+      // 工具还没显示时 clientHeight 是 0，这时候算出来的 max 也是 0，
+      // 会把源码栏永久压成 0 高（看着就像内容没了）。量不到就别动，等能量到再说。
+      if (!total) return;
+      const max = Math.max(MD_EDITOR_MIN, total - MD_CANVAS_MIN - 6);
+      mdEditorHeight = Math.max(MD_EDITOR_MIN, Math.min(mdEditorHeight, max));
+      markdownEditor.style.flex = `0 0 ${mdEditorHeight}px`;
+      markdownEditor.classList.toggle('is-collapsed', mdEditorHeight < 12);
+    }
+
+    // 窗口大小变了要重新夹一次，否则拉窄后画布可能被源码栏挤没。
+    const mdResizeObserver = new ResizeObserver(() => {
+      if (editorMode === 'markdown') applyMdSplit();
+    });
+
+    const mdSplit = h('div', {
+      class: 'nb__hsplit',
+      hidden: true,
+      title: '拖动调整上下高度，双击恢复默认；一路拖到顶就收起源码栏',
+      ondblclick: () => {
+        mdEditorHeight = MD_EDITOR_DEFAULT;
+        applyMdSplit();
+        config.set('notebook.mdEditorHeight', mdEditorHeight);
+      },
+    });
+    mdSplit.addEventListener('pointerdown', (event) => {
+      event.preventDefault();
+      mdSplit.setPointerCapture(event.pointerId);
+      mdSplit.classList.add('is-dragging');
+      const onMove = (e) => {
+        mdEditorHeight = e.clientY - markdownCanvas.getBoundingClientRect().top + markdownEditor.getBoundingClientRect().height;
+        applyMdSplit();
+      };
+      const onUp = () => {
+        mdSplit.classList.remove('is-dragging');
+        window.removeEventListener('pointermove', onMove);
+        window.removeEventListener('pointerup', onUp);
+        config.set('notebook.mdEditorHeight', mdEditorHeight);
+      };
+      window.addEventListener('pointermove', onMove);
+      window.addEventListener('pointerup', onUp);
+    });
+
     const markdownShell = h('div', { class: 'nb__markdown-shell', hidden: true },
       markdownToolbar,
+      markdownEditor,
+      mdSplit,
       markdownCanvas,
       slashPanel,
     );
@@ -589,6 +686,12 @@ export default {
       detailEl.hidden = markdown;
       if (markdown) tasksPanel.hidden = true;
       mainEl.classList.toggle('nb__main--markdown', markdown);
+      markdownEditor.hidden = !markdown;
+      mdSplit.hidden = !markdown;
+      // 关键：以前这里不调 setMode()，代码模式的 editor / codeView 就留在 markdown 模式里，
+      // 于是上面多出一栏「用代码高亮渲染 markdown」的残留面板，看着满是毛病。
+      setMode();
+      if (markdown) requestAnimationFrame(applyMdSplit);
     }
 
     // ---------- 任务模式：建目标 → 拆步骤 → 做完一步 AI 核验打钩 ----------
@@ -1437,6 +1540,7 @@ export default {
       graphButton,
     );
     const mainEl = h('div', { class: 'nb__main' }, editor, codeView, markdownShell, tasksPanel);
+    mdResizeObserver.observe(markdownShell);
     function applyEditorAppearance() {
       const theme = NOTEBOOK_THEMES[notebookTheme] || NOTEBOOK_THEMES.midnight;
       const font = NOTEBOOK_FONTS[notebookFont] || NOTEBOOK_FONTS.jetbrains;
