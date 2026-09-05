@@ -216,6 +216,18 @@ contextBridge.exposeInMainWorld('toolbox', {
     writeFile: (payload) => ipcRenderer.invoke('notebook:writeFile', payload),
   },
 
+  switcher: {
+    /** 焦点在 webview 里时，Ctrl+Tab 由主进程截获再转发过来 */
+    onStep: (cb) => ipcRenderer.on('switcher:step', (_e, payload) => cb(payload || {})),
+    onCommit: (cb) => ipcRenderer.on('switcher:commit', () => cb()),
+    onCancel: (cb) => ipcRenderer.on('switcher:cancel', () => cb()),
+  },
+
+  docs: {
+    /** 按名字找官方文档站：查 PyPI / npm / DevDocs */
+    search: (query) => ipcRenderer.invoke('docs:search', query),
+  },
+
   biblio: {
     /** 按标题或 DOI 从 Crossref 查书目元数据 */
     lookup: (payload) => ipcRenderer.invoke('biblio:lookup', payload),

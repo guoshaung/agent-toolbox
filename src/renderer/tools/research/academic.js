@@ -1,4 +1,6 @@
 import { createSiteGrid } from '../../core/sitegrid.js';
+import { createResearchBrowser } from './browser.js';
+import { h, toast } from '../../core/ui.js';
 
 const ACADEMIC_SITES = [
   { name: 'Google Scholar', url: 'https://scholar.google.com/', desc: '学术论文检索', emoji: '🎓' },
@@ -14,7 +16,44 @@ const ACADEMIC_SITES = [
 ];
 
 export function createAcademic(root, ctx) {
-  createSiteGrid(root, {
+  // 自动检索总有够不着的地方，得能自己翻。抓到了直接入库，不用复制粘贴。
+  const browser = createResearchBrowser({
+    onGrab: (result, info) => {
+      const meta = result.best || {};
+      const line = [meta.title, meta.year, meta.journal].filter(Boolean).join(' · ');
+      if (result.ambiguous) {
+        toast(`⚠️ 有 ${result.sameNameCount} 篇同名文献，去「文献库」里挑一下再入库：${line}`, 'warn', 6000);
+      } else if (result.exact || result.autoImport) {
+        toast(`已识别：${line}`, 'good', 5000);
+      } else {
+        toast(`找到（相似 ${result.score}）：${line}　不确定就去文献库核对`, 'info', 6000);
+      }
+      window.toolbox.clipboard.write(JSON.stringify(meta, null, 2));
+    },
+  });
+
+  const openBtn = (which, label, hint) => h('button', {
+    class: 'academic__browser-btn',
+    onclick: () => { browser.open(which); grid.hidden = true; backBtn.hidden = false; },
+  }, h('strong', {}, label), h('span', { class: 'faint' }, hint));
+
+  const backBtn = h('button', {
+    class: 'btn btn--sm', hidden: true,
+    onclick: () => { browser.close(); grid.hidden = false; backBtn.hidden = true; },
+  }, '← 回到入口列表');
+
+  const bar = h('div', { class: 'bar academic__top' },
+    h('span', { class: 'faint' }, '找不到就自己翻：'),
+    openBtn('chrome', 'Chrome', '独立登录态'),
+    openBtn('edge', 'Edge', '可同步本机 Edge 登录'),
+    h('span', { style: { flex: 1 } }),
+    backBtn,
+  );
+
+  const grid = h('div', { class: 'academic__grid' });
+  root.append(bar, browser.root, grid);
+
+  createSiteGrid(grid, {
     presets: ACADEMIC_SITES,
     configKey: 'research.academicSites',
     cachePrefix: 'research.academicFavicons.',

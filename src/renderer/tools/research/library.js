@@ -445,7 +445,7 @@ export function createLibrary(root, ctx) {
             class: 'btn btn--sm',
             onclick: async (e) => {
               e.target.disabled = true;
-              status.textContent = '正在从 Crossref 查…';
+              status.textContent = '正在查 OpenAlex / arXiv / Crossref…';
               candidateBox.textContent = '';
               // 手填了 DOI 就直接用；否则先让它自己去 PDF 里找 DOI / arXiv 号
               const typedDoi = inputs.doi.value.trim();
@@ -462,9 +462,23 @@ export function createLibrary(root, ctx) {
                 return;
               }
 
-              // 按标题查一律列候选让人挑 —— 标题相近的论文太多，自动填错更坑
-              status.textContent = `没在 PDF 里找到 DOI，改用${VIA_LABEL[result.via] || '标题'}搜到 ${result.candidates.length} 条，挑一条对得上的：`;
-              status.classList.toggle('lib__status--warn', result.score < AUTO_FILL_MIN);
+              // 只是 arXiv、又没有同名竞争者 —— 没什么可挑的，直接填。
+              if (result.autoImport) {
+                applyMeta(result.best);
+                status.textContent = `只在 arXiv 上，没有同名论文，已直接填入（${result.best.doi || result.best._arxivId || ''}）。`;
+                status.classList.remove('lib__status--warn');
+                candidateBox.textContent = '';
+                return;
+              }
+
+              // 同名不同篇 —— 这种自动填必错，必须让人选。
+              if (result.ambiguous) {
+                status.textContent = `⚠️ 找到 ${result.sameNameCount} 篇标题几乎一样但不是同一篇的文献，得你挑一下是哪篇：`;
+                status.classList.add('lib__status--warn');
+              } else {
+                status.textContent = `没在 PDF 里找到 DOI，改用${VIA_LABEL[result.via] || '标题'}搜到 ${result.candidates.length} 条，挑一条对得上的：`;
+                status.classList.toggle('lib__status--warn', result.score < AUTO_FILL_MIN);
+              }
               candidateBox.append(...result.candidates.map((cand) => h('button', {
                 class: 'lib__cand',
                 onclick: () => {
@@ -475,7 +489,9 @@ export function createLibrary(root, ctx) {
               },
                 h('div', { class: 'lib__cand-title' }, cand.title || '(无标题)'),
                 h('div', { class: 'faint lib__cand-sub' },
-                  [authorsToText(cand.authors) || '作者未知', cand.year, cand.journal].filter(Boolean).join(' · ')),
+                  // 同名的时候，能区分开的就是年份、期刊和 DOI，所以 DOI 也摆出来
+                  [authorsToText(cand.authors) || '作者未知', cand.year, cand.journal, cand.doi].filter(Boolean).join(' · ')),
+                cand._source ? h('span', { class: 'tag' }, cand._source) : null,
                 h('span', { class: `tag ${cand._score >= AUTO_FILL_MIN ? 'tag--good' : 'tag--warn'}` },
                   `相似 ${Number(cand._score ?? 0).toFixed(2)}`),
               )));

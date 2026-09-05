@@ -18,6 +18,7 @@ const { installCoachExtension } = require('./coach-install');
 const litFetch = require('./lit-fetch');
 const { registerNotebookIpc } = require('./notebook');
 const { registerBiblioIpc } = require('./biblio');
+const { registerDocSearchIpc } = require('./doc-search');
 const { registerCertTrust } = require('./certtrust');
 const translator = require('./translate');
 const ocr = require('./ocr');
@@ -490,6 +491,8 @@ function createWindow(showOnReady = true) {
   };
   mainWindow.on('resize', persistBounds);
   mainWindow.on('move', persistBounds);
+  // 焦点跑进 webview 时宿主页面的 document.hasFocus() 也是 false，渲染层区分不了
+  // 「切到内嵌页面」和「整个应用失焦」。所以由主进程判断整窗失焦，再通知过去关面板。
   mainWindow.on('closed', () => {
     mainWindow = null;
     windowDock?.detach({ restoreMain: false, restoreTarget: true });
@@ -1197,6 +1200,7 @@ function registerIpc() {
 
   // 文献库：书目元数据补全 + 引用导出
   registerBiblioIpc(ipcMain, { dialog, getWindow: () => mainWindow, clipboard });
+  registerDocSearchIpc(ipcMain);
 
   // 代码记事本：读取 Understand-Anything 的知识图谱 + 按行号回读源码
   registerNotebookIpc(ipcMain, { dialog, getWindow: () => mainWindow });
@@ -2088,6 +2092,34 @@ if (!app.requestSingleInstanceLock()) {
     mainWindow.focus();
   });
 }
+
+/**
+ * Ctrl+Tab 模块切换器要在「任何地方」都能唤出来。
+ *
+ * 难点：焦点在 <webview> 里的时候，键盘事件全被那个 guest 页面吃掉了，
+ * 根本不会冒泡到宿主页面 —— 所以在渲染层挂 window keydown 是够不着的
+ * （在文档页里按没反应就是这个原因）。
+ * 解法是在主进程给每个 webContents 挂 before-input-event，截下来转发给主窗口。
+ */
+function forwardSwitcherKeys(contents) {
+  contents.on('before-input-event', (event, input) => {
+    if (input.type !== 'keyDown' && input.type !== 'keyUp') return;
+    const ctrl = input.control || input.modifiers?.includes('control');
+    const isTab = input.key === 'Tab';
+    const isCtrlKey = input.key === 'Control';
+    // 只关心两件事：Ctrl+Tab（翻页）和松开 Ctrl（确认）
+    if (!(ctrl && isTab) && !isCtrlKey) return;
+    if (!mainWindow || mainWindow.isDestroyed()) return;
+    if (input.type === 'keyDown' && ctrl && isTab) {
+      event.preventDefault();
+      mainWindow.webContents.send('switcher:step', { back: Boolean(input.shift) });
+    } else if (input.type === 'keyUp' && isCtrlKey) {
+      mainWindow.webContents.send('switcher:commit');
+    }
+  });
+}
+
+app.on('web-contents-created', (_e, contents) => forwardSwitcherKeys(contents));
 
 app.whenReady().then(async () => {
   store = new Store(app.getPath('userData'));

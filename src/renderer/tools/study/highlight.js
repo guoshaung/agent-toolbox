@@ -12,6 +12,22 @@ const KEYWORDS = {
   javascript: new Set(['const', 'let', 'var', 'function', 'return', 'if', 'else', 'for', 'while',
     'class', 'extends', 'new', 'this', 'import', 'export', 'from', 'default', 'async', 'await',
     'try', 'catch', 'finally', 'throw', 'typeof', 'instanceof', 'null', 'undefined', 'true', 'false']),
+  bash: new Set(['if', 'then', 'else', 'elif', 'fi', 'for', 'in', 'do', 'done', 'while', 'until',
+    'case', 'esac', 'function', 'return', 'export', 'local', 'echo', 'printf', 'read', 'set',
+    'source', 'exit', 'cd', 'git', 'grep', 'awk', 'sed', 'sort', 'uniq', 'find', 'cat', 'head', 'tail']),
+  sql: new Set(['SELECT', 'FROM', 'WHERE', 'GROUP', 'BY', 'HAVING', 'ORDER', 'LIMIT', 'INSERT',
+    'INTO', 'VALUES', 'UPDATE', 'SET', 'DELETE', 'CREATE', 'TABLE', 'DROP', 'ALTER', 'JOIN',
+    'LEFT', 'RIGHT', 'INNER', 'OUTER', 'ON', 'AS', 'AND', 'OR', 'NOT', 'NULL', 'DISTINCT',
+    'PRIMARY', 'KEY', 'INTEGER', 'TEXT', 'REAL', 'OVER', 'PARTITION', 'RANK', 'IFNULL', 'ASC', 'DESC']),
+  matlab: new Set(['function', 'end', 'if', 'else', 'elseif', 'for', 'while', 'switch', 'case',
+    'otherwise', 'return', 'break', 'continue', 'disp', 'fprintf', 'zeros', 'ones', 'size', 'length']),
+};
+
+/** 轨道 id → 高亮语言。轨道很多，但语言就这几种。 */
+export const LANG_BY_TRACK = {
+  linux: 'bash', textproc: 'bash', git: 'bash', uv: 'bash',
+  sql: 'sql',
+  matlab: 'matlab',
 };
 
 const BUILTINS = new Set(['print', 'len', 'range', 'enumerate', 'zip', 'sorted', 'sum', 'max', 'min',
@@ -21,7 +37,7 @@ const BUILTINS = new Set(['print', 'len', 'range', 'enumerate', 'zip', 'sorted',
 const escapeHtml = (text) => text
   .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
-const LINE_COMMENT = { python: '#', javascript: '//' };
+const LINE_COMMENT = { python: '#', javascript: '//', bash: '#', sql: '--', matlab: '%' };
 
 export function highlight(code, lang = 'python') {
   const keywords = KEYWORDS[lang] || KEYWORDS.python;
@@ -86,7 +102,8 @@ export function highlight(code, lang = 'python') {
       const word = ident[0];
       const after = code.slice(i + word.length);
       let cls = null;
-      if (keywords.has(word)) cls = 'kw';
+      // SQL 关键字习惯大写，但小写写法也很常见，两边都认
+      if (keywords.has(word) || (lang === 'sql' && keywords.has(word.toUpperCase()))) cls = 'kw';
       else if (/^\s*\(/.test(after)) cls = 'fn';        // 后面跟括号，当函数名
       else if (BUILTINS.has(word)) cls = 'bi';
       emit(cls, word);

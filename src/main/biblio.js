@@ -13,10 +13,16 @@ const path = require('node:path');
 
 const UA = 'AgentToolbox/0.1 (personal research tool)';
 const CROSSREF = 'https://api.crossref.org/works';
+const OPENALEX = 'https://api.openalex.org/works';
+const ARXIV_API = 'https://export.arxiv.org/api/query';
+// OpenAlex 要求带联系方式换取更好的限流额度，给个不外发的占位邮箱即可。
+const POLITE = 'mailto=toolbox@local';
 
 /** 标题归一化后比对，用于判断 Crossref 返回的是不是同一篇 */
 function normalizeTitle(text) {
-  return String(text || '').toLowerCase()
+  return String(text || '')
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')  // Gödel → Godel：作者名带变音符时两边对不上
+    .toLowerCase()
     .replace(/[\s\-_—–]+/g, ' ')
     .replace(/[^\w一-龥 ]/g, '')
     .trim();
@@ -167,6 +173,118 @@ async function lookupArxiv(rawId) {
  * 按标题（或 DOI）查元数据。
  * @returns { ok, best, score, candidates } —— score < 0.6 时界面应提示"可能不是同一篇"
  */
+/** OpenAlex 的一条 work 转成本地统一结构。 */
+function normalizeOpenAlex(work) {
+  const typeMap = {
+    article: 'article',
+    preprint: 'article',
+    'proceedings-article': 'inproceedings',
+    book: 'book',
+    'book-chapter': 'inbook',
+  };
+  const loc = work.primary_location || {};
+  const doi = String(work.doi || '').replace(/^https?:\/\/(dx\.)?doi\.org\//i, '');
+  return {
+    title: work.display_name || work.title || '',
+    authors: (work.authorships || []).map((a) => {
+      const parts = String(a.author?.display_name || '').trim().split(/\s+/);
+      const family = parts.length > 1 ? parts.pop() : (parts[0] || '');
+      return { family, given: parts.join(' ') };
+    }).filter((a) => a.family),
+    year: work.publication_year ? String(work.publication_year) : '',
+    journal: loc.source?.display_name || '',
+    volume: work.biblio?.volume || '',
+    issue: work.biblio?.issue || '',
+    pages: [work.biblio?.first_page, work.biblio?.last_page].filter(Boolean).join('-'),
+    doi,
+    url: work.doi || loc.landing_page_url || '',
+    publisher: loc.source?.host_organization_name || '',
+    type: typeMap[work.type] || 'article',
+    // 下面几个是选片时要看的，不进引用格式
+    _source: 'OpenAlex',
+    _isPreprint: work.type === 'preprint' || /arxiv/i.test(loc.source?.display_name || ''),
+    _cited: work.cited_by_count || 0,
+    _pdf: loc.pdf_url || work.best_oa_location?.pdf_url || '',
+  };
+}
+
+/** arXiv 全文检索（按标题），返回统一结构。 */
+async function searchArxiv(title) {
+  const q = `ti:"${String(title).replace(/"/g, '')}"`;
+  const xml = await fetchText(
+    `${ARXIV_API}?search_query=${encodeURIComponent(q)}&max_results=5`,
+    { accept: 'application/atom+xml' },
+  );
+  const entries = xml.split('<entry>').slice(1);
+  return entries.map((entry) => {
+    const pick = (tag) => (entry.match(new RegExp(`<${tag}>([\\s\\S]*?)</${tag}>`)) || [])[1] || '';
+    const id = pick('id').trim();
+    const bare = id.replace(/^https?:\/\/arxiv\.org\/abs\//, '').replace(/v\d+$/, '');
+    return {
+      title: pick('title').replace(/\s+/g, ' ').trim(),
+      authors: [...entry.matchAll(/<name>([\s\S]*?)<\/name>/g)].map((m) => {
+        const parts = m[1].trim().split(/\s+/);
+        const family = parts.length > 1 ? parts.pop() : (parts[0] || '');
+        return { family, given: parts.join(' ') };
+      }).filter((a) => a.family),
+      year: (pick('published').match(/^(\d{4})/) || [])[1] || '',
+      journal: 'arXiv',
+      volume: '', issue: '', pages: '',
+      doi: bare ? `10.48550/arXiv.${bare}` : '',
+      url: id,
+      publisher: 'arXiv',
+      type: 'article',
+      _source: 'arXiv',
+      _isPreprint: true,
+      _cited: 0,
+      _pdf: bare ? `https://arxiv.org/pdf/${bare}` : '',
+      _arxivId: bare,
+    };
+  }).filter((x) => x.title);
+}
+
+/**
+ * 按标题多源检索。
+ *
+ * 为什么不只用 Crossref：实测 5 篇常见 AI 论文，Crossref 一篇都没匹配对
+ * ——「Attention Is All You Need」它返回「Is Attention All You Need?」，
+ * 「Deep Residual Learning」返回一篇蝴蝶识别。原因是 Crossref 不收 arXiv 预印本，
+ * 只能拿词面最像的顶上来。OpenAlex 收录预印本且排序好得多，所以让它当主力，
+ * arXiv 补预印本，Crossref 退居兜底。
+ */
+async function searchByTitle(title) {
+  const jobs = [
+    fetchJson(`${OPENALEX}?search=${encodeURIComponent(title)}&per-page=5&${POLITE}`)
+      .then((d) => (d.results || []).map(normalizeOpenAlex)).catch(() => []),
+    searchArxiv(title).catch(() => []),
+    fetchJson(`${CROSSREF}?query.bibliographic=${encodeURIComponent(title)}&rows=5`)
+      .then((d) => (d.message?.items || []).map(normalizeCrossref)
+        .map((m) => ({ ...m, _source: 'Crossref', _isPreprint: false, _cited: 0 }))).catch(() => []),
+  ];
+  const [oa, ax, cr] = await Promise.all(jobs);
+
+  // 合并去重。
+  // 注意别只看标题：真有两篇不同论文标题一模一样，按标题合并会把它们并成一条，
+  // 「同名要提示」这个功能就永远触发不了了。
+  // 所以只在「DOI 相同」或「标题相同且其中一方没 DOI（同一条记录的跨源补全）」时合并。
+  const merged = [];
+  for (const item of [...oa, ...ax, ...cr]) {
+    if (!item.title) continue;
+    const sameTitle = (m) => normalizeTitle(m.title) === normalizeTitle(item.title);
+    const hit = merged.find((m) => {
+      if (m.doi && item.doi) return m.doi.toLowerCase() === item.doi.toLowerCase();
+      return sameTitle(m);
+    });
+    if (!hit) { merged.push(item); continue; }
+    // arXiv 那条能补上 PDF 直链和 arXiv 号，合并进已有条目
+    if (!hit._pdf && item._pdf) hit._pdf = item._pdf;
+    if (!hit._arxivId && item._arxivId) hit._arxivId = item._arxivId;
+    if (!hit.doi && item.doi) hit.doi = item.doi;
+    if (!hit.journal && item.journal) hit.journal = item.journal;
+  }
+  return merged;
+}
+
 async function lookup({ title, doi, arxiv }) {
   try {
     if (arxiv) return await lookupArxiv(arxiv);
@@ -184,20 +302,41 @@ async function lookup({ title, doi, arxiv }) {
     const query = String(title || '').trim();
     if (query.length < 6) return { ok: false, error: '标题太短，查不了。' };
 
-    const url = `${CROSSREF}?query.bibliographic=${encodeURIComponent(query)}&rows=5`;
-    const data = await fetchJson(url);
-    const items = (data.message?.items || []).map(normalizeCrossref)
+    const items = (await searchByTitle(query))
       .map((meta) => ({ ...meta, _score: similarity(query, meta.title) }))
-      .sort((a, b) => b._score - a._score);
+      .sort((a, b) => b._score - a._score || b._cited - a._cited);
 
-    if (!items.length) return { ok: false, error: 'Crossref 里没找到这篇。' };
+    if (!items.length) return { ok: false, error: '三个库（OpenAlex / arXiv / Crossref）里都没找到这篇。' };
+
     const best = items[0];
+    const score = Number(best._score.toFixed(2));
+
+    // ---- 同名判定 ----
+    // 只要有第二条标题跟第一条基本一样、但 DOI 或年份不同，就是「同名不同篇」，
+    // 这种情况自动入库必错，必须让人挑。
+    const sameName = items.slice(1).filter((it) => similarity(best.title, it.title) >= 0.95
+      && ((it.doi && best.doi && it.doi.toLowerCase() !== best.doi.toLowerCase())
+        || (it.year && best.year && it.year !== best.year)));
+
+    // ---- arXiv 直通 ----
+    // 「只是 arXiv」= 有 arXiv 号，且没有正式出版的 DOI（或者 DOI 就是 arXiv 自己的 10.48550）。
+    // 不能用 OpenAlex 的 type==='preprint' 判断：实测 ResNet 的 primary_location
+    // 写着 arXiv、DOI 却是 CVPR 的，DGM 又被挂到一个第三方期刊上，那个字段不可靠。
+    const bestDoi = String(best.doi || '');
+    const publishedElsewhere = bestDoi && !/^10\.48550\//i.test(bestDoi);
+    const arxivOnly = !sameName.length && score >= 0.9
+      && Boolean(best._arxivId) && !publishedElsewhere;
+
     return {
       ok: true,
       best,
-      score: Number(best._score.toFixed(2)),
-      candidates: items.slice(0, 5),
+      score,
+      candidates: items.slice(0, 6),
       exact: false,
+      ambiguous: sameName.length > 0,
+      sameNameCount: sameName.length + 1,
+      autoImport: arxivOnly,
+      source: best._source || '',
     };
   } catch (err) {
     return { ok: false, error: `查询失败：${err.message}` };

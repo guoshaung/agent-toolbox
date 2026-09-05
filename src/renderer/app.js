@@ -6,6 +6,7 @@ import { h, toast } from './core/ui.js';
 import { LOGO_MARK_SVG } from './core/logo.js';
 import { iconFor } from './core/icons.js';
 import { buildTermPrompt, buildTermSystemPrompt, normalizeTermResult } from './tools/terms/prompt.js';
+import { createSwitcher } from './core/switcher.js';
 
 const rail = document.getElementById('rail');
 const stage = document.getElementById('stage');
@@ -36,6 +37,9 @@ const ctx = {
 };
 
 const mounted = new Map(); // id -> { el, instance }
+// 在顶上先声明：activate() 里要用它，而它自己在文件末尾才创建。
+// 写成 const 放下面的话，activate 早于它执行就会撞上暂时性死区（?. 也挡不住）。
+let switcher = null;
 let currentId = null;
 const SETTINGS_ID = 'settings';
 const MAX_PINNED = 7;
@@ -77,6 +81,7 @@ let libraryHideTimer;
 function activate(id) {
   const tool = TOOLS.find((t) => t.id === id);
   if (!tool) return;
+  switcher?.noteUse(id);
 
   if (currentId && currentId !== id) {
     const prev = mounted.get(currentId);
@@ -273,6 +278,14 @@ document.addEventListener('pointerdown', (event) => {
 });
 window.addEventListener('keydown', (event) => {
   if (event.key === 'Escape') setLibraryOpen(false);
+});
+
+// Ctrl+Tab 呼出模块切换器（按住能看见即将切到哪，松开才生效）
+switcher = createSwitcher({
+  tools: TOOLS,
+  getCurrentId: () => currentId,
+  onPick: (id) => activate(id),
+  config,
 });
 
 // Cmd+1..9 快速切工具

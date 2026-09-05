@@ -124,6 +124,11 @@ export async function identify(file, { fallbackTitle = '' } = {}) {
         exact: false,
         score: result.score,
         candidates: result.candidates,
+        // 同名提示 / arXiv 直通这两个判定在主进程里做，别在这层丢掉
+        ambiguous: result.ambiguous,
+        sameNameCount: result.sameNameCount,
+        autoImport: result.autoImport,
+        best: result.best,
       };
     }
     return { ok: false, error: result.error, probe };

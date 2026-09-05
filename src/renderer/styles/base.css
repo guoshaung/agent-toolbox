@@ -581,3 +581,44 @@ html, body { background: var(--bg); }
 .card:hover { border-color: #465057; box-shadow: none; transform: none; }
 .tag { background: #202529; border-color: #353d41; }
 .toast { box-shadow: 0 8px 24px rgba(0,0,0,.3); }
+
+/* ---------- 模块切换器（Ctrl+Tab） ---------- */
+.switcher {
+  position: fixed; inset: 0; z-index: 9000;
+  display: flex; align-items: center; justify-content: center;
+  background: rgba(6, 9, 14, .45);
+  backdrop-filter: blur(6px);
+  -webkit-app-region: no-drag;
+}
+.switcher[hidden] { display: none; }
+
+.switcher__panel {
+  max-width: min(880px, 88vw);
+  padding: 18px 20px 14px;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: color-mix(in srgb, var(--panel) 94%, transparent);
+  box-shadow: 0 28px 70px rgba(0, 0, 0, .55);
+  text-align: center;
+}
+.switcher__grid { display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; }
+.switcher__card {
+  width: 86px;
+  display: flex; flex-direction: column; align-items: center; gap: 6px;
+  padding: 12px 6px 9px;
+  border: 1px solid transparent;
+  border-radius: 12px;
+  background: transparent;
+  color: var(--text-dim);
+  cursor: pointer;
+}
+.switcher__card.is-active {
+  border-color: color-mix(in srgb, var(--accent) 60%, transparent);
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
+  color: var(--text);
+}
+.switcher__icon { display: flex; align-items: center; justify-content: center; width: 30px; height: 30px; }
+.switcher__icon svg { width: 26px; height: 26px; }
+.switcher__name { font-size: 11.5px; line-height: 1.3; }
+.switcher__label { margin-top: 12px; min-height: 18px; color: var(--text); font-size: 13px; }
+.switcher__hint { margin-top: 4px; font-size: 11px; }

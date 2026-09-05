@@ -30,10 +30,20 @@ const TRACKS = {
   fastapi: { label: 'FastAPI', engine: 'python3', extension: '.py', packages: ['fastapi'] },
   matplotlib: { label: 'Matplotlib', engine: 'python3', extension: '.py', packages: ['matplotlib'] },
   pandas: { label: 'Pandas', engine: 'python3', extension: '.py', packages: ['pandas'] },
+  // 下面这批是后加的实践轨道。新增轨道必须同时在这里登记，
+  // 否则渲染层能选到、点运行却报「未知实践领域」。
+  regex: { label: '正则表达式', engine: 'python3', extension: '.py' },
+  numpy: { label: 'NumPy', engine: 'python3', extension: '.py', packages: ['numpy'] },
+  asyncio: { label: 'asyncio 异步', engine: 'python3', extension: '.py' },
+  datafile: { label: '文件与 JSON/CSV', engine: 'python3', extension: '.py' },
+  pytest: { label: 'pytest 测试', engine: 'python3', extension: '.py', packages: ['pytest'] },
+  git: { label: 'Git 常用命令', engine: 'bash', extension: '.sh' },
+  textproc: { label: 'Shell 文本处理', engine: 'bash', extension: '.sh' },
 };
 
-const PYTHON_TRACKS = new Set(['python', 'requests', 'langchain', 'pytorch', 'transformers', 'fastapi', 'matplotlib', 'pandas']);
-const SHELL_TRACKS = new Set(['linux', 'uv']);
+const PYTHON_TRACKS = new Set(['python', 'requests', 'langchain', 'pytorch', 'transformers', 'fastapi', 'matplotlib', 'pandas',
+  'regex', 'numpy', 'asyncio', 'datafile', 'pytest']);
+const SHELL_TRACKS = new Set(['linux', 'uv', 'git', 'textproc']);
 
 function commandExists(command) {
   return Boolean(resolveCommand(command));
@@ -97,6 +107,9 @@ function environment() {
     fastapi: pythonPackageExists('fastapi', pythonInterpreter('fastapi')),
     matplotlib: pythonPackageExists('matplotlib', pythonInterpreter('matplotlib')),
     pandas: pythonPackageExists('pandas', pythonInterpreter('pandas')),
+    numpy: pythonPackageExists('numpy', pythonInterpreter('numpy')),
+    pytest: pythonPackageExists('pytest', pythonInterpreter('pytest')),
+    git: commandExists('git'),
   };
 }
 

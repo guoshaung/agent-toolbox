@@ -72,6 +72,62 @@ export default {
       }
     }
 
+    // ---- 找文档站 ----
+    //
+    // 预置书签再多也会缺（LangChain 就没有）。这里按名字现搜官方文档，
+    // 查 PyPI 的 project_urls、npm 的 homepage 和 DevDocs 索引，都在主进程做。
+    const siteFindResults = h('div', { class: 'docs__find-results' });
+    const siteFindInput = h('input', {
+      class: 'field field--sm',
+      placeholder: '搜文档站…（如 langchain）',
+      onkeydown: (e) => { if (e.key === 'Enter' && !e.isComposing) runFind(); },
+    });
+
+    async function runFind() {
+      const query = siteFindInput.value.trim();
+      if (!query) { siteFindResults.textContent = ''; return; }
+      siteFindResults.textContent = '';
+      siteFindResults.appendChild(h('div', { class: 'faint docs__hint' }, '正在查 PyPI / npm / DevDocs…'));
+      const result = await window.toolbox.docs.search(query);
+      siteFindResults.textContent = '';
+      if (!result.ok) {
+        siteFindResults.appendChild(h('div', { class: 'faint docs__hint' }, result.error || '没查到'));
+        return;
+      }
+      if (!result.results.length) {
+        siteFindResults.append(
+          h('div', { class: 'faint docs__hint' }, '三个源里都没有它的文档地址。'),
+          h('button', { class: 'btn btn--sm', onclick: () => navigate(result.fallback) }, '去搜索引擎找'),
+        );
+        return;
+      }
+      for (const hit of result.results) {
+        siteFindResults.appendChild(
+          h('div', { class: 'docs__find-item', title: hit.url },
+            h('button', {
+              class: 'docs__find-open',
+              onclick: () => { navigate(hit.url); },
+            },
+            h('span', { class: 'docs__find-name' }, hit.name),
+            h('span', { class: 'docs__find-url faint' }, hit.url.replace(/^https?:\/\//, '')),
+            hit.summary ? h('span', { class: 'docs__find-sum faint' }, hit.summary) : null),
+            h('span', { class: 'tag docs__find-src' }, hit.source),
+            h('button', {
+              class: 'docs__find-add', title: '加到左边的书签里',
+              onclick: async () => {
+                const list = config.get('docs.bookmarks') || [];
+                if (list.some((x) => x.url === hit.url)) return toast('这个已经在书签里了', 'info');
+                list.push({ group: '我加的', name: hit.name.split(' · ')[0], url: hit.url });
+                await config.set('docs.bookmarks', list);
+                renderBookmarks(filter.value.trim().toLowerCase());
+                toast(`已加到书签：${hit.name}`, 'good');
+              },
+            }, '＋'),
+          ),
+        );
+      }
+    }
+
     // ---- 标签页 ----
     const tabStrip = h('div', { class: 'docs__tabs' });
     const viewHost = h('div', { class: 'docs__views' });
@@ -98,8 +154,8 @@ export default {
       tabs.push(tab);
       viewHost.appendChild(view);
 
-      view.addEventListener('page-title-updated', (e) => { tab.title = e.title; renderTabs(); });
-      view.addEventListener('did-navigate', (e) => { tab.url = e.url; if (tab === active) syncBar(); });
+      view.addEventListener('page-title-updated', (e) => { tab.title = e.title; renderTabs(); persistTabs?.(); });
+      view.addEventListener('did-navigate', (e) => { tab.url = e.url; if (tab === active) syncBar(); persistTabs?.(); });
       view.addEventListener('did-navigate-in-page', (e) => { tab.url = e.url; if (tab === active) syncBar(); });
       view.addEventListener('did-start-loading', () => { if (tab === active) syncBar(); });
       view.addEventListener('did-stop-loading', () => { if (tab === active) syncBar(); });
@@ -223,6 +279,8 @@ export default {
       findBar,
       h('div', { class: 'docs__body' },
         h('aside', { class: 'docs__side' },
+          h('div', { class: 'docs__side-head' }, siteFindInput),
+          siteFindResults,
           h('div', { class: 'docs__side-head' }, filter),
           bookmarkList,
         ),
@@ -231,7 +289,23 @@ export default {
     );
 
     renderBookmarks();
-    openTab(config.get('docs.lastUrl') || HOME);
+
+    // 恢复上次开着的所有标签页，而不是只留一个 —— 关掉应用再打开，
+    // 手边那几篇文档还在原处。
+    const savedTabs = config.get('docs.openTabs') || [];
+    const savedActive = config.get('docs.activeTab', 0);
+    if (savedTabs.length) {
+      for (const item of savedTabs) openTab(item.url, item.title);
+      selectTab(tabs[Math.min(savedActive, tabs.length - 1)] || tabs[0]);
+    } else {
+      openTab(config.get('docs.lastUrl') || HOME);
+    }
+
+    /** 标签页有增减或跳转就记一次。存的是地址和标题，重开时按这个重建。 */
+    function persistTabs() {
+      config.set('docs.openTabs', tabs.map((t) => ({ url: t.url, title: t.title })).slice(0, 12));
+      config.set('docs.activeTab', Math.max(0, tabs.indexOf(active)));
+    }
 
     // 内嵌页面里 target="_blank" 的链接：主进程拦下来转成事件，在这里开新标签，
     // 而不是弹一个脱离工具箱的窗口。
@@ -247,7 +321,7 @@ export default {
     });
 
     return {
-      deactivate: () => { if (active) config.set('docs.lastUrl', active.url); },
+      deactivate: () => { if (active) config.set('docs.lastUrl', active.url); persistTabs(); },
     };
   },
 };

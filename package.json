@@ -1,6 +1,6 @@
 {
   "name": "agent-toolbox",
-  "version": "0.4.1",
+  "version": "0.4.2",
   "description": "个人 Agent 工具箱：科研文献 / 代码阅读 / 文档 / 打字纠错 / 专注 / DeepSeek 快问",
   "private": true,
   "main": "src/main/main.js",

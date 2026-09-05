@@ -5,6 +5,9 @@ import {
   normalizePracticeAiResult,
 } from './practice-assist.js';
 import { FRAMEWORK_TRACKS } from './data/frameworks.js';
+import { attachEditorKeys } from './editor-keys.js';
+import { highlight, LANG_BY_TRACK } from './highlight.js';
+import { EXTRA_TRACKS } from './data/practice-extra.js';
 
 const PRACTICE_TRACKS = [
   {
@@ -14,6 +17,10 @@ const PRACTICE_TRACKS = [
       { title: '列表推导式', level: '入门', code: `numbers = [1, 2, 3, 4, 5, 6]\nsquares = [number ** 2 for number in numbers if number % 2 == 0]\nprint(squares)` },
       { title: '函数与异常', level: '基础', code: `def average(values):\n    if not values:\n        raise ValueError("values 不能为空")\n    return sum(values) / len(values)\n\ntry:\n    print(average([72, 85, 91]))\nexcept ValueError as error:\n    print(f"输入错误：{error}")` },
       { title: '统计词频', level: '进阶', code: `from collections import Counter\n\ntext = "learn by doing, learn by testing"\nwords = text.lower().replace(",", "").split()\nfor word, count in Counter(words).most_common():\n    print(f"{word}: {count}")` },
+      { title: '字典与 defaultdict', level: '基础', code: `from collections import defaultdict\n\npapers = [("agent", "AgentSquare"), ("rsi", "DGM"), ("agent", "AFlow")]\ngroups = defaultdict(list)\nfor tag, name in papers:\n    groups[tag].append(name)\nfor tag, names in groups.items():\n    print(f"{tag}: {', '.join(names)}")` },
+      { title: '切片与解包', level: '基础', code: `row = [1, 2, 3, 4, 5, 6]\nhead, *middle, tail = row\nprint("头:", head, "中间:", middle, "尾:", tail)\nprint("每隔一个:", row[::2])\nprint("倒序:", row[::-1])` },
+      { title: '装饰器计时', level: '进阶', code: `import time\nfrom functools import wraps\n\ndef timed(func):\n    @wraps(func)\n    def wrapper(*args, **kwargs):\n        start = time.perf_counter()\n        result = func(*args, **kwargs)\n        print(f"{func.__name__} 用了 {time.perf_counter() - start:.4f}s")\n        return result\n    return wrapper\n\n@timed\ndef slow_sum(n):\n    return sum(range(n))\n\nprint(slow_sum(2_000_00))` },
+      { title: '生成器省内存', level: '进阶', code: `import sys\n\nlist_version = [x * x for x in range(100000)]\ngen_version = (x * x for x in range(100000))\nprint("列表占:", sys.getsizeof(list_version), "字节")\nprint("生成器占:", sys.getsizeof(gen_version), "字节")\nprint("前5个:", [next(gen_version) for _ in range(5)])` },
     ],
   },
   {
@@ -23,6 +30,9 @@ const PRACTICE_TRACKS = [
       { title: '管道统计', level: '入门', code: `printf '%s\\n' apple banana apple orange banana apple | sort | uniq -c | sort -nr` },
       { title: '查找文本', level: '基础', code: `printf '%s\\n' "error: disk full" "info: ready" "error: retry" > app.log\ngrep -n "error" app.log` },
       { title: '循环处理', level: '进阶', code: `for name in Ada Linus Grace; do\n  printf 'hello, %s\\n' "$name"\ndone` },
+      { title: '按大小找文件', level: '基础', code: `mkdir -p demo && cd demo\nhead -c 2000 /dev/zero > big.bin\nhead -c 10 /dev/zero > small.bin\nfind . -type f -size +1k -exec ls -lh {} \\;` },
+      { title: '重定向与错误流', level: '基础', code: `ls /nonexistent 2> err.log\necho "标准错误被单独收走了："\ncat err.log\nls /nonexistent > all.log 2>&1 && echo ok || echo "两条流都进了 all.log"` },
+      { title: '变量与条件判断', level: '进阶', code: `threshold=80\nfor score in 92 71 85; do\n  if [ "$score" -ge "$threshold" ]; then\n    echo "$score 通过"\n  else\n    echo "$score 未达标"\n  fi\ndone` },
     ],
   },
   {
@@ -32,6 +42,9 @@ const PRACTICE_TRACKS = [
       { title: '建表查询', level: '入门', code: `CREATE TABLE students (\n  id INTEGER PRIMARY KEY,\n  name TEXT NOT NULL,\n  score INTEGER\n);\nINSERT INTO students VALUES (1, '小明', 88), (2, '小红', 96);\nSELECT name, score FROM students WHERE score >= 90 ORDER BY score DESC;` },
       { title: '分组统计', level: '基础', code: `CREATE TABLE orders (user_name TEXT, amount INTEGER);\nINSERT INTO orders VALUES ('Ada', 30), ('Ada', 50), ('Linus', 80);\nSELECT user_name, SUM(amount) AS total\nFROM orders GROUP BY user_name HAVING total >= 60;` },
       { title: '连接两张表', level: '进阶', code: `CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT);\nCREATE TABLE posts (user_id INTEGER, title TEXT);\nINSERT INTO users VALUES (1, 'Ada'), (2, 'Linus');\nINSERT INTO posts VALUES (1, 'SQL 入门'), (1, '索引为什么快');\nSELECT users.name, posts.title FROM users\nJOIN posts ON posts.user_id = users.id;` },
+      { title: 'LEFT JOIN 与空值', level: '进阶', code: `CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT);\nCREATE TABLE posts (user_id INTEGER, title TEXT);\nINSERT INTO users VALUES (1, 'Ada'), (2, 'Linus');\nINSERT INTO posts VALUES (1, 'SQL 入门');\n-- LEFT JOIN 会把没发过帖的人也留下，右边补 NULL\nSELECT users.name, IFNULL(posts.title, '(还没发过)') AS title\nFROM users LEFT JOIN posts ON posts.user_id = users.id;` },
+      { title: '子查询与 IN', level: '进阶', code: `CREATE TABLE orders (user_name TEXT, amount INTEGER);\nINSERT INTO orders VALUES ('Ada', 120), ('Linus', 30), ('Grace', 200);\nSELECT user_name, amount FROM orders\nWHERE amount > (SELECT AVG(amount) FROM orders)\nORDER BY amount DESC;` },
+      { title: '窗口函数排名', level: '进阶', code: `CREATE TABLE scores (name TEXT, subject TEXT, score INTEGER);\nINSERT INTO scores VALUES ('Ada','math',95),('Linus','math',88),('Ada','cs',92),('Linus','cs',97);\nSELECT subject, name, score,\n       RANK() OVER (PARTITION BY subject ORDER BY score DESC) AS rank_in_subject\nFROM scores;` },
     ],
   },
   {
@@ -52,6 +65,7 @@ const PRACTICE_TRACKS = [
       { title: '循环与条件', level: '进阶', code: `for n = 1:10\n    if mod(n, 2) == 0\n        fprintf('%d 是偶数\\n', n);\n    end\nend` },
     ],
   },
+  ...EXTRA_TRACKS,
   ...FRAMEWORK_TRACKS,
 ];
 
@@ -93,6 +107,7 @@ export function createPracticePanel(ctx) {
 
   function updateMeta(cell = activeCell) {
     if (!cell) return;
+    paintHighlight(cell);
     cell.lineCount.textContent = `${cell.editor.value.split(/\r?\n/).length} 行`;
     description.textContent = track.description;
     setupBtn.hidden = !['python', 'requests', 'langchain', 'pytorch', 'transformers', 'fastapi', 'matplotlib', 'pandas'].includes(track.id);
@@ -276,10 +291,31 @@ export function createPracticePanel(ctx) {
     finally { cell.commentBtn.disabled = false; }
   }
 
+  /** 把当前代码渲染到高亮层。末尾补一个换行，否则最后一行空行会塌掉、和文本框错位。 */
+  function paintHighlight(cell) {
+    if (!cell || !cell.highlightLayer) return;
+    const lang = LANG_BY_TRACK[track.id] || 'python';
+    cell.highlightLayer.innerHTML = `${highlight(cell.editor.value, lang)}\n`;
+    syncHighlightScroll(cell);
+  }
+
+  function syncHighlightScroll(cell) {
+    if (!cell || !cell.highlightLayer) return;
+    cell.highlightLayer.scrollTop = cell.editor.scrollTop;
+    cell.highlightLayer.scrollLeft = cell.editor.scrollLeft;
+  }
+
+  function repaintAll() {
+    for (const cell of cells) paintHighlight(cell);
+  }
+
   function createCell(code = '') {
     const cell = { id: nextCellId++, code, runId: 0, executionCount: 0 };
     cell.gutter = h('div', { class: 'practice__cell-gutter' }, 'In [ ]');
     cell.editor = h('textarea', { class: 'practice__editor', spellcheck: false, wrap: 'off' }, code);
+    // 高亮层：垫在文本框底下，文本框自己的字设成透明，只留光标。
+    // textarea 没法给部分文字上色，这是唯一能既保留原生输入又有配色的做法。
+    cell.highlightLayer = h('pre', { class: 'practice__highlight', 'aria-hidden': 'true' });
     cell.editorWrap = h('div', { class: 'practice__editor-wrap' });
     cell.annotation = h('aside', { class: 'practice__annotation', hidden: true });
     cell.annotationTitle = h('strong', { class: 'practice__annotation-title' });
@@ -294,7 +330,7 @@ export function createPracticePanel(ctx) {
       cell.annotationWhy,
       cell.annotationActions,
     );
-    cell.editorWrap.append(cell.editor, cell.annotation);
+    cell.editorWrap.append(cell.highlightLayer, cell.editor, cell.annotation);
     cell.lineCount = h('span', { class: 'practice__editor-meta' }, `${code.split(/\r?\n/).length} 行`);
     cell.output = h('pre', { class: 'practice__output' }, '运行结果会出现在这里。');
     cell.resultStatus = h('span', { class: 'practice__result-status' }, '尚未运行');
@@ -318,9 +354,19 @@ export function createPracticePanel(ctx) {
         ),
       ),
     );
+    // Tab 补全 / 自动缩进 / ⌘Enter 开新行 / 括号配对。
+    // 轨道用函数取，因为轨道会切，补全词表得跟着换。
+    attachEditorKeys(cell.editor, () => track.id);
     cell.editor.addEventListener('focus', () => selectCell(cell));
-    cell.editor.addEventListener('input', () => { cell.code = cell.editor.value; updateMeta(cell); });
-    cell.editor.addEventListener('scroll', () => placeAnnotation(cell, currentLineIndex(cell)));
+    cell.editor.addEventListener('input', () => {
+      cell.code = cell.editor.value;
+      updateMeta(cell);
+    });
+    cell.editor.addEventListener('scroll', () => {
+      placeAnnotation(cell, currentLineIndex(cell));
+      syncHighlightScroll(cell);
+    });
+    paintHighlight(cell);
     return cell;
   }
 
@@ -347,6 +393,90 @@ export function createPracticePanel(ctx) {
   });
   levelSelect.addEventListener('change', () => { sampleIndex = Number(levelSelect.value); renderSamples(); });
 
+  // ---------- 代码文件夹：把练的东西存到本机，下次接着改 ----------
+  //
+  // 写完就没了是最劝退的。这里挂一个真实目录，保存/打开都走主进程的
+  // notebook:* 通道，那边有 realpath 收敛，写不出目录之外。
+  const EXT_BY_TRACK = { sql: '.sql', linux: '.sh', textproc: '.sh', git: '.sh', matlab: '.m' };
+  const extFor = (trackId) => EXT_BY_TRACK[trackId] || '.py';
+
+  let workspaceRoot = ctx.config.get('practice.workspaceRoot', '') || '';
+  const wsPath = h('span', { class: 'faint practice__ws-path' }, '未选择文件夹');
+  const wsFiles = h('select', { class: 'field field--sm practice__ws-files' });
+  const wsName = h('input', { class: 'field field--sm practice__ws-name', placeholder: '文件名' });
+
+  async function refreshFiles(selectRel = '') {
+    wsFiles.textContent = '';
+    if (!workspaceRoot) return;
+    const listed = await window.toolbox.notebook.listDir({ root: workspaceRoot, relPath: '' });
+    if (!listed.ok) { wsFiles.append(h('option', { value: '' }, listed.error || '读不了这个目录')); return; }
+    // 字段名是 isDir / items，别写成 isDirectory —— 写错等于没过滤，目录会混进列表
+    const files = (listed.items || []).filter((e) => !e.isDir && /\.(py|sh|sql|m|txt|md)$/i.test(e.name));
+    wsFiles.append(h('option', { value: '' }, files.length ? `— 选一个文件（${files.length}）—` : '（这个文件夹里还没有代码文件）'));
+    for (const f of files) wsFiles.append(h('option', { value: f.relPath || f.name }, f.name));
+    if (selectRel) wsFiles.value = selectRel;
+  }
+
+  async function openWorkspace() {
+    const picked = await window.toolbox.notebook.pickFolder();
+    if (!picked || picked.canceled) return;
+    const root = picked.root || picked.path || picked;
+    if (typeof root !== 'string') return toast('没拿到文件夹路径', 'bad');
+    workspaceRoot = root;
+    await ctx.config.set('practice.workspaceRoot', root);
+    wsPath.textContent = root.replace(/^.*\//, '📁 ');
+    wsPath.title = root;
+    await refreshFiles();
+    toast('文件夹已挂上，保存的代码会放这儿', 'good');
+  }
+
+  async function loadPicked() {
+    const rel = wsFiles.value;
+    if (!rel || !workspaceRoot) return;
+    const r = await window.toolbox.notebook.readFile({ root: workspaceRoot, relPath: rel });
+    if (!r.ok) return toast(r.error || '读不出来', 'bad');
+    const cell = activeCell || cells[0];
+    if (!cell) return;
+    cell.editor.value = r.code || '';
+    cell.code = cell.editor.value;
+    updateMeta(cell);
+    wsName.value = rel;
+    toast(`已载入 ${rel}`, 'good');
+  }
+
+  async function saveCurrent() {
+    if (!workspaceRoot) return toast('先点「打开文件夹」挑一个存放位置', 'info');
+    const cell = activeCell || cells[0];
+    if (!cell || !cell.editor.value.trim()) return toast('这个单元格是空的', 'info');
+    let name = wsName.value.trim();
+    if (!name) {
+      const stamp = new Date().toISOString().slice(5, 16).replace(/[-:T]/g, '').replace(' ', '_');
+      name = `${track.id}_${stamp}${extFor(track.id)}`;
+    }
+    if (!/\.\w+$/.test(name)) name += extFor(track.id);
+    const r = await window.toolbox.notebook.writeFile({ root: workspaceRoot, relPath: name, content: cell.editor.value });
+    if (!r.ok) return toast(r.error || '保存失败', 'bad');
+    wsName.value = r.relPath || name;
+    await refreshFiles(r.relPath || name);
+    toast(`已保存到 ${r.relPath || name}`, 'good');
+  }
+
+  const workspaceBar = h('div', { class: 'practice__workspace-bar' },
+    h('button', { class: 'btn btn--sm', onclick: openWorkspace }, '📁 打开文件夹'),
+    wsPath,
+    wsFiles,
+    h('button', { class: 'btn btn--sm', onclick: loadPicked }, '载入'),
+    h('span', { style: { flex: 1 } }),
+    wsName,
+    h('button', { class: 'btn btn--sm btn--primary', onclick: saveCurrent }, '保存到本地'),
+  );
+  wsFiles.addEventListener('change', () => { if (wsFiles.value) wsName.value = wsFiles.value; });
+  if (workspaceRoot) {
+    wsPath.textContent = workspaceRoot.replace(/^.*\//, '📁 ');
+    wsPath.title = workspaceRoot;
+    refreshFiles();
+  }
+
   const el = h('div', { class: 'practice' },
     h('div', { class: 'practice__head' },
       h('div', { class: 'practice__intro' },
@@ -364,6 +494,7 @@ export function createPracticePanel(ctx) {
       setupBtn,
       runtimeStatus,
     ),
+    workspaceBar,
     h('div', { class: 'practice__notebook' },
       h('div', { class: 'practice__notebook-toolbar' },
         h('div', {}, h('strong', {}, 'Notebook 单元格'), h('span', { class: 'faint' }, ' 运行后输出会留在对应单元格，可继续向下添加')),

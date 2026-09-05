@@ -25,7 +25,9 @@ export default {
 
     let moduleId = config.get('study.lastModule', MODULES[0].id);
     let templateId = null;
-    let view = 'templates';
+    // 记住上次停在哪个子页，切回来还是那一页。首次进来默认「实践敲码」。
+    let view = config.get('study.view', 'practice');
+    if (!VIEWS.some((v) => v.id === view)) view = 'practice';
 
     const scraper = new PageScraper(document.getElementById('bridge-host'));
 
@@ -510,7 +512,7 @@ export default {
       viewBar.append(h('button', {
         class: `btn btn--sm${v.id === view ? ' btn--primary' : ''}`,
         dataset: { view: v.id },
-        onclick: () => { view = v.id; syncViewBar(); renderMain(); },
+        onclick: () => { view = v.id; config.set('study.view', view); syncViewBar(); renderMain(); },
       }, v.label));
     }
     function syncViewBar() {
