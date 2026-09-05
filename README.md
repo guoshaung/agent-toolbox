@@ -72,8 +72,10 @@ npm run dist:win
 - **背熟标记**：每个模板可标记，侧栏显示 `已背熟 x/y`
 - **自己加模板**：任何模块下都能加，也能把 AI 从网页里提取的代码片段一键存成模板
 - **AI 出题**：专用 Qwen3.5-Flash 先讲一个范围内知识点，再考察基础、边界和迁移；选择题当场判对错并记录掌握度，代码题可让 Qwen 批改，一次 1 道或 5 道
-- **实践敲码**：Notebook 单元格支持 `＋` 新增、`−` 删除、独立运行和保留输出；覆盖 Python、Linux 命令、MySQL 常用 SQL、Requests、MATLAB/Octave、uv、LangChain、PyTorch、Transformers、FastAPI、Matplotlib 和 Pandas。Python/框架轨道可用 uv 创建独立 `.venv` 并安装依赖，SQL 使用临时 SQLite 数据库覆盖常用 MySQL 语法
+- **实践敲码**：Notebook 单元格支持 `＋` 新增、`−` 删除、独立运行和保留输出；输出下方可直接输入第三方包名并安装到统一的“我的学习环境”。覆盖 Python、Linux 命令、MySQL 常用 SQL、Requests、MATLAB/Octave、uv、LangChain、PyTorch、Transformers、FastAPI、Matplotlib 和 Pandas。Python/框架轨道用 uv 创建共享 `.venv` 并安装依赖，切换领域不会丢环境，SQL 使用临时 SQLite 数据库覆盖常用 MySQL 语法
 - **实践里的代码提示**：光标放到当前行会显示语法和作用；`import`、`from ... import ...`、Linux 命令和 SQL 子句优先用本地规则即时解释，不消耗 Token。复杂行可点「AI 解释当前行」，相关 Python/Linux/MySQL 文档可直接联动到「文档」工具
+- **实践里的环境与 Notebook**：学习区内置终端可直接执行 `uv` / `python`，所有 Python 轨道共用一个隔离 `.venv`；支持第三方依赖安装、跨单元格变量复用、全部运行、清空输出、自动保存，以及 `.ipynb` 导入/导出
+- **代码记事本编辑体验**：文件树、项目级搜索、独立标签页、符号大纲、调用关系图、查找/替换、命令面板、代码补全、自动缩进、括号配对、注释快捷键和项目文件保存都在工具箱内完成；内容默认镜像到本地 `userData/notebooks/notebook.json`，也可以直接把 VSCode / Finder 的学习文件拖进窗口自动归档并打开
 - **自定义 MCP**：Skill 工厂里可登记本地 stdio 或远程 HTTP/SSE 服务，生成标准配置并写入 Claude Desktop、Claude Code、OpenCode 或 Codex；已有配置会先备份为 `.bak`
 - **知识网站**：预置 28 个官方文档/经典教程；「AI 找站」按领域推荐；「分析知识点」用内置浏览器真实打开任意网址，抓正文交给 AI 整理成可复习的知识点
 

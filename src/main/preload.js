@@ -17,6 +17,7 @@ contextBridge.exposeInMainWorld('toolbox', {
   files: {
     /** 打开选图对话框，返回 { path, name, mime, base64 } 或 null（用户取消） */
     pickImage: () => ipcRenderer.invoke('files:pickImage'),
+    pickText: (payload) => ipcRenderer.invoke('files:pickText', payload),
     pickPetSkin: () => ipcRenderer.invoke('files:pickPetSkin'),
     saveImage: (payload) => ipcRenderer.invoke('files:saveImage', payload),
     saveText: (payload) => ipcRenderer.invoke('files:saveText', payload),
@@ -103,6 +104,10 @@ contextBridge.exposeInMainWorld('toolbox', {
     environment: () => ipcRenderer.invoke('practice:environment'),
     /** 用 uv 为当前 Python / 框架轨道创建隔离虚拟环境并安装依赖 */
     setup: (payload) => ipcRenderer.invoke('practice:setup', payload),
+    /** 把用户输入的第三方包安装到当前实践轨道的 uv 虚拟环境 */
+    install: (payload) => ipcRenderer.invoke('practice:install', payload),
+    /** 在共享学习环境目录中运行受控终端命令，适合直接学习 uv */
+    terminal: (payload) => ipcRenderer.invoke('practice:terminal', payload),
   },
 
   dock: {
@@ -214,6 +219,13 @@ contextBridge.exposeInMainWorld('toolbox', {
     createFile: (payload) => ipcRenderer.invoke('notebook:createFile', payload),
     /** 保存已打开的项目文件 */
     writeFile: (payload) => ipcRenderer.invoke('notebook:writeFile', payload),
+    /** 在项目目录内搜索文本，返回文件、行号和匹配行 */
+    searchProject: (payload) => ipcRenderer.invoke('notebook:searchProject', payload),
+    /** 把记事本内容镜像保存到工具箱 userData/notebooks */
+    saveLocal: (payload) => ipcRenderer.invoke('notebook:saveLocal', payload),
+    loadLocal: () => ipcRenderer.invoke('notebook:loadLocal'),
+    /** 导入从 VSCode / Finder 拖入的学习文件，并复制到工具箱本地归档 */
+    importFiles: (paths) => ipcRenderer.invoke('notebook:importFiles', paths),
   },
 
   switcher: {

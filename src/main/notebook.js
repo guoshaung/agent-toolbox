@@ -193,6 +193,11 @@ const TREE_SKIP = new Set(['node_modules', '.git', 'dist', 'build', 'out', '__py
   '.pytest_cache', '.mypy_cache', 'coverage', '.gradle']);
 const MAX_ENTRIES = 600;
 const TEXT_MAX = 2 * 1024 * 1024;
+const SEARCH_EXT = new Set(['py', 'js', 'ts', 'jsx', 'tsx', 'java', 'go', 'rs', 'c', 'h', 'cpp', 'hpp', 'cs', 'rb', 'php', 'swift', 'kt', 'scala', 'sh', 'sql', 'vue', 'svelte', 'json', 'yaml', 'yml', 'toml', 'md', 'html', 'css', 'scss']);
+const MAX_SEARCH_FILES = 5000;
+const MAX_SEARCH_RESULTS = 300;
+const LOCAL_NOTEBOOK_MAX = 30 * 1024 * 1024;
+const IMPORT_FILE_MAX = 4 * 1024 * 1024;
 
 /** 把路径限制在项目根以内，realpath 之后再比一次，防 ../ 和软链跳出去 */
 async function safeResolve(root, relPath) {
@@ -307,7 +312,110 @@ async function writeFile({ root, relPath, content = '', create = false }) {
   }
 }
 
-function registerNotebookIpc(ipcMain, { dialog, getWindow }) {
+async function searchProject({ root, query, caseSensitive = false } = {}) {
+  if (!root || !String(query || '').trim()) return { ok: false, error: '缺少项目目录或搜索内容。' };
+  const needle = String(query).trim();
+  let realRoot;
+  try { realRoot = await fsp.realpath(root); } catch { return { ok: false, error: '项目目录不存在。' }; }
+  const results = [];
+  const queue = [''];
+  let scannedFiles = 0;
+  while (queue.length && scannedFiles < MAX_SEARCH_FILES && results.length < MAX_SEARCH_RESULTS) {
+    const relDir = queue.shift();
+    let entries;
+    try { entries = await fsp.readdir(path.join(realRoot, relDir), { withFileTypes: true }); } catch { continue; }
+    for (const entry of entries) {
+      if (results.length >= MAX_SEARCH_RESULTS || scannedFiles >= MAX_SEARCH_FILES) break;
+      if (entry.name.startsWith('.') || SKIP_DIRS.has(entry.name)) continue;
+      const relPath = path.join(relDir, entry.name);
+      if (entry.isDirectory()) { queue.push(relPath); continue; }
+      const ext = path.extname(entry.name).slice(1).toLowerCase();
+      if (!SEARCH_EXT.has(ext)) continue;
+      scannedFiles += 1;
+      let buffer;
+      try {
+        const stat = await fsp.stat(path.join(realRoot, relPath));
+        if (stat.size > TEXT_MAX || stat.size === 0) continue;
+        buffer = await fsp.readFile(path.join(realRoot, relPath));
+      } catch { continue; }
+      if (buffer.subarray(0, 8192).includes(0)) continue;
+      const text = buffer.toString('utf8');
+      const source = caseSensitive ? text : text.toLowerCase();
+      const target = caseSensitive ? needle : needle.toLowerCase();
+      let offset = 0;
+      while (offset <= source.length && results.length < MAX_SEARCH_RESULTS) {
+        const hit = source.indexOf(target, offset);
+        if (hit < 0) break;
+        const line = source.slice(0, hit).split('\n').length;
+        const lineStart = source.lastIndexOf('\n', hit - 1) + 1;
+        const lineEnd = source.indexOf('\n', hit);
+        results.push({ relPath: relPath.split(path.sep).join('/'), line, text: text.slice(lineStart, lineEnd < 0 ? text.length : lineEnd).trimEnd(), column: hit - lineStart + 1 });
+        offset = hit + Math.max(1, target.length);
+      }
+    }
+  }
+  return { ok: true, results, scannedFiles, truncated: scannedFiles >= MAX_SEARCH_FILES || results.length >= MAX_SEARCH_RESULTS };
+}
+
+function localNotebookDirectory(getUserDataPath) {
+  return path.join(getUserDataPath(), 'notebooks');
+}
+
+async function saveLocalNotebook(getUserDataPath, { snippets = [], currentId = null } = {}) {
+  const directory = localNotebookDirectory(getUserDataPath);
+  const payload = JSON.stringify({ version: 1, currentId, snippets }, null, 2);
+  if (Buffer.byteLength(payload, 'utf8') > LOCAL_NOTEBOOK_MAX) return { ok: false, error: '本地记事本内容超过 30MB，暂时没有保存。' };
+  try {
+    await fsp.mkdir(directory, { recursive: true });
+    const target = path.join(directory, 'notebook.json');
+    const temporary = `${target}.tmp-${process.pid}`;
+    await fsp.writeFile(temporary, payload, 'utf8');
+    await fsp.rename(temporary, target);
+    return { ok: true, path: target };
+  } catch (err) {
+    return { ok: false, error: `本地记事本保存失败：${err.message}` };
+  }
+}
+
+async function loadLocalNotebook(getUserDataPath) {
+  const target = path.join(localNotebookDirectory(getUserDataPath), 'notebook.json');
+  try {
+    const stat = await fsp.stat(target);
+    if (stat.size > LOCAL_NOTEBOOK_MAX) return { ok: false, error: '本地记事本文件超过 30MB。' };
+    const data = JSON.parse(await fsp.readFile(target, 'utf8'));
+    return { ok: true, path: target, currentId: data.currentId || null, snippets: Array.isArray(data.snippets) ? data.snippets : [] };
+  } catch (err) {
+    if (err.code === 'ENOENT') return { ok: true, path: target, currentId: null, snippets: [] };
+    return { ok: false, error: `本地记事本读取失败：${err.message}` };
+  }
+}
+
+async function importLocalFiles(getUserDataPath, input) {
+  const paths = Array.isArray(input) ? input : input?.paths;
+  if (!Array.isArray(paths) || !paths.length) return { ok: false, error: '没有拿到要导入的文件。' };
+  const allowed = new Set(['py', 'js', 'ts', 'jsx', 'tsx', 'java', 'go', 'rs', 'c', 'h', 'cpp', 'hpp', 'cs', 'rb', 'php', 'swift', 'kt', 'scala', 'sh', 'sql', 'vue', 'svelte', 'json', 'yaml', 'yml', 'toml', 'md', 'txt', 'ipynb']);
+  const directory = path.join(localNotebookDirectory(getUserDataPath), 'imported');
+  await fsp.mkdir(directory, { recursive: true });
+  const items = [];
+  for (const rawPath of paths.slice(0, 30)) {
+    if (typeof rawPath !== 'string') continue;
+    let stat;
+    try { stat = await fsp.stat(rawPath); } catch { continue; }
+    if (!stat.isFile() || stat.size > IMPORT_FILE_MAX) continue;
+    const ext = path.extname(rawPath).slice(1).toLowerCase();
+    if (!allowed.has(ext)) continue;
+    const buffer = await fsp.readFile(rawPath);
+    if (buffer.subarray(0, 8192).includes(0)) continue;
+    const base = path.basename(rawPath).replace(/[^\w.\-一-龥]/g, '_') || `学习文件.${ext}`;
+    let target = path.join(directory, base);
+    if (fs.existsSync(target)) target = path.join(directory, `${Date.now()}-${base}`);
+    await fsp.writeFile(target, buffer);
+    items.push({ name: base, ext, path: target, sourcePath: rawPath, content: buffer.toString('utf8') });
+  }
+  return { ok: true, items, imported: items.length, skipped: Math.max(0, paths.length - items.length) };
+}
+
+function registerNotebookIpc(ipcMain, { dialog, getWindow, getUserDataPath }) {
   ipcMain.handle('notebook:pickFolder', async () => {
     const result = await dialog.showOpenDialog(getWindow?.(), {
       title: '打开项目文件夹',
@@ -322,6 +430,10 @@ function registerNotebookIpc(ipcMain, { dialog, getWindow }) {
   ipcMain.handle('notebook:readFile', (_e, payload) => readFile(payload || {}));
   ipcMain.handle('notebook:createFile', (_e, payload) => writeFile({ ...(payload || {}), create: true }));
   ipcMain.handle('notebook:writeFile', (_e, payload) => writeFile(payload || {}));
+  ipcMain.handle('notebook:searchProject', (_e, payload) => searchProject(payload || {}));
+  ipcMain.handle('notebook:saveLocal', (_e, payload) => saveLocalNotebook(getUserDataPath, payload || {}));
+  ipcMain.handle('notebook:loadLocal', () => loadLocalNotebook(getUserDataPath));
+  ipcMain.handle('notebook:importFiles', (_e, payload) => importLocalFiles(getUserDataPath, payload));
   ipcMain.handle('notebook:folderInfo', (_e, root) => ({
     root, name: path.basename(root || ''), hasGraph: !!(root && graphPathIn(root)),
   }));
@@ -345,4 +457,4 @@ function registerNotebookIpc(ipcMain, { dialog, getWindow }) {
   ipcMain.handle('notebook:readSource', (_e, payload) => readSource(payload || {}));
 }
 
-module.exports = { registerNotebookIpc, findGraphs, loadGraph, readSource, describeGraph, listDir, readFile, writeFile };
+module.exports = { registerNotebookIpc, findGraphs, loadGraph, readSource, describeGraph, listDir, readFile, searchProject, saveLocalNotebook, loadLocalNotebook, importLocalFiles, writeFile };

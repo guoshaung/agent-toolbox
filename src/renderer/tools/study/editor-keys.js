@@ -292,7 +292,7 @@ export function attachEditorKeys(area, getTrackId) {
     }
 
     // ---- Enter：保持缩进，遇到 : 或 { 再多缩一层 ----
-    if (event.key === 'Enter' && !meta && !event.isComposing) {
+    if (event.key === 'Enter' && !meta && !event.shiftKey && !event.isComposing) {
       event.preventDefault();
       const upto = info.text.slice(0, info.pos - info.start).trimEnd();
       const deeper = /[:{[(]$/.test(upto);

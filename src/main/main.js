@@ -1203,7 +1203,7 @@ function registerIpc() {
   registerDocSearchIpc(ipcMain);
 
   // 代码记事本：读取 Understand-Anything 的知识图谱 + 按行号回读源码
-  registerNotebookIpc(ipcMain, { dialog, getWindow: () => mainWindow });
+  registerNotebookIpc(ipcMain, { dialog, getWindow: () => mainWindow, getUserDataPath: () => app.getPath('userData') });
 
   ipcMain.handle('config:all', () => safeConfig());
   ipcMain.handle('config:get', (_e, key, fallback) => {
@@ -1458,6 +1458,19 @@ function registerIpc() {
       mime,
       base64: fs.readFileSync(filePath).toString('base64'),
     };
+  });
+
+  ipcMain.handle('files:pickText', async (_event, payload = {}) => {
+    const result = await dialog.showOpenDialog(mainWindow, {
+      title: payload.title || '打开学习文件',
+      properties: ['openFile'],
+      filters: [{ name: '学习文件', extensions: ['ipynb', 'json', 'txt', 'md', 'py'] }],
+    });
+    if (result.canceled || !result.filePaths.length) return null;
+    const filePath = result.filePaths[0];
+    const stat = fs.statSync(filePath);
+    if (stat.size > 30 * 1024 * 1024) return { ok: false, error: '文件超过 30MB，无法导入。' };
+    return { ok: true, path: filePath, name: path.basename(filePath), content: fs.readFileSync(filePath, 'utf8') };
   });
 
   ipcMain.handle('files:saveImage', async (_event, payload = {}) => {
@@ -2055,8 +2068,10 @@ function registerIpc() {
   ipcMain.handle('coach:install', () => installCoachExtension());
 
   ipcMain.handle('practice:environment', () => practiceRunner.environment());
-  ipcMain.handle('practice:run', (_e, payload = {}) => practiceRunner.run(payload.track, payload.code, { timeout: payload.timeout }));
+  ipcMain.handle('practice:run', (_e, payload = {}) => practiceRunner.run(payload.track, payload.code, { timeout: payload.timeout, prelude: payload.prelude }));
   ipcMain.handle('practice:setup', (_e, payload = {}) => practiceRunner.setup(payload.track));
+  ipcMain.handle('practice:install', (_e, payload = {}) => practiceRunner.install(payload.track, payload.packages));
+  ipcMain.handle('practice:terminal', (_e, payload = {}) => practiceRunner.terminal(payload.command));
 
   // ---- 专注 · AI 情报：RSS 快报由主进程代取（渲染进程 CSP 不放行跨域请求） ----
   ipcMain.handle('news:fetchFeed', (_e, url) => newsFeed.fetchFeed(url));
@@ -2101,19 +2116,27 @@ if (!app.requestSingleInstanceLock()) {
  * （在文档页里按没反应就是这个原因）。
  * 解法是在主进程给每个 webContents 挂 before-input-event，截下来转发给主窗口。
  */
+let switcherHolding = false;   // 面板是不是正被「按住 Ctrl」这个状态撑着
+
 function forwardSwitcherKeys(contents) {
   contents.on('before-input-event', (event, input) => {
     if (input.type !== 'keyDown' && input.type !== 'keyUp') return;
-    const ctrl = input.control || input.modifiers?.includes('control');
-    const isTab = input.key === 'Tab';
-    const isCtrlKey = input.key === 'Control';
-    // 只关心两件事：Ctrl+Tab（翻页）和松开 Ctrl（确认）
-    if (!(ctrl && isTab) && !isCtrlKey) return;
     if (!mainWindow || mainWindow.isDestroyed()) return;
-    if (input.type === 'keyDown' && ctrl && isTab) {
+    const ctrl = input.control || input.modifiers?.includes('control');
+
+    if (input.type === 'keyDown' && ctrl && input.key === 'Tab') {
       event.preventDefault();
+      switcherHolding = true;
       mainWindow.webContents.send('switcher:step', { back: Boolean(input.shift) });
-    } else if (input.type === 'keyUp' && isCtrlKey) {
+      return;
+    }
+    if (!switcherHolding) return;
+    // 收尾两条路径都要留：
+    //   1) Control 的 keyUp —— **不看 input.control**。这一下上报的修饰键状态
+    //      可能还带着 control，只用 !ctrl 判会把「手松开」这条主路径判没了。
+    //   2) 任何显示 Ctrl 已松的输入 —— 兜住焦点在 webview 之间跳、keyUp 整个丢掉。
+    if ((input.type === 'keyUp' && input.key === 'Control') || !ctrl) {
+      switcherHolding = false;
       mainWindow.webContents.send('switcher:commit');
     }
   });

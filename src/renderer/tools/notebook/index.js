@@ -55,6 +55,7 @@ export default {
     let wordWrap = Boolean(config.get('notebook.wordWrap', false));
 
     const current = () => snippets.find((s) => s.id === currentId) || snippets[0] || null;
+    const persistLocalSoon = debounce(() => window.toolbox.notebook.saveLocal({ snippets, currentId }), 450);
 
     // ---------- 顶部栏 ----------
     const snippetSelect = h('select', { class: 'field field--sm nb__snippets', onchange: () => {
@@ -64,6 +65,7 @@ export default {
       loadCurrent();
       syncFileActions();
     } });
+    const tabBar = h('div', { class: 'nb__tabs' });
 
     const langSelect = h('select', { class: 'field field--sm', onchange: () => {
       const snippet = current();
@@ -91,6 +93,105 @@ export default {
 
     const graphButton = h('button', { class: 'btn btn--sm', onclick: () => openGraphPicker() }, '挂载图谱');
 
+    const findInput = h('input', { class: 'field field--sm nb__find-input', placeholder: '查找当前文件' });
+    const replaceInput = h('input', { class: 'field field--sm nb__replace-input', placeholder: '替换为（可留空）' });
+    const findCounter = h('span', { class: 'faint nb__find-counter' }, '');
+    const findPanel = h('div', { class: 'nb__find-panel', hidden: true },
+      h('div', { class: 'nb__find-row' },
+        h('span', { class: 'nb__find-label' }, '查找'), findInput,
+        h('button', { class: 'btn btn--icon', title: '上一个（Shift+Enter）', onclick: () => selectFind(-1) }, '‹'),
+        h('button', { class: 'btn btn--icon', title: '下一个（Enter）', onclick: () => selectFind(1) }, '›'),
+        findCounter,
+        h('button', { class: 'btn btn--icon', title: '关闭（Esc）', onclick: closeFindPanel }, '×'),
+      ),
+      h('div', { class: 'nb__find-row' },
+        h('span', { class: 'nb__find-label' }, '替换'), replaceInput,
+        h('button', { class: 'btn btn--sm', onclick: replaceCurrent }, '替换'),
+        h('button', { class: 'btn btn--sm', onclick: replaceAll }, '全部替换'),
+      ),
+    );
+
+    function findMatches() {
+      const query = findInput.value;
+      if (!query) return [];
+      const matches = [];
+      let start = 0;
+      while (start <= editor.value.length) {
+        const index = editor.value.indexOf(query, start);
+        if (index < 0) break;
+        matches.push(index);
+        start = index + Math.max(1, query.length);
+      }
+      return matches;
+    }
+
+    function updateFindCounter() {
+      const matches = findMatches();
+      if (!matches.length) { findCounter.textContent = findInput.value ? '无匹配' : ''; return matches; }
+      const currentIndex = Math.max(0, matches.findIndex((index) => index >= editor.selectionStart));
+      findCounter.textContent = `${currentIndex + 1} / ${matches.length}`;
+      return matches;
+    }
+
+    function selectFind(direction = 1) {
+      const query = findInput.value;
+      if (!query) return updateFindCounter();
+      const matches = findMatches();
+      if (!matches.length) return updateFindCounter();
+      const current = direction > 0 ? editor.selectionEnd : editor.selectionStart - 1;
+      let target = direction > 0 ? matches.findIndex((index) => index >= current) : matches.findLastIndex((index) => index <= current);
+      if (target < 0) target = direction > 0 ? 0 : matches.length - 1;
+      editor.focus();
+      editor.setSelectionRange(matches[target], matches[target] + query.length);
+      updateFindCounter();
+    }
+
+    function openFindPanel() {
+      findPanel.removeAttribute('hidden');
+      findInput.value = selected || findInput.value;
+      findInput.focus();
+      findInput.select();
+      updateFindCounter();
+    }
+
+    function closeFindPanel() {
+      findPanel.setAttribute('hidden', '');
+      editor.focus();
+    }
+
+    function replaceCurrent() {
+      const query = findInput.value;
+      if (!query) return;
+      if (editor.value.slice(editor.selectionStart, editor.selectionEnd) === query) {
+        const start = editor.selectionStart;
+        editor.value = editor.value.slice(0, start) + replaceInput.value + editor.value.slice(editor.selectionEnd);
+        editor.setSelectionRange(start, start + replaceInput.value.length);
+        editor.dispatchEvent(new Event('input'));
+      }
+      selectFind(1);
+    }
+
+    function replaceAll() {
+      const query = findInput.value;
+      if (!query) return;
+      const matches = findMatches();
+      if (!matches.length) return updateFindCounter();
+      editor.value = editor.value.split(query).join(replaceInput.value);
+      editor.dispatchEvent(new Event('input'));
+      updateFindCounter();
+      toast(`已替换 ${matches.length} 处`, 'good');
+    }
+
+    findInput.addEventListener('input', updateFindCounter);
+    findInput.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter') { event.preventDefault(); selectFind(event.shiftKey ? -1 : 1); }
+      if (event.key === 'Escape') { event.preventDefault(); closeFindPanel(); }
+    });
+    replaceInput.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter') { event.preventDefault(); replaceCurrent(); }
+      if (event.key === 'Escape') { event.preventDefault(); closeFindPanel(); }
+    });
+
     // ---------- 主体 ----------
     const editor = h('textarea', {
       class: 'field nb__editor',
@@ -107,6 +208,16 @@ export default {
         reanalyze();
       }, 320),
       onkeydown: (e) => {
+        if ((e.ctrlKey || e.metaKey) && e.key === ' ') {
+          e.preventDefault();
+          openCompletion();
+          return;
+        }
+        if (e.key === 'Escape' && !completionPanel.hidden) {
+          e.preventDefault();
+          closeCompletion();
+          return;
+        }
         // Tab 插入两个空格而不是把焦点丢出去 —— 写代码的基本功
         if (e.key !== 'Tab') return;
         e.preventDefault();
@@ -115,6 +226,61 @@ export default {
         editor.selectionStart = editor.selectionEnd = start + 2;
         editor.dispatchEvent(new Event('input'));
       },
+    });
+
+    let completionIndex = 0;
+    const completionList = h('div', { class: 'nb__completion-list' });
+    const completionPanel = h('div', { class: 'nb__completion-panel', hidden: true, tabindex: '-1' }, completionList);
+
+    function completionPrefix() {
+      const before = editor.value.slice(0, editor.selectionStart || 0);
+      return before.match(/[A-Za-z_$一-龥][\w$一-龥]*$/)?.[0] || '';
+    }
+
+    function completionCandidates() {
+      const lang = LANGUAGES[langSelect.value] || LANGUAGES.plain;
+      const symbols = analysis ? [...analysis.symbols.keys()] : [];
+      const words = [...(lang.keywords || []), ...(lang.builtins || []), ...symbols];
+      const prefix = completionPrefix().toLowerCase();
+      return [...new Set(words.map((word) => String(word)))].filter((word) => !prefix || word.toLowerCase().startsWith(prefix)).slice(0, 30);
+    }
+
+    function renderCompletion() {
+      const visible = completionCandidates();
+      completionIndex = Math.max(0, Math.min(completionIndex, Math.max(0, visible.length - 1)));
+      completionList.replaceChildren(...visible.map((word, index) => h('button', {
+        class: `nb__completion-item${index === completionIndex ? ' is-active' : ''}`,
+        onclick: () => applyCompletion(word),
+      }, word)));
+      if (!visible.length) completionList.append(h('div', { class: 'faint nb__hint' }, '没有匹配的补全'));
+    }
+
+    function openCompletion() {
+      completionIndex = 0;
+      renderCompletion();
+      completionPanel.removeAttribute('hidden');
+      completionPanel.focus();
+    }
+
+    function closeCompletion() { completionPanel.setAttribute('hidden', ''); }
+
+    function applyCompletion(word) {
+      const prefix = completionPrefix();
+      const end = editor.selectionStart || 0;
+      const start = end - prefix.length;
+      editor.value = editor.value.slice(0, start) + word + editor.value.slice(end);
+      editor.setSelectionRange(start + word.length, start + word.length);
+      editor.dispatchEvent(new Event('input'));
+      closeCompletion();
+      editor.focus();
+    }
+
+    completionPanel.addEventListener('keydown', (event) => {
+      const visible = completionCandidates();
+      if (event.key === 'Escape') { event.preventDefault(); closeCompletion(); editor.focus(); }
+      if (event.key === 'ArrowDown') { event.preventDefault(); completionIndex = Math.min(Math.max(0, visible.length - 1), completionIndex + 1); renderCompletion(); }
+      if (event.key === 'ArrowUp') { event.preventDefault(); completionIndex = Math.max(0, completionIndex - 1); renderCompletion(); }
+      if (event.key === 'Enter' && visible[completionIndex]) { event.preventDefault(); applyCompletion(visible[completionIndex]); }
     });
 
     // Markdown 源码栏（上栏）。以前它是个纯藏起来的中转变量，
@@ -528,6 +694,7 @@ export default {
     // ---------- 片段管理 ----------
     function persist() {
       config.set('notebook.snippets', snippets);
+      persistLocalSoon();
     }
 
     function newSnippet(code = '', title = '') {
@@ -547,6 +714,26 @@ export default {
       loadCurrent();
       syncFileActions();
       return snippet;
+    }
+
+    function closeSnippet(snippet) {
+      const index = snippets.findIndex((item) => item.id === snippet?.id);
+      if (index < 0) return;
+      snippets = snippets.filter((item) => item.id !== snippet.id);
+      if (!snippets.length) {
+        newSnippet();
+        return;
+      }
+      if (currentId === snippet.id) {
+        currentId = snippets[Math.min(index, snippets.length - 1)].id;
+        selected = null;
+        config.set('notebook.currentId', currentId);
+        loadCurrent();
+      } else {
+        persist();
+        renderSnippetOptions();
+      }
+      syncFileActions();
     }
 
     function syncFileActions() {
@@ -608,6 +795,20 @@ export default {
           `${snippet.title}（${lines} 行）`));
       }
       if (current()) snippetSelect.value = current().id;
+      tabBar.replaceChildren(...snippets.map((snippet) => {
+        const tab = h('div', { class: `nb__tab${snippet.id === currentId ? ' is-active' : ''}` });
+        tab.append(
+          h('button', { class: 'nb__tab-main', title: snippet.title, onclick: () => {
+            currentId = snippet.id;
+            config.set('notebook.currentId', currentId);
+            selected = null;
+            loadCurrent();
+            syncFileActions();
+          } }, snippet.title),
+          h('button', { class: 'nb__tab-close', title: `关闭 ${snippet.title}`, onclick: (event) => { event.stopPropagation(); closeSnippet(snippet); } }, '×'),
+        );
+        return tab;
+      }));
     }
 
     function loadCurrent() {
@@ -688,6 +889,7 @@ export default {
       mainEl.classList.toggle('nb__main--markdown', markdown);
       markdownEditor.hidden = !markdown;
       mdSplit.hidden = !markdown;
+      completionPanel.hidden = markdown || !editing;
       // 关键：以前这里不调 setMode()，代码模式的 editor / codeView 就留在 markdown 模式里，
       // 于是上面多出一栏「用代码高亮渲染 markdown」的残留面板，看着满是毛病。
       setMode();
@@ -1044,6 +1246,31 @@ export default {
       node.scrollIntoView({ block: 'center', behavior: 'smooth' });
       node.classList.add('is-flash');
       setTimeout(() => node.classList.remove('is-flash'), 900);
+    }
+
+    function openGoToLine() {
+      const input = h('input', { class: 'field nb__goto-input', type: 'number', min: '1', placeholder: '输入行号，例如 42' });
+      const overlay = h('div', { class: 'nb__picker nb__goto-line' },
+        h('div', { class: 'nb__picker-card nb__goto-card' },
+          h('div', { class: 'nb__goto-head' }, h('h3', { class: 'card__title' }, '跳转到行'), h('span', { style: { flex: 1 } }), h('span', { class: 'faint' }, 'Esc 关闭')),
+          h('div', { class: 'nb__goto-form' }, input, h('button', { class: 'btn btn--sm btn--primary', onclick: go }, '跳转')),
+        ),
+      );
+      function go() {
+        const line = Math.max(1, Number(input.value) || 1);
+        overlay.remove();
+        if (editing) {
+          const lines = editor.value.split('\n');
+          const start = lines.slice(0, Math.min(line - 1, lines.length - 1)).join('\n').length + (line > 1 ? 1 : 0);
+          editor.focus();
+          editor.setSelectionRange(start, start);
+          const lineHeight = parseFloat(getComputedStyle(editor).lineHeight) || 22;
+          editor.scrollTop = Math.max(0, (line - 1) * lineHeight - editor.clientHeight / 2);
+        } else jumpToLine(line);
+      }
+      input.addEventListener('keydown', (event) => { if (event.key === 'Enter') go(); if (event.key === 'Escape') overlay.remove(); });
+      root.append(overlay);
+      input.focus();
     }
 
     // ---------- 右侧详情 ----------
@@ -1519,6 +1746,107 @@ export default {
     fontSelect.value = NOTEBOOK_FONTS[notebookFont] ? notebookFont : 'jetbrains';
     fontSizeSelect.value = String([12, 13, 14, 16, 18].includes(notebookFontSize) ? notebookFontSize : 13);
     wrapBtn.classList.toggle('is-active', wordWrap);
+
+    async function openProjectSearch() {
+      if (!tree.root) return toast('先打开一个项目文件夹，再做项目级搜索', 'info');
+      const query = h('input', { class: 'field nb__project-search-input', placeholder: '搜索当前项目，例如 readFile' });
+      const caseToggle = h('input', { type: 'checkbox' });
+      const resultList = h('div', { class: 'nb__project-search-results' }, h('div', { class: 'faint nb__hint' }, '输入关键词后回车搜索。'));
+      const overlay = h('div', { class: 'nb__picker nb__project-search' },
+        h('div', { class: 'nb__picker-card nb__project-search-card' },
+          h('div', { class: 'nb__project-search-head' },
+            h('h3', { class: 'card__title' }, '搜索项目'),
+            h('span', { style: { flex: 1 } }),
+            h('button', { class: 'btn btn--sm btn--ghost', onclick: () => overlay.remove() }, '关闭'),
+          ),
+          h('div', { class: 'nb__project-search-form' }, query, h('label', { class: 'faint' }, caseToggle, ' 区分大小写'), h('button', { class: 'btn btn--sm btn--primary', onclick: search }, '搜索')),
+          resultList,
+        ),
+      );
+
+      async function search() {
+        const value = query.value.trim();
+        if (!value) return;
+        resultList.replaceChildren(h('div', { class: 'faint nb__hint' }, '搜索中…'));
+        const found = await window.toolbox.notebook.searchProject({ root: tree.root, query: value, caseSensitive: caseToggle.checked });
+        if (!found.ok) return resultList.replaceChildren(h('div', { class: 'faint nb__hint' }, found.error || '搜索失败'));
+        if (!found.results?.length) return resultList.replaceChildren(h('div', { class: 'faint nb__hint' }, `没有找到“${value}”`));
+        resultList.replaceChildren(...found.results.map((item) => h('button', {
+          class: 'nb__project-search-result',
+          onclick: () => openProjectSearchResult(item, overlay),
+        },
+          h('strong', {}, `${item.relPath}:L${item.line}`),
+          h('span', { class: 'faint' }, item.text),
+        )));
+        if (found.truncated) resultList.append(h('div', { class: 'faint nb__hint' }, `结果过多，已展示前 ${found.results.length} 条`));
+      }
+
+      query.addEventListener('keydown', (event) => { if (event.key === 'Enter') search(); if (event.key === 'Escape') overlay.remove(); });
+      root.append(overlay);
+      query.focus();
+    }
+
+    async function openProjectSearchResult(item, overlay) {
+      const loaded = await window.toolbox.notebook.readFile({ root: tree.root, relPath: item.relPath });
+      if (!loaded.ok) return toast(loaded.error || '文件读取失败', 'bad');
+      const snippet = newSnippet(loaded.code, item.relPath);
+      snippet.origin = { root: tree.root, relPath: item.relPath };
+      snippet.langLocked = false;
+      persist();
+      loadCurrent();
+      syncFileActions();
+      overlay.remove();
+      requestAnimationFrame(() => jumpToLine(item.line));
+    }
+
+    function openCommandPalette() {
+      const commands = [
+        ['新建片段', '在记事本里打开一个新的独立标签', () => newSnippet()],
+        ['切换编辑模式', '在代码编辑和只读分析之间切换', () => editToggle.click()],
+        ['切换 Markdown', '打开或关闭 Markdown 所见即所得模式', () => noteModeToggle.click()],
+        ['项目搜索', '在当前项目的代码和文档中搜索文本', () => openProjectSearch()],
+        ['跳转到行', '输入行号定位代码', () => openGoToLine()],
+        ['保存当前文件', '把当前项目文件写回磁盘', () => saveCurrentFile()],
+        ['打开项目文件夹', '在侧栏挂载一个项目目录', () => openFolder()],
+        ['挂载知识图谱', '连接 Understand-Anything 的跨文件调用图', () => openGraphPicker()],
+        ['打开任务面板', '显示任务拆解和 AI 核验', () => taskToggle.click()],
+      ];
+      let selectedIndex = 0;
+      const query = h('input', { class: 'field nb__command-input', placeholder: '输入命令，例如：新建片段' });
+      const list = h('div', { class: 'nb__command-list' });
+      const overlay = h('div', { class: 'nb__command-palette', onclick: (event) => { if (event.target === overlay) overlay.remove(); } },
+        h('div', { class: 'nb__command-card' },
+          h('div', { class: 'nb__command-head' }, h('strong', {}, '命令面板'), h('span', { class: 'faint' }, 'Esc 关闭')),
+          query,
+          list,
+        ),
+      );
+      function filtered() {
+        const value = query.value.trim().toLowerCase();
+        return commands.filter(([label, hint]) => `${label} ${hint}`.toLowerCase().includes(value));
+      }
+      function renderCommands() {
+        const visible = filtered();
+        selectedIndex = Math.max(0, Math.min(selectedIndex, visible.length - 1));
+        list.replaceChildren(...visible.map(([label, hint, action], index) => h('button', {
+          class: `nb__command-item${index === selectedIndex ? ' is-active' : ''}`,
+          onclick: () => { overlay.remove(); action(); },
+        }, h('strong', {}, label), h('span', { class: 'faint' }, hint))));
+        if (!visible.length) list.append(h('div', { class: 'faint nb__hint' }, '没有匹配的命令'));
+      }
+      query.addEventListener('input', () => { selectedIndex = 0; renderCommands(); });
+      query.addEventListener('keydown', (event) => {
+        const visible = filtered();
+        if (event.key === 'Escape') { event.preventDefault(); overlay.remove(); }
+        if (event.key === 'ArrowDown') { event.preventDefault(); selectedIndex = Math.min(Math.max(0, visible.length - 1), selectedIndex + 1); renderCommands(); }
+        if (event.key === 'ArrowUp') { event.preventDefault(); selectedIndex = Math.max(0, selectedIndex - 1); renderCommands(); }
+        if (event.key === 'Enter' && visible[selectedIndex]) { event.preventDefault(); overlay.remove(); visible[selectedIndex][2](); }
+      });
+      root.append(overlay);
+      renderCommands();
+      query.focus();
+    }
+
     const codeControls = h('span', { class: 'nb__code-controls' },
       langSelect,
       editToggle,
@@ -1535,11 +1863,13 @@ export default {
       fontSelect,
       fontSizeSelect,
       wrapBtn,
+      h('button', { class: 'btn btn--sm', title: '打开命令面板（⌘/Ctrl+Shift+P）', onclick: openCommandPalette }, '⌘ 命令'),
       h('span', { class: 'subbar__sep' }),
       graphLabel,
       graphButton,
+      h('button', { class: 'btn btn--sm', title: '在当前项目中搜索（⌘/Ctrl+Shift+F）', onclick: openProjectSearch }, '项目搜索'),
     );
-    const mainEl = h('div', { class: 'nb__main' }, editor, codeView, markdownShell, tasksPanel);
+    const mainEl = h('div', { class: 'nb__main' }, findPanel, completionPanel, editor, codeView, markdownShell, tasksPanel);
     mdResizeObserver.observe(markdownShell);
     function applyEditorAppearance() {
       const theme = NOTEBOOK_THEMES[notebookTheme] || NOTEBOOK_THEMES.midnight;
@@ -1634,20 +1964,12 @@ export default {
         h('button', { class: 'btn btn--icon', title: '新片段', onclick: () => newSnippet() }, '＋'),
         h('button', {
           class: 'btn btn--icon', title: '删除当前片段',
-          onclick: () => {
-            if (!current()) return;
-            snippets = snippets.filter((s) => s.id !== current().id);
-            currentId = snippets[0]?.id || null;
-            persist();
-            config.set('notebook.currentId', currentId);
-            selected = null;
-            if (!snippets.length) newSnippet();
-            else loadCurrent();
-          },
+          onclick: () => closeSnippet(current()),
         }, '−'),
         codeControls,
       ),
       symbolList,
+      tabBar,
       nbBody,
       newFileModal,
     );
@@ -1660,8 +1982,23 @@ export default {
     // 窗口（或吸附分隔条）变宽变窄时，两栏跟着重新夹取，代码区保底 MAIN_MIN
     window.addEventListener('resize', debounce(applyPaneWidths, 80));
 
-    if (!snippets.length) newSnippet();
-    else loadCurrent();
+    if (!snippets.length) {
+      window.toolbox.notebook.loadLocal().then((local) => {
+        if (snippets.length) return;
+        if (local?.ok && local.snippets?.length) {
+          snippets = local.snippets;
+          currentId = local.currentId || snippets[0].id;
+          config.set('notebook.currentId', currentId);
+          loadCurrent();
+          syncFileActions();
+          return;
+        }
+        newSnippet();
+      }).catch(() => newSnippet());
+    } else {
+      loadCurrent();
+      window.toolbox.notebook.saveLocal({ snippets, currentId });
+    }
 
     syncSideTab();
 
@@ -1671,15 +2008,76 @@ export default {
     const savedFolder = config.get('notebook.folderRoot');
     if (savedFolder) tree.open(savedFolder).then(() => syncSideTab()).catch(() => {});
 
+    async function openDroppedFiles(files) {
+      const paths = [...files].map((file) => file.path).filter(Boolean).slice(0, 30);
+      if (!paths.length) return toast('没有拿到文件路径，请从 Finder 或 VSCode 拖入文件', 'info');
+      const result = await window.toolbox.notebook.importFiles(paths);
+      if (!result.ok) return toast(result.error || '文件导入失败', 'bad');
+      let opened = 0;
+      for (const item of result.items || []) {
+        if (item.ext === 'ipynb') {
+          let document;
+          try { document = JSON.parse(item.content); } catch { continue; }
+          for (const notebookCell of (document.cells || []).filter((cell) => cell.cell_type === 'code').slice(0, 100)) {
+            const source = Array.isArray(notebookCell.source) ? notebookCell.source.join('') : String(notebookCell.source || '');
+            const snippet = newSnippet(source, `${item.name} · cell ${opened + 1}`);
+            snippet.localImport = item.path;
+            opened += 1;
+          }
+        } else {
+          const snippet = newSnippet(item.content, item.name);
+          snippet.localImport = item.path;
+          opened += 1;
+        }
+      }
+      persist();
+      if (opened) toast(`已导入 ${opened} 个学习文件/单元格，并保存到工具本地`, 'good', 5000);
+      else toast('没有找到可打开的文本学习文件', 'info');
+    }
+
+    root.addEventListener('dragover', (event) => {
+      if (!event.dataTransfer?.files?.length) return;
+      event.preventDefault();
+      root.classList.add('nb__file-drop-target');
+    });
+    root.addEventListener('dragleave', (event) => {
+      if (!event.relatedTarget || !root.contains(event.relatedTarget)) root.classList.remove('nb__file-drop-target');
+    });
+    root.addEventListener('drop', async (event) => {
+      if (!event.dataTransfer?.files?.length) return;
+      event.preventDefault();
+      root.classList.remove('nb__file-drop-target');
+      try { await openDroppedFiles(event.dataTransfer.files); } catch (error) { toast(`文件导入失败：${error.message}`, 'bad', 5000); }
+    });
+
     root.addEventListener('keydown', (event) => {
       if (editorMode === 'code' && (event.metaKey || event.ctrlKey) && event.key === 'f') {
         event.preventDefault();
-        symbolInput.focus();
-        symbolInput.select();
+        if (!editing) {
+          editing = true;
+          setMode();
+        }
+        openFindPanel();
+      }
+      if (editorMode === 'code' && (event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 'g') {
+        event.preventDefault();
+        openGoToLine();
+      }
+      if (editorMode === 'code' && (event.metaKey || event.ctrlKey) && event.key.toLowerCase() === 's') {
+        event.preventDefault();
+        saveCurrentFile();
+      }
+      if (editorMode === 'code' && (event.metaKey || event.ctrlKey) && event.shiftKey && event.key.toLowerCase() === 'f') {
+        event.preventDefault();
+        openProjectSearch();
       }
       if (editorMode === 'code' && (event.metaKey || event.ctrlKey) && (event.key === 'e' || event.key === 'E')) {
         event.preventDefault();
         editToggle.click();
+      }
+      if (editorMode === 'code' && (event.metaKey || event.ctrlKey) && event.shiftKey && event.key.toLowerCase() === 'p') {
+        event.preventDefault();
+        openCommandPalette();
       }
     });
 

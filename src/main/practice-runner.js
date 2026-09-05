@@ -9,6 +9,7 @@ const MAX_CODE = 80 * 1024;
 const MAX_OUTPUT = 24 * 1024;
 const DEFAULT_TIMEOUT = 12000;
 const ENV_ROOT = path.join(os.homedir(), '.agent-toolbox', 'practice-envs');
+const SHARED_ENV_ID = 'learning';
 
 const DANGEROUS_SHELL = [
   /(^|[;&|])\s*(sudo|rm\s+-rf|mkfs|shutdown|reboot|halt)\b/i,
@@ -24,7 +25,7 @@ const TRACKS = {
   requests: { label: 'Requests 爬虫', engine: 'python3', extension: '.py' },
   matlab: { label: 'MATLAB / Octave', engine: 'matlab', extension: '.m' },
   uv: { label: 'uv 环境管理', engine: 'uv', extension: '.sh', packages: [] },
-  langchain: { label: 'LangChain', engine: 'python3', extension: '.py', packages: ['langchain-core'] },
+  langchain: { label: 'LangChain', engine: 'python3', extension: '.py', packages: ['langchain'] },
   pytorch: { label: 'PyTorch', engine: 'python3', extension: '.py', packages: ['torch'] },
   transformers: { label: 'Transformers', engine: 'python3', extension: '.py', packages: ['transformers'] },
   fastapi: { label: 'FastAPI', engine: 'python3', extension: '.py', packages: ['fastapi'] },
@@ -72,12 +73,19 @@ function resolveCommand(command) {
 
 function venvPython(trackId) {
   const binary = process.platform === 'win32' ? path.join('Scripts', 'python.exe') : path.join('bin', 'python');
+  return path.join(ENV_ROOT, SHARED_ENV_ID, '.venv', binary);
+}
+
+function legacyVenvPython(trackId) {
+  const binary = process.platform === 'win32' ? path.join('Scripts', 'python.exe') : path.join('bin', 'python');
   return path.join(ENV_ROOT, trackId, '.venv', binary);
 }
 
 function pythonInterpreter(trackId) {
   const isolated = venvPython(trackId);
   if (fs.existsSync(isolated)) return isolated;
+  const legacy = legacyVenvPython(trackId);
+  if (fs.existsSync(legacy)) return legacy;
   return resolveCommand('python3') || null;
 }
 
@@ -85,7 +93,8 @@ function pythonPackageExists(modules, interpreter = 'python3') {
   if (!interpreter || !commandExists(interpreter)) return false;
   const names = Array.isArray(modules) ? modules : [modules];
   try {
-    execFileSync(interpreter, ['-c', `import importlib.util; raise SystemExit(0 if any(importlib.util.find_spec(${JSON.stringify(name)}) for name in ${JSON.stringify(names)}) else 1)`], { stdio: 'ignore', timeout: 3000 });
+    const script = `import importlib.util; names = ${JSON.stringify(names)}; raise SystemExit(0 if any(importlib.util.find_spec(name) for name in names) else 1)`;
+    execFileSync(interpreter, ['-c', script], { stdio: 'ignore', timeout: 3000 });
     return true;
   } catch {
     return false;
@@ -101,6 +110,7 @@ function environment() {
     octave: commandExists('octave-cli') || commandExists('octave'),
     matlab: commandExists('matlab'),
     uv: commandExists('uv'),
+    learningEnv: fs.existsSync(venvPython('learning')),
     langchain: pythonPackageExists(['langchain', 'langchain_core'], pythonInterpreter('langchain')),
     torch: pythonPackageExists('torch', pythonInterpreter('pytorch')),
     transformers: pythonPackageExists('transformers', pythonInterpreter('transformers')),
@@ -128,6 +138,16 @@ function validateCode(trackId, code) {
     return '这条命令包含工具箱拦截的高风险操作，请改成无破坏性的练习命令。';
   }
   return '';
+}
+
+function normalizePackages(value) {
+  const packages = String(value || '').split(/[\s,]+/).map((item) => item.trim()).filter(Boolean);
+  if (!packages.length) return { packages: [], error: '请输入至少一个第三方包名，例如 numpy 或 pandas。' };
+  if (packages.length > 20) return { packages: [], error: '一次最多安装 20 个第三方包。' };
+  const packagePattern = /^[A-Za-z0-9][A-Za-z0-9._-]*(?:(?:==|~=|!=|>=|<=|>|<)[A-Za-z0-9.*+!_-]+)?$/;
+  const invalid = packages.find((item) => !packagePattern.test(item));
+  if (invalid) return { packages: [], error: `包名格式不安全：${invalid}` };
+  return { packages };
 }
 
 function unavailable(trackId, env) {
@@ -189,6 +209,8 @@ async function run(trackId, code, options = {}) {
   const track = TRACKS[trackId];
   const validation = validateCode(trackId, code);
   if (validation) return { ok: false, error: validation };
+  const prelude = String(options.prelude || '');
+  if (prelude.length + String(code || '').length > MAX_CODE) return { ok: false, error: `当前单元格和前置单元格合计超过 ${MAX_CODE} 字节。` };
   const env = environment();
   const missing = unavailable(trackId, env);
   if (missing) return { ok: false, error: missing, environment: env };
@@ -196,7 +218,10 @@ async function run(trackId, code, options = {}) {
   try {
     if (PYTHON_TRACKS.has(trackId)) {
       const interpreter = pythonInterpreter(trackId);
-      return { ...(await runProcess(interpreter, ['-u', '-'], code, cwd, options.timeout)), engine: trackId === 'python' ? 'python3' : interpreter === 'python3' ? 'python3' : `${track.label} · uv .venv` };
+      const source = prelude.trim()
+        ? `import contextlib\nimport io\n_learning_globals = globals()\nwith contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):\n    exec(${JSON.stringify(prelude)}, _learning_globals)\nexec(${JSON.stringify(String(code || ''))}, _learning_globals)\n`
+        : code;
+      return { ...(await runProcess(interpreter, ['-u', '-'], source, cwd, options.timeout)), engine: trackId === 'python' ? 'python3' : interpreter === 'python3' ? 'python3' : `${track.label} · uv .venv` };
     }
     if (SHELL_TRACKS.has(trackId)) {
       const shell = resolveCommand('bash');
@@ -224,7 +249,7 @@ async function setup(trackId) {
   const uv = resolveCommand('uv');
   if (!uv) return { ok: false, error: '没有找到 uv。请先在终端执行：curl -LsSf https://astral.sh/uv/install.sh | sh，然后重启工具。' };
 
-  const envDir = path.join(ENV_ROOT, trackId);
+  const envDir = path.join(ENV_ROOT, SHARED_ENV_ID);
   const envPath = path.join(envDir, '.venv');
   fs.mkdirSync(envDir, { recursive: true });
   const setupTimeout = 240000;
@@ -236,7 +261,45 @@ async function setup(trackId) {
     const installed = await runProcess(uv, ['pip', 'install', '--python', venvPython(trackId), ...track.packages], '', envDir, setupTimeout);
     if (!installed.ok) return { ok: false, error: installed.stderr || installed.stdout || `${track.label} 依赖安装失败。` };
   }
-  return { ok: true, message: `${track.label} 的 uv 虚拟环境已准备好`, environment: environment() };
+  return { ok: true, message: `共享学习环境已准备好（${track.label} 依赖已就绪）`, environment: environment() };
 }
 
-module.exports = { TRACKS, environment, run, setup, validateCode };
+async function install(trackId, packageInput) {
+  const track = TRACKS[trackId];
+  if (!track) return { ok: false, error: '未知实践领域。' };
+  if (!PYTHON_TRACKS.has(trackId)) return { ok: false, error: '只有 Python 和框架轨道支持安装第三方 Python 包。' };
+  const normalized = normalizePackages(packageInput);
+  if (normalized.error) return { ok: false, error: normalized.error };
+  const prepared = await setup(trackId);
+  if (!prepared.ok) return prepared;
+  const uv = resolveCommand('uv');
+  const envDir = path.join(ENV_ROOT, SHARED_ENV_ID);
+  const installed = await runProcess(uv, ['pip', 'install', '--python', venvPython(trackId), ...normalized.packages], '', envDir, 240000);
+  if (!installed.ok) return { ok: false, error: installed.stderr || installed.stdout || '第三方包安装失败。' };
+  return { ok: true, message: `已安装到共享学习环境：${normalized.packages.join(', ')}`, environment: environment() };
+}
+
+async function terminal(command) {
+  const input = String(command || '').trim();
+  if (!input) return { ok: false, error: '请输入一条终端命令。' };
+  if (input.length > MAX_CODE) return { ok: false, error: `终端命令超过 ${MAX_CODE} 字节。` };
+  if (DANGEROUS_SHELL.some((pattern) => pattern.test(input))) {
+    return { ok: false, error: '这条命令包含工具箱拦截的高风险操作，请改成无破坏性的学习命令。' };
+  }
+  const shell = resolveCommand(process.platform === 'win32' ? 'cmd.exe' : 'bash');
+  if (!shell) return { ok: false, error: '当前设备没有可用的终端解释器。' };
+  const envDir = path.join(ENV_ROOT, SHARED_ENV_ID);
+  fs.mkdirSync(envDir, { recursive: true });
+  const uvPath = resolveCommand('uv');
+  const envBin = path.dirname(venvPython('learning'));
+  const pathPrefix = uvPath && process.platform !== 'win32'
+    ? `export PATH=${JSON.stringify(envBin)}:${JSON.stringify(path.dirname(uvPath))}:$PATH\n`
+    : '';
+  const args = process.platform === 'win32'
+    ? ['/d', '/s', '/c', input]
+    : ['-lc', `set -o pipefail\n${pathPrefix}source /dev/stdin`];
+  const result = await runProcess(shell, args, process.platform === 'win32' ? '' : input, envDir, 120000);
+  return { ...result, engine: 'learning-terminal', cwd: envDir, environment: environment() };
+}
+
+module.exports = { TRACKS, environment, install, run, setup, terminal, validateCode };
