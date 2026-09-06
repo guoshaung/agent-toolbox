@@ -2009,7 +2009,7 @@ export default {
     if (savedFolder) tree.open(savedFolder).then(() => syncSideTab()).catch(() => {});
 
     async function openDroppedFiles(files) {
-      const paths = [...files].map((file) => file.path).filter(Boolean).slice(0, 30);
+      const paths = [...files].map((file) => file.path || window.toolbox.files.getPathForFile(file)).filter(Boolean).slice(0, 30);
       if (!paths.length) return toast('没有拿到文件路径，请从 Finder 或 VSCode 拖入文件', 'info');
       const result = await window.toolbox.notebook.importFiles(paths);
       if (!result.ok) return toast(result.error || '文件导入失败', 'bad');
@@ -2036,18 +2036,20 @@ export default {
     }
 
     root.addEventListener('dragover', (event) => {
-      if (!event.dataTransfer?.files?.length) return;
+      if (!Array.from(event.dataTransfer?.types || []).includes('Files') && !event.dataTransfer?.files?.length) return;
       event.preventDefault();
+      event.dataTransfer.dropEffect = 'copy';
       root.classList.add('nb__file-drop-target');
     });
     root.addEventListener('dragleave', (event) => {
       if (!event.relatedTarget || !root.contains(event.relatedTarget)) root.classList.remove('nb__file-drop-target');
     });
     root.addEventListener('drop', async (event) => {
-      if (!event.dataTransfer?.files?.length) return;
+      if (!Array.from(event.dataTransfer?.types || []).includes('Files') && !event.dataTransfer?.files?.length && !event.dataTransfer?.getData('text/uri-list')) return;
       event.preventDefault();
       root.classList.remove('nb__file-drop-target');
-      try { await openDroppedFiles(event.dataTransfer.files); } catch (error) { toast(`文件导入失败：${error.message}`, 'bad', 5000); }
+      const files = event.dataTransfer.files?.length ? event.dataTransfer.files : String(event.dataTransfer.getData('text/uri-list') || '').split(/\r?\n/).filter(Boolean).map((path) => ({ path: decodeURIComponent(path.replace(/^file:\/\//, '')) }));
+      try { await openDroppedFiles(files); } catch (error) { toast(`文件导入失败：${error.message}`, 'bad', 5000); }
     });
 
     root.addEventListener('keydown', (event) => {

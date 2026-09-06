@@ -148,9 +148,10 @@ export default {
       tabStrip.appendChild(h('button', { class: 'docs__tab-add', title: '新标签页', onclick: () => openTab(HOME) }, '＋'));
     }
 
-    function openTab(url, title) {
-      const view = h('webview', { partition: PARTITION, src: url });
-      const tab = { view, title: title || '', url };
+    /** lazy=true 时先建个空壳，等你真的点到它才去加载，避免一次性把几个页面全拉起来。 */
+    function openTab(url, title, { lazy = false, select = true } = {}) {
+      const view = h('webview', { partition: PARTITION, src: lazy ? 'about:blank' : url });
+      const tab = { view, title: title || '', url, pending: lazy ? url : null };
       tabs.push(tab);
       viewHost.appendChild(view);
 
@@ -161,11 +162,18 @@ export default {
       view.addEventListener('did-stop-loading', () => { if (tab === active) syncBar(); });
       view.addEventListener('dom-ready', () => { if (tab === active) syncBar(); });
 
-      selectTab(tab);
+      if (select) selectTab(tab);
+      else renderTabs();
       return tab;
     }
 
     function selectTab(tab) {
+      // 被延迟的标签页，等真的切到它才发请求
+      if (tab && tab.pending) {
+        const url = tab.pending;
+        tab.pending = null;
+        tab.view.loadURL(url);
+      }
       active = tab;
       for (const t of tabs) t.view.style.display = t === tab ? 'flex' : 'none';
       renderTabs();
@@ -295,8 +303,12 @@ export default {
     const savedTabs = config.get('docs.openTabs') || [];
     const savedActive = config.get('docs.activeTab', 0);
     if (savedTabs.length) {
-      for (const item of savedTabs) openTab(item.url, item.title);
-      selectTab(tabs[Math.min(savedActive, tabs.length - 1)] || tabs[0]);
+      const activeIndex = Math.min(Math.max(0, savedActive), savedTabs.length - 1);
+      savedTabs.forEach((item, i) => {
+        // 只有当前那个立刻加载，其余全部挂起 —— 否则一进「文档」就并发拉起十几个页面，
+        // 它们抢带宽也抢主进程，看着就是「打开特别慢」。
+        openTab(item.url, item.title, { lazy: i !== activeIndex, select: i === activeIndex });
+      });
     } else {
       openTab(config.get('docs.lastUrl') || HOME);
     }

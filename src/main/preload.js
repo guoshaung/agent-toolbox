@@ -1,5 +1,5 @@
 'use strict';
-const { contextBridge, ipcRenderer } = require('electron');
+const { contextBridge, ipcRenderer, webUtils } = require('electron');
 
 /**
  * 渲染进程唯一的 Node 能力入口。这里是白名单：没列出来的能力，
@@ -18,6 +18,7 @@ contextBridge.exposeInMainWorld('toolbox', {
     /** 打开选图对话框，返回 { path, name, mime, base64 } 或 null（用户取消） */
     pickImage: () => ipcRenderer.invoke('files:pickImage'),
     pickText: (payload) => ipcRenderer.invoke('files:pickText', payload),
+    getPathForFile: (file) => { try { return webUtils.getPathForFile(file); } catch { return ''; } },
     pickPetSkin: () => ipcRenderer.invoke('files:pickPetSkin'),
     saveImage: (payload) => ipcRenderer.invoke('files:saveImage', payload),
     saveText: (payload) => ipcRenderer.invoke('files:saveText', payload),
@@ -228,6 +229,42 @@ contextBridge.exposeInMainWorld('toolbox', {
     importFiles: (paths) => ipcRenderer.invoke('notebook:importFiles', paths),
   },
 
+  container: {
+    /** 只访问工具箱自己的 userData/container 容器 */
+    list: (relPath) => ipcRenderer.invoke('container:list', relPath),
+    mkdir: (payload) => ipcRenderer.invoke('container:mkdir', payload),
+    organize: (relPath) => ipcRenderer.invoke('container:organize', relPath),
+    applyPlan: (payload) => ipcRenderer.invoke('container:applyPlan', payload),
+    import: (payload) => ipcRenderer.invoke('container:import', payload),
+    open: () => ipcRenderer.invoke('container:open'),
+  },
+
+  dsh: {
+    status: () => ipcRenderer.invoke('dsh:status'),
+    start: () => ipcRenderer.invoke('dsh:start'),
+    stop: () => ipcRenderer.invoke('dsh:stop'),
+    onStatus: (callback) => ipcRenderer.on('dsh:status', (_event, state) => callback(state)),
+  },
+
+  update: {
+    /** 手动检查更新（会弹窗告诉你结果） */
+    check: () => ipcRenderer.invoke('update:check'),
+    current: () => ipcRenderer.invoke('update:current'),
+    openReleases: () => ipcRenderer.invoke('update:openReleases'),
+  },
+
+  shelf: {
+    /** 选一个工具目录，顺便探测该怎么启动 */
+    pickFolder: () => ipcRenderer.invoke('shelf:pickFolder'),
+    probe: (dir) => ipcRenderer.invoke('shelf:probe', dir),
+    probeMany: (dirs) => ipcRenderer.invoke('shelf:probeMany', dirs),
+    start: (payload) => ipcRenderer.invoke('shelf:start', payload),
+    stop: (id) => ipcRenderer.invoke('shelf:stop', id),
+    forget: (id) => ipcRenderer.invoke('shelf:forget', id),
+    status: () => ipcRenderer.invoke('shelf:status'),
+    log: (id) => ipcRenderer.invoke('shelf:log', id),
+  },
+
   switcher: {
     /** 焦点在 webview 里时，Ctrl+Tab 由主进程截获再转发过来 */
     onStep: (cb) => ipcRenderer.on('switcher:step', (_e, payload) => cb(payload || {})),
@@ -273,6 +310,7 @@ contextBridge.exposeInMainWorld('toolbox', {
     setAutoStart: (enabled) => ipcRenderer.invoke('remote:setAutoStart', enabled),
     resolve: (payload) => ipcRenderer.invoke('remote:resolve', payload),
     onCommand: (callback) => ipcRenderer.on('remote:command', (_event, command) => callback(command)),
+    onInbox: (callback) => ipcRenderer.on('remote:inbox', (_event, item) => callback(item)),
   },
 
   shell: {

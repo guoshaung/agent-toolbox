@@ -3,4 +3,7 @@ dist/
 out/
 .DS_Store
 *.log
+mobile/android/local.properties
+mobile/android/.gradle/
+mobile/android/app/build/
 assets/coach-extension/defaults.local.json

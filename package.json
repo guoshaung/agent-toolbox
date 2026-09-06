@@ -1,26 +1,29 @@
 {
   "name": "agent-toolbox",
-  "version": "0.4.3",
+  "version": "0.5.0",
   "description": "个人 Agent 工具箱：科研文献 / 代码阅读 / 文档 / 打字纠错 / 专注 / DeepSeek 快问",
   "private": true,
   "main": "src/main/main.js",
   "scripts": {
     "start": "electron .",
     "dev": "electron . --dev",
-    "dist": "electron-builder --mac dmg",
+    "dist": "electron-builder --mac dmg zip",
     "dist:dir": "electron-builder --mac dir",
-    "dist:win": "electron-builder --win portable --x64",
+    "dist:win": "electron-builder --win nsis portable --x64",
     "icon": "electron scripts/build-icon.js",
     "check": "node --check src/main/main.js && node --check src/main/preload.js && node --test test/*.test.js",
-    "logo": "node scripts/build-logo.js"
+    "logo": "node scripts/build-logo.js",
+    "release": "electron-builder --mac dmg zip --publish always"
   },
   "devDependencies": {
     "electron": "^33.2.0",
     "electron-builder": "^26.15.3"
   },
   "dependencies": {
+    "electron-updater": "^6.8.9",
     "katex": "^0.18.5",
-    "pdfjs-dist": "^4.10.38"
+    "pdfjs-dist": "^4.10.38",
+    "qrcode": "^1.5.4"
   },
   "build": {
     "appId": "cn.macpe.agenttoolbox",
@@ -38,18 +41,77 @@
     "mac": {
       "category": "public.app-category.productivity",
       "icon": "assets/icon.icns",
-      "target": [{ "target": "dmg", "arch": ["arm64"] }]
+      "target": [
+        {
+          "target": "dmg",
+          "arch": [
+            "arm64"
+          ]
+        },
+        {
+          "target": "zip",
+          "arch": [
+            "arm64"
+          ]
+        }
+      ]
     },
     "dmg": {
       "title": "Agent 工具箱",
       "icon": "assets/icon.icns",
       "backgroundColor": "#0f1116",
-      "contents": [{ "x": 190, "y": 250 }, { "x": 510, "y": 250, "type": "link", "path": "/Applications" }]
+      "contents": [
+        {
+          "x": 190,
+          "y": 250
+        },
+        {
+          "x": 510,
+          "y": 250,
+          "type": "link",
+          "path": "/Applications"
+        }
+      ]
     },
     "win": {
       "icon": "assets/icon.png",
-      "target": [{ "target": "portable", "arch": ["x64"] }],
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
       "artifactName": "Agent-Toolbox-${version}-win-${arch}.${ext}"
-    }
+    },
+    "extraResources": [
+      {
+        "from": "container-seed",
+        "to": "container-seed",
+        "filter": [
+          "**/*",
+          "!**/__pycache__/**",
+          "!**/.DS_Store"
+        ]
+      }
+    ],
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "guoshaung",
+        "repo": "agent-toolbox"
+      }
+    ]
   }
 }

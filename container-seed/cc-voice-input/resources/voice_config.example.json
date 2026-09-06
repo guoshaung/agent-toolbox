@@ -1,0 +1,37 @@
+{
+  "device": null,
+  "asr": {
+    "endpoint": "wss://openspeech.bytedance.com/api/v3/sauc/bigmodel_async",
+    "api_key": "",
+    "resource_id": "volc.seedasr.sauc.duration"
+  },
+  "tts": {
+    "api_key": "",
+    "speaker": "zh_female_vv_uranus_bigtts",
+    "resource_id": "seed-tts-2.0",
+    "sample_rate": 24000
+  },
+  "injector": {
+    "app_name": null
+  },
+  "agent": {
+    "provider": "deepseek",
+    "model": "deepseek-v4-pro",
+    "max_tokens": 8192,
+    "temperature": 0.2,
+    "providers": {
+      "deepseek": {
+        "apiKey": "",
+        "apiBase": "https://api.deepseek.com/v1"
+      },
+      "anthropic": {
+        "apiKey": "",
+        "apiBase": "https://api.openai-next.com"
+      },
+      "openai": {
+        "apiKey": "",
+        "apiBase": "https://api.openai-next.com/v1"
+      }
+    }
+  }
+}

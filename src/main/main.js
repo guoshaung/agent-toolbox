@@ -4,6 +4,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const { execFile } = require('node:child_process');
 const { promisify } = require('node:util');
+const QRCode = require('qrcode');
 const {
   app, BrowserWindow, ipcMain, session, shell, dialog, clipboard, nativeTheme, safeStorage, screen,
   nativeImage, globalShortcut,
@@ -19,6 +20,8 @@ const litFetch = require('./lit-fetch');
 const { registerNotebookIpc } = require('./notebook');
 const { registerBiblioIpc } = require('./biblio');
 const { registerDocSearchIpc } = require('./doc-search');
+const { registerShelfIpc, stopAllShelfApps } = require('./app-shelf');
+const { registerUpdaterIpc, startAutoCheck, stopAutoCheck } = require('./updater');
 const { registerCertTrust } = require('./certtrust');
 const translator = require('./translate');
 const ocr = require('./ocr');
@@ -29,6 +32,14 @@ const mcpFactory = require('./mcp-factory');
 const practiceRunner = require('./practice-runner');
 const edgeCookies = require('./edge-cookies');
 const { RemoteControl } = require('./remote-control');
+const { registerContainerIpc, seedContainer } = require('./container-storage');
+const { DshService } = require('./dsh-service');
+
+async function remoteStatusWithQr(state) {
+  const current = state || remoteControl.status();
+  const apkUrl = current.apkUrls?.[0] || '';
+  return { ...current, apkQr: apkUrl ? await QRCode.toDataURL(apkUrl, { width: 320, margin: 2 }) : '' };
+}
 
 const IS_DEV = process.argv.includes('--dev');
 const ICON_PATH = path.join(__dirname, '..', '..', 'assets', 'icon.png');
@@ -64,6 +75,7 @@ let literatureDownloadWaiter;
 let windowDock;
 let quittingForDock = false;
 let remoteControl;
+let dshService;
 const siteFloatWindows = new Map();
 const pendingRemoteCommands = new Map();
 const watchAvatarCache = new Map();
@@ -260,6 +272,8 @@ async function handleRemoteCommand(type, payload = {}) {
     case 'remote.stop':
       setImmediate(() => remoteControl.stop());
       return { stopping: true };
+    case 'remote.inbox.add':
+      return { accepted: true };
     case 'app.show':
       ensureMainWindow({ show: true });
       return { shown: true };
@@ -400,7 +414,13 @@ function relaxPartition(partitionName) {
   const ses = session.fromPartition(partitionName);
   ses.setUserAgent(CHROME_UA);
 
-  ses.webRequest.onHeadersReceived((details, callback) => {
+  // 只拦文档和子框架。
+  // CSP 只在文档响应头上生效，图片/脚本/字体上没有意义 —— 而不加过滤的话，
+  // 页面上每一个子资源（一个内容页两三百个）都要往返一次主进程 JS，
+  // 几百次 IPC 全挤在单线程的主进程里，冷加载实测慢了约 15%。
+  const DOC_ONLY = { urls: ['<all_urls>'], types: ['mainFrame', 'subFrame'] };
+
+  ses.webRequest.onHeadersReceived(DOC_ONLY, (details, callback) => {
     const headers = details.responseHeaders || {};
     for (const key of Object.keys(headers)) {
       const lower = key.toLowerCase();
@@ -412,8 +432,10 @@ function relaxPartition(partitionName) {
   });
 
   // 站点可能按 UA 提示（Client Hints）判断浏览器，一并对齐，避免被判成非常规客户端。
-  ses.webRequest.onBeforeSendHeaders((details, callback) => {
+  ses.webRequest.onBeforeSendHeaders(DOC_ONLY, (details, callback) => {
     const headers = details.requestHeaders;
+    // UA 已经由上面的 setUserAgent 全局设过了，这里保留是为了万无一失；
+    // Client Hints 只有文档请求上的才会被站点用来判断浏览器。
     headers['User-Agent'] = CHROME_UA;
     // 补齐 Chrome 130 的 Client Hints，防止站点从 Sec-CH-UA 里识别出 Electron
     headers['Sec-CH-UA'] = '"Chromium";v="130", "Google Chrome";v="130", "Not?A_Brand";v="99"';
@@ -508,10 +530,14 @@ function createWindow(showOnReady = true) {
   });
 
   // 强制所有 webview 的安全参数，不信任渲染进程写的属性。
-  mainWindow.webContents.on('will-attach-webview', (_event, webPreferences) => {
-    // 用主进程控制的 preload 做站点登录墙清理（只删遮挡层、恢复滚动/复制，不改登录态）
-    webPreferences.preload = path.join(__dirname, 'site-bypass-preload.js');
-    console.log('[main] will-attach-webview preload:', webPreferences.preload);
+  mainWindow.webContents.on('will-attach-webview', (_event, webPreferences, params) => {
+    const source = String(params?.src || '');
+    const isDsh = webPreferences.partition === 'persist:dsh' || /^https?:\/\/127\.0\.0\.1:3080(?:\/|$)/i.test(source);
+    // DSH 是完整的本地 Web 应用，不要套用站点清理脚本。该脚本会主动改写
+    // html/body 的滚动和 user-select，且监听整个 DOM；对 DSH 这种模块化 SPA
+    // 可能造成启动阶段黑屏。保留空 preload 只为明确隔离边界。
+    webPreferences.preload = path.join(__dirname, isDsh ? 'dsh-preload.js' : 'site-bypass-preload.js');
+    console.log('[main] will-attach-webview preload:', webPreferences.preload, source);
     webPreferences.nodeIntegration = false;
     webPreferences.contextIsolation = true;
     // 文献阅读器要用 Chromium 内置 PDF 查看器（自带缩放/翻页/搜索）
@@ -1201,9 +1227,24 @@ function registerIpc() {
   // 文献库：书目元数据补全 + 引用导出
   registerBiblioIpc(ipcMain, { dialog, getWindow: () => mainWindow, clipboard });
   registerDocSearchIpc(ipcMain);
+  registerShelfIpc(ipcMain, { dialog, getWindow: () => mainWindow });
+  registerUpdaterIpc(ipcMain);
+  startAutoCheck();
 
   // 代码记事本：读取 Understand-Anything 的知识图谱 + 按行号回读源码
   registerNotebookIpc(ipcMain, { dialog, getWindow: () => mainWindow, getUserDataPath: () => app.getPath('userData') });
+  registerContainerIpc(ipcMain, { shell, getUserDataPath: () => app.getPath('userData') });
+  // 把随包附带的工具铺进容器（只补缺，不覆盖）。
+  // 打包后种子在 resources/container-seed，开发时在仓库根目录。
+  const seedDir = app.isPackaged
+    ? path.join(process.resourcesPath, 'container-seed')
+    : path.join(__dirname, '..', '..', 'container-seed');
+  const seeded = seedContainer(() => app.getPath('userData'), seedDir);
+  if (seeded.copied.length) console.log('[container] 已放入随包工具:', seeded.copied.join(', '));
+
+  ipcMain.handle('dsh:status', () => dshService.status());
+  ipcMain.handle('dsh:start', () => dshService.start());
+  ipcMain.handle('dsh:stop', () => dshService.stop());
 
   ipcMain.handle('config:all', () => safeConfig());
   ipcMain.handle('config:get', (_e, key, fallback) => {
@@ -1229,18 +1270,18 @@ function registerIpc() {
     return { ok: true, mime: 'image/png', base64: png.toString('base64') };
   });
 
-  ipcMain.handle('remote:status', () => ({ ...remoteControl.status(), autoStart: store.get('remote.autoStart', false), persistent: Boolean(readRemoteToken()) }));
+  ipcMain.handle('remote:status', async () => ({ ...(await remoteStatusWithQr()), autoStart: store.get('remote.autoStart', false), persistent: Boolean(readRemoteToken()) }));
   ipcMain.handle('remote:start', async () => {
     const result = await remoteControl.start({ token: readRemoteToken() });
     saveRemoteToken(result.token);
-    return { ...result, persistent: Boolean(readRemoteToken()) };
+    return { ...(await remoteStatusWithQr(result)), persistent: Boolean(readRemoteToken()) };
   });
   ipcMain.handle('remote:stop', () => remoteControl.stop());
   ipcMain.handle('remote:rotate', async () => {
     await remoteControl.stop();
     const result = await remoteControl.start();
     saveRemoteToken(result.token);
-    return { ...result, persistent: Boolean(readRemoteToken()) };
+    return { ...(await remoteStatusWithQr(result)), persistent: Boolean(readRemoteToken()) };
   });
   ipcMain.handle('remote:setAutoStart', (_event, enabled) => {
     store.set('remote.autoStart', Boolean(enabled));
@@ -2177,12 +2218,23 @@ app.whenReady().then(async () => {
   remoteControl = new RemoteControl({
     deviceName: 'Agent 工具箱',
     onCommand: handleRemoteCommand,
+    apkPath: path.join(__dirname, '..', '..', 'assets', 'mobile', 'Agent-Toolbox-Remote-0.1.0-debug.apk'),
+    apkName: 'Agent-Toolbox-Remote-0.1.0-debug.apk',
+    inbox: store.get('remote.inbox', []),
+    onInbox: (item) => {
+      const inbox = [item, ...(store.get('remote.inbox', []) || [])].slice(0, 100);
+      store.set('remote.inbox', inbox);
+      if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('remote:inbox', item);
+    },
   });
+
+  dshService = new DshService({ app, getWindow: () => mainWindow });
 
   registerIpc();
   hookLiteratureDownloads();
   hookResearchDownloads();
   createWindow();
+  dshService.start().catch((error) => console.warn('[dsh] background start failed:', error.message));
   createPetWindow();
   if (store.get('remote.autoStart', false)) {
     remoteControl.start({ token: readRemoteToken() })
@@ -2211,6 +2263,8 @@ app.on('before-quit', (event) => {
 });
 
 app.on('will-quit', () => {
+  stopAllShelfApps();      // 别把工具架启动的子进程留成孤儿
+  stopAutoCheck();
   globalShortcut.unregisterAll();
   remoteControl?.stop();
   for (const pending of pendingRemoteCommands.values()) {
@@ -2218,4 +2272,5 @@ app.on('will-quit', () => {
     pending.reject(new Error('工具箱正在退出。'));
   }
   pendingRemoteCommands.clear();
+  dshService?.stop();
 });

@@ -14,6 +14,26 @@ export default {
     const startBtn = h('button', { class: 'btn btn--primary', onclick: start }, '启动手机控制');
     const stopBtn = h('button', { class: 'btn btn--sm btn--ghost', disabled: true, onclick: stop }, '停止');
     const rotateBtn = h('button', { class: 'btn btn--sm', disabled: true, onclick: rotate }, '重新配对');
+    const inboxEl = h('div', { class: 'remote__inbox' });
+    const apkQrEl = h('img', { class: 'remote__apk-qr', alt: '手机 APK 下载二维码', hidden: true });
+    const apkQrPlaceholder = h('div', { class: 'remote__apk-placeholder' }, '启动手机控制后显示二维码');
+    const apkQrBox = h('div', { class: 'remote__apk-qr-box' }, apkQrEl, apkQrPlaceholder);
+    const apkLink = h('a', { class: 'remote__apk-link', target: '_blank', rel: 'noreferrer', hidden: true }, '直接下载 APK');
+    let inboxItems = [];
+
+    function renderInbox(items = []) {
+      inboxItems = items;
+      inboxEl.replaceChildren();
+      if (!items.length) { inboxEl.append(h('div', { class: 'faint remote__empty' }, '手机分享的论文、视频和公众号链接会出现在这里。')); return; }
+      for (const item of items) {
+        inboxEl.append(h('article', { class: 'remote__inbox-item' },
+          h('div', { class: 'remote__inbox-head' }, h('strong', {}, item.title || item.url || '手机分享'), h('span', { class: 'faint' }, item.receivedAt ? new Date(item.receivedAt).toLocaleString('zh-CN') : '')),
+          item.text && h('p', {}, item.text),
+          item.url && h('div', { class: 'remote__inbox-actions' }, h('code', {}, item.url), h('button', { class: 'btn btn--sm', onclick: () => window.toolbox.shell.openExternal(item.url) }, '打开链接')),
+          h('button', { class: 'btn btn--sm btn--ghost', onclick: () => window.toolbox.clipboard.write([item.title, item.text, item.url].filter(Boolean).join('\n')).then(() => toast('已复制到电脑剪贴板', 'good')) }, '复制内容'),
+        ));
+      }
+    }
 
     async function refresh(next) {
       const current = next || await window.toolbox.remote.status();
@@ -27,6 +47,8 @@ export default {
       startBtn.disabled = Boolean(current.enabled);
       stopBtn.disabled = !current.enabled;
       rotateBtn.disabled = !current.enabled;
+      renderInbox(current.inbox || []);
+      if (current.apkQr && current.apkUrls?.[0]) { apkQrEl.src = current.apkQr; apkQrEl.removeAttribute('hidden'); apkQrPlaceholder.setAttribute('hidden', ''); apkLink.href = current.apkUrls[0]; apkLink.removeAttribute('hidden'); } else { apkQrEl.setAttribute('hidden', ''); apkQrPlaceholder.removeAttribute('hidden'); apkLink.setAttribute('hidden', ''); }
     }
     async function start() {
       try { await refresh(await window.toolbox.remote.start()); toast('手机控制已启动，打开上面的地址配对。', 'good', 5000); }
@@ -57,6 +79,10 @@ export default {
           urls,
           h('div', { class: 'faint remote__security' }, '配对令牌保存在电脑的系统安全存储中。需要结束控制时点“停止”；需要让旧手机失效时点“重新配对”。'),
         ),
+        h('section', { class: 'card remote__apk-card' },
+          h('div', { class: 'remote__section-head' }, h('strong', {}, '安装手机端 APK'), h('span', { class: 'faint' }, '扫码下载')),
+          h('div', { class: 'remote__apk-row' }, apkQrBox, h('div', { class: 'remote__apk-copy' }, h('p', { class: 'faint' }, '启动手机控制后，二维码会自动绑定当前局域网地址和配对令牌。换 Wi‑Fi 或重新配对后会更新。'), apkLink, h('span', { class: 'faint' }, '当前 APK 接收文字和链接分享；Android 安装时可能需要允许未知来源。'))),
+        ),
         h('section', { class: 'card remote__scope' },
           h('div', { class: 'remote__section-head' }, h('strong', {}, '手机端可以做什么')),
           h('div', { class: 'remote__capabilities' },
@@ -64,8 +90,14 @@ export default {
           ),
           h('p', { class: 'faint remote__security' }, '当前版本不开放任意 shell、任意键鼠模拟或删除文件。需要验证码、付款、系统权限或敏感操作时，仍在电脑端确认。换 Wi-Fi 时请使用设备名.local、Tailscale 或其他 VPN 地址。'),
         ),
+        h('section', { class: 'card remote__inbox-card' },
+          h('div', { class: 'remote__section-head' }, h('strong', {}, '手机分享收件箱'), h('button', { class: 'btn btn--sm', onclick: async () => refresh() }, '刷新')),
+          h('p', { class: 'faint remote__security' }, '手机上分享的链接、论文和公众号内容会同步到这里。'),
+          inboxEl,
+        ),
       ),
     );
+    window.toolbox.remote.onInbox((item) => renderInbox([item, ...inboxItems.filter((old) => old.id !== item.id)].slice(0, 100)));
     refresh();
     return {};
   },

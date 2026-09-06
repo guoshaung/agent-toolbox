@@ -1,0 +1,49 @@
+# 打一个 v 开头的 tag 就自动出包并发到 Releases。
+#
+#   npm version patch          # 会自动改 package.json 并打 tag
+#   git push && git push --tags
+#
+# 之后客户端里的更新器就能查到这个新版本。
+name: 构建并发布
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:          # 也可以在 Actions 页面手动点一次
+
+permissions:
+  contents: write             # 创建 Release 需要写权限
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false        # mac 挂了不影响 windows 继续出包
+      matrix:
+        include:
+          - os: macos-latest
+            build: npm run dist
+          - os: windows-latest
+            build: npm run dist:win
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      # 语法自检，别把跑不起来的版本发出去
+      - run: npm run check
+
+      - name: 打包并上传
+        run: ${{ matrix.build }} --publish always
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # macOS 代码签名：把证书和密码存成仓库 secret 之后，
+          # 下面两行会自动生效，签过名才能真正静默自动更新。
+          # 没有证书就留空，照样能出包，只是 macOS 用户要手动下载安装。
+          CSC_LINK: ${{ secrets.MAC_CERT_P12 }}
+          CSC_KEY_PASSWORD: ${{ secrets.MAC_CERT_PASSWORD }}

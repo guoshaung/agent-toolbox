@@ -1,0 +1,9 @@
+PySide6>=6.6.0
+PySide6-Fluent-Widgets>=1.7.0
+pyinstaller>=6.0.0
+websockets>=14
+aiohttp>=3.9.0
+sounddevice>=0.4.6
+openai>=2.8.0
+anthropic>=0.45.0,<1.0.0
+loguru>=0.7.0

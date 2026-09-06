@@ -11,13 +11,16 @@ import { createSwitcher } from './core/switcher.js';
 const rail = document.getElementById('rail');
 const stage = document.getElementById('stage');
 
-const atelierBanner = h('header', { class: 'atelier-banner', 'aria-label': 'Agent 工具箱装饰标题栏' },
+const dshBannerState = h('span', { class: 'atelier-banner__dsh-state' }, 'DSH Web');
+const dshButton = h('button', { class: 'atelier-banner__dsh', onclick: openDsh, title: '打开内置 DeepSeek Harness' }, '◈ ', dshBannerState);
+const atelierBanner = h('header', { class: 'atelier-banner', 'aria-label': 'Agent 工具箱装饰标题栏', onclick: (event) => { if (!event.target.closest('button')) openDsh(); } },
   h('div', { class: 'atelier-banner__brand' },
     h('span', {}, 'AGENT'),
     h('strong', {}, 'TOOLBOX'),
   ),
   h('div', { class: 'atelier-banner__bow', 'aria-hidden': 'true' }),
   h('span', { class: 'atelier-banner__caption' }, 'PERSONAL WORKSPACE'),
+  dshButton,
 );
 stage.appendChild(atelierBanner);
 
@@ -35,6 +38,23 @@ const ctx = {
   /** 让「专注」里的 AI 建议按钮能一键跳到「快问」去登录 */
   goto: (id) => activate(id),
 };
+
+function openDsh() {
+  window.toolbox.dsh.start().then((result) => {
+    if (result.ok) activate('dsh');
+    else toast(result.error || 'DSH 尚未启动', 'bad', 6000);
+  });
+}
+
+function renderDshBanner(state) {
+  const running = state?.status === 'running';
+  dshBannerState.textContent = running ? 'DSH · 已就绪' : state?.status === 'installing' ? 'DSH · 下载中' : state?.status === 'starting' ? 'DSH · 启动中' : 'DSH · 点击启动';
+  dshButton.classList.toggle('is-ready', running);
+  dshButton.classList.toggle('is-busy', state?.status === 'installing' || state?.status === 'starting');
+}
+
+window.toolbox.dsh.onStatus(renderDshBanner);
+window.toolbox.dsh.status().then(renderDshBanner);
 
 const mounted = new Map(); // id -> { el, instance }
 // 在顶上先声明：activate() 里要用它，而它自己在文件末尾才创建。
