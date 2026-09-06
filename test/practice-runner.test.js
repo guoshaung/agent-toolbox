@@ -14,7 +14,10 @@ function hasCommand(name) {
   try { execFileSync(probe, [name], { stdio: 'ignore' }); return true; } catch { return false; }
 }
 const HAS_UV = hasCommand('uv');
-const HAS_PY = hasCommand('python3') || hasCommand('python');
+// 判断要和被测代码实际调用的命令一致：runner 调的是 python3。
+// 写成 python3 || python 会在 Windows 上误判 —— 那里有 python 没有 python3，
+// 于是用例照跑，然后挂在「找不到 python3」上。
+const HAS_PY = hasCommand('python3');
 const HAS_SQLITE = hasCommand('sqlite3');
 const need = (ok, what) => (ok ? false : `本机没有 ${what}，跳过`);
 
