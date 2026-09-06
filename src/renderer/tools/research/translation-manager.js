@@ -1,4 +1,9 @@
-/** Local-first translation manager for research reading. */
+/**
+ * 科研阅读的本地优先翻译入口。
+ *
+ * 普通翻译固定按 Chrome Translator -> Argos 的顺序执行。这里刻意不接 LLM
+ * 兜底，避免用户只是在阅读论文时意外消耗 API Key；AI 精译由 UI 的显式按钮处理。
+ */
 const VERSION = 'local-v2';
 
 function hash(value) {
@@ -18,6 +23,10 @@ const SCIENTIFIC_TOKEN_PATTERNS = [
   /\b(?:GPT-\d+(?:\.\d+)?|[A-Z][A-Za-z0-9-]*(?:Bench|Eval)|[A-Za-z]+(?:Bench|Eval)|[A-Z]{2,}[A-Z0-9-]*)\b/g,
 ];
 
+/**
+ * 翻译前把 DOI、引用、公式、缩写和模型名替换成私用区占位符。
+ * 这既防止机器翻译改坏科研标识，也让恢复过程不依赖模糊文本匹配。
+ */
 export function protectScientificText(text) {
   let protectedText = String(text || '');
   const replacements = [];
@@ -45,6 +54,7 @@ export class TranslationManager {
     this.cache = new Map(Object.entries(config?.get(`research.translationCache.${this.paperId}`, {}) || {}));
   }
 
+  /** Chrome 内置模型优先；只有不可用时才把请求交给本机 Argos sidecar。 */
   detectProvider() {
     if (typeof globalThis.Translator === 'object' || typeof globalThis.Translator === 'function') return 'chrome';
     if (globalThis.window?.toolbox?.translation?.argos) return 'argos';
@@ -53,6 +63,7 @@ export class TranslationManager {
 
   async initTranslator(sourceLanguage, targetLanguage, onProgress) {
     const key = `${sourceLanguage}-${targetLanguage}`;
+    // 每个语言方向只创建一个实例，避免逐段重复加载本地模型。
     if (this.instances.has(key)) return this.instances.get(key);
     if (!globalThis.Translator?.create) throw new Error('Chrome Translator API 不可用');
     const instance = await globalThis.Translator.create({
@@ -64,6 +75,7 @@ export class TranslationManager {
   }
 
   key(text, sourceLanguage, targetLanguage) {
+    // provider 版本进入缓存键，翻译策略升级后不会误用旧结果。
     return hash(`${this.paperId}\n${text}\n${sourceLanguage}\n${targetLanguage}\n${VERSION}`);
   }
 
@@ -77,6 +89,8 @@ export class TranslationManager {
     const key = this.key(source, sourceLanguage, targetLanguage);
     const cached = this.cache.get(key);
     if (cached?.translation) return { ...cached, cached: true };
+
+    // 所有本地 provider 都接收同一份受保护文本，成功后再统一恢复科研标识。
     const { protectedText, replacements } = protectScientificText(source);
     let result;
     if (this.detectProvider() === 'chrome') {
@@ -84,7 +98,10 @@ export class TranslationManager {
         onProgress?.({ state: 'initializing', message: '正在初始化本地翻译模型…' });
         const translator = await this.initTranslator(sourceLanguage, targetLanguage, (loaded, total) => onProgress?.({ state: 'downloading', loaded, total }));
         result = { ok: true, translation: restoreScientificText(await translator.translate(protectedText), replacements), provider: 'chrome', paragraphId };
-      } catch (error) { onProgress?.({ state: 'fallback', message: error.message }); }
+      } catch (error) {
+        // Chrome 模型缺失或初始化失败时允许降级到 Argos，但不降级到远程服务。
+        onProgress?.({ state: 'fallback', message: error.message });
+      }
     }
     if (!result && globalThis.window?.toolbox?.translation?.argos) {
       try {
@@ -101,10 +118,13 @@ export class TranslationManager {
             paragraphId,
           };
         }
-      } catch { /* explicit unavailable result below */ }
+      } catch {
+        // IPC 不可用时在下方返回统一、可展示的失败结果，避免静默失败。
+      }
     }
     if (!result) result = { ok: false, error: '本地翻译不可用。请安装并启动 Argos Translate，或主动点击“AI 精译”。', provider: 'unavailable', paragraphId };
     if (result.ok) {
+      // 缓存保存文本锚点和 provider，重开论文后仍能按段落直接复用。
       this.cache.set(key, {
         paperId: this.paperId,
         paragraphId,

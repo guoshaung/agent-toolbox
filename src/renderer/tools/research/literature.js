@@ -994,6 +994,7 @@ export function createLiterature(root, ctx) {
   }
 
   async function paragraphs() {
+    // 段落 ID 由文档顺序稳定生成，是双栏定位、高亮恢复和翻译缓存的共同锚点。
     if (rawText != null) {
       const all = String(rawText).split(/\n+/).map((source) => source.trim()).filter(Boolean);
       return { items: all.slice(0, 180).map((source, index) => ({ source, paragraphId: `p_${String(index + 1).padStart(3, '0')}` })), truncated: all.length > 180 };
@@ -1006,6 +1007,7 @@ export function createLiterature(root, ctx) {
       const page = await pdfDoc.getPage(pageNo);
       const content = await page.getTextContent();
       let line = '';
+      // PDF.js 返回的是文字片段；优先按行尾合并，超长行再设上限避免单段过大。
       for (const item of content.items) {
         const value = String(item.str || '').trim();
         if (value) line += `${line ? ' ' : ''}${value}`;
@@ -1020,6 +1022,7 @@ export function createLiterature(root, ctx) {
         chars += line.length;
       }
       if (items.length >= 220 || chars >= 60000) {
+        // 首次进入只解析有限正文，避免长论文必须全部处理完才能开始阅读。
         truncated = pageNo < pdfDoc.numPages;
         break;
       }
@@ -1045,6 +1048,7 @@ export function createLiterature(root, ctx) {
     const value = String(text || '');
     const ranges = [];
     for (const mark of marks) {
+      // 高亮保存文本锚点而非屏幕坐标，因此布局变化或重开论文后仍可恢复。
       const needle = String(mark.selected_text || '');
       const start = needle ? value.indexOf(needle) : -1;
       if (start >= 0) ranges.push({ start, end: start + needle.length, mark });
@@ -1071,6 +1075,7 @@ export function createLiterature(root, ctx) {
     for (const [paragraphId, cell] of bilingualCells) {
       const paragraphMarks = marks.filter((mark) => mark.paragraph_id === paragraphId);
       for (const node of [cell.source, cell.target]) {
+        // 没有可靠词级对齐时只标记对应段落，不猜测中英文词语映射。
         node.classList.toggle('has-highlight', paragraphMarks.length > 0);
         node.style.setProperty('--highlight-color', HIGHLIGHT_COLORS[paragraphMarks[0]?.color] || HIGHLIGHT_COLORS.yellow);
       }
@@ -1105,6 +1110,7 @@ export function createLiterature(root, ctx) {
     if (!current) return;
     if (bilingual) return closeBilingual();
     const runId = ++bilingualRunId;
+    // runId 是轻量取消令牌：切文献或关闭双栏后，旧异步任务不能继续写当前 UI。
     bilingual = true;
     bilingBtn.classList.add('is-on');
     bilingBtn.textContent = '准备对照…';
@@ -1183,6 +1189,7 @@ export function createLiterature(root, ctx) {
       sourcePane.appendChild(source);
       targetPane.appendChild(target);
       const syncHover = (on) => { source.classList.toggle('is-linked', on); target.classList.toggle('is-linked', on); };
+      // 两侧共享 paragraphId，悬停只联动对应段落，不按视觉高度猜位置。
       for (const node of [source, target]) {
         node.addEventListener('mouseenter', () => syncHover(true));
         node.addEventListener('mouseleave', () => syncHover(false));
@@ -1211,6 +1218,7 @@ export function createLiterature(root, ctx) {
       if (!linkedScroll || syncing || index < 0) return;
       syncing = true;
       const peer = pane === sourcePane ? cells[index].target : cells[index].source;
+      // 同步依据当前可见段落而非滚动百分比，中英文高度不同也不会逐渐漂移。
       peer.scrollIntoView({ block: 'start' });
       requestAnimationFrame(() => { syncing = false; });
     };
@@ -1230,6 +1238,7 @@ export function createLiterature(root, ctx) {
     bilingualTranslating = true;
     const pending = new Set(pendingIdx);
     const visible = new Set();
+    // 单独观察原文可见性，用于动态调整翻译队列，而不是加载时翻译全文。
     const translationObserver = new IntersectionObserver((entries) => {
       for (const entry of entries) {
         const index = cells.findIndex((cell) => cell.source === entry.target);
@@ -1239,6 +1248,7 @@ export function createLiterature(root, ctx) {
     bilingualObservers.push(translationObserver);
     cells.forEach((cell) => translationObserver.observe(cell.source));
     const takeNext = () => {
+      // 优先级：当前视口 -> 后续八段 -> 前四段 -> 文档其余部分。
       const onScreen = [...visible].filter((index) => pending.has(index)).sort((a, b) => a - b);
       if (onScreen.length) return onScreen[0];
       const visibleOrder = [...visible].sort((a, b) => a - b);

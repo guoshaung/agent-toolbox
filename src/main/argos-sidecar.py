@@ -1,4 +1,4 @@
-"""Minimal JSON-lines sidecar for optional local Argos Translate."""
+"""可选 Argos Translate 的最小 JSONL sidecar；不提供网络翻译兜底。"""
 
 import json
 import sys
@@ -9,7 +9,7 @@ try:
     import argostranslate.package as argos_package
     import argostranslate.translate as argos_translate
     IMPORT_ERROR = None
-except Exception as exc:  # Argos is an optional local dependency.
+except Exception as exc:  # Argos 是可选本地依赖，缺失时进程仍启动并报告可操作状态。
     argos_package = None
     argos_translate = None
     IMPORT_ERROR = str(exc)
@@ -21,6 +21,7 @@ def emit(payload):
 
 
 def installed_pairs():
+    """从已安装语言对象推导真正可用的翻译方向，而不是只检查包文件。"""
     if argos_translate is None:
         return set()
     languages = {language.code: language for language in argos_translate.get_installed_languages()}
@@ -38,6 +39,7 @@ def installed_pairs():
 
 
 def status():
+    """区分 Python 包缺失和语言模型缺失，供 UI 显示不同修复入口。"""
     if IMPORT_ERROR:
         return {
             "ok": False,
@@ -81,6 +83,7 @@ def translate(request):
 
 
 def install_models(request):
+    """仅响应用户确认后的 install 请求，从 Argos 官方索引安装指定语言对。"""
     if IMPORT_ERROR:
         return status()
     requested = request.get("pairs") or [["en", "zh"], ["zh", "en"]]
@@ -109,6 +112,7 @@ def install_models(request):
 
 emit({"event": "ready", "packageAvailable": IMPORT_ERROR is None})
 
+# stdin/stdout 每行一个 JSON 对象；请求 id 原样返回，主进程据此匹配并发请求。
 for line in sys.stdin:
     request = {}
     try:

@@ -408,13 +408,12 @@ function safeConfig() {
   return data;
 }
 
-/** Configure browser identity without weakening third-party response policies. */
+/** 只统一浏览器身份，不删除或放宽第三方页面的安全响应头。 */
 function configurePartition(partitionName) {
   const ses = session.fromPartition(partitionName);
   ses.setUserAgent(CHROME_UA);
 
-  // Client hints only need to be normalized for document requests. Response
-  // headers, including third-party Content-Security-Policy, are preserved.
+  // Client Hints 只需处理文档请求；响应头（尤其第三方 CSP）必须原样保留。
   const DOC_ONLY = { urls: ['<all_urls>'], types: ['mainFrame', 'subFrame'] };
   // 站点可能按 UA 提示（Client Hints）判断浏览器，一并对齐，避免被判成非常规客户端。
   ses.webRequest.onBeforeSendHeaders(DOC_ONLY, (details, callback) => {
