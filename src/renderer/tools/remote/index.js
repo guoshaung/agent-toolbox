@@ -19,6 +19,9 @@ export default {
     const apkQrPlaceholder = h('div', { class: 'remote__apk-placeholder' }, '启动手机控制后显示二维码');
     const apkQrBox = h('div', { class: 'remote__apk-qr-box' }, apkQrEl, apkQrPlaceholder);
     const apkLink = h('a', { class: 'remote__apk-link', target: '_blank', rel: 'noreferrer', hidden: true }, '直接下载 APK');
+    const pairQrEl = h('img', { class: 'remote__apk-qr', alt: '连接当前电脑二维码', hidden: true });
+    const pairQrPlaceholder = h('div', { class: 'remote__apk-placeholder' }, '启动后显示连接码');
+    const pairQrBox = h('div', { class: 'remote__apk-qr-box' }, pairQrEl, pairQrPlaceholder);
     let inboxItems = [];
 
     function renderInbox(items = []) {
@@ -49,6 +52,7 @@ export default {
       rotateBtn.disabled = !current.enabled;
       renderInbox(current.inbox || []);
       if (current.apkQr && current.apkUrls?.[0]) { apkQrEl.src = current.apkQr; apkQrEl.removeAttribute('hidden'); apkQrPlaceholder.setAttribute('hidden', ''); apkLink.href = current.apkUrls[0]; apkLink.removeAttribute('hidden'); } else { apkQrEl.setAttribute('hidden', ''); apkQrPlaceholder.removeAttribute('hidden'); apkLink.setAttribute('hidden', ''); }
+      if (current.pairQr) { pairQrEl.src = current.pairQr; pairQrEl.removeAttribute('hidden'); pairQrPlaceholder.setAttribute('hidden', ''); } else { pairQrEl.setAttribute('hidden', ''); pairQrPlaceholder.removeAttribute('hidden'); }
     }
     async function start() {
       try { await refresh(await window.toolbox.remote.start()); toast('手机控制已启动，打开上面的地址配对。', 'good', 5000); }
@@ -74,14 +78,20 @@ export default {
           h('label', { class: 'remote__auto-start' }, autoStartInput, '开机自动启动（默认关闭）'),
           detail,
         ),
-        h('section', { class: 'card remote__pairing' },
-          h('div', { class: 'remote__section-head' }, h('strong', {}, '手机打开这个地址'), h('button', { class: 'btn btn--sm btn--ghost', onclick: async () => { if (!urls.value) return; await window.toolbox.clipboard.write(urls.value); toast('配对地址已复制', 'good'); } }, '复制地址')),
-          urls,
-          h('div', { class: 'faint remote__security' }, '配对令牌保存在电脑的系统安全存储中。需要结束控制时点“停止”；需要让旧手机失效时点“重新配对”。'),
+        h('section', { class: 'remote__setup-grid' },
+          h('article', { class: 'card remote__setup-card' },
+            h('span', { class: 'remote__step' }, '01'), h('h3', {}, '安装手机 App'),
+            h('p', { class: 'faint' }, '用手机相机扫描下载码，安装一次即可。'), apkQrBox, apkLink,
+          ),
+          h('article', { class: 'card remote__setup-card remote__setup-card--accent' },
+            h('span', { class: 'remote__step' }, '02'), h('h3', {}, '连接这台电脑'),
+            h('p', { class: 'faint' }, '打开手机 App，点击“扫描连接码”，对准这里。'), pairQrBox,
+          ),
         ),
-        h('section', { class: 'card remote__apk-card' },
-          h('div', { class: 'remote__section-head' }, h('strong', {}, '安装手机端 APK'), h('span', { class: 'faint' }, '扫码下载')),
-          h('div', { class: 'remote__apk-row' }, apkQrBox, h('div', { class: 'remote__apk-copy' }, h('p', { class: 'faint' }, '启动手机控制后，二维码会自动绑定当前局域网地址和配对令牌。换 Wi‑Fi 或重新配对后会更新。'), apkLink, h('span', { class: 'faint' }, '当前 APK 接收文字和链接分享；Android 安装时可能需要允许未知来源。'))),
+        h('section', { class: 'card remote__pairing' },
+          h('div', { class: 'remote__section-head' }, h('strong', {}, '手动连接（备用）'), h('button', { class: 'btn btn--sm btn--ghost', onclick: async () => { if (!urls.value) return; await window.toolbox.clipboard.write(urls.value); toast('配对地址已复制', 'good'); } }, '复制地址')),
+          urls,
+          h('div', { class: 'faint remote__security' }, '两台设备需要连接同一 Wi‑Fi。重新配对会同时更新二维码并让旧连接失效。'),
         ),
         h('section', { class: 'card remote__scope' },
           h('div', { class: 'remote__section-head' }, h('strong', {}, '手机端可以做什么')),

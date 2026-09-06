@@ -1,144 +1,64 @@
 package cn.macpe.agenttoolbox.remote;
 
 import android.app.Activity;
-import android.content.ClipData;
-import android.content.Context;
 import android.content.Intent;
-import android.content.SharedPreferences;
 import android.graphics.Color;
+import android.graphics.drawable.GradientDrawable;
 import android.net.Uri;
 import android.os.Bundle;
+import android.view.Gravity;
 import android.view.View;
-import android.webkit.WebSettings;
-import android.webkit.WebView;
-import android.widget.Button;
-import android.widget.EditText;
-import android.widget.LinearLayout;
-import android.widget.TextView;
-import android.widget.Toast;
-
+import android.webkit.*;
+import android.widget.*;
+import com.google.zxing.integration.android.IntentIntegrator;
+import com.google.zxing.integration.android.IntentResult;
 import java.io.OutputStream;
-import java.net.HttpURLConnection;
-import java.net.URL;
-import java.net.URLEncoder;
+import java.net.*;
 import java.nio.charset.StandardCharsets;
+import android.util.Base64;
+import java.io.InputStream;
 
 public class MainActivity extends Activity {
-    private static final String PREFS = "agent_remote";
-    private static final String ENDPOINT = "endpoint";
-    private EditText endpointInput;
-    private TextView shareStatus;
-    private WebView webView;
+    private static final String PREFS="agent_remote", ENDPOINT="endpoint";
+    private EditText endpointInput, manualShareInput; private TextView connectionStatus, shareStatus; private LinearLayout setupPanel; private WebView webView;
+    private static final int PICK_FILE = 42;
+    @Override protected void onCreate(Bundle state){super.onCreate(state);buildUi();boolean linked=handleDeepLink(getIntent());handleIncomingShare(getIntent());if(!linked&&!endpointInput.getText().toString().trim().isEmpty())connect();}
+    @Override protected void onNewIntent(Intent intent){super.onNewIntent(intent);setIntent(intent);handleDeepLink(intent);handleIncomingShare(intent);}
+    private int dp(int v){return Math.round(v*getResources().getDisplayMetrics().density);}
+    private GradientDrawable shape(int color,int radius){GradientDrawable d=new GradientDrawable();d.setColor(color);d.setCornerRadius(dp(radius));return d;}
+    private TextView text(String value,float size,int color){TextView v=new TextView(this);v.setText(value);v.setTextSize(size);v.setTextColor(color);return v;}
+    private Button button(String label,boolean primary){Button b=new Button(this);b.setText(label);b.setAllCaps(false);b.setTextSize(14);b.setTypeface(null,1);b.setTextColor(primary?Color.rgb(5,31,22):Color.WHITE);b.setBackground(shape(primary?Color.rgb(33,230,165):Color.rgb(31,54,45),12));return b;}
 
-    @Override
-    protected void onCreate(Bundle state) {
-        super.onCreate(state);
-        buildUi();
-        handleIncomingShare(getIntent());
+    private void buildUi(){
+        LinearLayout root=new LinearLayout(this);root.setOrientation(LinearLayout.VERTICAL);root.setBackgroundColor(Color.rgb(7,18,14));
+        LinearLayout header=new LinearLayout(this);header.setGravity(Gravity.CENTER_VERTICAL);header.setPadding(dp(20),dp(18),dp(20),dp(16));
+        ImageView logo=new ImageView(this);logo.setImageResource(R.drawable.app_logo);header.addView(logo,new LinearLayout.LayoutParams(dp(54),dp(54)));
+        LinearLayout brand=new LinearLayout(this);brand.setOrientation(LinearLayout.VERTICAL);brand.setPadding(dp(12),0,0,0);brand.addView(text("AGENT TOOLBOX",11,Color.rgb(33,230,165)));TextView title=text("手机控制",24,Color.WHITE);title.setTypeface(null,1);brand.addView(title);connectionStatus=text("等待连接",12,Color.rgb(143,164,156));brand.addView(connectionStatus);header.addView(brand,new LinearLayout.LayoutParams(0,-2,1));root.addView(header);
+        setupPanel=new LinearLayout(this);setupPanel.setOrientation(LinearLayout.VERTICAL);setupPanel.setPadding(dp(18),dp(18),dp(18),dp(18));setupPanel.setBackground(shape(Color.rgb(15,35,28),22));LinearLayout.LayoutParams cp=new LinearLayout.LayoutParams(-1,-2);cp.setMargins(dp(14),dp(4),dp(14),dp(14));
+        TextView st=text("连接你的电脑",20,Color.WHITE);st.setTypeface(null,1);setupPanel.addView(st);TextView hint=text("确保手机与电脑连接同一 Wi‑Fi。推荐扫描电脑端的连接二维码，无需手动输入。",14,Color.rgb(179,199,191));hint.setPadding(0,dp(8),0,dp(14));setupPanel.addView(hint);
+        Button scan=button("扫描连接二维码",true);scan.setOnClickListener(v->scanPairCode());setupPanel.addView(scan,new LinearLayout.LayoutParams(-1,dp(52)));
+        TextView divider=text("或者手动粘贴地址",12,Color.rgb(112,136,127));divider.setGravity(Gravity.CENTER);divider.setPadding(0,dp(16),0,dp(8));setupPanel.addView(divider);
+        endpointInput=new EditText(this);endpointInput.setSingleLine(true);endpointInput.setTextColor(Color.WHITE);endpointInput.setHintTextColor(Color.rgb(99,124,115));endpointInput.setHint("http://192.168.x.x:43127/?token=...");endpointInput.setBackground(shape(Color.rgb(8,24,18),12));endpointInput.setPadding(dp(14),0,dp(14),0);endpointInput.setText(getSharedPreferences(PREFS,MODE_PRIVATE).getString(ENDPOINT,""));setupPanel.addView(endpointInput,new LinearLayout.LayoutParams(-1,dp(50)));
+        LinearLayout actions=new LinearLayout(this);actions.setPadding(0,dp(10),0,0);Button connect=button("连接电脑",true);connect.setOnClickListener(v->connect());actions.addView(connect,new LinearLayout.LayoutParams(0,dp(48),1));Button clear=button("清除",false);clear.setOnClickListener(v->clearConnection());LinearLayout.LayoutParams clp=new LinearLayout.LayoutParams(0,dp(48),.45f);clp.setMargins(dp(8),0,0,0);actions.addView(clear,clp);setupPanel.addView(actions);
+        TextView manualTitle=text("手动发送到电脑",16,Color.WHITE);manualTitle.setTypeface(null,1);manualTitle.setPadding(0,dp(20),0,dp(8));setupPanel.addView(manualTitle);
+        manualShareInput=new EditText(this);manualShareInput.setHint("输入文字或粘贴链接…");manualShareInput.setTextColor(Color.WHITE);manualShareInput.setHintTextColor(Color.rgb(99,124,115));manualShareInput.setGravity(Gravity.TOP);manualShareInput.setMinLines(3);manualShareInput.setBackground(shape(Color.rgb(8,24,18),12));manualShareInput.setPadding(dp(14),dp(12),dp(14),dp(12));setupPanel.addView(manualShareInput,new LinearLayout.LayoutParams(-1,dp(92)));
+        LinearLayout shareActions=new LinearLayout(this);Button send=button("发送文字",true);send.setOnClickListener(v->sendManualText());shareActions.addView(send,new LinearLayout.LayoutParams(0,dp(46),1));Button file=button("选择图片/文件",false);file.setOnClickListener(v->pickFile());LinearLayout.LayoutParams fp=new LinearLayout.LayoutParams(0,dp(46),1);fp.setMargins(dp(8),0,0,0);shareActions.addView(file,fp);setupPanel.addView(shareActions,new LinearLayout.LayoutParams(-1,dp(54)));
+        shareStatus=text("",12,Color.rgb(33,230,165));shareStatus.setPadding(0,dp(12),0,0);setupPanel.addView(shareStatus);root.addView(setupPanel,cp);
+        webView=new WebView(this);WebSettings settings=webView.getSettings();settings.setJavaScriptEnabled(true);settings.setDomStorageEnabled(true);settings.setSupportZoom(true);settings.setMixedContentMode(WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE);webView.setBackgroundColor(Color.rgb(7,18,14));webView.setWebChromeClient(new WebChromeClient());webView.setWebViewClient(new WebViewClient(){private boolean mainFailed=false;@Override public void onPageStarted(WebView v,String u,android.graphics.Bitmap i){mainFailed=false;connectionStatus.setText("正在验证电脑连接…");shareStatus.setText("请稍候，正在连接同一 Wi‑Fi 下的电脑");setupPanel.setVisibility(View.VISIBLE);}@Override public void onPageFinished(WebView v,String u){if(mainFailed||"about:blank".equals(u))return;connectionStatus.setText("已连接 · 在线");shareStatus.setText("");setupPanel.setVisibility(View.GONE);}@Override public void onReceivedError(WebView v,WebResourceRequest r,WebResourceError e){if(r.isForMainFrame()){mainFailed=true;connectionStatus.setText("连接失败");shareStatus.setText("无法连接电脑："+e.getDescription()+"。请确认手机和电脑在同一 Wi‑Fi，且电脑端手机控制仍在运行。");setupPanel.setVisibility(View.VISIBLE);}}@Override public void onReceivedHttpError(WebView v,WebResourceRequest r,WebResourceResponse e){if(r.isForMainFrame()&&e.getStatusCode()>=400){mainFailed=true;connectionStatus.setText("配对失败 · HTTP "+e.getStatusCode());shareStatus.setText(e.getStatusCode()==401?"连接码已失效，请在电脑端点击“重新配对”后重新扫描。":"电脑返回错误，请重新启动手机控制后再扫一次。");setupPanel.setVisibility(View.VISIBLE);}}});root.addView(webView,new LinearLayout.LayoutParams(-1,0,1));setContentView(root);
     }
-
-    @Override
-    protected void onNewIntent(Intent intent) {
-        super.onNewIntent(intent);
-        setIntent(intent);
-        handleIncomingShare(intent);
-    }
-
-    private void buildUi() {
-        LinearLayout root = new LinearLayout(this);
-        root.setOrientation(LinearLayout.VERTICAL);
-        root.setPadding(28, 28, 28, 18);
-        root.setBackgroundColor(Color.rgb(16, 21, 27));
-
-        TextView title = new TextView(this);
-        title.setText("Agent 工具箱手机端");
-        title.setTextColor(Color.WHITE);
-        title.setTextSize(22);
-        title.setPadding(0, 0, 0, 14);
-        root.addView(title, new LinearLayout.LayoutParams(-1, -2));
-
-        TextView hint = new TextView(this);
-        hint.setText("先粘贴电脑端配对地址；之后从论文、视频、公众号点击系统分享即可同步到电脑。\n当前版本接收文字和链接，PDF 文件接收将在下一版加入。\n配对地址示例：http://电脑地址:43127/?token=...");
-        hint.setTextColor(Color.rgb(168, 183, 193));
-        hint.setTextSize(13);
-        root.addView(hint, new LinearLayout.LayoutParams(-1, -2));
-
-        endpointInput = new EditText(this);
-        endpointInput.setSingleLine(true);
-        endpointInput.setHint("http://192.168.x.x:43127/?token=...");
-        endpointInput.setTextColor(Color.WHITE);
-        endpointInput.setHintTextColor(Color.rgb(120, 137, 148));
-        endpointInput.setText(getSharedPreferences(PREFS, MODE_PRIVATE).getString(ENDPOINT, ""));
-        root.addView(endpointInput, new LinearLayout.LayoutParams(-1, -2));
-
-        LinearLayout actions = new LinearLayout(this);
-        actions.setOrientation(LinearLayout.HORIZONTAL);
-        Button connect = button("连接电脑");
-        connect.setOnClickListener(view -> connect());
-        Button clear = button("清除");
-        clear.setOnClickListener(view -> { endpointInput.setText(""); getSharedPreferences(PREFS, MODE_PRIVATE).edit().remove(ENDPOINT).apply(); });
-        actions.addView(connect, new LinearLayout.LayoutParams(0, -2, 1));
-        actions.addView(clear, new LinearLayout.LayoutParams(0, -2, 1));
-        root.addView(actions, new LinearLayout.LayoutParams(-1, -2));
-
-        shareStatus = new TextView(this);
-        shareStatus.setTextColor(Color.rgb(110, 224, 204));
-        shareStatus.setTextSize(12);
-        shareStatus.setPadding(0, 14, 0, 8);
-        root.addView(shareStatus, new LinearLayout.LayoutParams(-1, -2));
-
-        webView = new WebView(this);
-        WebSettings settings = webView.getSettings();
-        settings.setJavaScriptEnabled(true);
-        settings.setDomStorageEnabled(true);
-        settings.setSupportZoom(true);
-        webView.setBackgroundColor(Color.rgb(16, 21, 27));
-        root.addView(webView, new LinearLayout.LayoutParams(-1, 0, 1));
-        setContentView(root);
-        if (!endpointInput.getText().toString().trim().isEmpty()) connect();
-    }
-
-    private Button button(String label) {
-        Button button = new Button(this);
-        button.setText(label);
-        return button;
-    }
-
-    private void connect() {
-        String endpoint = endpointInput.getText().toString().trim();
-        if (!endpoint.startsWith("http://") && !endpoint.startsWith("https://")) { toast("请输入电脑端配对地址"); return; }
-        getSharedPreferences(PREFS, MODE_PRIVATE).edit().putString(ENDPOINT, endpoint).apply();
-        webView.loadUrl(endpoint);
-        shareStatus.setText("已保存配对地址，正在连接电脑…");
-    }
-
-    private void handleIncomingShare(Intent intent) {
-        if (intent == null || !Intent.ACTION_SEND.equals(intent.getAction())) return;
-        String text = intent.getStringExtra(Intent.EXTRA_TEXT);
-        Uri uri = intent.getParcelableExtra(Intent.EXTRA_STREAM);
-        if (text == null && uri != null) text = uri.toString();
-        if (text == null) text = "";
-        final String shared = text.trim();
-        if (shared.isEmpty()) return;
-        String endpoint = getSharedPreferences(PREFS, MODE_PRIVATE).getString(ENDPOINT, "");
-        if (endpoint.isEmpty()) { shareStatus.setText("已收到分享内容，请先填写电脑端配对地址"); return; }
-        shareStatus.setText("正在把分享内容同步到电脑…");
-        new Thread(() -> {
-            try {
-                Uri remote = Uri.parse(endpoint);
-                String token = remote.getQueryParameter("token");
-                if (token == null || remote.getHost() == null) throw new IllegalStateException("配对地址缺少 token");
-                String origin = remote.getScheme() + "://" + remote.getAuthority();
-                URL url = new URL(origin + "/share?token=" + URLEncoder.encode(token, StandardCharsets.UTF_8.name()));
-                String body = "title=" + URLEncoder.encode("手机分享", StandardCharsets.UTF_8.name()) + "&text=" + URLEncoder.encode(shared, StandardCharsets.UTF_8.name());
-                HttpURLConnection connection = (HttpURLConnection) url.openConnection();
-                connection.setRequestMethod("POST"); connection.setDoOutput(true); connection.setConnectTimeout(8000); connection.setReadTimeout(12000); connection.setRequestProperty("Content-Type", "application/x-www-form-urlencoded");
-                try (OutputStream output = connection.getOutputStream()) { output.write(body.getBytes(StandardCharsets.UTF_8)); }
-                int code = connection.getResponseCode();
-                runOnUiThread(() -> shareStatus.setText(code >= 200 && code < 400 ? "已同步到电脑手机收件箱" : "同步失败：HTTP " + code));
-            } catch (Exception error) { runOnUiThread(() -> shareStatus.setText("同步失败：" + error.getMessage())); }
-        }).start();
-    }
-
-    private void toast(String message) { Toast.makeText(this, message, Toast.LENGTH_SHORT).show(); }
+    private void scanPairCode(){new IntentIntegrator(this).setDesiredBarcodeFormats(IntentIntegrator.QR_CODE).setPrompt("扫描电脑上的连接二维码").setBeepEnabled(false).setOrientationLocked(false).initiateScan();}
+    @Override protected void onActivityResult(int req,int result,Intent data){IntentResult scan=IntentIntegrator.parseActivityResult(req,result,data);if(scan!=null){if(scan.getContents()!=null)applyPairValue(scan.getContents());return;}if(req==PICK_FILE&&result==RESULT_OK&&data!=null&&data.getData()!=null){sendFile(data.getData());return;}super.onActivityResult(req,result,data);}
+    private boolean applyPairValue(String value){Uri uri=Uri.parse(value);String endpoint=value;if("agenttoolbox".equals(uri.getScheme())&&"pair".equals(uri.getHost()))endpoint=uri.getQueryParameter("endpoint");if(endpoint==null||(!endpoint.startsWith("http://")&&!endpoint.startsWith("https://"))||Uri.parse(endpoint).getQueryParameter("token")==null){toast("这不是有效的连接二维码");connectionStatus.setText("二维码无效");setupPanel.setVisibility(View.VISIBLE);return false;}endpointInput.setText(endpoint);shareStatus.setText("已识别连接码，正在验证…");connect();return true;}
+    private boolean handleDeepLink(Intent intent){return intent!=null&&intent.getData()!=null&&applyPairValue(intent.getData().toString());}
+    private void clearConnection(){endpointInput.setText("");getSharedPreferences(PREFS,MODE_PRIVATE).edit().remove(ENDPOINT).apply();webView.loadUrl("about:blank");setupPanel.setVisibility(View.VISIBLE);connectionStatus.setText("等待连接");}
+    private void connect(){String endpoint=endpointInput.getText().toString().trim();if(!endpoint.startsWith("http://")&&!endpoint.startsWith("https://")){toast("请输入电脑端配对地址");return;}getSharedPreferences(PREFS,MODE_PRIVATE).edit().putString(ENDPOINT,endpoint).apply();setupPanel.setVisibility(View.GONE);webView.loadUrl(endpoint);connectionStatus.setText("正在连接…");}
+    private void pickFile(){Intent intent=new Intent(Intent.ACTION_OPEN_DOCUMENT);intent.addCategory(Intent.CATEGORY_OPENABLE);intent.setType("*/*");startActivityForResult(intent,PICK_FILE);}
+    private String endpoint(){return getSharedPreferences(PREFS,MODE_PRIVATE).getString(ENDPOINT,"");}
+    private void sendManualText(){String text=manualShareInput.getText().toString().trim();if(text.isEmpty()){toast("请先输入文字或链接");return;}postShare("手机手动分享",text,"","text/plain","");}
+    private void sendFile(Uri uri){new Thread(()->{try{InputStream in=getContentResolver().openInputStream(uri);byte[] bytes=in.readAllBytes();in.close();String mime=getContentResolver().getType(uri);postShare("手机文件",uri.toString(),"",mime==null?"application/octet-stream":mime,Base64.encodeToString(bytes,Base64.NO_WRAP));}catch(Exception e){runOnUiThread(()->shareStatus.setText("读取文件失败："+e.getMessage()));}}).start();}
+    private void postShare(String title,String text,String url,String mime,String data){try{Uri remote=Uri.parse(endpoint());String token=remote.getQueryParameter("token");if(token==null)throw new IllegalStateException("请先连接电脑");String origin=remote.getScheme()+"://"+remote.getAuthority();URL target=new URL(origin+"/api/share?token="+URLEncoder.encode(token,StandardCharsets.UTF_8.name()));String json="{\"title\":"+json(title)+",\"text\":"+json(text)+",\"url\":"+json(url)+",\"mime\":"+json(mime)+",\"data\":"+json(data)+"}";HttpURLConnection c=(HttpURLConnection)target.openConnection();c.setRequestMethod("POST");c.setDoOutput(true);c.setConnectTimeout(8000);c.setReadTimeout(20000);c.setRequestProperty("Content-Type","application/json");try(OutputStream out=c.getOutputStream()){out.write(json.getBytes(StandardCharsets.UTF_8));}int code=c.getResponseCode();runOnUiThread(()->shareStatus.setText(code>=200&&code<300?"已发送到电脑收件箱 ✓":"发送失败：HTTP "+code));}catch(Exception e){runOnUiThread(()->shareStatus.setText("发送失败："+e.getMessage()));}}
+    private String json(String value){return "\""+String.valueOf(value==null?"":value).replace("\\","\\\\").replace("\"","\\\"").replace("\n","\\n").replace("\r","\\r")+"\"";}
+    @Override public void onBackPressed(){if(webView.canGoBack())webView.goBack();else if(setupPanel.getVisibility()!=View.VISIBLE)setupPanel.setVisibility(View.VISIBLE);else super.onBackPressed();}
+    private void handleIncomingShare(Intent intent){if(intent==null||!Intent.ACTION_SEND.equals(intent.getAction()))return;String value=intent.getStringExtra(Intent.EXTRA_TEXT);Uri uri=intent.getParcelableExtra(Intent.EXTRA_STREAM);if(value==null&&uri!=null)value=uri.toString();if(value==null||value.trim().isEmpty())return;final String shared=value.trim();String endpoint=getSharedPreferences(PREFS,MODE_PRIVATE).getString(ENDPOINT,"");if(endpoint.isEmpty()){shareStatus.setText("已收到分享，请先连接电脑");setupPanel.setVisibility(View.VISIBLE);return;}shareStatus.setText("正在同步分享内容…");new Thread(()->{try{Uri remote=Uri.parse(endpoint);String token=remote.getQueryParameter("token");if(token==null||remote.getHost()==null)throw new IllegalStateException("配对地址缺少 token");String origin=remote.getScheme()+"://"+remote.getAuthority();URL target=new URL(origin+"/share?token="+URLEncoder.encode(token,StandardCharsets.UTF_8.name()));String body="title="+URLEncoder.encode("手机分享",StandardCharsets.UTF_8.name())+"&text="+URLEncoder.encode(shared,StandardCharsets.UTF_8.name());HttpURLConnection c=(HttpURLConnection)target.openConnection();c.setRequestMethod("POST");c.setDoOutput(true);c.setConnectTimeout(8000);c.setReadTimeout(12000);c.setRequestProperty("Content-Type","application/x-www-form-urlencoded");try(OutputStream out=c.getOutputStream()){out.write(body.getBytes(StandardCharsets.UTF_8));}int code=c.getResponseCode();runOnUiThread(()->{setupPanel.setVisibility(View.VISIBLE);shareStatus.setText(code>=200&&code<400?"已同步到电脑收件箱 ✓":"同步失败：HTTP "+code);});}catch(Exception e){runOnUiThread(()->{setupPanel.setVisibility(View.VISIBLE);shareStatus.setText("同步失败："+e.getMessage());});}}).start();}
+    private void toast(String message){Toast.makeText(this,message,Toast.LENGTH_SHORT).show();}
 }

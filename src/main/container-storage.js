@@ -53,6 +53,81 @@ async function safeDirectory(getUserDataPath, relPath = '') {
   return { root, directory: real, relPath: path.relative(root, real).split(path.sep).join('/') };
 }
 
+async function safeFile(getUserDataPath, relPath) {
+  const root = await fsp.realpath(containerRoot(getUserDataPath));
+  const target = path.resolve(root, String(relPath || ''));
+  const real = await fsp.realpath(target);
+  if (!real.startsWith(root + path.sep)) throw new Error('拒绝访问容器以外的路径。');
+  const stat = await fsp.stat(real);
+  if (!stat.isFile()) throw new Error('目标不是文件。');
+  return { root, file: real, relPath: path.relative(root, real).split(path.sep).join('/'), stat };
+}
+
+async function readContainerFile(getUserDataPath, relPath) {
+  try {
+    const location = await safeFile(getUserDataPath, relPath);
+    const ext = path.extname(location.file).slice(1).toLowerCase();
+    if (location.stat.size > 5 * 1024 * 1024) throw new Error('文件超过 5MB，请使用外部应用打开。');
+    if (!['txt', 'md', 'json', 'jsonl', 'yaml', 'yml', 'csv', 'js', 'ts', 'py', 'html', 'css', 'sh', 'sql'].includes(ext)) throw new Error('这个格式不支持文本预览。');
+    return { ok: true, content: await fsp.readFile(location.file, 'utf8'), ext, relPath: location.relPath };
+  } catch (error) { return { ok: false, error: error.message }; }
+}
+
+async function writeContainerFile(getUserDataPath, relPath, content) {
+  try {
+    const location = await safeFile(getUserDataPath, relPath);
+    const text = String(content ?? '');
+    if (Buffer.byteLength(text, 'utf8') > 5 * 1024 * 1024) throw new Error('内容超过 5MB。');
+    await fsp.writeFile(location.file, text, 'utf8');
+    return { ok: true, relPath: location.relPath, bytes: Buffer.byteLength(text) };
+  } catch (error) { return { ok: false, error: error.message }; }
+}
+
+async function containerFilePath(getUserDataPath, relPath) {
+  try { const location = await safeFile(getUserDataPath, relPath); return { ok: true, path: location.file }; }
+  catch (error) { return { ok: false, error: error.message }; }
+}
+
+async function syncContainerLiterature(getUserDataPath, literatureDir) {
+  const root = containerRoot(getUserDataPath);
+  fs.mkdirSync(literatureDir, { recursive: true });
+  const manifestPath = path.join(root, '.literature-imports.json');
+  let manifest = {};
+  try { manifest = JSON.parse(await fsp.readFile(manifestPath, 'utf8')); } catch {}
+  // 自动流转只认 PDF，避免把项目 README、requirements 等普通文本误当论文。
+  // 其它文献格式仍可在容器菜单中由用户明确选择“转入科研”。
+  const extensions = new Set(['pdf']);
+  const imported = [];
+  async function visit(directory) {
+    for (const entry of await fsp.readdir(directory, { withFileTypes: true })) {
+      if (entry.name.startsWith('.')) continue;
+      const source = path.join(directory, entry.name);
+      if (entry.isDirectory()) await visit(source);
+      else if (entry.isFile() && extensions.has(path.extname(entry.name).slice(1).toLowerCase())) {
+        const stat = await fsp.stat(source);
+        const key = path.relative(root, source).split(path.sep).join('/');
+        const signature = `${stat.size}:${stat.mtimeMs}`;
+        if (manifest[key]?.signature === signature && fs.existsSync(path.join(literatureDir, manifest[key].file))) continue;
+        const sameName = path.join(literatureDir, entry.name);
+        if (!manifest[key] && fs.existsSync(sameName)) {
+          const existing = await fsp.stat(sameName);
+          if (existing.size === stat.size) {
+            manifest[key] = { signature, file: entry.name };
+            continue;
+          }
+        }
+        const target = await uniqueTarget(literatureDir, entry.name);
+        await fsp.copyFile(source, target);
+        manifest[key] = { signature, file: path.basename(target) };
+        imported.push({ source: key, file: path.basename(target), size: stat.size });
+      }
+    }
+  }
+  await visit(root);
+  await fsp.writeFile(manifestPath, JSON.stringify(manifest, null, 2), 'utf8');
+  return { ok: true, imported, count: imported.length };
+}
+
 function safeFolderName(name) {
   const value = String(name || '').trim();
   if (!value || value === '.' || value === '..' || /[\\/:*?"<>|]/.test(value) || value.length > 80) throw new Error('文件夹名称无效。');
@@ -224,6 +299,9 @@ function registerContainerIpc(ipcMain, { shell, getUserDataPath }) {
   ipcMain.handle('container:applyPlan', (_event, payload = {}) => moveFiles(getUserDataPath, payload.relPath || '', payload.groups));
   ipcMain.handle('container:import', (_event, payload = {}) => importIntoContainer(getUserDataPath, payload.sources, payload.relPath || ''));
   ipcMain.handle('container:open', () => openContainer(getUserDataPath, shell));
+  ipcMain.handle('container:readFile', (_event, relPath) => readContainerFile(getUserDataPath, relPath));
+  ipcMain.handle('container:writeFile', (_event, payload = {}) => writeContainerFile(getUserDataPath, payload.relPath, payload.content));
+  ipcMain.handle('container:filePath', (_event, relPath) => containerFilePath(getUserDataPath, relPath));
 }
 
-module.exports = { categoryFor, importIntoContainer, listContainer, makeFolder, moveFiles, organize, registerContainerIpc, seedContainer };
+module.exports = { categoryFor, containerFilePath, containerRoot, importIntoContainer, listContainer, makeFolder, moveFiles, organize, readContainerFile, registerContainerIpc, seedContainer, syncContainerLiterature, writeContainerFile };

@@ -453,6 +453,54 @@ async function discoverPapers(options = {}) {
   };
 }
 
+async function discoverReferences(query, limit = 40) {
+  const input = typeof query === 'object' ? query : { title: query };
+  const q = String(input.title || '').replace(/\.pdf$/i, '').replace(/[_-]+/g, ' ').trim();
+  if (!q) return { ok: false, error: '当前文献没有可识别标题。' };
+  const search = await fetchJson(`https://api.openalex.org/works?search=${encodeURIComponent(q)}&per-page=5&select=id,title,referenced_works`);
+  const work = (search?.results || []).sort((a, b) => titleScore(q, b.title) - titleScore(q, a.title))[0];
+  let ids = (work?.referenced_works || []).slice(0, Math.max(1, Math.min(50, Number(limit) || 40)));
+  if (!ids.length) {
+    const found = await fetchJson(`https://api.semanticscholar.org/graph/v1/paper/search?query=${encodeURIComponent(q)}&limit=3&fields=title,paperId`, 20000);
+    const match = (found?.data || []).sort((a, b) => titleScore(q, b.title) - titleScore(q, a.title))[0];
+    if (match?.paperId) {
+      const refs = await fetchJson(`https://api.semanticscholar.org/graph/v1/paper/${encodeURIComponent(match.paperId)}/references?limit=${Math.max(1, Math.min(50, Number(limit) || 40))}&fields=title,externalIds`, 25000);
+      const papers = [];
+      for (const entry of refs?.data || []) {
+        const cited = entry?.citedPaper;
+        if (!cited?.title) continue;
+        const doi = cited.externalIds?.DOI || '';
+        try {
+          const record = doi
+            ? await fetchJson(`https://api.openalex.org/works/https://doi.org/${encodeURIComponent(doi)}`, 12000)
+            : (await fetchJson(`https://api.openalex.org/works?search=${encodeURIComponent(cited.title)}&per-page=1`, 12000))?.results?.[0];
+          papers.push(record ? openAlexPaper(record) : { id: cited.paperId, title: cited.title, doi, authors: [], year: null, citedBy: 0, pdfUrl: '', landingUrl: doi ? `https://doi.org/${doi}` : '', source: 'Semantic Scholar' });
+        } catch { papers.push({ id: cited.paperId, title: cited.title, doi, authors: [], year: null, citedBy: 0, pdfUrl: '', landingUrl: '', source: 'Semantic Scholar' }); }
+      }
+      return { ok: true, sourceTitle: match.title, papers };
+    }
+    const candidates = String(input.referenceText || '').split(/(?=\[?\d{1,3}[\].)]\s+)/)
+      .map((line) => line.replace(/^\[?\d{1,3}[\].)]\s*/, '').trim())
+      .map((line) => (line.match(/[“"]([^”"]{12,180})[”"]/u)?.[1] || line.match(/\.\s+([^\.]{12,180})\.\s+(?:In |arXiv|Proceedings|Journal|Transactions)/i)?.[1] || '').trim())
+      .filter(Boolean).slice(0, Math.max(1, Math.min(20, Number(limit) || 20)));
+    const papers = [];
+    for (const title of candidates) {
+      try {
+        const hit = (await searchOpenAlex(title))[0];
+        if (hit) papers.push({ id: `title:${normalize(hit.title)}`, title: hit.title, authors: [], year: null, citedBy: 0, doi: '', pdfUrl: hit.pdfUrl, landingUrl: hit.pdfUrl, source: 'PDF References' });
+      } catch { /* 单条解析失败跳过 */ }
+    }
+    return { ok: true, sourceTitle: work?.title || q, papers };
+  }
+  const papers = [];
+  for (let start = 0; start < ids.length; start += 10) {
+    const batch = ids.slice(start, start + 10);
+    const records = await Promise.all(batch.map((id) => fetchJson(`https://api.openalex.org/works/${id.split('/').pop()}`, 20000).catch(() => null)));
+    papers.push(...records.filter(Boolean).map(openAlexPaper));
+  }
+  return { ok: true, sourceTitle: work.title, papers: papers.sort((a, b) => b.citedBy - a.citedBy) };
+}
+
 function safeHttpUrl(value) {
   try {
     const url = new URL(String(value || ''));
@@ -625,6 +673,7 @@ async function fetchPaperByTitle(litDir, query) {
 module.exports = {
   fetchPaperByTitle,
   discoverPapers,
+  discoverReferences,
   downloadPaperCandidate,
   downloadPapersBatch,
   restoreAbstract,

@@ -75,6 +75,7 @@ export function createLiterature(root, ctx) {
   const fitPageBtn = h('button', { class: 'btn btn--sm', title: '整页显示，一眼看到版面结构', onclick: () => fitTo('page') }, '整页');
   const annoToggle = h('button', { class: 'btn btn--sm', onclick: () => toggleAnno() }, 'Highlights');
   const chatToggle = h('button', { class: 'btn btn--sm', title: '带着文献内容问 AI', onclick: () => toggleChat() }, '💬 问答');
+  const referencesBtn = h('button', { class: 'btn btn--sm', title: '查找当前论文引用的文献', onclick: () => showReferences() }, '参考文献');
   const bilingBtn = h('button', { class: 'btn btn--sm', hidden: true, title: '本地优先的中英双栏阅读', onclick: () => toggleBilingual() }, '中英双栏');
   const handBtn = h('button', { class: 'btn btn--sm', title: '手掌：拖拽平移页面', onclick: () => setCursorMode('hand') }, '✋');
   const selectBtn = h('button', { class: 'btn btn--sm', title: '指针：选中文字（配合划词/批注）', onclick: () => setCursorMode('select') }, '➤');
@@ -91,8 +92,49 @@ export function createLiterature(root, ctx) {
     h('span', { class: 'subbar__sep' }),
     bilingBtn, selBtn, snipBtn, transToggleBtn, compareBtn,
     h('span', { class: 'subbar__sep' }),
-    chatToggle, annoToggle,
+    referencesBtn, chatToggle, annoToggle,
   );
+  const referencesPanel = h('aside', { class: 'lit__references', hidden: true });
+
+  async function showReferences() {
+    if (!current) return;
+    referencesPanel.hidden = false;
+    referencesPanel.replaceChildren(h('div', { class: 'container__loading' }, h('span', { class: 'spinner' }), ' 正在查找引用关系…'));
+    const query = (meta()[current.file]?.title || current.file).replace(/\.pdf$/i, '');
+    try {
+      let result = await lit.references(query);
+      if (result.ok && !(result.papers || []).length && pdfDoc) {
+        const tail = [];
+        for (let n = Math.max(1, pdfDoc.numPages - 5); n <= pdfDoc.numPages; n += 1) {
+          const content = await (await pdfDoc.getPage(n)).getTextContent();
+          tail.push(content.items.map((item) => item.str).join(' '));
+        }
+        result = await lit.references({ title: query, referenceText: tail.join('\n') });
+      }
+      if (!result.ok) throw new Error(result.error);
+      const papers = result.papers || [];
+      const selected = new Set(papers.filter((paper) => paper.pdfUrl).map((paper) => paper.id));
+      const list = h('div', { class: 'lit__references-list' });
+      for (const paper of papers) {
+        const check = h('input', { type: 'checkbox', checked: selected.has(paper.id), disabled: !paper.pdfUrl, onchange: (e) => e.target.checked ? selected.add(paper.id) : selected.delete(paper.id) });
+        list.append(h('label', { class: 'lit__reference-item' }, check,
+          h('span', {}, h('strong', {}, paper.title), h('small', { class: 'faint' }, `${paper.year || ''} · 被引 ${paper.citedBy || 0}${paper.pdfUrl ? ' · 开放全文' : ' · 暂无开放全文'}`))));
+      }
+      const download = h('button', { class: 'btn btn--sm btn--primary', onclick: async () => {
+        const chosen = papers.filter((paper) => selected.has(paper.id));
+        if (!chosen.length) return toast('没有勾选可下载的开放文献', 'info');
+        download.disabled = true;
+        const out = await lit.downloadCandidates(chosen);
+        download.disabled = false;
+        toast(`参考文献下载完成：${out.completed || 0}/${out.total || chosen.length}`, out.completed ? 'good' : 'bad', 6000);
+        await renderList();
+      } }, '下载已选开放全文');
+      referencesPanel.replaceChildren(
+        h('div', { class: 'lit__references-head' }, h('strong', {}, `参考文献 · ${papers.length} 篇`), h('span', { style: { flex: 1 } }), download, h('button', { class: 'btn btn--sm', onclick: () => { referencesPanel.hidden = true; } }, '关闭')),
+        h('div', { class: 'faint lit__references-source' }, `来源论文：${result.sourceTitle || query}`), list,
+      );
+    } catch (error) { referencesPanel.textContent = `查找参考文献失败：${error.message}`; }
+  }
 
   // ---- 批注栏 ----
   const annoList = h('div', { class: 'lit__anno-list' });
@@ -1108,7 +1150,10 @@ export function createLiterature(root, ctx) {
     bilingual = true;
     bilingBtn.classList.add('is-on');
     bilingBtn.textContent = '准备对照…';
-    const { items, truncated } = await paragraphs();
+    const extracted = await paragraphs();
+    const allItems = extracted.items;
+    const items = allItems.slice(0, 40);
+    const truncated = extracted.truncated || allItems.length > items.length;
     if (runId !== bilingualRunId) return;
     if (!items.length) {
       closeBilingual();
@@ -1614,6 +1659,9 @@ export function createLiterature(root, ctx) {
 
   async function openReader(item) {
     current = item;
+    for (const row of listEl.querySelectorAll('.lit__item')) {
+      row.classList.toggle('is-reading', row.dataset.file === item.file);
+    }
     rawText = null;
     closeBilingual();
     lastSelection = '';
@@ -1834,8 +1882,22 @@ export function createLiterature(root, ctx) {
           await config.set('research.litMeta', next);
         },
       });
+      const openFromCard = (event) => {
+        if (event.target.closest('button, input, textarea, select, a')) return;
+        openReader(item);
+      };
       listEl.appendChild(
-        h('div', { class: `lit__item${current?.file === item.file ? ' is-reading' : ''}` },
+        h('div', {
+          class: `lit__item${current?.file === item.file ? ' is-reading' : ''}`,
+          dataset: { file: item.file },
+          role: 'button',
+          tabindex: 0,
+          title: '点击在右侧阅读',
+          onclick: openFromCard,
+          onkeydown: (event) => {
+            if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); openReader(item); }
+          },
+        },
           h('span', { class: 'lit__icon' }, FORMAT_ICONS[item.format] || '📄'),
           h('div', { class: 'lit__main' },
             h('div', { class: 'lit__name', title: item.file }, item.file),
@@ -1851,6 +1913,7 @@ export function createLiterature(root, ctx) {
         ),
       );
     }
+    if (!current && files[0]) openReader(files[0]);
   }
 
   function paperMeta(paper) {
@@ -2289,6 +2352,7 @@ export function createLiterature(root, ctx) {
         viewerBar,
       h('div', { class: 'lit__reader-body' },
           viewerEl,
+          referencesPanel,
           pdfXBar,
           transCard,
           comparePanel,

@@ -32,13 +32,21 @@ const mcpFactory = require('./mcp-factory');
 const practiceRunner = require('./practice-runner');
 const edgeCookies = require('./edge-cookies');
 const { RemoteControl } = require('./remote-control');
-const { registerContainerIpc, seedContainer } = require('./container-storage');
+const { registerContainerIpc, seedContainer, syncContainerLiterature } = require('./container-storage');
 const { DshService } = require('./dsh-service');
 
 async function remoteStatusWithQr(state) {
   const current = state || remoteControl.status();
   const apkUrl = current.apkUrls?.[0] || '';
-  return { ...current, apkQr: apkUrl ? await QRCode.toDataURL(apkUrl, { width: 320, margin: 2 }) : '' };
+  const pairUrl = current.urls?.[0] || '';
+  // 直接编码 HTTPS/HTTP 配对地址：系统相机可打开网页，新版 App 内扫码也可识别。
+  const pairDeepLink = pairUrl;
+  return {
+    ...current,
+    apkQr: apkUrl ? await QRCode.toDataURL(apkUrl, { width: 320, margin: 2 }) : '',
+    pairDeepLink,
+    pairQr: pairDeepLink ? await QRCode.toDataURL(pairDeepLink, { width: 320, margin: 2 }) : '',
+  };
 }
 const { ArgosService } = require('./argos-service');
 
@@ -1867,6 +1875,9 @@ function registerIpc() {
     fs.mkdirSync(dir, { recursive: true });
     return dir;
   };
+  syncContainerLiterature(() => app.getPath('userData'), litDir())
+    .then((result) => { if (result.count) console.log('[container] 自动转入科研文献:', result.count); })
+    .catch((error) => console.warn('[container] 文献自动入库失败:', error.message));
 
   function decodeXmlText(value) {
     return String(value || '')
@@ -1983,6 +1994,23 @@ function registerIpc() {
   });
 
   ipcMain.handle('lit:importFiles', (_e, sources) => importLiteratureSources(sources));
+  ipcMain.handle('container:toLiterature', async (_e, relPaths) => {
+    const root = path.join(app.getPath('userData'), 'container');
+    const sources = [];
+    const visit = (target) => {
+      let stat;
+      try { stat = fs.statSync(target); } catch { return; }
+      if (stat.isDirectory()) {
+        for (const entry of fs.readdirSync(target)) visit(path.join(target, entry));
+      } else sources.push(target);
+    };
+    for (const rel of Array.isArray(relPaths) ? relPaths : []) {
+      const target = path.resolve(root, String(rel || ''));
+      if (target === root || target.startsWith(root + path.sep)) visit(target);
+    }
+    const imported = await importLiteratureSources(sources);
+    return { ok: true, imported, count: imported.length };
+  });
 
   /** 整理库里已有的编号命名 PDF（不重新导入） */
   ipcMain.handle('lit:fixNames', async () => {
@@ -2002,6 +2030,7 @@ function registerIpc() {
   ipcMain.handle('lit:fetch', (_e, query) => litFetch.fetchPaperByTitle(litDir(), query));
   /** 按研究方向发现候选论文（OpenAlex + Europe PMC） */
   ipcMain.handle('lit:discover', (_e, options) => litFetch.discoverPapers(options));
+  ipcMain.handle('lit:references', (_e, query) => litFetch.discoverReferences(query));
   /** 下载候选论文的合法开放全文 */
   ipcMain.handle('lit:downloadCandidate', (_e, paper) => litFetch.downloadPaperCandidate(litDir(), paper));
   ipcMain.handle('lit:downloadCandidates', (_e, papers) => litFetch.downloadPapersBatch(
