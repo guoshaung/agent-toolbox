@@ -993,7 +993,7 @@
 .lit__trans-actions { flex: 0 0 auto; display: flex; justify-content: flex-end; gap: 8px; padding: 10px 14px; border-top: 1px solid rgba(255,255,255,.08); background: rgba(21,29,42,var(--lit-trans-opacity,.94)); }
 .lit__trans-empty { margin: auto; max-width: 280px; padding: 24px; color: #aeb8ca; font-size: 13px; line-height: 1.8; text-align: center; }
 .lit__trans-busy { margin: auto; padding: 28px; display: flex; align-items: center; gap: 10px; color: #dce6ff; font-size: 14px; }
-.lit__selection-action { position: absolute; z-index: 9; width: 32px; height: 32px; padding: 0; border: 1px solid var(--accent); border-radius: 999px; background: var(--accent); color: white; box-shadow: 0 5px 18px rgba(0,0,0,.32); cursor: pointer; font-weight: 700; }
+.lit__selection-action { position: absolute; z-index: 9; display: flex; gap: 4px; padding: 3px; border: 1px solid var(--accent); border-radius: 8px; background: var(--accent); color: white; box-shadow: 0 5px 18px rgba(0,0,0,.32); }
 .lit__selection-action[hidden] { display: none; }
 .lit__snip-overlay { position: absolute; inset: 0; z-index: 4; cursor: crosshair; background: rgba(0,0,0,.15); }
 .lit__snip-svg { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
@@ -1012,18 +1012,27 @@
 .lit__text-layer ::selection { background: rgba(75, 116, 255, .36); }
 .lit__biling-panel { position: absolute; inset: 0; z-index: 7; display: flex; flex-direction: column; min-width: 0; background: var(--bg-sunken); }
 .lit__biling-head { flex: 0 0 auto; display: flex; align-items: center; gap: 10px; padding: 9px 14px; border-bottom: 1px solid var(--line-soft); background: var(--bg-raised); font-size: 12.5px; }
-.lit__biling { flex: 1; min-height: 0; overflow-y: auto; padding: 18px; width: 100%; max-width: 1180px; margin: 0 auto; display: flex; flex-direction: column; gap: 14px; }
+.lit__biling { flex: 1; min-height: 0; overflow: hidden; padding: 0; width: 100%; margin: 0 auto; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 1px; background: var(--line-soft); }
+.lit__biling-pane { min-width: 0; min-height: 0; overflow-y: auto; padding: 18px; background: var(--bg-sunken); display: flex; flex-direction: column; gap: 14px; }
 .lit__biling-item { display: flex; flex-direction: column; gap: 7px; padding: 14px; border: 1px solid var(--line-soft); border-radius: 12px; background: var(--bg-raised); }
 .lit__biling-meta { font-size: 10.5px; }
-.lit__biling-cols { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 18px; }
 .lit__biling-col { min-width: 0; padding: 13px 15px; border-radius: 10px; }
 .lit__biling-col--src { background: var(--bg-sunken); border: 1px solid var(--line-soft); }
 .lit__biling-col--dst { background: rgba(91,140,255,.1); border: 1px solid rgba(91,140,255,.36); }
+.lit__biling-col.is-linked { outline: 2px solid rgba(110,224,204,.7); outline-offset: 2px; background: rgba(110,224,204,.12); }
 .lit__biling-col-label { margin-bottom: 8px; color: var(--text-faint); font-size: 10.5px; font-weight: 750; letter-spacing: 1px; }
 .lit__biling-col--dst .lit__biling-col-label { color: #8db0ff; }
 .lit__biling-src { color: var(--text-dim); font-size: 13px; line-height: 1.8; white-space: pre-wrap; word-break: break-word; }
 .lit__biling-dst { color: #fff; font-size: 15px; line-height: 1.9; font-weight: 500; white-space: pre-wrap; word-break: break-word; user-select: text; }
-@media (max-width: 1050px) { .lit__biling-cols { grid-template-columns: 1fr; } }
+@media (max-width: 800px) { .lit__biling { grid-template-columns: 1fr 1fr; } .lit__biling-pane { padding: 10px; } }
+.lit__compare { position: absolute; inset: 0; z-index: 8; display: flex; flex-direction: column; background: var(--bg-sunken); padding: 14px; gap: 12px; }
+.lit__compare[hidden] { display: none; }
+.lit__compare-head { display: flex; align-items: center; gap: 8px; }
+.lit__compare-inputs { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.lit__compare-inputs textarea { min-height: 110px; }
+.lit__compare-output { flex: 1; overflow: auto; padding: 14px; white-space: pre-wrap; line-height: 1.8; background: var(--bg-raised); border: 1px solid var(--line-soft); }
+.lit__diff-insert { background: rgba(68, 180, 110, .24); }
+.lit__diff-delete { color: #d66; text-decoration: line-through; background: rgba(210, 80, 80, .18); }
 .btn.is-on { border-color: var(--accent); color: var(--accent); }
 .lit__scroll { flex: 1; min-height: 0; overflow-y: auto; padding: 14px; }
 .lit__list { display: flex; flex-direction: column; gap: 10px; max-width: 900px; }

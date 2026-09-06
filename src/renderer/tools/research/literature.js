@@ -1,6 +1,8 @@
 import { h, toast } from '../../core/ui.js';
 import { paperToMeta } from './citation.js';
 import { buildPaperQaPrompt, buildReadingSummaryPrompt, ANNO_TAGS, tagOf } from './readprompt.js';
+import { TranslationManager } from './translation-manager.js';
+import { diffWords } from './text-diff.js';
 
 const FORMAT_ICONS = {
   pdf: '📕', doc: '📘', docx: '📘', txt: '📄', md: '📄',
@@ -38,6 +40,7 @@ export function createLiterature(root, ctx) {
 
   let files = [];
   let current = null; // 当前阅读的 { file, format, size, mtime }
+  let translationManager = null;
   let zoomIndex = 2;  // ZOOM_STEPS 里的 1.0
   let paperCandidates = [];
   let libraryCandidates = [];
@@ -59,12 +62,13 @@ export function createLiterature(root, ctx) {
   const fitPageBtn = h('button', { class: 'btn btn--sm', title: '整页显示，一眼看到版面结构', onclick: () => fitTo('page') }, '整页');
   const annoToggle = h('button', { class: 'btn btn--sm', onclick: () => toggleAnno() }, '批注');
   const chatToggle = h('button', { class: 'btn btn--sm', title: '带着文献内容问 AI', onclick: () => toggleChat() }, '💬 问答');
-  const bilingBtn = h('button', { class: 'btn btn--sm', hidden: true, title: '豆包一键翻译全文，原文/译文对照阅读', onclick: () => toggleBilingual() }, '一键对照');
+  const bilingBtn = h('button', { class: 'btn btn--sm', hidden: true, title: '本地优先的中英双栏阅读', onclick: () => toggleBilingual() }, '中英双栏');
   const handBtn = h('button', { class: 'btn btn--sm', title: '手掌：拖拽平移页面', onclick: () => setCursorMode('hand') }, '✋');
   const selectBtn = h('button', { class: 'btn btn--sm', title: '指针：选中文字（配合划词/批注）', onclick: () => setCursorMode('select') }, '➤');
   const selBtn = h('button', { class: 'btn btn--sm', title: '先选中文字，再翻译；PDF 请切到指针模式', onclick: () => translateSelection() }, '翻译选中');
   const snipBtn = h('button', { class: 'btn btn--sm', title: '默认方式：在 PDF 页面右键后圈选区域；也可点击此按钮', onclick: () => startSnip() }, '圈译');
   const transToggleBtn = h('button', { class: 'btn btn--sm', title: '打开固定译文栏', onclick: () => toggleTransPanel() }, '译文栏');
+  const compareBtn = h('button', { class: 'btn btn--sm', onclick: () => toggleCompare() }, '差异');
   const viewerBar = h('div', { class: 'bar lit__viewerbar', hidden: true },
     h('span', { class: 'lit__viewer-name', title: '' }, ''),
     h('span', { style: { flex: 1 } }),
@@ -72,7 +76,7 @@ export function createLiterature(root, ctx) {
     h('span', { class: 'subbar__sep' }),
     zoomOutBtn, zoomLabel, zoomInBtn, fitWidthBtn, fitPageBtn,
     h('span', { class: 'subbar__sep' }),
-    bilingBtn, selBtn, snipBtn, transToggleBtn,
+    bilingBtn, selBtn, snipBtn, transToggleBtn, compareBtn,
     h('span', { class: 'subbar__sep' }),
     chatToggle, annoToggle,
   );
@@ -314,6 +318,21 @@ export function createLiterature(root, ctx) {
     return (config.get(annoKey()) || []);
   }
 
+  function highlightKey() { return `research.litHighlights.${current?.file || ''}`; }
+  function highlights() { return current ? (config.get(highlightKey()) || []) : []; }
+  async function saveHighlight(tag = 'important', color = 'yellow') {
+    if (!current || !lastSelection.trim()) return toast('先选中论文文字', 'info');
+    const selection = window.getSelection();
+    const anchor = selection?.anchorNode?.nodeType === Node.TEXT_NODE ? selection.anchorNode.parentElement : selection?.anchorNode;
+    const paragraphId = anchor?.closest?.('[data-paragraph-id]')?.dataset.paragraphId || 'p_text';
+    const list = highlights();
+    list.unshift({ id: `hl-${Date.now()}`, paper_id: current.file, paragraph_id: paragraphId, selected_text: lastSelection.trim(), highlight_type: tag, color, created_at: new Date().toISOString() });
+    await config.set(highlightKey(), list);
+    hideSelectionAction();
+    renderAnnos();
+    toast('重点已保存', 'good');
+  }
+
   let annoTag = 'key';        // 当前选中的批注标签
 
   async function addAnno() {
@@ -342,8 +361,9 @@ export function createLiterature(root, ctx) {
   function renderAnnos() {
     annoList.textContent = '';
     const list = annotations();
-    if (!list.length) {
-      annoList.appendChild(h('div', { class: 'faint lit__anno-empty' }, '还没有批注'));
+    const marks = highlights();
+    if (!list.length && !marks.length) {
+      annoList.appendChild(h('div', { class: 'faint lit__anno-empty' }, '还没有批注或重点'));
       return;
     }
     for (const a of list) {
@@ -409,13 +429,16 @@ export function createLiterature(root, ctx) {
   /** 圈译/划词固定显示在右侧专注栏，避免浮卡挡住正文或译文看不见。 */
   let lastTransResult = null;
   const transCard = h('aside', { class: 'lit__trans-panel', hidden: true });
+  const comparePanel = h('aside', { class: 'lit__compare', hidden: true });
   let transOpacity = Math.min(1, Math.max(0.15, Number(config.get('research.lit.transOpacity', 0.94)) || 0.94));
   transCard.style.setProperty('--lit-trans-opacity', String(transOpacity));
-  const selectionAction = h('button', {
+  const selectionAction = h('div', {
     class: 'lit__selection-action', hidden: true,
     onmousedown: (e) => e.preventDefault(),
-    onclick: () => translateSelection(),
-  }, '译');
+  },
+    h('button', { class: 'btn btn--sm', onclick: () => translateSelection() }, '译'),
+    h('button', { class: 'btn btn--sm', onclick: () => saveHighlight('important', 'yellow') }, '高亮'),
+  );
 
   /** 翻译方向：和主进程 detectTarget 一致 —— 中文为主译英，否则译中 */
   function targetLang(text) {
@@ -428,7 +451,7 @@ export function createLiterature(root, ctx) {
     return Boolean(value) && !/\s/.test(value) && value.length <= 80;
   }
 
-  /** 豆包翻译独立于全局 AI；失败时再退到全局 AI 和有道，单个词不会静默空白。 */
+  /** Ordinary translation is local-first; AI is exposed only by the explicit refine action. */
   function cleanTranslation(text) {
     return String(text || '')
       .trim()
@@ -440,62 +463,25 @@ export function createLiterature(root, ctx) {
 
   async function translateSmart(text) {
     const to = targetLang(text);
-    const errs = [];
-    const messages = [
-      {
-        role: 'system',
-        content: '你是资深科研论文翻译。忠实、准确、自然地翻译，优先保证技术含义和术语一致。模型名、基准名、数据集名、缩写、变量、代码、文件名、坐标轴、图例标签和版本号保持原样，不要臆造释义；无法确定的短标签保留英文并在后面给出括号说明。只输出译文本身，不解释，不添加标题。',
-      },
-      {
-        role: 'user',
-        content: `将下面的科研内容翻译成${to}。这是论文正文、图注或图表文字，必须结合上下文翻译；不要把 high、xhigh、max、ultracode、RHI、HI 等可能是模型/实验标签的 token 翻译成普通中文。保留段落、公式、代码、引用编号、文件路径、专有名词、图例标签和数字：\n\n${text}`,
-      },
-    ];
-    try {
-      const result = await window.toolbox.ai.translate({ messages, temperature: 0.1, timeout: 90000 });
-      const cleaned = cleanTranslation(result.ok ? result.text : '');
-      if (result.ok && cleaned) return { ok: true, translation: cleaned, via: 'doubao' };
-      errs.push(result.ok ? '豆包返回了空内容' : `豆包：${result.error}`);
-    } catch (err) {
-      errs.push(`豆包：${err.message}`);
+    if (!translationManager || translationManager.paperId !== (current?.file || 'selection')) {
+      translationManager = new TranslationManager({ config, paperId: current?.file || 'selection' });
     }
-    try {
-      const out = await ctx.ai.chat(
-        `你是资深科研论文翻译。把下面的内容准确翻译成${to}。\n` +
-        '只输出译文本身：不要解释、不要重复原文、不要任何前后缀或引号。\n' +
-        '模型名、基准名、数据集名、缩写、变量、代码、文件名、坐标轴、图例标签、版本号和 high/xhigh/max/ultracode 等 token 保持原样；不确定的短标签不要臆译。保留原有换行分段、公式、引用编号和专有名词。\n\n' + text,
-        { timeout: 60000 },
-      );
-      const cleaned = cleanTranslation(out);
-      if (cleaned) return { ok: true, translation: cleaned, via: 'ai' };
-      errs.push('全局 AI 返回了空内容');
-    } catch (err) {
-      errs.push(`全局 AI：${err.message}`);
-    }
-    try {
-      const fallback = await lit.translate(text, { interactive: true });
-      const cleaned = cleanTranslation(fallback.ok ? fallback.translation : '');
-      if (fallback.ok && cleaned) return { ok: true, translation: cleaned, via: 'youdao' };
-      errs.push(fallback.ok ? '有道返回了空译文' : `有道：${fallback.error}`);
-    } catch (err) {
-      errs.push(`有道：${err.message}`);
-    }
-    // 两条通道都失败时把原因都亮出来，不然浮卡空着根本不知道发生了什么
-    return { ok: false, error: errs.join('；') };
+    const local = await translationManager.translateSelection(text, {
+      sourceLanguage: to === '英文' ? 'zh' : 'en',
+      targetLanguage: to === '英文' ? 'en' : 'zh',
+      paragraphId: 'selection',
+    });
+    if (local.ok) return { ...local, via: local.provider };
+    return { ok: false, error: local.error, via: local.provider };
   }
 
-  /** 单词速查先走有道单发接口，避免每个词都等待学术翻译模型。 */
+  /** 单词速查也走本地优先翻译，避免普通阅读消耗 API。 */
   async function translateWordFast(text) {
-    try {
-      const result = await lit.translate(text, { interactive: true });
-      const cleaned = cleanTranslation(result.ok ? result.translation : '');
-      if (result.ok && cleaned) return { ok: true, translation: cleaned, via: 'youdao-fast' };
-    } catch { /* 快速通道失败就交给完整翻译链路 */ }
     return translateSmart(text);
   }
 
   function viaLabel(via) {
-    return via === 'doubao' ? '豆包' : via === 'ai' ? '全局 AI' : via === 'youdao-fast' ? '快速词义' : '有道';
+    return via === 'chrome' ? 'Chrome 本地' : via === 'argos' ? 'Argos 本地' : '本地翻译';
   }
 
   function openTransPanel() {
@@ -583,6 +569,20 @@ export function createLiterature(root, ctx) {
         ),
       ),
       h('div', { class: 'lit__trans-actions' },
+        srcText && !isError && h('button', {
+          class: 'btn btn--sm',
+          onclick: async () => {
+            try {
+              const to = targetLang(srcText) === '英文' ? '英文' : '中文';
+              const result = await window.toolbox.ai.translate({ messages: [
+                { role: 'system', content: '你是科研论文精译助手。保留引用、公式、变量、模型名、数据集名和缩写，只输出译文。' },
+                { role: 'user', content: `将以下内容精确翻译成${to}：\n\n${srcText}` },
+              ], temperature: 0.1, timeout: 90000 });
+              if (!result.ok) throw new Error(result.error);
+              showTransResult(srcText, cleanTranslation(result.text), 'ai');
+            } catch (err) { toast(`AI 精译失败：${err.message}`, 'bad'); }
+          },
+        }, 'AI 精译'),
         !isError && value && h('button', {
           class: 'btn btn--sm',
           onclick: async () => { await window.toolbox.clipboard.write(value); toast('译文已复制', 'good'); },
@@ -853,7 +853,7 @@ export function createLiterature(root, ctx) {
   async function paragraphs() {
     if (rawText != null) {
       const all = String(rawText).split(/\n+/).map((source) => source.trim()).filter(Boolean);
-      return { items: all.slice(0, 180).map((source) => ({ source })), truncated: all.length > 180 };
+      return { items: all.slice(0, 180).map((source, index) => ({ source, paragraphId: `p_${String(index + 1).padStart(3, '0')}` })), truncated: all.length > 180 };
     }
     if (!pdfDoc) return { items: [], truncated: false };
     const items = [];
@@ -867,13 +867,13 @@ export function createLiterature(root, ctx) {
         const value = String(item.str || '').trim();
         if (value) line += `${line ? ' ' : ''}${value}`;
         if ((item.hasEOL || line.length >= 700) && line) {
-          items.push({ source: line, page: pageNo });
+          items.push({ source: line, page: pageNo, paragraphId: `p_${String(items.length + 1).padStart(3, '0')}` });
           chars += line.length;
           line = '';
         }
       }
       if (line) {
-        items.push({ source: line, page: pageNo });
+        items.push({ source: line, page: pageNo, paragraphId: `p_${String(items.length + 1).padStart(3, '0')}` });
         chars += line.length;
       }
       if (items.length >= 220 || chars >= 60000) {
@@ -920,22 +920,16 @@ export function createLiterature(root, ctx) {
   }
 
   async function translateBatch(items, batch) {
-    const payload = batch.map((id) => ({ id, text: items[id].source }));
-    const to = targetLang(payload.map((item) => item.text).join('\n'));
-    const result = await window.toolbox.ai.translate({
-      messages: [
-        { role: 'system', content: '你是专业学术翻译引擎。保持术语、公式、引用编号准确。严格输出 JSON，不要 markdown。' },
-        {
-          role: 'user',
-          content: `把 input 中每条 text 翻译成${to}。id 必须原样返回，不能合并、遗漏或新增。输出格式：{"items":[{"id":0,"translation":"译文"}]}\ninput=${JSON.stringify(payload)}`,
-        },
-      ],
-      temperature: 0.1,
-      timeout: 120000,
+    if (!translationManager || translationManager.paperId !== (current?.file || 'selection')) {
+      translationManager = new TranslationManager({ config, paperId: current?.file || 'selection' });
+    }
+    const to = targetLang(batch.map((id) => items[id].source).join('\n')) === '英文' ? 'en' : 'zh';
+    const results = await translationManager.translateBatch(batch.map((id) => ({ paragraphId: items[id].paragraphId, source: items[id].source })), {
+      sourceLanguage: to === 'en' ? 'zh' : 'en', targetLanguage: to,
     });
-    if (!result.ok) throw new Error(result.error);
-    const parsed = parseBatchTranslations(result.text);
-    if (!parsed || batch.some((id) => !parsed.get(id))) throw new Error('豆包没有按段落返回完整 JSON');
+    const parsed = new Map();
+    results.forEach((result, index) => { if (result.ok) parsed.set(batch[index], cleanTranslation(result.translation)); });
+    if (batch.some((id) => !parsed.get(id))) throw new Error('本地翻译不可用');
     return parsed;
   }
 
@@ -948,14 +942,29 @@ export function createLiterature(root, ctx) {
     bilingBtn.textContent = '一键对照';
   }
 
+  function toggleCompare() {
+    if (!current) return toast('先打开一篇文献', 'info');
+    if (!comparePanel.hasAttribute('hidden')) { comparePanel.setAttribute('hidden', ''); return; }
+    comparePanel.textContent = '';
+    const left = h('textarea', { class: 'field', placeholder: '版本 A / 原始方法' });
+    const right = h('textarea', { class: 'field', placeholder: '版本 B / 我的方法' });
+    const output = h('div', { class: 'lit__compare-output' });
+    const render = () => {
+      output.textContent = '';
+      for (const part of diffWords(left.value, right.value)) {
+        const node = h('span', { class: `lit__diff-${part.type}` }, part.text);
+        output.appendChild(node);
+      }
+    };
+    left.addEventListener('input', render); right.addEventListener('input', render);
+    comparePanel.append(h('div', { class: 'lit__compare-head' }, h('strong', {}, '论文差异对照'), h('span', { style: { flex: 1 } }), h('button', { class: 'btn btn--sm', onclick: () => comparePanel.setAttribute('hidden', '') }, '关闭')),
+      h('div', { class: 'lit__compare-inputs' }, left, right), output);
+    comparePanel.removeAttribute('hidden');
+  }
+
   async function toggleBilingual() {
     if (!current) return;
     if (bilingual) return closeBilingual();
-    if (!config.get('research.translation.hasKey', false) || !config.get('research.translation.model', '')) {
-      toast('先在「设置 → 豆包翻译」保存 API Key 和模型/接入点，已为你打开设置', 'info', 6000);
-      ctx.goto('settings');
-      return;
-    }
     const runId = ++bilingualRunId;
     bilingual = true;
     bilingBtn.classList.add('is-on');
@@ -968,10 +977,12 @@ export function createLiterature(root, ctx) {
     }
 
     const cache = config.get(transCacheKey()) || {};
-    const wrap = h('div', { class: 'lit__biling' });
+    const sourcePane = h('div', { class: 'lit__biling-pane lit__biling-pane--src' });
+    const targetPane = h('div', { class: 'lit__biling-pane lit__biling-pane--dst' });
+    const wrap = h('div', { class: 'lit__biling' }, sourcePane, targetPane);
     bilingualPanel = h('div', { class: 'lit__biling-panel' },
       h('div', { class: 'lit__biling-head' },
-        h('strong', {}, '豆包全文对照'),
+        h('strong', {}, '中英双栏'),
         h('span', { class: 'faint' }, truncated ? '文献较长，先展示前 6 万字' : `${items.length} 段`),
         h('span', { style: { flex: 1 } }),
         h('button', { class: 'btn btn--sm', onclick: closeBilingual }, '返回原文'),
@@ -980,67 +991,70 @@ export function createLiterature(root, ctx) {
     );
     viewerEl.appendChild(bilingualPanel);
     const cells = items.map((item, i) => {
-      const cached = cache[i];
+      const cached = cache[item.paragraphId];
       const valid = cached && cached.source === item.source && cached.translation;
-      const cell = h('div', { class: 'lit__biling-item' },
-        h('div', { class: 'lit__biling-meta faint' }, item.page ? `第 ${item.page} 页` : `第 ${i + 1} 段`),
-        h('div', { class: 'lit__biling-cols' },
-          h('section', { class: 'lit__biling-col lit__biling-col--src' },
-            h('div', { class: 'lit__biling-col-label' }, '原文'),
-            h('div', { class: 'lit__biling-src' }, item.source),
-          ),
-          h('section', { class: 'lit__biling-col lit__biling-col--dst' },
-            h('div', { class: 'lit__biling-col-label' }, '译文'),
-            h('div', { class: 'lit__biling-dst' }, valid ? cached.translation : '等待翻译…'),
-          ),
-        ),
-      );
-      wrap.appendChild(cell);
-      return cell;
+      const meta = item.page ? `第 ${item.page} 页 · ${item.paragraphId}` : item.paragraphId;
+      const source = h('section', { class: 'lit__biling-col lit__biling-col--src', dataset: { paragraphId: item.paragraphId } },
+        h('div', { class: 'lit__biling-meta faint' }, meta), h('div', { class: 'lit__biling-src' }, item.source));
+      const target = h('section', { class: 'lit__biling-col lit__biling-col--dst', dataset: { paragraphId: item.paragraphId } },
+        h('div', { class: 'lit__biling-meta faint' }, meta), h('div', { class: 'lit__biling-dst' }, valid ? cached.translation : '等待本地翻译…'));
+      sourcePane.appendChild(source);
+      targetPane.appendChild(target);
+      const syncHover = (on) => { source.classList.toggle('is-linked', on); target.classList.toggle('is-linked', on); };
+      for (const node of [source, target]) {
+        node.addEventListener('mouseenter', () => syncHover(true));
+        node.addEventListener('mouseleave', () => syncHover(false));
+      }
+      return { source, target, output: target.querySelector('.lit__biling-dst') };
     });
 
+    let linkedScroll = true;
+    let syncing = false;
+    const syncButton = h('button', { class: 'btn btn--sm', onclick: (event) => {
+      linkedScroll = !linkedScroll;
+      event.currentTarget.textContent = linkedScroll ? '同步滚动 ON' : '同步滚动 OFF';
+    } }, '同步滚动 ON');
+    bilingualPanel.querySelector('.lit__biling-head').insertBefore(syncButton, bilingualPanel.querySelector('.lit__biling-head').lastElementChild);
+    const align = (index, pane) => {
+      if (!linkedScroll || syncing || index < 0) return;
+      syncing = true;
+      const peer = pane === sourcePane ? cells[index].target : cells[index].source;
+      peer.scrollIntoView({ block: 'start' });
+      requestAnimationFrame(() => { syncing = false; });
+    };
+    const sourceObserver = new IntersectionObserver((entries) => {
+      const hit = entries.filter((entry) => entry.isIntersecting).sort((a, b) => b.intersectionRatio - a.intersectionRatio)[0];
+      if (hit) align(cells.findIndex((cell) => cell.source === hit.target), sourcePane);
+    }, { root: sourcePane, threshold: 0.55 });
+    const targetObserver = new IntersectionObserver((entries) => {
+      const hit = entries.filter((entry) => entry.isIntersecting).sort((a, b) => b.intersectionRatio - a.intersectionRatio)[0];
+      if (hit) align(cells.findIndex((cell) => cell.target === hit.target), targetPane);
+    }, { root: targetPane, threshold: 0.55 });
+    cells.forEach((cell) => { sourceObserver.observe(cell.source); targetObserver.observe(cell.target); });
+
     const pendingIdx = items.map((_, i) => i)
-      .filter((i) => !cache[i] || cache[i].source !== items[i].source || !cache[i].translation);
-    if (!pendingIdx.length) {
-      bilingBtn.textContent = '一键对照';
-      return;
-    }
+      .filter((i) => !cache[items[i].paragraphId] || cache[items[i].paragraphId].source !== items[i].source || !cache[items[i].paragraphId].translation);
+    if (!pendingIdx.length) { bilingBtn.textContent = '中英双栏'; return; }
     bilingualTranslating = true;
-    const batches = makeParaBatches(items, pendingIdx);
+    const visibleFirst = pendingIdx.filter((i) => i < 12);
+    const queue = [...visibleFirst, ...pendingIdx.filter((i) => !visibleFirst.includes(i))];
     let done = 0;
     try {
-      for (const batch of batches) {
+      for (const i of queue) {
         if (!bilingual || runId !== bilingualRunId || current == null) break;
-        for (const i of batch) cells[i].querySelector('.lit__biling-dst').textContent = '豆包翻译中…';
-        try {
-          const translations = await translateBatch(items, batch);
-          for (const i of batch) {
-            cache[i] = { source: items[i].source, translation: translations.get(i), via: 'doubao' };
-            cells[i].querySelector('.lit__biling-dst').textContent = cache[i].translation;
-          }
-        } catch (batchErr) {
-          for (const i of batch) {
-            try {
-              const one = await translateSmart(items[i].source);
-              cache[i] = {
-                source: items[i].source,
-                translation: one.ok ? one.translation : `翻译失败：${one.error}`,
-                via: one.via || 'error',
-              };
-            } catch (err) {
-              cache[i] = { source: items[i].source, translation: `翻译失败：${err.message}`, via: 'error' };
-            }
-            cells[i].querySelector('.lit__biling-dst').textContent = cache[i].translation;
-          }
-          toast(`豆包批量翻译失败，已逐段降级：${batchErr.message}`, 'info', 5000);
-        }
-        done += batch.length;
-        bilingBtn.textContent = `对照 ${Math.min(done, pendingIdx.length)}/${pendingIdx.length}`;
-        await config.set(transCacheKey(), cache);
+        cells[i].output.textContent = '本地翻译中…';
+        const one = await translateSmart(items[i].source);
+        const record = { source: items[i].source, translation: one.ok ? one.translation : `翻译失败：${one.error}`, via: one.via || 'error' };
+        cache[items[i].paragraphId] = record;
+        cells[i].output.textContent = record.translation;
+        done += 1;
+        bilingBtn.textContent = `对照 ${done}/${pendingIdx.length}`;
+        if (done % 4 === 0 || done === pendingIdx.length) await config.set(transCacheKey(), cache);
+        await new Promise((resolve) => setTimeout(resolve, 0));
       }
     } finally {
       bilingualTranslating = false;
-      if (runId === bilingualRunId) bilingBtn.textContent = '一键对照';
+      if (runId === bilingualRunId) bilingBtn.textContent = '中英双栏';
     }
   }
 
@@ -2040,6 +2054,7 @@ export function createLiterature(root, ctx) {
           viewerEl,
           pdfXBar,
           transCard,
+          comparePanel,
           chatPanel,
           annoPanel,
         ),
