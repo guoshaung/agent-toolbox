@@ -11,7 +11,8 @@
     "dist:dir": "electron-builder --mac dir",
     "dist:win": "electron-builder --win nsis portable --x64",
     "icon": "electron scripts/build-icon.js",
-    "check": "node --check src/main/main.js && node --check src/main/preload.js && node --test test/",
+    "test": "node --test \"test/*.test.js\"",
+    "check": "node --check src/main/main.js && node --check src/main/preload.js && node --test \"test/*.test.js\"",
     "logo": "node scripts/build-logo.js",
     "release": "electron-builder --mac dmg zip --publish always"
   },

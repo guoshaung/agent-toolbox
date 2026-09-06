@@ -15,7 +15,7 @@
 - No Python environment or `argostranslate` package is installed automatically. The user must install the optional Python package; language-model download is then an explicit in-app action.
 - PDF text extraction remains the existing PDF.js implementation. Figures, OCR and arbitrary publisher HTML are not rewritten in this slice.
 - Existing AI chat, summary, explanation and Q&A paths remain available. Only ordinary translation is local-first; AI remains available through explicit actions.
-- Remote Control, MCP risk prompts, chat-export privacy scanning and the pre-existing Practice Runner Windows runtime failures remain documented in `AUDIT_REPORT.md` and were not changed in this slice.
+- Remote Control, MCP risk prompts, chat-export privacy scanning and host-executed Practice Runner isolation were not changed in this slice; they remain follow-up work for a separate hardening pass.
 
 ## Remaining Risks
 
@@ -32,9 +32,9 @@ None. The legacy remote translation preload method remains available for compati
 
 ## Verification
 
-- Focused translation, Argos, diff and Electron security tests: **11 passed, 0 failed, 0 skipped**.
-- Full `npm.cmd run check`: **61 total, 59 passed, 2 failed, 0 skipped**.
-- Both full-suite failures are the pre-existing Windows Practice Runner assumptions: it requires a `python3` command and a `sqlite3` executable. They are unrelated to this translation change and remain documented in `AUDIT_REPORT.md`.
+- Focused translation, Argos, diff and Electron security tests: **14 passed, 0 failed, 0 skipped**.
+- Full `npm.cmd run check`: **83 total, 79 passed, 0 failed, 4 skipped**.
+- Four skips are environment-gated Practice Runner checks (Python 3, SQLite and uv are not installed on this machine); the tests report the reason instead of failing.
 - The Argos stdio protocol was started against the local Python installation and correctly returned `package-missing`; the optional `argostranslate` package/model is not installed on this machine, so a real translation result could not be verified here.
 - Electron UI smoke testing was not run in this non-interactive environment.
 
