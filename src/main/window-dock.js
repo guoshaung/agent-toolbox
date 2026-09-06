@@ -145,6 +145,45 @@ printJSON(["ok": false, "error": "unknown command"])
 exit(1)
 `;
 
+const WINDOWS_HELPER_SOURCE = String.raw`param([string]$Command, [string[]]$Rest)
+Add-Type @'
+using System;
+using System.Runtime.InteropServices;
+public static class DockWin32 {
+  [StructLayout(LayoutKind.Sequential)] public struct RECT { public int Left, Top, Right, Bottom; }
+  [StructLayout(LayoutKind.Sequential)] public struct POINT { public int X, Y; }
+  [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
+  [DllImport("user32.dll")] public static extern IntPtr WindowFromPoint(POINT p);
+  [DllImport("user32.dll")] public static extern IntPtr GetAncestor(IntPtr h, uint flags);
+  [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr h, out RECT r);
+  [DllImport("user32.dll", CharSet=CharSet.Unicode)] public static extern int GetWindowText(IntPtr h, System.Text.StringBuilder s, int n);
+  [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr h, out uint pid);
+  [DllImport("user32.dll")] public static extern bool MoveWindow(IntPtr h, int x, int y, int w, int height, bool repaint);
+  [DllImport("user32.dll")] public static extern bool ShowWindow(IntPtr h, int cmd);
+  [DllImport("user32.dll")] public static extern short GetAsyncKeyState(int key);
+}
+'@
+function Result($h) {
+  if ($h -eq [IntPtr]::Zero) { return @{ok=$false;error='没有找到可控制的窗口'} }
+  $h = [DockWin32]::GetAncestor($h, 2); $pidValue = [uint32]0
+  [void][DockWin32]::GetWindowThreadProcessId($h, [ref]$pidValue)
+  $rect = New-Object DockWin32+RECT
+  if (-not [DockWin32]::GetWindowRect($h, [ref]$rect)) { return @{ok=$false;error='无法读取窗口位置'} }
+  $title = New-Object System.Text.StringBuilder 1024; [void][DockWin32]::GetWindowText($h,$title,1024)
+  try { $proc = Get-Process -Id $pidValue -ErrorAction Stop; $name=$proc.ProcessName } catch { $name='应用' }
+  return @{ok=$true;pid=[int]$pidValue;handle=$h.ToInt64().ToString();name=$name;bundleId='win32';title=$title.ToString();buttons=([DockWin32]::GetAsyncKeyState(1) -lt 0);bounds=@{x=$rect.Left;y=$rect.Top;width=$rect.Right-$rect.Left;height=$rect.Bottom-$rect.Top}}
+}
+if ($Command -eq 'permission') { @{ok=$true;trusted=$true} | ConvertTo-Json -Compress; exit }
+if ($Command -eq 'frontmost') { Result ([DockWin32]::GetForegroundWindow()) | ConvertTo-Json -Compress; exit }
+if ($Command -eq 'point') { $p=New-Object DockWin32+POINT; $p.X=[int]$Rest[0];$p.Y=[int]$Rest[1]; Result ([DockWin32]::WindowFromPoint($p)) | ConvertTo-Json -Compress; exit }
+if ($Command -eq 'set') {
+  $target=[IntPtr]::new([long]$Rest[0]); [void][DockWin32]::ShowWindow($target,9)
+  $ok=[DockWin32]::MoveWindow($target,[int]$Rest[3],[int]$Rest[4],[int]$Rest[5],[int]$Rest[6],$true)
+  @{ok=$ok;error=$(if($ok){''}else{'目标窗口拒绝移动或缩放'})} | ConvertTo-Json -Compress; exit
+}
+@{ok=$false;error='unknown command'} | ConvertTo-Json -Compress
+`;
+
 function clamp(value, min, max) {
   return Math.min(max, Math.max(min, value));
 }
@@ -158,6 +197,7 @@ class WindowDock {
     this.getMainWindow = getMainWindow;
     this.helperPath = path.join(app.getPath('userData'), 'bin', 'agent-toolbox-window-dock');
     this.sourcePath = `${this.helperPath}.swift`;
+    this.windowsHelperPath = path.join(app.getPath('userData'), 'bin', 'agent-toolbox-window-dock.ps1');
     this.dividerWindow = null;
     this.target = null;
     this.originalMainBounds = null;
@@ -173,6 +213,21 @@ class WindowDock {
   }
 
   async ensureHelper() {
+    if (process.platform === 'win32') {
+      fs.mkdirSync(path.dirname(this.windowsHelperPath), { recursive: true });
+      let current = '';
+      let hasUtf8Bom = false;
+      try {
+        const bytes = fs.readFileSync(this.windowsHelperPath);
+        hasUtf8Bom = bytes[0] === 0xef && bytes[1] === 0xbb && bytes[2] === 0xbf;
+        current = bytes.toString('utf8').replace(/^\uFEFF/, '');
+      } catch {}
+      if (!hasUtf8Bom || current !== WINDOWS_HELPER_SOURCE) {
+        // Windows PowerShell 5 会把无 BOM 的 UTF-8 脚本按系统代码页读取，中文会破坏语法。
+        fs.writeFileSync(this.windowsHelperPath, `\uFEFF${WINDOWS_HELPER_SOURCE}`, 'utf8');
+      }
+      return true;
+    }
     if (process.platform !== 'darwin') return false;
     fs.mkdirSync(path.dirname(this.helperPath), { recursive: true });
     let current = '';
@@ -184,10 +239,14 @@ class WindowDock {
   }
 
   async run(args) {
-    if (process.platform !== 'darwin') return { ok: false, code: 'unsupported', error: '窗口吸附目前仅支持 macOS' };
+    if (!['darwin', 'win32'].includes(process.platform)) return { ok: false, code: 'unsupported', error: '窗口吸附目前支持 macOS 和 Windows' };
     try {
       await this.ensureHelper();
-      const { stdout } = await execFileAsync(this.helperPath, args.map(String), { timeout: 15000 });
+      const command = process.platform === 'win32' ? 'powershell.exe' : this.helperPath;
+      const commandArgs = process.platform === 'win32'
+        ? ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', this.windowsHelperPath, String(args[0]), ...args.slice(1).map(String)]
+        : args.map(String);
+      const { stdout } = await execFileAsync(command, commandArgs, { timeout: 15000 });
       return JSON.parse(stdout.trim() || '{}');
     } catch (err) {
       try { return JSON.parse(String(err.stdout || '').trim()); } catch {}
@@ -197,7 +256,7 @@ class WindowDock {
 
   status() {
     return {
-      supported: process.platform === 'darwin',
+      supported: ['darwin', 'win32'].includes(process.platform),
       active: Boolean(this.target),
       armed: this.armed,
       target: this.target ? { name: this.target.name, title: this.target.title, bundleId: this.target.bundleId } : null,
@@ -213,20 +272,23 @@ class WindowDock {
   }
 
   async requestPermission() {
+    if (process.platform === 'win32') return { ok: true, trusted: true, ...this.status() };
     const result = await this.run(['permission', 'true']);
     return { ...result, ...this.status() };
   }
 
   async arm() {
     if (this.target) return { ok: true, ...this.status() };
-    const permission = await this.run(['permission', 'true']);
+    const permission = await this.run(['permission', process.platform === 'darwin' ? 'true' : 'false']);
     if (!permission.trusted) {
       this.armed = false;
       this.emitStatus();
       return {
         ok: false,
         code: 'permission',
-        error: '请先在“系统设置 → 隐私与安全性 → 辅助功能”中允许窗口控制器。授权后再点一次回形针。',
+        error: process.platform === 'darwin'
+          ? '请先在“系统设置 → 隐私与安全性 → 辅助功能”中允许窗口控制器。授权后再点一次回形针。'
+          : 'Windows 无法控制目标窗口，请确认它不是以管理员身份运行。',
         ...this.status(),
       };
     }
@@ -307,7 +369,7 @@ class WindowDock {
     const result = await this.run(['frontmost']);
     if (!result.ok) return { ...result, ...this.status() };
     if (result.pid === process.pid || /agent.?toolbox|electron/i.test(`${result.name} ${result.bundleId}`)) {
-      return { ok: false, error: '当前前台仍是工具箱，请先切到 Edge/Chrome，再按 ⌥⇧D。', ...this.status() };
+      return { ok: false, error: `当前前台仍是工具箱，请先切到 Edge/Chrome，再按 ${this.status().shortcut}。`, ...this.status() };
     }
 
     return this.attachTarget(result);
@@ -360,7 +422,7 @@ class WindowDock {
       if (!mainWindow || mainWindow.isDestroyed()) return { ok: false, error: '工具箱窗口不可用' };
       const layout = this.layoutBounds();
       const moved = await this.run([
-        'set', this.target.pid, this.target.title || '',
+        'set', process.platform === 'win32' ? this.target.handle : this.target.pid, this.target.title || '',
         layout.target.x, layout.target.y, layout.target.width, layout.target.height,
       ]);
       if (!moved.ok) {
@@ -449,7 +511,7 @@ class WindowDock {
     if (this.dividerWindow && !this.dividerWindow.isDestroyed()) this.dividerWindow.hide();
     if (restoreTarget && target?.originalBounds) {
       const b = target.originalBounds;
-      await this.run(['set', target.pid, target.title || '', b.x, b.y, b.width, b.height]);
+      await this.run(['set', process.platform === 'win32' ? target.handle : target.pid, target.title || '', b.x, b.y, b.width, b.height]);
     }
     const mainWindow = this.getMainWindow();
     if (mainWindow && !mainWindow.isDestroyed()) {
@@ -468,4 +530,4 @@ class WindowDock {
   }
 }
 
-module.exports = { WindowDock, HELPER_SOURCE };
+module.exports = { WindowDock, HELPER_SOURCE, WINDOWS_HELPER_SOURCE };

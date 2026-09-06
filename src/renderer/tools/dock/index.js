@@ -17,7 +17,8 @@ export default {
     // 弹出"请授权隐私权限"——而 Windows 压根没有这个概念。
     const isMac = window.toolbox.platform === 'darwin';
 
-    if (!isMac) {
+    const isWindows = window.toolbox.platform === 'win32';
+    if (!isMac && !isWindows) {
       root.append(
         h('div', { class: 'bar bar--drag' },
           h('strong', {}, '窗口吸附'),
@@ -117,7 +118,7 @@ export default {
       applyRatio();
     });
 
-    const permissionBtn = h('button', {
+    const permissionBtn = isMac ? h('button', {
       class: 'btn btn--sm',
       onclick: async () => {
         permissionBtn.disabled = true;
@@ -126,7 +127,7 @@ export default {
         if (result.trusted) toast('辅助功能权限已就绪', 'good');
         else toast('请在“系统设置 → 隐私与安全性 → 辅助功能”中允许窗口控制器，然后重试。', 'bad', 6500);
       },
-    }, '检查 / 请求授权');
+    }, '检查 / 请求授权') : null;
 
     root.append(
       h('div', { class: 'bar bar--drag' },
@@ -168,16 +169,21 @@ export default {
             ratioValue,
           ),
         ),
-        h('section', { class: 'card dock__permission' },
+        isMac ? h('section', { class: 'card dock__permission' },
           h('div', {},
             h('h3', { class: 'card__title' }, 'macOS 权限'),
             h('p', { class: 'faint' }, '第一次使用需要辅助功能权限，这是系统允许本工具移动其他应用窗口的必要权限。工具不会读取网页内容或键盘输入。'),
           ),
           permissionBtn,
+        ) : h('section', { class: 'card dock__permission' },
+          h('div', {},
+            h('h3', { class: 'card__title' }, 'Windows 窗口控制'),
+            h('p', { class: 'faint' }, 'Windows 版使用系统窗口 API，无需隐私或辅助功能授权。普通 Edge、Chrome、VS Code 等窗口可直接吸附；以管理员身份运行的窗口需要与工具箱保持相同权限级别。'),
+          ),
         ),
         h('div', { class: 'dock__note' },
           h('strong', {}, '说明：'),
-          'macOS 不允许 Electron 把第三方窗口真正塞进应用内部，因此这里采用系统级“贴靠组合”。视觉和操作上是左右一体的，但 Edge 仍由 Edge 自己运行，兼容性和登录状态更可靠。',
+          `${isMac ? 'macOS' : 'Windows'} 采用系统级“贴靠组合”。视觉和操作上是左右一体的，但 Edge 仍由 Edge 自己运行，兼容性和登录状态不会丢。`,
         ),
       ),
     );

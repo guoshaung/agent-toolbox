@@ -1779,7 +1779,13 @@ export function createFigureboard(root, ctx) {
   }, { passive: false });
   board.addEventListener('touchend', (event) => { if (event.touches.length < 2) pinchStartDistance = null; });
   board.addEventListener('contextmenu', openContextMenu);
-  board.addEventListener('pointerdown', (event) => { if (event.target === board) startMarquee(event); });
+  board.addEventListener('pointerdown', (event) => {
+    // 缩放层 surface 覆盖了整个空白画布；只判断 board 会让框选永远无法启动。
+    // 仍然排除图形、连线和操作手柄，避免拖动物体时误画选框。
+    const target = event.target;
+    const isCanvasBackground = target === board || target === surface;
+    if (event.button === 0 && isCanvasBackground) startMarquee(event);
+  });
   document.addEventListener('keydown', handleShortcut);
   document.addEventListener('pointerdown', (event) => {
     if (!contextMenu.hidden && !contextMenu.contains(event.target)) closeContextMenu();

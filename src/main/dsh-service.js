@@ -10,29 +10,53 @@ const DSH_PACKAGE = '@deepseek-ai/dsh@0.1.1-rc.2';
 const DEFAULT_PORT = 3080;
 
 function resolveCommand(command, userDataPath = '') {
+  const commandNames = process.platform === 'win32'
+    ? [`${command}.cmd`, `${command}.exe`, `${command}.bat`, command]
+    : [command];
   const candidates = [
-    command,
-    userDataPath && path.join(userDataPath, 'dsh-runtime', 'node_modules', '.bin', command),
+    ...commandNames,
+    ...commandNames.map((name) => userDataPath && path.join(userDataPath, 'dsh-runtime', 'node_modules', '.bin', name)),
+    ...commandNames.map((name) => path.join(os.homedir(), 'AppData', 'Roaming', 'npm', name)),
+    ...commandNames.map((name) => path.join(process.env.ProgramFiles || '', 'nodejs', name)),
     path.join(os.homedir(), '.nvm', 'versions', 'node', 'v22.23.1', 'bin', command),
     path.join(os.homedir(), '.local', 'bin', command),
     path.join('/opt/homebrew/bin', command),
     path.join('/usr/local/bin', command),
   ].filter(Boolean);
   for (const candidate of candidates) {
-    if (candidate !== command && fs.existsSync(candidate)) return candidate;
+    if (!commandNames.includes(candidate) && fs.existsSync(candidate)) return candidate;
   }
-  try { return execFileSync('which', [command], { encoding: 'utf8', timeout: 2000 }).trim() || ''; } catch { return ''; }
+  const finder = process.platform === 'win32' ? 'where.exe' : 'which';
+  try {
+    return execFileSync(finder, [command], { encoding: 'utf8', timeout: 2000 })
+      .split(/\r?\n/).map((line) => line.trim()).find(Boolean) || '';
+  } catch { return ''; }
 }
 
-function probe(port = DEFAULT_PORT) {
+function spawnOptions(options = {}) {
+  return process.platform === 'win32' ? { ...options, shell: true } : options;
+}
+
+function probe(port = DEFAULT_PORT, requestPath = '/') {
   return new Promise((resolve) => {
-    const request = http.get({ hostname: '127.0.0.1', port, path: '/', timeout: 1200 }, (response) => {
+    const request = http.get({ hostname: '127.0.0.1', port, path: requestPath, timeout: 1200 }, (response) => {
+      let body = '';
+      response.setEncoding('utf8');
+      response.on('data', (chunk) => { body += chunk; });
       response.resume();
-      resolve(response.statusCode >= 200 && response.statusCode < 500);
+      response.on('end', () => resolve({
+        running: response.statusCode >= 200 && response.statusCode < 500,
+        authenticated: response.statusCode !== 401,
+        isDsh: response.statusCode !== 401 || body.includes('dsh web authentication required'),
+      }));
     });
-    request.on('error', () => resolve(false));
-    request.on('timeout', () => { request.destroy(); resolve(false); });
+    request.on('error', () => resolve({ running: false, authenticated: false, isDsh: false }));
+    request.on('timeout', () => { request.destroy(); resolve({ running: false, authenticated: false, isDsh: false }); });
   });
+}
+
+function findWebUrl(text) {
+  return String(text || '').match(/https?:\/\/[^\s"'<>]+/)?.[0] || '';
 }
 
 class DshService {
@@ -65,7 +89,7 @@ class DshService {
     fs.mkdirSync(prefix, { recursive: true });
     this.emit({ status: 'installing', error: '' });
     const result = await new Promise((resolve) => {
-      const child = spawn(npm, ['install', '--prefix', prefix, '--no-fund', '--no-audit', DSH_PACKAGE], { cwd: prefix, stdio: ['ignore', 'pipe', 'pipe'] });
+      const child = spawn(npm, ['install', '--prefix', prefix, '--no-fund', '--no-audit', DSH_PACKAGE], spawnOptions({ cwd: prefix, stdio: ['ignore', 'pipe', 'pipe'] }));
       let stderr = '';
       child.stderr.on('data', (chunk) => { stderr += chunk; });
       child.on('error', (error) => resolve({ ok: false, error: error.message }));
@@ -78,17 +102,45 @@ class DshService {
   }
 
   async start() {
-    if (await probe(DEFAULT_PORT)) {
+    const existing = await probe(DEFAULT_PORT);
+    if (existing.running && existing.authenticated) {
       this.emit({ status: 'running', url: this.url, managed: false, error: '' });
       return { ok: true, ...this.state };
     }
     if (this.child && !this.child.killed) return { ok: true, ...this.state };
     try {
       const dsh = await this.ensureInstalled();
+      const userData = this.app.getPath('userData');
+      const mcpServer = path.join(__dirname, 'toolbox-mcp-server.js');
+      const overlay = path.join(userData, 'dsh-toolbox.patch.yml');
+      const yamlPath = (value) => JSON.stringify(String(value).replace(/\\/g, '/'));
+      fs.writeFileSync(overlay, [
+        '- id: mcp-agent-toolbox',
+        "  name: '@deepseek-ai/dsh-mcp-client'",
+        '  config:',
+        '    serverName: agent_toolbox',
+        '    transport: stdio',
+        `    command: ${yamlPath(process.execPath)}`,
+        `    args: [${yamlPath(mcpServer)}]`,
+        `    cwd: ${yamlPath(path.dirname(mcpServer))}`,
+        '    env:',
+        `      AGENT_TOOLBOX_USER_DATA: ${yamlPath(userData)}`,
+        '      ELECTRON_RUN_AS_NODE: "1"',
+        '    toolCallTimeoutMs: 180000',
+        '    failOnStartupError: true',
+        '',
+      ].join('\n'), 'utf8');
       this.emit({ status: 'starting', url: this.url, managed: true, error: '' });
-      this.child = spawn(dsh, ['web', '--no-open', '--port', String(DEFAULT_PORT)], { cwd: os.homedir(), stdio: ['ignore', 'pipe', 'pipe'] });
-      this.child.stdout.resume();
-      this.child.stderr.resume();
+      // 新版 DSH 的 URL 含一次性认证 token。若 3080 已被另一个实例占用，
+      // 让 DSH 自选空闲端口，避免要求用户手动寻找并关闭旧进程。
+      const port = existing.running ? 0 : DEFAULT_PORT;
+      this.child = spawn(dsh, ['--profile', 'web', '--patch', overlay, '--no-open', '--port', String(port)], spawnOptions({ cwd: os.homedir(), stdio: ['ignore', 'pipe', 'pipe'] }));
+      const captureUrl = (chunk) => {
+        const url = findWebUrl(chunk);
+        if (url) this.url = url;
+      };
+      this.child.stdout.on('data', captureUrl);
+      this.child.stderr.on('data', captureUrl);
       this.child.on('error', (error) => this.emit({ status: 'error', error: `DSH 启动失败：${error.message}` }));
       this.child.on('close', (code) => {
         this.child = null;
@@ -96,7 +148,14 @@ class DshService {
       });
       const deadline = Date.now() + 30000;
       while (Date.now() < deadline) {
-        if (await probe(DEFAULT_PORT)) {
+        let health = { running: false, isDsh: false };
+        try {
+          const parsed = new URL(this.url);
+          // 启动 URL 中的 token 是一次性凭证。健康检查只能探测裸地址；
+          // 若在这里请求 ?token=...，webview 随后打开时会因 token 已消费而 401。
+          health = await probe(Number(parsed.port), '/');
+        } catch { /* 等待 DSH 输出 URL */ }
+        if (health.running && health.isDsh && this.url.includes('token=')) {
           this.emit({ status: 'running', url: this.url, managed: true, error: '' });
           return { ok: true, ...this.state };
         }
@@ -119,4 +178,4 @@ class DshService {
   }
 }
 
-module.exports = { DSH_PACKAGE, DEFAULT_PORT, DshService, probe, resolveCommand };
+module.exports = { DSH_PACKAGE, DEFAULT_PORT, DshService, findWebUrl, probe, resolveCommand };

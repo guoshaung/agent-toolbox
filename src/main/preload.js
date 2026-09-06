@@ -159,6 +159,7 @@ contextBridge.exposeInMainWorld('toolbox', {
     fetchByTitle: (query) => ipcRenderer.invoke('lit:fetch', query),
     /** 按研究方向发现候选论文 */
     discover: (options) => ipcRenderer.invoke('lit:discover', options),
+    references: (query) => ipcRenderer.invoke('lit:references', query),
     /** 下载候选的合法开放全文 */
     downloadCandidate: (paper) => ipcRenderer.invoke('lit:downloadCandidate', paper),
     downloadCandidates: (papers) => ipcRenderer.invoke('lit:downloadCandidates', papers),
@@ -242,6 +243,10 @@ contextBridge.exposeInMainWorld('toolbox', {
     organize: (relPath) => ipcRenderer.invoke('container:organize', relPath),
     applyPlan: (payload) => ipcRenderer.invoke('container:applyPlan', payload),
     import: (payload) => ipcRenderer.invoke('container:import', payload),
+    readFile: (relPath) => ipcRenderer.invoke('container:readFile', relPath),
+    writeFile: (payload) => ipcRenderer.invoke('container:writeFile', payload),
+    filePath: (relPath) => ipcRenderer.invoke('container:filePath', relPath),
+    toLiterature: (relPaths) => ipcRenderer.invoke('container:toLiterature', relPaths),
     open: () => ipcRenderer.invoke('container:open'),
   },
 

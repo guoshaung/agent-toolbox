@@ -38,6 +38,10 @@ export default {
     const status = h('span', { class: 'faint container__status' }, '只访问工具箱容器');
     const list = h('div', { class: 'container__list' });
     const menu = h('div', { class: 'container__menu', hidden: true });
+    const preview = h('div', { class: 'container__preview', hidden: true });
+    const previewTitle = h('strong', { class: 'container__preview-title' });
+    const editor = h('textarea', { class: 'container__editor', spellcheck: false });
+    let previewItem = null;
     const searchInput = h('input', { class: 'field container__search', placeholder: '筛选当前文件夹…' });
     const newFolderInput = h('input', { class: 'field field--sm container__new-folder-input', placeholder: '新文件夹名称' });
     const isFileDrag = (dataTransfer) => {
@@ -46,6 +50,40 @@ export default {
     };
 
     function closeMenu() { menu.setAttribute('hidden', ''); }
+
+    async function openPreview(item) {
+      closeMenu();
+      previewItem = item;
+      previewTitle.textContent = item.name;
+      editor.hidden = true;
+      preview.hidden = false;
+      const body = preview.querySelector('.container__preview-body');
+      body.textContent = '';
+      const ext = item.name.split('.').pop()?.toLowerCase();
+      if (ext === 'pdf') {
+        const result = await window.toolbox.container.filePath(item.relPath);
+        if (!result.ok) return body.textContent = result.error;
+        body.append(h('webview', { class: 'container__pdf', src: `file://${result.path.replace(/\\/g, '/')}` }));
+        return;
+      }
+      const result = await window.toolbox.container.readFile(item.relPath);
+      if (!result.ok) return body.textContent = result.error;
+      editor.value = result.content;
+      editor.hidden = false;
+      body.append(editor);
+    }
+
+    async function savePreview() {
+      if (!previewItem || editor.hidden) return;
+      const result = await window.toolbox.container.writeFile({ relPath: previewItem.relPath, content: editor.value });
+      toast(result.ok ? '已保存到容器' : result.error, result.ok ? 'good' : 'bad');
+    }
+
+    async function toLiterature(item) {
+      closeMenu();
+      const result = await window.toolbox.container.toLiterature([item.relPath]);
+      toast(result.count ? `已转入科研文献库：${result.count} 个文件` : '没有找到支持的文献文件', result.count ? 'good' : 'info', 5000);
+    }
 
     function renderBreadcrumb() {
       breadcrumb.textContent = '';
@@ -80,7 +118,7 @@ export default {
       for (const item of visible) {
         const row = h('div', { class: `container__item${item.isDir ? ' is-folder' : ''}`, oncontextmenu: (event) => { event.preventDefault(); showMenu(event, item); } });
         row.append(
-          h('button', { class: 'container__item-main', ondblclick: () => item.isDir && refresh(item.relPath), onclick: () => item.isDir && refresh(item.relPath) },
+          h('button', { class: 'container__item-main', ondblclick: () => item.isDir ? refresh(item.relPath) : openPreview(item), onclick: () => item.isDir && refresh(item.relPath) },
             h('span', { class: 'container__item-icon' }, item.isDir ? '▰' : (GROUP_ICONS[categoryOf(item.name)] || '·')),
             h('span', { class: 'container__item-copy' },
               h('strong', {}, item.name),
@@ -254,6 +292,10 @@ export default {
         h('button', { class: 'container__menu-item container__menu-item--ai', onclick: () => deepOrganize(targetPath) }, '✦ 深度整理（AI）'),
       );
       if (item?.isDir) menu.append(h('button', { class: 'container__menu-item', onclick: () => refresh(item.relPath) }, '进入文件夹'));
+      if (item && !item.isDir) menu.append(h('button', { class: 'container__menu-item', onclick: () => openPreview(item) }, '预览 / 编辑'));
+      if (item && (item.isDir || ['pdf', 'doc', 'docx', 'txt', 'md', 'rtf'].includes(item.name.split('.').pop()?.toLowerCase()))) {
+        menu.append(h('button', { class: 'container__menu-item', onclick: () => toLiterature(item) }, '转入科研文献库'));
+      }
       const rect = root.getBoundingClientRect();
       menu.style.left = `${Math.min(Math.max(8, event.clientX - rect.left), Math.max(8, rect.width - 210))}px`;
       menu.style.top = `${Math.min(Math.max(8, event.clientY - rect.top), Math.max(8, rect.height - 150))}px`;
@@ -286,7 +328,14 @@ export default {
     root.addEventListener('click', (event) => { if (!menu.contains(event.target)) closeMenu(); });
     root.addEventListener('contextmenu', (event) => { if (event.target === root || event.target === list) { event.preventDefault(); showMenu(event); } });
 
-    const workspace = h('div', { class: 'container__workspace' }, list, menu);
+    const previewBody = h('div', { class: 'container__preview-body' });
+    preview.append(
+      h('div', { class: 'container__preview-head' }, previewTitle, h('span', { style: { flex: 1 } }),
+        h('button', { class: 'btn btn--sm btn--primary', onclick: savePreview }, '保存'),
+        h('button', { class: 'btn btn--sm', onclick: () => { preview.hidden = true; previewItem = null; } }, '关闭')),
+      previewBody,
+    );
+    const workspace = h('div', { class: 'container__workspace' }, list, menu, preview);
     const markFileDrag = (event) => {
       if (!isFileDrag(event.dataTransfer)) return false;
       event.preventDefault();

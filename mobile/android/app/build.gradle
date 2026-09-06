@@ -2,6 +2,10 @@ plugins {
     id 'com.android.application'
 }
 
+dependencies {
+    implementation 'com.journeyapps:zxing-android-embedded:4.3.0'
+}
+
 android {
     namespace 'cn.macpe.agenttoolbox.remote'
     compileSdk 35
