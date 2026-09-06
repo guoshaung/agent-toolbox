@@ -402,7 +402,7 @@ class WindowDock {
         preload: path.join(__dirname, 'dock-divider-preload.js'),
         contextIsolation: true,
         nodeIntegration: false,
-        sandbox: false,
+        sandbox: true,
       },
     });
     this.dividerWindow.setAlwaysOnTop(true, 'floating');

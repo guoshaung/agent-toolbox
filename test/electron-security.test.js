@@ -7,6 +7,7 @@ const path = require('node:path');
 
 const root = path.join(__dirname, '..');
 const mainSource = fs.readFileSync(path.join(root, 'src/main/main.js'), 'utf8');
+const dockSource = fs.readFileSync(path.join(root, 'src/main/window-dock.js'), 'utf8');
 const askSource = fs.readFileSync(path.join(root, 'src/renderer/tools/ask/index.js'), 'utf8');
 
 test('third-party partitions preserve Content-Security-Policy headers', () => {
@@ -17,6 +18,7 @@ test('third-party partitions preserve Content-Security-Policy headers', () => {
 
 test('BrowserWindows and attached webviews enable Chromium sandboxing', () => {
   assert.doesNotMatch(mainSource, /sandbox:\s*false/);
+  assert.doesNotMatch(dockSource, /sandbox:\s*false/);
   assert.match(mainSource, /webPreferences\.sandbox = true/);
 });
 
