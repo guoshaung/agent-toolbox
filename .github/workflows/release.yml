@@ -39,7 +39,7 @@ jobs:
       - run: npm run check
 
       - name: 打包并上传
-        run: ${{ matrix.build }} --publish always
+        run: ${{ matrix.build }} -- --publish always
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           # macOS 代码签名：把证书和密码存成仓库 secret 之后，
