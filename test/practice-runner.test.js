@@ -1,7 +1,14 @@
 'use strict';
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const { execFileSync } = require('node:child_process');
 const { install, run, terminal, validateCode } = require('../src/main/practice-runner');
+
+/** uv 是可选依赖：本机没装就跳过相关用例，而不是把整个 CI 判失败。 */
+function hasCommand(name) {
+  try { execFileSync('which', [name], { stdio: 'ignore' }); return true; } catch { return false; }
+}
+const HAS_UV = hasCommand('uv');
 
 test('Python 实践真的运行并返回 stdout', async () => {
   const result = await run('python', 'print(2 + 3)');
@@ -38,7 +45,7 @@ test('第三方包输入拒绝命令参数', async () => {
   assert.match(result.error, /包名格式不安全/);
 });
 
-test('学习终端可以真实运行 uv', async () => {
+test('学习终端可以真实运行 uv', { skip: HAS_UV ? false : '本机没装 uv，跳过' }, async () => {
   const result = await terminal('uv --version');
   assert.equal(result.ok, true);
   assert.match(result.stdout, /uv /);
