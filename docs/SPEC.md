@@ -1,11 +1,11 @@
-# Agent 工具箱 — 需求规格 v0.1
+# Agent 工具箱 — 需求规格 v0.5.7
 
 > 一句话：把「查文档、打字、进入状态、问 AI」这四件每天都要干、但每次都要切窗口的事，收进同一个壳里。
 
 ## 0. 设计原则
 
 1. **常驻不重载** —— 所有工具首次打开后就留在内存里，切换是瞬时的。用户抱怨的「每次都要切到 Edge 然后搜索」，省掉的就是这段时间。
-2. **不花钱** —— 不用任何付费 API。AI 能力全部复用用户自己已登录的 DeepSeek 网页会话。
+2. **本地/免费优先** —— 普通论文翻译优先使用 Chrome Translator 或本机 Argos；DeepSeek 网页版是 best-effort AI provider。OpenAI-compatible API 仅在用户配置并主动使用 AI 功能时调用。
 3. **可拆可加** —— 工具是插件。第 5 条「以后还要更多工具」靠注册表实现，加一个工具 = 加一个文件夹 + 注册一行。
 4. **坏了要看得见** —— 依赖第三方网页 DOM 的部分（DeepSeek 桥接）一定会随对方改版失效。所以选择器可配置、有自检面板、失败时报错而不是假装成功。
 
@@ -78,12 +78,12 @@
 需求 2 和 3 的 AI 能力都靠它。原理：一个**隐藏的** webview，和「快问」共用同一个登录态，被当作无界面的 LLM 调用：
 
 ```
-注入文本 → 触发发送 → 轮询最后一条回复 → 文本连续 1.2s 不变且停止生成 → 返回
+注入文本 → 触发发送 → 观察新回复 → 文本稳定且停止生成 → 返回
 ```
 
 - 每次提问前开新会话，避免上下文污染。
 - 未登录时明确报「请先到 DeepSeek 快问里登录」，不静默失败。
-- **选择器会失效**：`core/selectors.js` 集中存放所有 DOM 选择器，每个都是候选数组按序尝试；设置页有「桥接自检」，能看到当前哪个选择器命中、哪个没命中，并允许手工覆盖。
+- **选择器会失效**：站点适配集中在 `core/page-agent.js`；设置页提供桥接自检。DeepSeek DOM、登录风控或流式行为变化后仍可能需要更新适配。
 
 ### 2.6 学习（tools/study）
 
@@ -138,9 +138,9 @@ HTTP 请求走主进程发出：渲染进程有 CSP 发不出去，而且 API Ke
 | Tauri | ❌ macOS 上用的是 Safari 的 WKWebView，不是 Chrome 内核 |
 | 打包器（Vite/webpack） | ❌ 不用。渲染进程用原生 ESM，改完刷新即生效，个人工具没必要引入构建步骤 |
 | 前端框架 | ❌ 不用。工具箱是若干独立面板，原生 DOM 足够，且零依赖好维护 |
-| 运行时依赖 | 只有 `electron` 一个 |
+| 运行时依赖 | `electron`、`pdfjs-dist`、`katex`；Argos Translate 是可选的本机 Python 依赖 |
 
-安全基线：`contextIsolation: true`、`nodeIntegration: false`、所有 Node 能力经 `preload` 白名单暴露。
+安全基线：`contextIsolation: true`、`nodeIntegration: false`、`sandbox: true`，第三方页面保留原始 CSP，所有 Node 能力经 `preload` 白名单暴露。
 
 ## 4. 明确不做
 

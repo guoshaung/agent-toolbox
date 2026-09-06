@@ -177,6 +177,7 @@ export default {
     root.append(bar, panel, stage);
 
     let injected = false;
+    let backgroundCssKey = null;
     async function inject() {
       if (injected) return;
       await view.executeJavaScript(PAGE_AGENT);
@@ -210,12 +211,24 @@ export default {
 
     async function applyBackground() {
       try {
-        await inject();
-        await view.executeJavaScript(`window.__tbx.applyBackground(${JSON.stringify({
-          dataUrl: config.get('ask.bg.dataUrl') || '',
-          dim: config.get('ask.bg.dim', 0.45),
-          blur: config.get('ask.bg.blur', 0),
-        })})`);
+        if (backgroundCssKey) {
+          await view.removeInsertedCSS(backgroundCssKey);
+          backgroundCssKey = null;
+        }
+        const dataUrl = config.get('ask.bg.dataUrl') || '';
+        if (!dataUrl) return;
+        const dimValue = Math.min(0.9, Math.max(0, Number(config.get('ask.bg.dim', 0.45)) || 0));
+        const blurValue = Math.min(24, Math.max(0, Number(config.get('ask.bg.blur', 0)) || 0));
+        const css = [
+          `html{background-image:url("${dataUrl}") !important;background-size:cover !important;`,
+          'background-position:center center !important;background-attachment:fixed !important;}',
+          'html::before{content:"";position:fixed;inset:0;z-index:0;pointer-events:none;',
+          `background:rgba(8,10,14,${dimValue});backdrop-filter:blur(${blurValue}px);}`,
+          'body,#root,#app,#__next{background:transparent !important;}',
+          'body *:not(img):not(svg):not(canvas):not(video){background-color:transparent !important;}',
+          'textarea,input,[contenteditable="true"]{background-color:rgba(20,24,32,.55) !important;}',
+        ].join('');
+        backgroundCssKey = await view.insertCSS(css);
       } catch (err) {
         console.warn('[ask] 背景注入失败', err);
       }

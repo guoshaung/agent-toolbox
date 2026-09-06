@@ -1,6 +1,6 @@
 # Agent 工具箱
 
-把「查文档、打字、进入状态、问 AI、背模板」这几件每天都要干、但每次都得切窗口的事，收进同一个壳里。
+一个轻量、本地优先的 Electron AI 桌面工作台，把科研阅读、查文档、学习、问 AI 和日常效率工具收进同一个壳里。它不是 Agent Runtime 或多智能体框架。
 
 [![Latest Release](https://img.shields.io/github/v/release/guoshaung/agent-toolbox?display_name=tag&sort=semver&logo=github)](https://github.com/guoshaung/agent-toolbox/releases)
 [![GitHub Stars](https://img.shields.io/github/stars/guoshaung/agent-toolbox?style=flat&logo=github)](https://github.com/guoshaung/agent-toolbox)
@@ -8,7 +8,7 @@
 [![JavaScript](https://img.shields.io/badge/JavaScript-Vanilla-F7DF1E?logo=javascript&logoColor=111827)](https://developer.mozilla.org/docs/Web/JavaScript)
 [![Platform](https://img.shields.io/badge/platform-macOS%20%7C%20Windows-111827)](#技术栈)
 
-基于 Electron + Chromium WebView，使用原生 JavaScript/CSS 开发，发布使用 electron-builder。
+基于 Electron + Chromium WebView，使用原生 JavaScript/CSS 开发，发布使用 electron-builder。运行时依赖还包括 `pdfjs-dist`、`katex` 和 `qrcode`；Argos Translate 是可选的本机 Python 依赖。
 
 ## 跑起来
 
@@ -134,6 +134,8 @@ DSH Web 会在工具箱启动时后台检测 `dsh web`：已有 `3080` 端口实
 
 从“学校访问”内嵌页面下载的文件会自动保存到工具箱文献库 `userData/literature/`，与“文献”页面导入的文件共用同一个库。
 
+文献阅读支持本地优先的划词翻译和中英双栏。优先使用 Chromium `Translator` API；不可用时尝试本机 Python 中的 Argos Translate。Argos 语言模型只会在用户明确确认后下载。普通翻译不会自动调用付费 LLM；`AI 精译`、解释和问答仍是显式 AI 操作。翻译结果按论文、段落、语言和 provider 版本缓存到本地配置。双栏按段落 ID 同步滚动，并支持科研语义高亮和本地文本差异对照。
+
 科研“想法”支持直接粘贴截图和 LaTeX：在补充细节框中按 `⌘V` 粘贴图片，保存后会压缩并跟随想法保存；公式可使用 `$...$`、`$$...$$`、`\(...\)`、`\[...\]`，也支持直接粘贴以 `\text`、`\frac`、`\underbrace` 等命令开头的完整公式。
 
 含有多个等号或加号的裸 LaTeX 公式会自动整理为逐行对齐布局；等号、加号和 `\underbrace` 说明各自占固定位置，长公式只在公式区域内横向滚动。
@@ -162,14 +164,14 @@ DSH Web 会在工具箱启动时后台检测 `dsh web`：已有 `3080` 端口实
 - **AI 整理的知识点不保证正确**。「分析网站知识点」是把别人网页上的话交给模型总结，关键结论请回原文核对；
   「AI 找站」给的网址也可能失效或记错，点开看一眼再收藏。
 - **抓来的网页内容当数据、不当指令**。送进模型时用分隔符隔离并明确声明，网页里若埋了「忽略以上指令」之类的文字不会生效。
-- **数据只存本地**：普通设置在 `~/Library/Application Support/agent-toolbox/config.json`；API Key 由系统安全存储加密，不上传到项目或日志。
+- **配置与文献默认存本地**：普通设置在 `userData/config.json`；API Key 由系统安全存储加密，不进入页面上下文或日志。主动使用网页 AI/API、论文检索或下载时，所选内容和请求仍会发送给相应第三方服务。
 
 ## 目录
 
 ```
 src/
 ├── main/                   主进程：窗口、session、IPC、配置落盘
-│   ├── main.js             入口；剥离内嵌站点 CSP、伪装 Chrome UA
+│   ├── main.js             入口；保留第三方 CSP、隔离 session、伪装 Chrome UA
 │   ├── preload.js          渲染进程能用的 Node 能力白名单
 │   └── store.js            config.json 原子读写
 └── renderer/

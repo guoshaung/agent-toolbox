@@ -1,6 +1,8 @@
 import { h, toast } from '../../core/ui.js';
 import { paperToMeta } from './citation.js';
 import { buildPaperQaPrompt, buildReadingSummaryPrompt, ANNO_TAGS, tagOf } from './readprompt.js';
+import { TranslationManager } from './translation-manager.js';
+import { diffWords } from './text-diff.js';
 
 const FORMAT_ICONS = {
   pdf: '📕', doc: '📘', docx: '📘', txt: '📄', md: '📄',
@@ -9,6 +11,19 @@ const FORMAT_ICONS = {
 };
 const TEXT_READABLE = new Set(['txt', 'md', 'rtf']);
 const ZOOM_STEPS = [0.6, 0.8, 1, 1.25, 1.5, 2];
+const HIGHLIGHT_TAGS = [
+  { id: 'important', label: 'Important' },
+  { id: 'idea', label: 'Idea' },
+  { id: 'method', label: 'Method' },
+  { id: 'result', label: 'Result' },
+  { id: 'limitation', label: 'Limitation' },
+  { id: 'question', label: 'Question' },
+  { id: 'related-work', label: 'Related Work' },
+  { id: 'my-idea', label: 'My Idea' },
+];
+const HIGHLIGHT_COLORS = {
+  yellow: '#f0c44c', red: '#e86f68', blue: '#6f9ded', green: '#5fbd8a',
+};
 
 /** PDF.js 懒加载：只有打开 PDF 时才 import（自带 worker 配置，加载失败会退回主线程渲染） */
 let pdfjsPromise = null;
@@ -38,6 +53,7 @@ export function createLiterature(root, ctx) {
 
   let files = [];
   let current = null; // 当前阅读的 { file, format, size, mtime }
+  let translationManager = null;
   let zoomIndex = 2;  // ZOOM_STEPS 里的 1.0
   let paperCandidates = [];
   let libraryCandidates = [];
@@ -57,14 +73,15 @@ export function createLiterature(root, ctx) {
   const zoomInBtn = h('button', { class: 'btn btn--icon', title: '放大 (Cmd +)', onclick: () => zoom(1) }, '＋');
   const fitWidthBtn = h('button', { class: 'btn btn--sm', title: '适应宽度 (Cmd 0)', onclick: () => fitTo('width') }, '适宽');
   const fitPageBtn = h('button', { class: 'btn btn--sm', title: '整页显示，一眼看到版面结构', onclick: () => fitTo('page') }, '整页');
-  const annoToggle = h('button', { class: 'btn btn--sm', onclick: () => toggleAnno() }, '批注');
+  const annoToggle = h('button', { class: 'btn btn--sm', onclick: () => toggleAnno() }, 'Highlights');
   const chatToggle = h('button', { class: 'btn btn--sm', title: '带着文献内容问 AI', onclick: () => toggleChat() }, '💬 问答');
-  const bilingBtn = h('button', { class: 'btn btn--sm', hidden: true, title: '豆包一键翻译全文，原文/译文对照阅读', onclick: () => toggleBilingual() }, '一键对照');
+  const bilingBtn = h('button', { class: 'btn btn--sm', hidden: true, title: '本地优先的中英双栏阅读', onclick: () => toggleBilingual() }, '中英双栏');
   const handBtn = h('button', { class: 'btn btn--sm', title: '手掌：拖拽平移页面', onclick: () => setCursorMode('hand') }, '✋');
   const selectBtn = h('button', { class: 'btn btn--sm', title: '指针：选中文字（配合划词/批注）', onclick: () => setCursorMode('select') }, '➤');
   const selBtn = h('button', { class: 'btn btn--sm', title: '先选中文字，再翻译；PDF 请切到指针模式', onclick: () => translateSelection() }, '翻译选中');
   const snipBtn = h('button', { class: 'btn btn--sm', title: '默认方式：在 PDF 页面右键后圈选区域；也可点击此按钮', onclick: () => startSnip() }, '圈译');
   const transToggleBtn = h('button', { class: 'btn btn--sm', title: '打开固定译文栏', onclick: () => toggleTransPanel() }, '译文栏');
+  const compareBtn = h('button', { class: 'btn btn--sm', onclick: () => toggleCompare() }, '差异');
   const viewerBar = h('div', { class: 'bar lit__viewerbar', hidden: true },
     h('span', { class: 'lit__viewer-name', title: '' }, ''),
     h('span', { style: { flex: 1 } }),
@@ -72,13 +89,17 @@ export function createLiterature(root, ctx) {
     h('span', { class: 'subbar__sep' }),
     zoomOutBtn, zoomLabel, zoomInBtn, fitWidthBtn, fitPageBtn,
     h('span', { class: 'subbar__sep' }),
-    bilingBtn, selBtn, snipBtn, transToggleBtn,
+    bilingBtn, selBtn, snipBtn, transToggleBtn, compareBtn,
     h('span', { class: 'subbar__sep' }),
     chatToggle, annoToggle,
   );
 
   // ---- 批注栏 ----
   const annoList = h('div', { class: 'lit__anno-list' });
+  const highlightFilter = h('select', {
+    class: 'field lit__highlight-filter', title: '筛选科研标记',
+    onchange: () => renderAnnos(),
+  }, h('option', { value: 'all' }, 'All'), ...HIGHLIGHT_TAGS.map((tag) => h('option', { value: tag.id }, tag.label)));
   const annoQuote = h('textarea', {
     class: 'field lit__anno-quote',
     placeholder: '引用的原文（在 PDF 里选中 → Cmd+C → 粘贴到这里；可空）',
@@ -109,7 +130,7 @@ export function createLiterature(root, ctx) {
   }, '读后总结');
 
   const annoPanel = h('div', { class: 'lit__anno', hidden: true },
-    h('div', { class: 'lit__anno-head' }, '批注', h('span', { style: { flex: 1 } }), summaryBtn),
+    h('div', { class: 'lit__anno-head' }, 'Highlights', h('span', { style: { flex: 1 } }), highlightFilter, summaryBtn),
     annoTagBar,
     annoQuote,
     annoNote,
@@ -133,7 +154,10 @@ export function createLiterature(root, ctx) {
       const result = await ctx.ai.json(buildReadingSummaryPrompt({
         title: current.file.replace(/\.[^.]+$/, ''),
         context,
-        annotations: annotations(),
+        annotations: [
+          ...annotations(),
+          ...highlights().map((mark) => ({ quote: mark.selected_text, note: mark.note || '', tag: mark.highlight_type })),
+        ],
       }), { timeout: 150000 });
       renderSummary(result);
       await config.set(`research.litSummary.${current.file}`, { ...result, at: Date.now() });
@@ -314,6 +338,69 @@ export function createLiterature(root, ctx) {
     return (config.get(annoKey()) || []);
   }
 
+  function highlightKey() { return `research.litHighlights.${current?.file || ''}`; }
+  function highlights() { return current ? (config.get(highlightKey()) || []) : []; }
+  async function saveHighlight(tag = 'important', color = 'yellow') {
+    if (!current || !lastSelection.trim()) return toast('先选中论文文字', 'info');
+    const context = lastSelectionContext || {};
+    const list = highlights();
+    list.unshift({
+      id: `hl-${Date.now()}`,
+      paper_id: current.file,
+      paragraph_id: context.paragraphId || 'p_text',
+      page: context.page || null,
+      original_text: context.originalText || '',
+      translated_text: context.translatedText || '',
+      selected_text: lastSelection.trim(),
+      anchor_side: context.side || 'original',
+      highlight_type: tag,
+      color,
+      note: '',
+      created_at: new Date().toISOString(),
+    });
+    await config.set(highlightKey(), list);
+    hideSelectionAction();
+    applyBilingualHighlights();
+    renderAnnos();
+    toast('重点已保存', 'good');
+  }
+
+  async function removeHighlight(id) {
+    await config.set(highlightKey(), highlights().filter((mark) => mark.id !== id));
+    applyBilingualHighlights();
+    renderAnnos();
+  }
+
+  async function openSelectionNote() {
+    if (!lastSelection.trim()) return;
+    annoQuote.value = lastSelection.trim();
+    chatPanel.setAttribute('hidden', '');
+    transCard.setAttribute('hidden', '');
+    annoPanel.removeAttribute('hidden');
+    annoNote.focus();
+    hideSelectionAction();
+  }
+
+  async function jumpToHighlight(mark) {
+    if (bilingualPanel && mark.paragraph_id) {
+      const target = bilingualPanel.querySelector(`[data-paragraph-id="${mark.paragraph_id}"]`);
+      if (target) {
+        target.scrollIntoView({ block: 'center' });
+        target.classList.add('is-jump-target');
+        setTimeout(() => target.classList.remove('is-jump-target'), 1300);
+        return;
+      }
+    }
+    if (mark.page && pdfPageEls[mark.page]) {
+      pdfPageEls[mark.page].scrollIntoView({ block: 'center' });
+      return;
+    }
+    if (!bilingual && mark.paragraph_id?.startsWith('p_')) {
+      await toggleBilingual();
+      requestAnimationFrame(() => jumpToHighlight(mark));
+    }
+  }
+
   let annoTag = 'key';        // 当前选中的批注标签
 
   async function addAnno() {
@@ -342,8 +429,9 @@ export function createLiterature(root, ctx) {
   function renderAnnos() {
     annoList.textContent = '';
     const list = annotations();
-    if (!list.length) {
-      annoList.appendChild(h('div', { class: 'faint lit__anno-empty' }, '还没有批注'));
+    const marks = highlights();
+    if (!list.length && !marks.length) {
+      annoList.appendChild(h('div', { class: 'faint lit__anno-empty' }, '还没有批注或重点'));
       return;
     }
     for (const a of list) {
@@ -362,6 +450,30 @@ export function createLiterature(root, ctx) {
         a.quote && h('div', { class: 'lit__anno-item-quote' }, a.quote),
         h('div', { class: 'lit__anno-item-note' }, a.note),
       ));
+    }
+    const filter = highlightFilter.value || 'all';
+    for (const mark of marks.filter((item) => filter === 'all' || item.highlight_type === filter)) {
+      const tag = HIGHLIGHT_TAGS.find((item) => item.id === mark.highlight_type);
+      const color = HIGHLIGHT_COLORS[mark.color] || HIGHLIGHT_COLORS.yellow;
+      annoList.appendChild(h('div', {
+        class: 'lit__anno-item lit__highlight-item',
+        role: 'button', tabindex: '0',
+        style: { '--highlight-color': color },
+        onclick: () => jumpToHighlight(mark),
+        onkeydown: (event) => { if (event.key === 'Enter' || event.key === ' ') jumpToHighlight(mark); },
+      },
+      h('div', { class: 'lit__anno-item-head' },
+        h('span', { class: 'lit__highlight-tag' }, tag?.label || mark.highlight_type || 'Important'),
+        h('span', { class: 'faint' }, new Date(mark.created_at).toLocaleString('zh-CN', { hour12: false })),
+        h('span', { style: { flex: 1 } }),
+        h('button', {
+          class: 'lit__anno-del', title: '删除',
+          onclick: (event) => { event.stopPropagation(); removeHighlight(mark.id); },
+        }, '×'),
+      ),
+      h('div', { class: 'lit__anno-item-quote' }, mark.selected_text),
+      mark.translated_text && h('div', { class: 'lit__highlight-translation' }, mark.translated_text),
+      mark.note && h('div', { class: 'lit__anno-item-note' }, mark.note)));
     }
   }
 
@@ -389,6 +501,9 @@ export function createLiterature(root, ctx) {
   let translating = false;
   let bilingualTranslating = false;
   let bilingualPanel = null;
+  let bilingualCells = new Map();
+  let bilingualObservers = [];
+  let bilingualCleanups = [];
   let bilingualRunId = 0;
   let cursorMode = config.get('research.lit.cursor', 'hand'); // hand | select
   let panOverlay = null;     // 手掌模式的拖拽层
@@ -409,13 +524,26 @@ export function createLiterature(root, ctx) {
   /** 圈译/划词固定显示在右侧专注栏，避免浮卡挡住正文或译文看不见。 */
   let lastTransResult = null;
   const transCard = h('aside', { class: 'lit__trans-panel', hidden: true });
+  const comparePanel = h('aside', { class: 'lit__compare', hidden: true });
   let transOpacity = Math.min(1, Math.max(0.15, Number(config.get('research.lit.transOpacity', 0.94)) || 0.94));
   transCard.style.setProperty('--lit-trans-opacity', String(transOpacity));
-  const selectionAction = h('button', {
+  const highlightTagSelect = h('select', { class: 'lit__selection-select', title: '科研标记类型' },
+    ...HIGHLIGHT_TAGS.map((tag) => h('option', { value: tag.id }, tag.label)));
+  const highlightColorSelect = h('select', { class: 'lit__selection-select lit__selection-color', title: '高亮颜色' },
+    h('option', { value: 'yellow' }, 'Yellow'),
+    h('option', { value: 'red' }, 'Red'),
+    h('option', { value: 'blue' }, 'Blue'),
+    h('option', { value: 'green' }, 'Green'));
+  const selectionAction = h('div', {
     class: 'lit__selection-action', hidden: true,
     onmousedown: (e) => e.preventDefault(),
-    onclick: () => translateSelection(),
-  }, '译');
+  },
+    h('button', { class: 'btn btn--sm', onclick: () => translateSelection() }, '译'),
+    highlightTagSelect,
+    highlightColorSelect,
+    h('button', { class: 'btn btn--sm', onclick: () => saveHighlight(highlightTagSelect.value, highlightColorSelect.value) }, '高亮'),
+    h('button', { class: 'btn btn--sm', onclick: openSelectionNote }, '笔记'),
+  );
 
   /** 翻译方向：和主进程 detectTarget 一致 —— 中文为主译英，否则译中 */
   function targetLang(text) {
@@ -428,7 +556,7 @@ export function createLiterature(root, ctx) {
     return Boolean(value) && !/\s/.test(value) && value.length <= 80;
   }
 
-  /** 豆包翻译独立于全局 AI；失败时再退到全局 AI 和有道，单个词不会静默空白。 */
+  /** Ordinary translation is local-first; AI is exposed only by the explicit refine action. */
   function cleanTranslation(text) {
     return String(text || '')
       .trim()
@@ -438,64 +566,38 @@ export function createLiterature(root, ctx) {
       .trim();
   }
 
-  async function translateSmart(text) {
+  async function translateSmart(text, options = {}) {
     const to = targetLang(text);
-    const errs = [];
-    const messages = [
-      {
-        role: 'system',
-        content: '你是资深科研论文翻译。忠实、准确、自然地翻译，优先保证技术含义和术语一致。模型名、基准名、数据集名、缩写、变量、代码、文件名、坐标轴、图例标签和版本号保持原样，不要臆造释义；无法确定的短标签保留英文并在后面给出括号说明。只输出译文本身，不解释，不添加标题。',
-      },
-      {
-        role: 'user',
-        content: `将下面的科研内容翻译成${to}。这是论文正文、图注或图表文字，必须结合上下文翻译；不要把 high、xhigh、max、ultracode、RHI、HI 等可能是模型/实验标签的 token 翻译成普通中文。保留段落、公式、代码、引用编号、文件路径、专有名词、图例标签和数字：\n\n${text}`,
-      },
-    ];
-    try {
-      const result = await window.toolbox.ai.translate({ messages, temperature: 0.1, timeout: 90000 });
-      const cleaned = cleanTranslation(result.ok ? result.text : '');
-      if (result.ok && cleaned) return { ok: true, translation: cleaned, via: 'doubao' };
-      errs.push(result.ok ? '豆包返回了空内容' : `豆包：${result.error}`);
-    } catch (err) {
-      errs.push(`豆包：${err.message}`);
+    if (!translationManager || translationManager.paperId !== (current?.file || 'selection')) {
+      translationManager = new TranslationManager({ config, paperId: current?.file || 'selection' });
     }
-    try {
-      const out = await ctx.ai.chat(
-        `你是资深科研论文翻译。把下面的内容准确翻译成${to}。\n` +
-        '只输出译文本身：不要解释、不要重复原文、不要任何前后缀或引号。\n' +
-        '模型名、基准名、数据集名、缩写、变量、代码、文件名、坐标轴、图例标签、版本号和 high/xhigh/max/ultracode 等 token 保持原样；不确定的短标签不要臆译。保留原有换行分段、公式、引用编号和专有名词。\n\n' + text,
-        { timeout: 60000 },
-      );
-      const cleaned = cleanTranslation(out);
-      if (cleaned) return { ok: true, translation: cleaned, via: 'ai' };
-      errs.push('全局 AI 返回了空内容');
-    } catch (err) {
-      errs.push(`全局 AI：${err.message}`);
-    }
-    try {
-      const fallback = await lit.translate(text, { interactive: true });
-      const cleaned = cleanTranslation(fallback.ok ? fallback.translation : '');
-      if (fallback.ok && cleaned) return { ok: true, translation: cleaned, via: 'youdao' };
-      errs.push(fallback.ok ? '有道返回了空译文' : `有道：${fallback.error}`);
-    } catch (err) {
-      errs.push(`有道：${err.message}`);
-    }
-    // 两条通道都失败时把原因都亮出来，不然浮卡空着根本不知道发生了什么
-    return { ok: false, error: errs.join('；') };
+    const local = await translationManager.translateSelection(text, {
+      sourceLanguage: to === '英文' ? 'zh' : 'en',
+      targetLanguage: to === '英文' ? 'en' : 'zh',
+      paragraphId: options.paragraphId || 'selection',
+      onProgress: options.onProgress,
+    });
+    if (local.ok) return { ...local, via: local.provider };
+    return { ok: false, error: local.error, via: local.provider };
   }
 
-  /** 单词速查先走有道单发接口，避免每个词都等待学术翻译模型。 */
+  /** 单词速查也走本地优先翻译，避免普通阅读消耗 API。 */
   async function translateWordFast(text) {
-    try {
-      const result = await lit.translate(text, { interactive: true });
-      const cleaned = cleanTranslation(result.ok ? result.translation : '');
-      if (result.ok && cleaned) return { ok: true, translation: cleaned, via: 'youdao-fast' };
-    } catch { /* 快速通道失败就交给完整翻译链路 */ }
     return translateSmart(text);
   }
 
   function viaLabel(via) {
-    return via === 'doubao' ? '豆包' : via === 'ai' ? '全局 AI' : via === 'youdao-fast' ? '快速词义' : '有道';
+    return via === 'chrome' ? 'Chrome 本地' : via === 'argos' ? 'Argos 本地' : via === 'ai' ? 'AI 精译' : '本地翻译';
+  }
+
+  async function installArgosAndRetry(srcText, paragraphId = 'selection') {
+    if (!window.confirm('将从 Argos 官方模型索引下载 English ↔ Chinese 模型。模型仅保存在本机，继续吗？')) return;
+    showTransBusy('正在下载并初始化 Argos 本地翻译模型…');
+    const installed = await translationManager?.installArgosModels();
+    if (!installed?.ok) return showTransResult(srcText, `翻译失败：${installed?.error || 'Argos 模型安装失败'}`);
+    const retried = await translateSmart(srcText, { paragraphId });
+    if (!retried.ok) return showTransResult(srcText, `翻译失败：${retried.error}`, '', retried);
+    showTransResult(srcText, retried.translation, retried.via);
   }
 
   function openTransPanel() {
@@ -542,7 +644,7 @@ export function createLiterature(root, ctx) {
   function toggleTransPanel() {
     if (!current) return toast('先打开一篇文献', 'info');
     if (!transCard.hasAttribute('hidden')) return closeTransPanel();
-    if (lastTransResult) return showTransResult(lastTransResult.srcText, lastTransResult.translation, lastTransResult.via);
+    if (lastTransResult) return showTransResult(lastTransResult.srcText, lastTransResult.translation, lastTransResult.via, lastTransResult.errorInfo);
     transCard.textContent = '';
     transCard.append(
       h('div', { class: 'lit__trans-panel-head' },
@@ -558,10 +660,10 @@ export function createLiterature(root, ctx) {
     transToggleBtn.title = '译文已显示在阅读器右侧浮层';
   }
 
-  function showTransResult(srcText, translation, via = '') {
+  function showTransResult(srcText, translation, via = '', errorInfo = null) {
     const value = String(translation || '').trim();
     const isError = /^(翻译失败|圈译失败|豆包翻译失败)/.test(value);
-    lastTransResult = { srcText: srcText || '', translation: value, via };
+    lastTransResult = { srcText: srcText || '', translation: value, via, errorInfo };
     transCard.textContent = '';
     transCard.classList.toggle('is-error', isError);
     const focusBtn = h('button', { class: 'btn btn--sm', onclick: (e) => toggleTransFocus(e.currentTarget) }, '专注放大');
@@ -583,6 +685,24 @@ export function createLiterature(root, ctx) {
         ),
       ),
       h('div', { class: 'lit__trans-actions' },
+        isError && errorInfo?.canInstall && h('button', {
+          class: 'btn btn--sm btn--primary',
+          onclick: () => installArgosAndRetry(srcText),
+        }, '安装 Argos 模型'),
+        srcText && !isError && h('button', {
+          class: 'btn btn--sm',
+          onclick: async () => {
+            try {
+              const to = targetLang(srcText) === '英文' ? '英文' : '中文';
+              const result = await window.toolbox.ai.translate({ messages: [
+                { role: 'system', content: '你是科研论文精译助手。保留引用、公式、变量、模型名、数据集名和缩写，只输出译文。' },
+                { role: 'user', content: `将以下内容精确翻译成${to}：\n\n${srcText}` },
+              ], temperature: 0.1, timeout: 90000 });
+              if (!result.ok) throw new Error(result.error);
+              showTransResult(srcText, cleanTranslation(result.text), 'ai');
+            } catch (err) { toast(`AI 精译失败：${err.message}`, 'bad'); }
+          },
+        }, 'AI 精译'),
         !isError && value && h('button', {
           class: 'btn btn--sm',
           onclick: async () => { await window.toolbox.clipboard.write(value); toast('译文已复制', 'good'); },
@@ -644,10 +764,11 @@ export function createLiterature(root, ctx) {
     const selected = normalizeSelection(selection?.toString());
     if (!selected || !selectionInsideViewer(selection)) return hideSelectionAction();
     lastSelection = selected;
+    lastSelectionContext = selectionContext(selection);
     try {
       const rect = selection.getRangeAt(0).getBoundingClientRect();
       const box = viewerEl.getBoundingClientRect();
-      selectionAction.style.left = `${Math.max(8, Math.min(box.width - 44, rect.right - box.left + 8))}px`;
+      selectionAction.style.left = `${Math.max(8, Math.min(box.width - 340, rect.right - box.left + 8))}px`;
       selectionAction.style.top = `${Math.max(8, Math.min(box.height - 38, rect.top - box.top - 4))}px`;
       selectionAction.removeAttribute('hidden');
     } catch {
@@ -657,10 +778,33 @@ export function createLiterature(root, ctx) {
 
   /** 记住最近一次非空选区：点按钮会让选区塌掉，必须提前存。 */
   let lastSelection = '';
+  let lastSelectionContext = null;
+  function selectionContext(selection) {
+    if (!selection?.rangeCount) return null;
+    const common = selection.getRangeAt(0).commonAncestorContainer;
+    const node = common.nodeType === Node.TEXT_NODE ? common.parentElement : common;
+    const paragraph = node?.closest?.('[data-paragraph-id]');
+    const paragraphId = paragraph?.dataset.paragraphId || 'p_text';
+    const page = Number(node?.closest?.('[data-page]')?.dataset.page) || null;
+    const side = paragraph?.classList.contains('lit__biling-col--dst') ? 'translation' : 'original';
+    const peerRoot = bilingualPanel?.querySelector(`[data-paragraph-id="${paragraphId}"].lit__biling-col--${side === 'translation' ? 'src' : 'dst'}`);
+    const originalRoot = side === 'original' ? paragraph : peerRoot;
+    const translatedRoot = side === 'translation' ? paragraph : peerRoot;
+    return {
+      paragraphId,
+      page,
+      side,
+      originalText: originalRoot?.querySelector('.lit__biling-src')?.textContent || '',
+      translatedText: translatedRoot?.querySelector('.lit__biling-dst')?.textContent || '',
+    };
+  }
   document.addEventListener('selectionchange', () => {
     const selection = window.getSelection();
     const selected = normalizeSelection(selection?.toString());
-    if (selected && selectionInsideViewer(selection)) lastSelection = selected;
+    if (selected && selectionInsideViewer(selection)) {
+      lastSelection = selected;
+      lastSelectionContext = selectionContext(selection);
+    }
   });
   viewerEl.addEventListener('mouseup', () => setTimeout(updateSelectionAction, 0));
   viewerEl.addEventListener('scroll', hideSelectionAction, true);
@@ -711,7 +855,7 @@ export function createLiterature(root, ctx) {
     showTransBusy(`翻译「${short}」…`);
     try {
       const result = isSingleWord(word) ? await translateWordFast(word) : await translateSmart(word);
-      if (!result.ok) return showTransResult(word, `翻译失败：${result.error}`);
+      if (!result.ok) return showTransResult(word, `翻译失败：${result.error}`, '', result);
       showTransResult(word, result.translation, result.via);
       toast(`「${short}」的译文已显示在阅读器右侧`, 'good');
     } catch (err) {
@@ -736,7 +880,7 @@ export function createLiterature(root, ctx) {
     showTransBusy(`正在翻译（${selected.length} 字）…`);
     try {
       const result = isSingleWord(selected) ? await translateWordFast(selected) : await translateSmart(selected);
-      if (!result.ok) return showTransResult(selected, `翻译失败：${result.error}`);
+      if (!result.ok) return showTransResult(selected, `翻译失败：${result.error}`, '', result);
       showTransResult(selected, result.translation, result.via);
       toast(`翻译好了（${viaLabel(result.via)}），译文在阅读器右侧`, 'good');
     } catch (err) {
@@ -816,8 +960,7 @@ export function createLiterature(root, ctx) {
       try {
         const crops = await cropLassoRegion(rect);
         if (!crops.length) return showTransResult(null, '圈住的地方还没有渲染出来，滚动一下再圈。');
-        // 先把每页的裁片都 OCR 出来；翻译只发一次请求（合并全文），
-        // 既省有道配额，AI 翻译也能带着上下文，术语前后一致
+        // 先把每页的裁片都 OCR 出来；合并后只请求一次本地翻译，保持上下文连续。
         const srcParts = [];
         const ocrErrs = [];
         for (const c of crops) {
@@ -833,7 +976,7 @@ export function createLiterature(root, ctx) {
         const tr = await translateSmart(srcText);
         if (!tr.ok) {
           // OCR 原文还在的话也亮出来，方便看是识别问题还是翻译问题
-          return showTransResult(srcText, `翻译失败：${tr.error}`);
+          return showTransResult(srcText, `翻译失败：${tr.error}`, '', tr);
         }
         showTransResult(srcText, tr.translation + (ocrErrs.length ? `\n（${ocrErrs.join('；')}）` : ''), tr.via);
         toast(`翻译好了（${viaLabel(tr.via)}）`, 'good');
@@ -853,7 +996,7 @@ export function createLiterature(root, ctx) {
   async function paragraphs() {
     if (rawText != null) {
       const all = String(rawText).split(/\n+/).map((source) => source.trim()).filter(Boolean);
-      return { items: all.slice(0, 180).map((source) => ({ source })), truncated: all.length > 180 };
+      return { items: all.slice(0, 180).map((source, index) => ({ source, paragraphId: `p_${String(index + 1).padStart(3, '0')}` })), truncated: all.length > 180 };
     }
     if (!pdfDoc) return { items: [], truncated: false };
     const items = [];
@@ -867,13 +1010,13 @@ export function createLiterature(root, ctx) {
         const value = String(item.str || '').trim();
         if (value) line += `${line ? ' ' : ''}${value}`;
         if ((item.hasEOL || line.length >= 700) && line) {
-          items.push({ source: line, page: pageNo });
+          items.push({ source: line, page: pageNo, paragraphId: `p_${String(items.length + 1).padStart(3, '0')}` });
           chars += line.length;
           line = '';
         }
       }
       if (line) {
-        items.push({ source: line, page: pageNo });
+        items.push({ source: line, page: pageNo, paragraphId: `p_${String(items.length + 1).padStart(3, '0')}` });
         chars += line.length;
       }
       if (items.length >= 220 || chars >= 60000) {
@@ -884,78 +1027,83 @@ export function createLiterature(root, ctx) {
     return { items, truncated };
   }
 
-  function transCacheKey() {
-    return `research.litTransV2.${current.file}`;
-  }
-
-  function makeParaBatches(items, pendingIdx) {
-    const batches = [];
-    let cur = [];
-    let chars = 0;
-    for (const i of pendingIdx) {
-      if (cur.length && (chars + items[i].source.length > 5000 || cur.length >= 8)) {
-        batches.push(cur);
-        cur = [];
-        chars = 0;
-      }
-      cur.push(i);
-      chars += items[i].source.length;
-    }
-    if (cur.length) batches.push(cur);
-    return batches;
-  }
-
-  function parseBatchTranslations(text) {
-    const cleaned = String(text || '').trim().replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '');
-    const start = cleaned.indexOf('{');
-    const end = cleaned.lastIndexOf('}');
-    if (start < 0 || end <= start) return null;
-    try {
-      const parsed = JSON.parse(cleaned.slice(start, end + 1));
-      if (!Array.isArray(parsed.items)) return null;
-      return new Map(parsed.items.map((item) => [Number(item.id), cleanTranslation(item.translation)]));
-    } catch {
-      return null;
-    }
-  }
-
-  async function translateBatch(items, batch) {
-    const payload = batch.map((id) => ({ id, text: items[id].source }));
-    const to = targetLang(payload.map((item) => item.text).join('\n'));
-    const result = await window.toolbox.ai.translate({
-      messages: [
-        { role: 'system', content: '你是专业学术翻译引擎。保持术语、公式、引用编号准确。严格输出 JSON，不要 markdown。' },
-        {
-          role: 'user',
-          content: `把 input 中每条 text 翻译成${to}。id 必须原样返回，不能合并、遗漏或新增。输出格式：{"items":[{"id":0,"translation":"译文"}]}\ninput=${JSON.stringify(payload)}`,
-        },
-      ],
-      temperature: 0.1,
-      timeout: 120000,
-    });
-    if (!result.ok) throw new Error(result.error);
-    const parsed = parseBatchTranslations(result.text);
-    if (!parsed || batch.some((id) => !parsed.get(id))) throw new Error('豆包没有按段落返回完整 JSON');
-    return parsed;
-  }
-
   function closeBilingual() {
     bilingualRunId += 1;
     bilingual = false;
+    for (const observer of bilingualObservers) observer.disconnect();
+    bilingualObservers = [];
+    for (const cleanup of bilingualCleanups) cleanup();
+    bilingualCleanups = [];
+    bilingualCells = new Map();
     bilingualPanel?.remove();
     bilingualPanel = null;
     bilingBtn.classList.remove('is-on');
-    bilingBtn.textContent = '一键对照';
+    bilingBtn.textContent = '中英双栏';
+  }
+
+  function renderMarkedText(element, text, marks, color) {
+    const value = String(text || '');
+    const ranges = [];
+    for (const mark of marks) {
+      const needle = String(mark.selected_text || '');
+      const start = needle ? value.indexOf(needle) : -1;
+      if (start >= 0) ranges.push({ start, end: start + needle.length, mark });
+    }
+    ranges.sort((a, b) => a.start - b.start);
+    element.textContent = '';
+    let cursor = 0;
+    for (const range of ranges) {
+      if (range.start < cursor) continue;
+      element.append(document.createTextNode(value.slice(cursor, range.start)));
+      element.append(h('mark', {
+        class: 'lit__text-highlight',
+        dataset: { highlightId: range.mark.id },
+        style: { '--highlight-color': HIGHLIGHT_COLORS[range.mark.color] || color },
+      }, value.slice(range.start, range.end)));
+      cursor = range.end;
+    }
+    element.append(document.createTextNode(value.slice(cursor)));
+  }
+
+  function applyBilingualHighlights() {
+    if (!bilingualCells.size) return;
+    const marks = highlights();
+    for (const [paragraphId, cell] of bilingualCells) {
+      const paragraphMarks = marks.filter((mark) => mark.paragraph_id === paragraphId);
+      for (const node of [cell.source, cell.target]) {
+        node.classList.toggle('has-highlight', paragraphMarks.length > 0);
+        node.style.setProperty('--highlight-color', HIGHLIGHT_COLORS[paragraphMarks[0]?.color] || HIGHLIGHT_COLORS.yellow);
+      }
+      renderMarkedText(cell.sourceText, cell.item.source,
+        paragraphMarks.filter((mark) => (mark.anchor_side || 'original') === 'original'), HIGHLIGHT_COLORS.yellow);
+      renderMarkedText(cell.output, cell.targetText,
+        paragraphMarks.filter((mark) => mark.anchor_side === 'translation'), HIGHLIGHT_COLORS.yellow);
+    }
+  }
+
+  function toggleCompare() {
+    if (!current) return toast('先打开一篇文献', 'info');
+    if (!comparePanel.hasAttribute('hidden')) { comparePanel.setAttribute('hidden', ''); return; }
+    comparePanel.textContent = '';
+    const left = h('textarea', { class: 'field', placeholder: '版本 A / 原始方法' });
+    const right = h('textarea', { class: 'field', placeholder: '版本 B / 我的方法' });
+    const output = h('div', { class: 'lit__compare-output' });
+    const render = () => {
+      output.textContent = '';
+      for (const part of diffWords(left.value, right.value)) {
+        const node = h('span', { class: `lit__diff-${part.type}` }, part.text);
+        output.appendChild(node);
+      }
+    };
+    left.addEventListener('input', render); right.addEventListener('input', render);
+    comparePanel.append(h('div', { class: 'lit__compare-head' }, h('strong', {}, '论文差异对照'), h('span', { style: { flex: 1 } }), h('button', { class: 'btn btn--sm', onclick: () => comparePanel.setAttribute('hidden', '') }, '关闭')),
+      h('div', { class: 'lit__compare-inputs' }, left, right), output);
+    comparePanel.removeAttribute('hidden');
   }
 
   async function toggleBilingual() {
     if (!current) return;
     if (bilingual) return closeBilingual();
-    if (!config.get('research.translation.hasKey', false) || !config.get('research.translation.model', '')) {
-      toast('先在「设置 → 豆包翻译」保存 API Key 和模型/接入点，已为你打开设置', 'info', 6000);
-      ctx.goto('settings');
-      return;
-    }
     const runId = ++bilingualRunId;
     bilingual = true;
     bilingBtn.classList.add('is-on');
@@ -967,80 +1115,182 @@ export function createLiterature(root, ctx) {
       return toast('这篇 PDF 没有可选文本，可能是扫描版；请使用圈译', 'bad', 5000);
     }
 
-    const cache = config.get(transCacheKey()) || {};
-    const wrap = h('div', { class: 'lit__biling' });
+    if (!translationManager || translationManager.paperId !== current.file) {
+      translationManager = new TranslationManager({ config, paperId: current.file });
+    }
+    const cachedFor = (item) => {
+      const to = targetLang(item.source) === '英文' ? 'en' : 'zh';
+      return translationManager.getCached(item.source, { sourceLanguage: to === 'en' ? 'zh' : 'en', targetLanguage: to });
+    };
+    const sourcePane = h('div', { class: 'lit__biling-pane lit__biling-pane--src' });
+    const targetPane = h('div', { class: 'lit__biling-pane lit__biling-pane--dst' });
+    const splitter = h('div', { class: 'lit__biling-splitter', title: '拖动调整双栏比例' });
+    const wrap = h('div', { class: 'lit__biling' }, sourcePane, splitter, targetPane);
+    const splitRatio = Math.min(70, Math.max(30, Number(config.get('research.lit.splitRatio', 50)) || 50));
+    wrap.style.setProperty('--split-left', `${splitRatio}%`);
+    let draggingSplit = false;
+    splitter.addEventListener('mousedown', (event) => { draggingSplit = true; event.preventDefault(); });
+    const dragSplitter = (event) => {
+      if (!draggingSplit || !bilingual) return;
+      const box = wrap.getBoundingClientRect();
+      const ratio = Math.min(70, Math.max(30, ((event.clientX - box.left) / box.width) * 100));
+      wrap.style.setProperty('--split-left', `${ratio}%`);
+    };
+    const stopSplitter = () => {
+      if (!draggingSplit) return;
+      draggingSplit = false;
+      config.set('research.lit.splitRatio', parseFloat(wrap.style.getPropertyValue('--split-left')));
+    };
+    window.addEventListener('mousemove', dragSplitter);
+    window.addEventListener('mouseup', stopSplitter);
+    bilingualCleanups.push(() => window.removeEventListener('mousemove', dragSplitter));
+    bilingualCleanups.push(() => window.removeEventListener('mouseup', stopSplitter));
+    const bilingualStatus = h('span', { class: 'faint' }, truncated ? '文献较长，先展示前 6 万字' : `${items.length} 段`);
+    const bilingualModeButton = h('button', { class: 'btn btn--sm is-on' }, '中英双栏');
+    const chineseModeButton = h('button', {
+      class: 'btn btn--sm',
+      onclick: () => {
+        wrap.classList.add('is-target-only');
+        bilingualModeButton.classList.remove('is-on');
+        chineseModeButton.classList.add('is-on');
+      },
+    }, '中文');
+    bilingualModeButton.addEventListener('click', () => {
+      wrap.classList.remove('is-target-only');
+      chineseModeButton.classList.remove('is-on');
+      bilingualModeButton.classList.add('is-on');
+    });
+    const bilingualHead = h('div', { class: 'lit__biling-head' },
+      h('button', { class: 'btn btn--sm', onclick: closeBilingual }, 'Original'),
+      bilingualModeButton,
+      chineseModeButton,
+      bilingualStatus,
+      h('span', { style: { flex: 1 } }),
+      h('button', { class: 'lit__anno-del', title: '关闭', onclick: closeBilingual }, '×'));
     bilingualPanel = h('div', { class: 'lit__biling-panel' },
-      h('div', { class: 'lit__biling-head' },
-        h('strong', {}, '豆包全文对照'),
-        h('span', { class: 'faint' }, truncated ? '文献较长，先展示前 6 万字' : `${items.length} 段`),
-        h('span', { style: { flex: 1 } }),
-        h('button', { class: 'btn btn--sm', onclick: closeBilingual }, '返回原文'),
-      ),
+      bilingualHead,
       wrap,
     );
     viewerEl.appendChild(bilingualPanel);
     const cells = items.map((item, i) => {
-      const cached = cache[i];
-      const valid = cached && cached.source === item.source && cached.translation;
-      const cell = h('div', { class: 'lit__biling-item' },
-        h('div', { class: 'lit__biling-meta faint' }, item.page ? `第 ${item.page} 页` : `第 ${i + 1} 段`),
-        h('div', { class: 'lit__biling-cols' },
-          h('section', { class: 'lit__biling-col lit__biling-col--src' },
-            h('div', { class: 'lit__biling-col-label' }, '原文'),
-            h('div', { class: 'lit__biling-src' }, item.source),
-          ),
-          h('section', { class: 'lit__biling-col lit__biling-col--dst' },
-            h('div', { class: 'lit__biling-col-label' }, '译文'),
-            h('div', { class: 'lit__biling-dst' }, valid ? cached.translation : '等待翻译…'),
-          ),
-        ),
-      );
-      wrap.appendChild(cell);
+      const cached = cachedFor(item);
+      const valid = Boolean(cached?.translation);
+      const meta = item.page ? `第 ${item.page} 页 · ${item.paragraphId}` : item.paragraphId;
+      const source = h('section', { class: 'lit__biling-col lit__biling-col--src', dataset: { paragraphId: item.paragraphId } },
+        h('div', { class: 'lit__biling-meta faint' }, meta), h('div', { class: 'lit__biling-src' }, item.source));
+      const target = h('section', { class: 'lit__biling-col lit__biling-col--dst', dataset: { paragraphId: item.paragraphId } },
+        h('div', { class: 'lit__biling-meta faint' }, meta), h('div', { class: 'lit__biling-dst' }, valid ? cached.translation : '等待本地翻译…'));
+      sourcePane.appendChild(source);
+      targetPane.appendChild(target);
+      const syncHover = (on) => { source.classList.toggle('is-linked', on); target.classList.toggle('is-linked', on); };
+      for (const node of [source, target]) {
+        node.addEventListener('mouseenter', () => syncHover(true));
+        node.addEventListener('mouseleave', () => syncHover(false));
+      }
+      const cell = {
+        item,
+        source,
+        target,
+        sourceText: source.querySelector('.lit__biling-src'),
+        output: target.querySelector('.lit__biling-dst'),
+        targetText: valid ? cached.translation : '等待本地翻译…',
+      };
+      bilingualCells.set(item.paragraphId, cell);
       return cell;
     });
+    applyBilingualHighlights();
 
-    const pendingIdx = items.map((_, i) => i)
-      .filter((i) => !cache[i] || cache[i].source !== items[i].source || !cache[i].translation);
-    if (!pendingIdx.length) {
-      bilingBtn.textContent = '一键对照';
-      return;
-    }
+    let linkedScroll = true;
+    let syncing = false;
+    const syncButton = h('button', { class: 'btn btn--sm', onclick: (event) => {
+      linkedScroll = !linkedScroll;
+      event.currentTarget.textContent = linkedScroll ? '同步滚动 ON' : '同步滚动 OFF';
+    } }, '同步滚动 ON');
+    bilingualHead.insertBefore(syncButton, bilingualHead.lastElementChild);
+    const align = (index, pane) => {
+      if (!linkedScroll || syncing || index < 0) return;
+      syncing = true;
+      const peer = pane === sourcePane ? cells[index].target : cells[index].source;
+      peer.scrollIntoView({ block: 'start' });
+      requestAnimationFrame(() => { syncing = false; });
+    };
+    const sourceObserver = new IntersectionObserver((entries) => {
+      const hit = entries.filter((entry) => entry.isIntersecting).sort((a, b) => b.intersectionRatio - a.intersectionRatio)[0];
+      if (hit) align(cells.findIndex((cell) => cell.source === hit.target), sourcePane);
+    }, { root: sourcePane, threshold: 0.55 });
+    const targetObserver = new IntersectionObserver((entries) => {
+      const hit = entries.filter((entry) => entry.isIntersecting).sort((a, b) => b.intersectionRatio - a.intersectionRatio)[0];
+      if (hit) align(cells.findIndex((cell) => cell.target === hit.target), targetPane);
+    }, { root: targetPane, threshold: 0.55 });
+    bilingualObservers.push(sourceObserver, targetObserver);
+    cells.forEach((cell) => { sourceObserver.observe(cell.source); targetObserver.observe(cell.target); });
+
+    const pendingIdx = items.map((_, i) => i).filter((i) => !cachedFor(items[i])?.translation);
+    if (!pendingIdx.length) { bilingBtn.textContent = '中英双栏'; return; }
     bilingualTranslating = true;
-    const batches = makeParaBatches(items, pendingIdx);
+    const pending = new Set(pendingIdx);
+    const visible = new Set();
+    const translationObserver = new IntersectionObserver((entries) => {
+      for (const entry of entries) {
+        const index = cells.findIndex((cell) => cell.source === entry.target);
+        if (entry.isIntersecting) visible.add(index); else visible.delete(index);
+      }
+    }, { root: sourcePane, threshold: 0.01 });
+    bilingualObservers.push(translationObserver);
+    cells.forEach((cell) => translationObserver.observe(cell.source));
+    const takeNext = () => {
+      const onScreen = [...visible].filter((index) => pending.has(index)).sort((a, b) => a - b);
+      if (onScreen.length) return onScreen[0];
+      const visibleOrder = [...visible].sort((a, b) => a - b);
+      const anchor = visibleOrder[0] ?? cells.findIndex((cell) => cell.source.offsetTop + cell.source.offsetHeight >= sourcePane.scrollTop);
+      for (let offset = 1; offset <= 8; offset += 1) if (pending.has(anchor + offset)) return anchor + offset;
+      for (let offset = 1; offset <= 4; offset += 1) if (pending.has(anchor - offset)) return anchor - offset;
+      return pending.values().next().value;
+    };
     let done = 0;
     try {
-      for (const batch of batches) {
+      while (pending.size) {
         if (!bilingual || runId !== bilingualRunId || current == null) break;
-        for (const i of batch) cells[i].querySelector('.lit__biling-dst').textContent = '豆包翻译中…';
-        try {
-          const translations = await translateBatch(items, batch);
-          for (const i of batch) {
-            cache[i] = { source: items[i].source, translation: translations.get(i), via: 'doubao' };
-            cells[i].querySelector('.lit__biling-dst').textContent = cache[i].translation;
+        const i = takeNext();
+        pending.delete(i);
+        cells[i].output.textContent = '本地翻译中…';
+        cells[i].targetText = '本地翻译中…';
+        const one = await translateSmart(items[i].source, { paragraphId: items[i].paragraphId });
+        if (!one.ok) {
+          cells[i].targetText = `翻译失败：${one.error}`;
+          cells[i].output.textContent = cells[i].targetText;
+          bilingualStatus.textContent = one.error;
+          if (one.canInstall && !bilingualHead.querySelector('.lit__argos-install')) {
+            const installButton = h('button', {
+              class: 'btn btn--sm btn--primary lit__argos-install',
+              onclick: async () => {
+                if (!window.confirm('将从 Argos 官方模型索引下载 English ↔ Chinese 模型。模型仅保存在本机，继续吗？')) return;
+                installButton.disabled = true;
+                bilingualStatus.textContent = '正在安装 Argos 本地模型…';
+                const installed = await translationManager.installArgosModels();
+                if (!installed?.ok) {
+                  bilingualStatus.textContent = installed?.error || 'Argos 模型安装失败';
+                  installButton.disabled = false;
+                  return;
+                }
+                closeBilingual();
+                toggleBilingual();
+              },
+            }, '安装 Argos 模型');
+            bilingualHead.insertBefore(installButton, syncButton);
           }
-        } catch (batchErr) {
-          for (const i of batch) {
-            try {
-              const one = await translateSmart(items[i].source);
-              cache[i] = {
-                source: items[i].source,
-                translation: one.ok ? one.translation : `翻译失败：${one.error}`,
-                via: one.via || 'error',
-              };
-            } catch (err) {
-              cache[i] = { source: items[i].source, translation: `翻译失败：${err.message}`, via: 'error' };
-            }
-            cells[i].querySelector('.lit__biling-dst').textContent = cache[i].translation;
-          }
-          toast(`豆包批量翻译失败，已逐段降级：${batchErr.message}`, 'info', 5000);
+          break;
         }
-        done += batch.length;
-        bilingBtn.textContent = `对照 ${Math.min(done, pendingIdx.length)}/${pendingIdx.length}`;
-        await config.set(transCacheKey(), cache);
+        cells[i].targetText = one.translation;
+        applyBilingualHighlights();
+        done += 1;
+        bilingBtn.textContent = `对照 ${done}/${pendingIdx.length}`;
+        bilingualStatus.textContent = `${done}/${pendingIdx.length} 段已翻译`;
+        await new Promise((resolve) => setTimeout(resolve, 0));
       }
     } finally {
       bilingualTranslating = false;
-      if (runId === bilingualRunId) bilingBtn.textContent = '一键对照';
+      if (runId === bilingualRunId) bilingBtn.textContent = '中英双栏';
     }
   }
 
@@ -1367,6 +1617,7 @@ export function createLiterature(root, ctx) {
     rawText = null;
     closeBilingual();
     lastSelection = '';
+    lastSelectionContext = null;
     hideSelectionAction();
     // 释放上一个 PDF
     if (pdfObserver) { pdfObserver.disconnect(); pdfObserver = null; }
@@ -2040,6 +2291,7 @@ export function createLiterature(root, ctx) {
           viewerEl,
           pdfXBar,
           transCard,
+          comparePanel,
           chatPanel,
           annoPanel,
         ),

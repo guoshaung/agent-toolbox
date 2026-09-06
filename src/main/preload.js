@@ -169,10 +169,16 @@ contextBridge.exposeInMainWorld('toolbox', {
     onBatchProgress: (callback) => ipcRenderer.on('lit:batch-progress', (_event, state) => callback(state)),
     onAutoProgress: (callback) => ipcRenderer.on('lit:auto-progress', (_event, state) => callback(state)),
     onDownloaded: (callback) => ipcRenderer.on('lit:downloaded', (_event, item) => callback(item)),
-    /** 免费翻译（有道），返回 { ok, translation | error } */
-    translate: (text, opts) => ipcRenderer.invoke('lit:translate', text, opts),
-    /** 圈选截图 OCR（只识别不翻译，翻译走渲染层 AI 接口），返回 { ok, text | error } */
+    /** Legacy remote translator retained for compatibility; research reading uses local-first translation. */
+    translate: (text, options) => ipcRenderer.invoke('lit:translate', text, options),
+    /** 圈选截图 OCR（只识别不翻译，翻译走本地优先 TranslationManager），返回 { ok, text | error } */
     snipOcr: (dataUrl) => ipcRenderer.invoke('lit:snipOcr', dataUrl),
+  },
+
+  translation: {
+    argos: (payload) => ipcRenderer.invoke('translation:argos', payload),
+    argosStatus: () => ipcRenderer.invoke('translation:argos-status'),
+    installArgosModels: () => ipcRenderer.invoke('translation:argos-install'),
   },
 
   ai: {
