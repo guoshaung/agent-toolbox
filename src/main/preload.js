@@ -175,6 +175,10 @@ contextBridge.exposeInMainWorld('toolbox', {
     snipOcr: (dataUrl) => ipcRenderer.invoke('lit:snipOcr', dataUrl),
   },
 
+  translation: {
+    argos: (payload) => ipcRenderer.invoke('translation:argos', payload),
+  },
+
   ai: {
     /** 走主进程发 OpenAI 兼容请求；API Key 只从主进程安全存储读取 */
     chat: (payload) => ipcRenderer.invoke('ai:chat', payload),

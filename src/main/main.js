@@ -233,7 +233,7 @@ function createSiteFloat(site) {
         preload: path.join(__dirname, 'site-float-preload.js'),
         contextIsolation: true,
         nodeIntegration: false,
-        sandbox: false,
+        sandbox: true,
         webviewTag: true,
       },
     }),
@@ -406,31 +406,14 @@ function safeConfig() {
   return data;
 }
 
-/**
- * 剥离 CSP 响应头。只作用于我们自己 App 内的这个分区，不影响系统浏览器。
- * 目的：让「自定义背景」的 CSS/图片注入不被站点 CSP 挡掉。
- */
-function relaxPartition(partitionName) {
+/** Configure browser identity without weakening third-party response policies. */
+function configurePartition(partitionName) {
   const ses = session.fromPartition(partitionName);
   ses.setUserAgent(CHROME_UA);
 
-  // 只拦文档和子框架。
-  // CSP 只在文档响应头上生效，图片/脚本/字体上没有意义 —— 而不加过滤的话，
-  // 页面上每一个子资源（一个内容页两三百个）都要往返一次主进程 JS，
-  // 几百次 IPC 全挤在单线程的主进程里，冷加载实测慢了约 15%。
+  // Client hints only need to be normalized for document requests. Response
+  // headers, including third-party Content-Security-Policy, are preserved.
   const DOC_ONLY = { urls: ['<all_urls>'], types: ['mainFrame', 'subFrame'] };
-
-  ses.webRequest.onHeadersReceived(DOC_ONLY, (details, callback) => {
-    const headers = details.responseHeaders || {};
-    for (const key of Object.keys(headers)) {
-      const lower = key.toLowerCase();
-      if (lower === 'content-security-policy' || lower === 'content-security-policy-report-only') {
-        delete headers[key];
-      }
-    }
-    callback({ responseHeaders: headers });
-  });
-
   // 站点可能按 UA 提示（Client Hints）判断浏览器，一并对齐，避免被判成非常规客户端。
   ses.webRequest.onBeforeSendHeaders(DOC_ONLY, (details, callback) => {
     const headers = details.requestHeaders;
@@ -478,7 +461,7 @@ function createWindow(showOnReady = true) {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
-      sandbox: false,
+      sandbox: true,
       webviewTag: true, // 四个工具全靠它内嵌 Chromium
       spellcheck: false,
     },
@@ -540,6 +523,7 @@ function createWindow(showOnReady = true) {
     console.log('[main] will-attach-webview preload:', webPreferences.preload, source);
     webPreferences.nodeIntegration = false;
     webPreferences.contextIsolation = true;
+    webPreferences.sandbox = true;
     // 文献阅读器要用 Chromium 内置 PDF 查看器（自带缩放/翻页/搜索）
     webPreferences.plugins = true;
   });
@@ -691,7 +675,7 @@ function createTermPopup() {
       preload: path.join(__dirname, 'term-popup-preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
-      sandbox: false,
+      sandbox: true,
     },
   });
   termPopupWindow.setAlwaysOnTop(true, process.platform === 'darwin' ? 'floating' : 'normal');
@@ -1133,7 +1117,7 @@ function createPetWindow() {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
-      sandbox: false,
+      sandbox: true,
     },
   });
   petWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: false });
@@ -2044,6 +2028,11 @@ function registerIpc() {
 
   /** 免费翻译（有道），返回 { ok, translation | error } */
   ipcMain.handle('lit:translate', (_e, text, opts) => translator.translate(text, opts));
+  ipcMain.handle('translation:argos', async () => ({
+    ok: false,
+    code: 'argos-unavailable',
+    error: 'Argos Translate 本地服务未启动。请安装并启动 Argos sidecar。',
+  }));
 
   /** 圈选截图（dataURL PNG）→ 本地 OCR，只识别不翻译，返回 { ok, text | error }。
    *  翻译由渲染层自己走 AI 接口（质量好、没有有道每分钟约 5 条新内容的配额）。 */
@@ -2196,7 +2185,7 @@ app.whenReady().then(async () => {
     if (!icon.isEmpty()) app.dock.setIcon(icon);
   }
 
-  for (const partition of Object.values(PARTITIONS)) relaxPartition(partition);
+  for (const partition of Object.values(PARTITIONS)) configurePartition(partition);
   configureBilibiliPartition();
 
   // 启动时清空专注/情报分区的缓存和 cookie，避免站点记住上次的登录重定向状态

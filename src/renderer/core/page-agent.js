@@ -138,30 +138,6 @@ export const PAGE_AGENT = String.raw`
         bodyChars: (document.body.innerText || '').length,
       };
     },
-
-    /** 自定义背景：把注入的样式集中在一个 <style> 里，改一次覆盖一次。 */
-    applyBackground({ dataUrl, dim = 0.45, blur = 0 }) {
-      const ID = '__tbx_bg';
-      let style = document.getElementById(ID);
-      if (!style) {
-        style = document.createElement('style');
-        style.id = ID;
-        document.documentElement.appendChild(style);
-      }
-      if (!dataUrl) { style.textContent = ''; return true; }
-      style.textContent = [
-        'html{background-image:url("' + dataUrl + '") !important;background-size:cover !important;',
-        'background-position:center center !important;background-attachment:fixed !important;}',
-        'html::before{content:"";position:fixed;inset:0;z-index:0;pointer-events:none;',
-        'background:rgba(8,10,14,' + dim + ');backdrop-filter:blur(' + blur + 'px);}',
-        // 把站点自己的实心底色掀掉，否则背景图会被整片盖住。
-        'body,#root,#app,#__next{background:transparent !important;}',
-        'body *:not(img):not(svg):not(canvas):not(video){background-color:transparent !important;}',
-        // 掀完之后气泡/输入框会失去边界，补一层半透明玻璃让文字仍然可读。
-        'textarea,input,[contenteditable="true"]{background-color:rgba(20,24,32,.55) !important;}',
-      ].join('');
-      return true;
-    },
   };
 
   window.__tbx = agent;
