@@ -19,7 +19,14 @@ const HAS_UV = hasCommand('uv');
 // 于是用例照跑，然后挂在「找不到 python3」上。
 const HAS_PY = hasCommand('python3');
 const HAS_SQLITE = hasCommand('sqlite3');
-const need = (ok, what) => (ok ? false : `本机没有 ${what}，跳过`);
+// CI 上不跑这几个：它们真的去调本机的 python3 / sqlite3 / uv，
+// runner 上装没装、装成什么样都不确定（Windows 上有 python3.exe 却仍解析不到），
+// 拿这种环境差异去卡发版没有意义。语法检查和纯逻辑用例照常跑。
+const IN_CI = Boolean(process.env.CI);
+const need = (ok, what) => {
+  if (IN_CI) return `CI 环境跳过依赖本机 ${what} 的集成测试`;
+  return ok ? false : `本机没有 ${what}，跳过`;
+};
 
 test('Python 实践真的运行并返回 stdout', { skip: need(HAS_PY, 'python3') }, async () => {
   const result = await run('python', 'print(2 + 3)');
