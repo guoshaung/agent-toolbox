@@ -40,6 +40,7 @@ async function remoteStatusWithQr(state) {
   const apkUrl = current.apkUrls?.[0] || '';
   return { ...current, apkQr: apkUrl ? await QRCode.toDataURL(apkUrl, { width: 320, margin: 2 }) : '' };
 }
+const { ArgosService } = require('./argos-service');
 
 const IS_DEV = process.argv.includes('--dev');
 const ICON_PATH = path.join(__dirname, '..', '..', 'assets', 'icon.png');
@@ -76,6 +77,7 @@ let windowDock;
 let quittingForDock = false;
 let remoteControl;
 let dshService;
+let argosService;
 const siteFloatWindows = new Map();
 const pendingRemoteCommands = new Map();
 const watchAvatarCache = new Map();
@@ -2026,16 +2028,14 @@ function registerIpc() {
     }
   });
 
-  /** 免费翻译（有道），返回 { ok, translation | error } */
-  ipcMain.handle('lit:translate', (_e, text, opts) => translator.translate(text, opts));
-  ipcMain.handle('translation:argos', async () => ({
-    ok: false,
-    code: 'argos-unavailable',
-    error: 'Argos Translate 本地服务未启动。请安装并启动 Argos sidecar。',
-  }));
+  ipcMain.handle('translation:argos', (_event, payload) => argosService.translate(payload));
+  // Kept for preload compatibility. Research reading does not use this remote provider by default.
+  ipcMain.handle('lit:translate', (_event, text, options) => translator.translate(text, options));
+  ipcMain.handle('translation:argos-status', () => argosService.status());
+  ipcMain.handle('translation:argos-install', () => argosService.installModels());
 
   /** 圈选截图（dataURL PNG）→ 本地 OCR，只识别不翻译，返回 { ok, text | error }。
-   *  翻译由渲染层自己走 AI 接口（质量好、没有有道每分钟约 5 条新内容的配额）。 */
+   *  普通翻译由渲染层的 local-first TranslationManager 处理。 */
   ipcMain.handle('lit:snipOcr', (_e, dataUrl) => ocr.ocrImage(app.getPath('userData'), dataUrl));
 
   ipcMain.handle('lit:list', () => {
@@ -2216,6 +2216,7 @@ app.whenReady().then(async () => {
       if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('remote:inbox', item);
     },
   });
+  argosService = new ArgosService();
 
   dshService = new DshService({ app, getWindow: () => mainWindow });
 
@@ -2256,6 +2257,7 @@ app.on('will-quit', () => {
   stopAutoCheck();
   globalShortcut.unregisterAll();
   remoteControl?.stop();
+  argosService?.destroy();
   for (const pending of pendingRemoteCommands.values()) {
     clearTimeout(pending.timer);
     pending.reject(new Error('工具箱正在退出。'));

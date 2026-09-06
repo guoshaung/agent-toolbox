@@ -23,3 +23,36 @@ test('TranslationManager does not call an LLM when local providers are unavailab
   assert.equal(result.ok, false);
   assert.match(result.error, /本地翻译不可用/);
 });
+
+test('TranslationManager protects scientific identifiers and restores them after local translation', async () => {
+  const { TranslationManager } = await import('../src/renderer/tools/research/translation-manager.js');
+  let received = '';
+  global.window = { toolbox: { translation: { argos: async ({ text }) => {
+    received = text;
+    return { ok: true, translation: `译文 ${text}` };
+  } } } };
+  const manager = new TranslationManager({ config: { get: () => ({}), set: () => {} }, paperId: 'paper-c' });
+  const source = 'We evaluate RSI agents on MASEval [12] with P(x|y). See Figure 2 and https://example.test.';
+  const result = await manager.translateParagraph(source, { paragraphId: 'p_003' });
+  assert.doesNotMatch(received, /RSI|MASEval|\[12\]|P\(x\|y\)|Figure 2|https:\/\/example\.test/);
+  assert.match(result.translation, /RSI/);
+  assert.match(result.translation, /MASEval \[12\]/);
+  assert.match(result.translation, /P\(x\|y\)/);
+  assert.match(result.translation, /Figure 2/);
+  assert.match(result.translation, /https:\/\/example\.test/);
+});
+
+test('TranslationManager exposes model installation only as an explicit action', async () => {
+  const { TranslationManager } = await import('../src/renderer/tools/research/translation-manager.js');
+  let installs = 0;
+  global.window = { toolbox: { translation: {
+    argos: async () => ({ ok: false, code: 'models-missing', error: 'missing', canInstall: true }),
+    installArgosModels: async () => { installs += 1; return { ok: true }; },
+  } } };
+  const manager = new TranslationManager({ config: { get: () => ({}), set: () => {} }, paperId: 'paper-d' });
+  const result = await manager.translateParagraph('Hello', { paragraphId: 'p_004' });
+  assert.equal(result.canInstall, true);
+  assert.equal(installs, 0);
+  assert.equal((await manager.installArgosModels()).ok, true);
+  assert.equal(installs, 1);
+});
