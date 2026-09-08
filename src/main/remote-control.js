@@ -39,7 +39,7 @@ function escapeHtml(value) {
   return String(value || '').replace(/[&<>"']/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]));
 }
 
-function pageHtml(token, deviceName) {
+function pageHtml(token, deviceName, tools) {
   const safeToken = escapeHtml(token);
   const safeName = escapeHtml(deviceName);
   return `<!doctype html>
@@ -51,29 +51,38 @@ function pageHtml(token, deviceName) {
 <div class="card"><h2>切换工具</h2><div class="grid" id="tools"></div></div>
 <div class="card"><h2>问当前 AI <small>使用电脑端当前配置</small></h2><textarea id="prompt" placeholder="输入要交给 AI 的任务"></textarea><div class="row" style="margin-top:8px"><button class="primary" id="ask">发送给 AI</button><button id="copyPrompt">复制到电脑剪贴板</button></div><div class="log" id="answer"></div></div>
 <div class="card"><h2>发送给其他 AI</h2><textarea id="payload" placeholder="输入要发送的文字，先复制到电脑剪贴板"></textarea><div class="row" style="margin-top:8px"><button id="copyPayload">复制到电脑</button><button data-url="https://chat.deepseek.com/">打开 DeepSeek</button><button data-url="https://claude.ai/">打开 Claude</button><button data-url="https://chatgpt.com/">打开 ChatGPT</button></div></div>
-<div class="card"><h2>电脑动作</h2><div class="row"><button data-url="https://www.google.com/">打开网页</button><button id="readClipboard">读取电脑剪贴板</button><button class="danger" id="stop">停止手机控制</button></div><div class="log" id="clipboard"></div></div>
+<div class="card"><h2>电脑动作</h2><div class="row"><input id="openUrl" placeholder="输入网址，在电脑上打开" style="flex:1;min-width:180px"><button id="goUrl">打开</button></div><div class="row" style="margin-top:8px"><button id="readClipboard">读取电脑剪贴板</button><button class="danger" id="stop">停止手机控制</button></div><div class="log" id="clipboard"></div></div>
 <div class="card"><div class="row"><h2 style="margin-right:auto">手机分享收件箱</h2><button id="refreshInbox">刷新</button></div><div class="log" id="inbox">正在加载…</div><p class="muted">Android 安装到主屏幕后，可从浏览器、视频、公众号等应用直接分享文字或链接到这里。</p></div>
 <p class="muted">设备：${safeName} · 可通过局域网或已连接的 VPN 访问。手机控制不会自动执行任意命令；需要登录、付款、验证码或系统权限时请在电脑端确认。</p>
 <script>
-const token=${JSON.stringify(token)};const tools=[['ask','⚡ 快问'],['focus','🎯 专注'],['research','🔬 科研'],['terms','⌁ 术语'],['history','🗂 记录'],['video','📺 视频'],['coach','🧑‍🏫 陪读'],['settings','⚙ 设置']];
+const token=${JSON.stringify(token)};const tools=${JSON.stringify(tools)};
 const $=id=>document.getElementById(id); const log=(el,text)=>{$(el).textContent=String(text||'')};
+// 手机上 alert 会打断操作还得多点一次，改成页面顶部飘一条
+const tip=document.createElement('div');tip.style='position:fixed;left:50%;top:14px;transform:translateX(-50%);z-index:99;padding:9px 15px;border-radius:12px;background:#12382a;border:1px solid #2e765c;color:#d8fff1;font-size:13px;box-shadow:0 8px 24px #0006;opacity:0;transition:opacity .18s;pointer-events:none;max-width:88vw;text-align:center';document.body.append(tip);
+let tipTimer=null;
+function say(text,bad){tip.textContent=text;tip.style.background=bad?'#4b282b':'#12382a';tip.style.borderColor=bad?'#8c4a51':'#2e765c';tip.style.opacity='1';clearTimeout(tipTimer);tipTimer=setTimeout(()=>{tip.style.opacity='0'},1900);}
 async function command(type,payload={}){const response=await fetch('/api/command?token='+encodeURIComponent(token),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({type,payload})});const data=await response.json();if(!response.ok||!data.ok)throw new Error(data.error||'请求失败');return data;}
-async function loadInbox(){try{const response=await fetch('/api/inbox?token='+encodeURIComponent(token));const data=await response.json();if(!response.ok||!data.ok)throw new Error(data.error||'读取失败');const items=data.items||[];const box=$('inbox');box.textContent='';if(!items.length){box.textContent='还没有分享内容。';return;}for(const item of items){const row=document.createElement('div');row.style='padding:9px 0;border-bottom:1px solid #29333a';const title=document.createElement('strong');title.textContent=item.title||item.url||'手机分享';const body=document.createElement('div');body.className='muted';body.textContent=[item.text,item.url].filter(Boolean).join('\\n');const copy=document.createElement('button');copy.textContent='复制到电脑';copy.onclick=()=>command('clipboard.write',{text:[item.title,item.text,item.url].filter(Boolean).join('\\n')}).then(()=>alert('已复制到电脑剪贴板'));row.append(title,body,copy);box.append(row)}}catch(error){log('inbox','读取失败：'+error.message)}}
-for(const [id,label] of tools){const b=document.createElement('button');b.textContent=label;b.onclick=()=>command('tool.open',{id}).catch(e=>alert(e.message));$('tools').append(b)}
+async function loadInbox(){try{const response=await fetch('/api/inbox?token='+encodeURIComponent(token));const data=await response.json();if(!response.ok||!data.ok)throw new Error(data.error||'读取失败');const items=data.items||[];const box=$('inbox');box.textContent='';if(!items.length){box.textContent='还没有分享内容。';return;}for(const item of items){const row=document.createElement('div');row.style='padding:9px 0;border-bottom:1px solid #29333a';const title=document.createElement('strong');title.textContent=item.title||item.url||'手机分享';const body=document.createElement('div');body.className='muted';body.textContent=[item.text,item.url].filter(Boolean).join('\\n');const copy=document.createElement('button');copy.textContent='复制到电脑';copy.onclick=()=>command('clipboard.write',{text:[item.title,item.text,item.url].filter(Boolean).join('\\n')}).then(()=>say('已复制到电脑剪贴板')).catch(e=>say(e.message,1));row.append(title,body,copy);box.append(row)}}catch(error){log('inbox','读取失败：'+error.message)}}
+for(const [id,label] of tools){const b=document.createElement('button');b.textContent=label;b.onclick=()=>command('tool.open',{id}).then(()=>say('电脑已切到「'+label.replace(/^\S+\s*/,'')+'」')).catch(e=>say(e.message,1));$('tools').append(b)}
 $('ask').onclick=async()=>{const text=$('prompt').value.trim();if(!text)return;log('answer','正在请求…');try{const r=await command('ai.ask',{prompt:text});log('answer',r.text)}catch(e){log('answer','失败：'+e.message)}};
-$('copyPrompt').onclick=()=>{const text=$('prompt').value.trim();if(text)command('clipboard.write',{text}).catch(e=>alert(e.message))};
-$('copyPayload').onclick=()=>{const text=$('payload').value.trim();if(text)command('clipboard.write',{text}).then(()=>alert('已复制到电脑剪贴板')).catch(e=>alert(e.message))};
-for(const b of document.querySelectorAll('[data-url]'))b.onclick=()=>command('url.open',{url:b.dataset.url}).catch(e=>alert(e.message));
+$('copyPrompt').onclick=()=>{const text=$('prompt').value.trim();if(text)command('clipboard.write',{text}).then(()=>say('已复制到电脑剪贴板')).catch(e=>say(e.message,1))};
+$('copyPayload').onclick=()=>{const text=$('payload').value.trim();if(text)command('clipboard.write',{text}).then(()=>say('已复制到电脑剪贴板')).catch(e=>say(e.message,1))};
+for(const b of document.querySelectorAll('[data-url]'))b.onclick=()=>command('url.open',{url:b.dataset.url}).then(()=>say('已在电脑上打开')).catch(e=>say(e.message,1));
+$('goUrl').onclick=()=>{let u=$('openUrl').value.trim();if(!u)return;if(!/^https?:\/\//i.test(u))u='https://'+u;command('url.open',{url:u}).then(()=>say('已在电脑上打开')).catch(e=>say(e.message,1))};
+$('openUrl').addEventListener('keydown',e=>{if(e.key==='Enter')$('goUrl').click()});
 $('readClipboard').onclick=async()=>{try{const r=await command('clipboard.read');log('clipboard',r.text||'（剪贴板为空）')}catch(e){log('clipboard','失败：'+e.message)}};
 $('refreshInbox').onclick=loadInbox;
 $('stop').onclick=async()=>{if(confirm('停止后手机将不能再控制工具箱，确定吗？')){await command('remote.stop');location.reload()}};
-loadInbox();navigator.serviceWorker?.register('/sw.js?token='+encodeURIComponent(token)).catch(()=>{});
+loadInbox();setInterval(loadInbox,15000);navigator.serviceWorker?.register('/sw.js?token='+encodeURIComponent(token)).catch(()=>{});
 </script></body></html>`;
 }
 
 class RemoteControl {
   constructor({ deviceName = 'Agent 工具箱', onCommand, onInbox, preferredPort = 43127, inbox = [], apkPath = '', apkName = 'Agent-Toolbox-Remote.apk' }) {
     this.deviceName = deviceName;
+    // 工具表由渲染层推过来（setTools）。写死的话每加一个工具手机端就少一个，
+    // 之前手机上只能切到 8 个，而工具箱已经有 19 个了。
+    this.tools = [['ask', '⚡ 快问'], ['docs', '📖 文档'], ['research', '🔬 科研'], ['settings', '⚙ 设置']];
     this.onCommand = onCommand;
     this.onInbox = onInbox;
     this.preferredPort = preferredPort;
@@ -96,6 +105,15 @@ class RemoteControl {
     });
     this.port = this.server.address().port;
     return this.status();
+  }
+
+  /** 渲染层启动时把真实的工具列表推过来，手机端据此生成按钮。 */
+  setTools(list) {
+    if (!Array.isArray(list) || !list.length) return;
+    this.tools = list
+      .filter((t) => t && t.id && t.title)
+      .map((t) => [String(t.id), `${t.emoji || '•'} ${t.title}`])
+      .slice(0, 24);
   }
 
   async stop() {
@@ -147,7 +165,7 @@ class RemoteControl {
     if (request.method === 'GET' && url.pathname === '/') {
       if (!constantTimeEqual(url.searchParams.get('token'), this.token)) return this._json(response, 401, { ok: false, error: '配对地址无效，请在电脑端重新开启。' });
       response.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' });
-      response.end(pageHtml(this.token, this.deviceName));
+      response.end(pageHtml(this.token, this.deviceName, this.tools));
       return;
     }
     if (request.method === 'GET' && url.pathname === '/manifest.webmanifest') {

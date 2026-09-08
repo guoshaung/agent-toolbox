@@ -40,6 +40,12 @@ const VIDEO_PLUGINS = [
     description: '沿用工具箱的站点清理规则，关闭评论干扰并保留页面导航。',
     defaultOn: true,
   },
+  {
+    id: 'study-web-fullscreen',
+    name: 'B 站网页全屏',
+    description: '进入具体视频后自动切换 B 站网页全屏；可按 Esc 退出，返回页面时不会重复抢占。',
+    defaultOn: true,
+  },
 ];
 
 function defaultVideoPlugins() {
@@ -71,6 +77,9 @@ export default {
     let pluginPrefs = { ...defaultVideoPlugins(), ...(config.get(VIDEO_PLUGIN_KEY) || {}) };
     let subtitlePluginTimer = null;
     let subtitlePluginAttempts = 0;
+    let webFullscreenTimer = null;
+    let webFullscreenUrl = '';
+    let webFullscreenAttempts = 0;
     let userscriptCode = config.get(USERSCRIPT_KEY, {}).code || '';
 
     const linkInput = h('input', {
@@ -276,9 +285,46 @@ export default {
       } catch {}
     }
 
+    async function applyWebFullscreen() {
+      if (!pluginEnabled('study-web-fullscreen')) return;
+      const url = studyView.getURL();
+      if (!/bilibili\.com\/video\/BV[0-9A-Za-z]+/i.test(url || '')) return;
+      if (url !== webFullscreenUrl) {
+        webFullscreenUrl = url;
+        webFullscreenAttempts = 0;
+      }
+      if (webFullscreenAttempts >= 12) return;
+      webFullscreenAttempts += 1;
+      try {
+        const result = await studyView.executeJavaScript(`(() => {
+          const labelOf = (node) => [
+            node.getAttribute?.('aria-label'),
+            node.getAttribute?.('title'),
+            node.textContent,
+            typeof node.className === 'string' ? node.className : '',
+          ].filter(Boolean).join(' ');
+          const player = document.querySelector('.bpx-player-container, .bilibili-player-video-wrap, .html5-player-video-wrap');
+          const controls = player ? [...player.querySelectorAll('button,[role="button"],[aria-label],[title]')] : [];
+          const webFullscreen = player?.querySelector('.bpx-player-ctrl-web, .bilibili-player-video-web-fullscreen')
+            || controls.find((node) => /网页全屏|web[ -]?fullscreen/i.test(labelOf(node)));
+          if (!webFullscreen) return { found: false };
+          const active = /active|on|selected/i.test(labelOf(webFullscreen))
+            || webFullscreen.getAttribute('aria-pressed') === 'true';
+          if (!active) webFullscreen.click();
+          return { found: true, clicked: !active };
+        })()`, true);
+        if (result?.clicked || result?.found) return;
+      } catch {}
+      if (webFullscreenAttempts < 12) {
+        clearTimeout(webFullscreenTimer);
+        webFullscreenTimer = setTimeout(applyWebFullscreen, 1200);
+      }
+    }
+
     async function applyStudyPlugins() {
       await applySpeedPlugin();
       await applySwipeBackPlugin();
+      await applyWebFullscreen();
       if (!pluginEnabled('subtitle-auto-open')) {
         subtitleStatus.textContent = '自动字幕插件已关闭';
         subtitleStatus.className = 'tag tag--warn video__subtitle-status';
@@ -326,6 +372,7 @@ export default {
     function scheduleStudyPlugins() {
       clearTimeout(subtitlePluginTimer);
       subtitlePluginAttempts = 0;
+      clearTimeout(webFullscreenTimer);
       subtitlePluginTimer = setTimeout(applyStudyPlugins, 650);
     }
 
@@ -944,7 +991,7 @@ export default {
             toggle.addEventListener('change', async () => {
               pluginPrefs = { ...pluginPrefs, [plugin.id]: toggle.checked };
               await config.set(VIDEO_PLUGIN_KEY, pluginPrefs);
-              if (['subtitle-auto-open', 'playback-speed', 'swipe-back'].includes(plugin.id)) scheduleStudyPlugins();
+              if (['subtitle-auto-open', 'playback-speed', 'swipe-back', 'study-web-fullscreen'].includes(plugin.id)) scheduleStudyPlugins();
               renderPluginLibrary();
             });
             return h('div', { class: 'video__plugin-card' },
@@ -1028,6 +1075,6 @@ export default {
     renderHistory();
     setView(currentView);
 
-    return { activate: () => setTimeout(() => currentView === 'report' && linkInput.focus(), 30) };
+    return { activate: () => setTimeout(() => { if (currentView === 'report') linkInput.focus(); else scheduleStudyPlugins(); }, 30) };
   },
 };

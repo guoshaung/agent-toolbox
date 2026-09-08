@@ -32,7 +32,7 @@ const mcpFactory = require('./mcp-factory');
 const practiceRunner = require('./practice-runner');
 const edgeCookies = require('./edge-cookies');
 const { RemoteControl } = require('./remote-control');
-const { registerContainerIpc, seedContainer, syncContainerLiterature } = require('./container-storage');
+const { registerContainerIpc, seedContainer, syncContainerLiterature, containerRoot } = require('./container-storage');
 const { DshService } = require('./dsh-service');
 
 async function remoteStatusWithQr(state) {
@@ -164,6 +164,11 @@ function validHttpUrl(value) {
   }
 }
 
+function isFeishuHost(hostname) {
+  const host = String(hostname || '').toLowerCase().replace(/\.$/, '');
+  return host === 'feishu.cn' || host.endsWith('.feishu.cn');
+}
+
 function normalizedSite(site) {
   const url = validHttpUrl(site?.url);
   if (!url) return null;
@@ -209,7 +214,9 @@ function configureSiteFloatWindow(entry) {
     webPreferences.preload = path.join(__dirname, 'site-bypass-preload.js');
     webPreferences.nodeIntegration = false;
     webPreferences.contextIsolation = true;
-    webPreferences.sandbox = true;
+    // macOS 上部分国内站点的 Electron 兼容层会在 guest sandbox 下直接
+    // 返回 ERR_FAILED；主窗口仍保持 sandbox，第三方 guest 走兼容模式。
+    webPreferences.sandbox = process.platform !== 'darwin';
     webPreferences.plugins = true;
   });
   owner.webContents.on('did-attach-webview', (_event, guest) => {
@@ -243,7 +250,7 @@ function createSiteFloat(site) {
         preload: path.join(__dirname, 'site-float-preload.js'),
         contextIsolation: true,
         nodeIntegration: false,
-        sandbox: true,
+        sandbox: process.platform !== 'darwin',
         webviewTag: true,
       },
     }),
@@ -526,14 +533,17 @@ function createWindow(showOnReady = true) {
   mainWindow.webContents.on('will-attach-webview', (_event, webPreferences, params) => {
     const source = String(params?.src || '');
     const isDsh = webPreferences.partition === 'persist:dsh' || /^https?:\/\/127\.0\.0\.1:3080(?:\/|$)/i.test(source);
+    // 示意图编辑器不套站点清理脚本：它是本地单文件应用，不需要拆登录墙。
+    const isDrafter = webPreferences.partition === 'persist:drafter' || /figure-drafter\.html$/i.test(source);
     // DSH 是完整的本地 Web 应用，不要套用站点清理脚本。该脚本会主动改写
     // html/body 的滚动和 user-select，且监听整个 DOM；对 DSH 这种模块化 SPA
     // 可能造成启动阶段黑屏。保留空 preload 只为明确隔离边界。
-    webPreferences.preload = path.join(__dirname, isDsh ? 'dsh-preload.js' : 'site-bypass-preload.js');
+    webPreferences.preload = path.join(__dirname,
+      (isDsh || isDrafter) ? 'dsh-preload.js' : 'site-bypass-preload.js');
     console.log('[main] will-attach-webview preload:', webPreferences.preload, source);
     webPreferences.nodeIntegration = false;
     webPreferences.contextIsolation = true;
-    webPreferences.sandbox = true;
+    webPreferences.sandbox = process.platform !== 'darwin';
     // 文献阅读器要用 Chromium 内置 PDF 查看器（自带缩放/翻页/搜索）
     webPreferences.plugins = true;
   });
@@ -584,7 +594,7 @@ function createWindow(showOnReady = true) {
               partition: PARTITIONS.deepseek,
               contextIsolation: true,
               nodeIntegration: false,
-              sandbox: true,
+              sandbox: process.platform !== 'darwin',
             },
           },
         };
@@ -605,7 +615,7 @@ function createWindow(showOnReady = true) {
                 partition: PARTITIONS.bilibili,
                 contextIsolation: true,
                 nodeIntegration: false,
-                sandbox: true,
+                sandbox: process.platform !== 'darwin',
               },
             },
           };
@@ -628,7 +638,7 @@ function createWindow(showOnReady = true) {
               partition: PARTITIONS.feishu,
               contextIsolation: true,
               nodeIntegration: false,
-              sandbox: true,
+              sandbox: process.platform !== 'darwin',
             },
           },
         };
@@ -826,6 +836,39 @@ function hookLiteratureDownloads() {
   });
 }
 
+/**
+ * 让某个分区的下载落进容器的子目录，而不是系统下载文件夹。
+ * 画图工具导出的 SVG / PNG、DSH 里下载的东西都走这条 ——
+ * 东西留在「容器」那一栏里看得见、能整理，也不会散到 home 下面。
+ */
+const containerDownloadHooked = new Set();
+function hookContainerDownloads(partitionName, subFolder) {
+  if (containerDownloadHooked.has(partitionName)) return;
+  containerDownloadHooked.add(partitionName);
+  const ses = session.fromPartition(partitionName);
+  ses.on('will-download', (_event, item) => {
+    let dir;
+    try {
+      dir = path.join(containerRoot(() => app.getPath('userData')), subFolder);
+      fs.mkdirSync(dir, { recursive: true });
+    } catch {
+      return;                       // 建不出目录就让它走系统默认，别把下载弄丢
+    }
+    const ext = path.extname(item.getFilename());
+    const stem = path.basename(item.getFilename(), ext) || 'download';
+    let target = path.join(dir, `${stem}${ext}`);
+    let index = 1;
+    while (fs.existsSync(target)) target = path.join(dir, `${stem}-${index++}${ext}`);
+    item.setSavePath(target);
+    item.once('done', (_e, state) => {
+      if (state !== 'completed') return;
+      mainWindow?.webContents.send('container:downloaded', {
+        file: path.basename(target), folder: subFolder,
+      });
+    });
+  });
+}
+
 function hookResearchDownloads() {
   if (researchDownloadHooked) return;
   researchDownloadHooked = true;
@@ -1009,7 +1052,7 @@ function openLiteratureBrowser(url) {
         partition: PARTITIONS.literature,
         contextIsolation: true,
         nodeIntegration: false,
-        sandbox: true,
+        sandbox: process.platform !== 'darwin',
         plugins: true,
       },
     });
@@ -1223,11 +1266,33 @@ function registerIpc() {
   registerDocSearchIpc(ipcMain);
   registerShelfIpc(ipcMain, { dialog, getWindow: () => mainWindow });
   registerUpdaterIpc(ipcMain);
+  // 渲染层启动时把真实工具表推过来，手机端按这个生成按钮
+  ipcMain.handle('remote:setTools', (_e, list) => { remoteControl?.setTools(list); return { ok: true }; });
   startAutoCheck();
 
   // 代码记事本：读取 Understand-Anything 的知识图谱 + 按行号回读源码
   registerNotebookIpc(ipcMain, { dialog, getWindow: () => mainWindow, getUserDataPath: () => app.getPath('userData') });
   registerContainerIpc(ipcMain, { shell, getUserDataPath: () => app.getPath('userData') });
+  // 画图工具导出的图、DSH 里下载的文件，都落进容器
+  hookContainerDownloads('persist:drafter', '图表');
+  // 页面里 <a download> 存的文件走这条（webview 里 blob 下载会被丢弃，见 drafter-preload）
+  ipcMain.handle('container:saveBinary', (_e, { folder = '', name = 'file', data = [] } = {}) => {
+    try {
+      const safeName = path.basename(String(name)).replace(/[/\\:*?"<>|]/g, '_') || 'file';
+      const dir = path.join(containerRoot(() => app.getPath('userData')), path.basename(String(folder || '')));
+      fs.mkdirSync(dir, { recursive: true });
+      const ext = path.extname(safeName);
+      const stem = path.basename(safeName, ext);
+      let target = path.join(dir, safeName);
+      let index = 1;
+      while (fs.existsSync(target)) target = path.join(dir, `${stem}-${index++}${ext}`);
+      fs.writeFileSync(target, Buffer.from(data));
+      return { ok: true, relPath: path.relative(containerRoot(() => app.getPath('userData')), target) };
+    } catch (err) {
+      return { ok: false, error: err.message };
+    }
+  });
+  hookContainerDownloads('persist:dsh', 'dsh');
   // 把随包附带的工具铺进容器（只补缺，不覆盖）。
   // 打包后种子在 resources/container-seed，开发时在仓库根目录。
   const seedDir = app.isPackaged
@@ -1654,7 +1719,7 @@ function registerIpc() {
   ipcMain.handle('video:openFeishuWindow', async (_e, url) => {
     let target;
     try { target = new URL(String(url || '')); } catch { return { ok: false, error: '飞书文档地址无效。' }; }
-    if (target.protocol !== 'https:' || !target.hostname.endsWith('.feishu.cn')) {
+    if (target.protocol !== 'https:' || !isFeishuHost(target.hostname)) {
       return { ok: false, error: '只允许打开飞书文档地址。' };
     }
     await edgeCookies.syncCookies(PARTITIONS.feishu, 'feishu.cn').catch(() => {});
@@ -1662,10 +1727,10 @@ function registerIpc() {
       feishuWindow = new BrowserWindow({
         width: 1180, height: 820, minWidth: 820, minHeight: 620,
         title: '飞书报告', backgroundColor: '#ffffff', parent: mainWindow || undefined,
-        webPreferences: { partition: PARTITIONS.feishu, contextIsolation: true, nodeIntegration: false, sandbox: true },
+        webPreferences: { partition: PARTITIONS.feishu, contextIsolation: true, nodeIntegration: false, sandbox: process.platform !== 'darwin' },
       });
       feishuWindow.webContents.setWindowOpenHandler(({ url: next }) => {
-        try { return new URL(next).hostname.endsWith('.feishu.cn') ? { action: 'allow' } : { action: 'deny' }; } catch { return { action: 'deny' }; }
+        try { return isFeishuHost(new URL(next).hostname) ? { action: 'allow' } : { action: 'deny' }; } catch { return { action: 'deny' }; }
       });
       feishuWindow.on('closed', () => { feishuWindow = null; });
     }

@@ -76,7 +76,9 @@ const PRACTICE_TRACKS = [
 ];
 
 export function createPracticePanel(ctx) {
-  const { ai } = ctx;
+  // config 一定要一起解构出来：下面持久化 notebook 的几处直接用了裸 config，
+  // 少了它整个「学习」模块都打不开（一进来就渲染实践敲码，create 阶段就抛）。
+  const { ai, config } = ctx;
   let track = PRACTICE_TRACKS[0];
   let sampleIndex = 0;
   let environment = {};

@@ -4,7 +4,25 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { importIntoContainer, listContainer, organize } = require('../src/main/container-storage');
+const { importIntoContainer, listContainer, organize, seedContainer } = require('../src/main/container-storage');
+
+test('已有容器工具只补缺失的 uv 项目元数据，不覆盖用户文件', () => {
+  const userData = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-toolbox-container-seed-'));
+  const seed = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-toolbox-seed-'));
+  fs.mkdirSync(path.join(seed, 'tool'), { recursive: true });
+  fs.writeFileSync(path.join(seed, 'tool', 'pyproject.toml'), '[project]\nname = "tool"\n');
+  fs.mkdirSync(path.join(userData, 'container', 'tool'), { recursive: true });
+  fs.writeFileSync(path.join(userData, 'container', 'tool', 'main.py'), 'print(1)');
+  try {
+    const result = seedContainer(() => userData, seed);
+    assert.deepEqual(result.copied, []);
+    assert.equal(fs.existsSync(path.join(userData, 'container', 'tool', 'pyproject.toml')), true);
+    assert.equal(fs.readFileSync(path.join(userData, 'container', 'tool', 'main.py'), 'utf8'), 'print(1)');
+  } finally {
+    fs.rmSync(userData, { recursive: true, force: true });
+    fs.rmSync(seed, { recursive: true, force: true });
+  }
+});
 
 test('容器一键整理会在隔离目录内移动文件', async () => {
   const userData = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-toolbox-container-'));

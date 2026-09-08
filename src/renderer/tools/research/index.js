@@ -7,6 +7,7 @@ import { createLibrary } from './library.js';
 import { createFigureboard } from './figureboard.js';
 import { createAcademic } from './academic.js';
 import { createSchools } from './schools.js';
+import { createDrafter } from './drafter.js';
 
 const SUB_SECTIONS = [
   { id: 'portal', label: '门户', icon: 'globe' },
@@ -15,6 +16,7 @@ const SUB_SECTIONS = [
   { id: 'literature', label: '文献', icon: 'book' },
   { id: 'ideas', label: '想法', icon: 'zap' },
   { id: 'figureboard', label: 'PPT图板', icon: 'pen' },
+  { id: 'drafter', label: '示意图', icon: 'pen' },
   { id: 'library', label: '文献库', icon: 'archive' },
 ];
 
@@ -41,6 +43,7 @@ export default {
       literature: createLiterature,
       ideas: createIdeas,
       figureboard: createFigureboard,
+      drafter: createDrafter,
       library: createLibrary,
       academic: createAcademic,
       schools: createSchools,

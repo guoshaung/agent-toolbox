@@ -32,9 +32,16 @@ function seedContainer(getUserDataPath, seedDir) {
   for (const name of fs.readdirSync(seedDir)) {
     if (name.startsWith('.')) continue;
     const target = path.join(root, name);
-    if (fs.existsSync(target)) continue;      // 已经有了就别动，尊重用户的修改
+    const source = path.join(seedDir, name);
+    if (fs.existsSync(target)) {
+      // 已存在的工具不覆盖；只补缺失的项目元数据，让旧容器也能用 uv 启动。
+      if (fs.statSync(target).isDirectory() && fs.existsSync(path.join(source, 'pyproject.toml')) && !fs.existsSync(path.join(target, 'pyproject.toml'))) {
+        try { fs.copyFileSync(path.join(source, 'pyproject.toml'), path.join(target, 'pyproject.toml')); } catch (err) { console.warn('[container] 项目元数据补齐失败', name, err.message); }
+      }
+      continue;
+    }
     try {
-      fs.cpSync(path.join(seedDir, name), target, { recursive: true });
+      fs.cpSync(source, target, { recursive: true });
       copied.push(name);
     } catch (err) {
       console.warn('[container] 种子复制失败', name, err.message);

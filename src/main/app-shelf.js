@@ -50,9 +50,12 @@ function probe(dir) {
     if (venvPython) {
       out.command = `"${venvPython}" ${pyEntry}`;
       out.notes.push(`用目录里已有的虚拟环境：${path.relative(dir, venvPython)}`);
-    } else if (has('pyproject.toml') || has('requirements.txt')) {
+    } else if (has('pyproject.toml')) {
       out.command = `uv run ${pyEntry}`;
       out.notes.push('没找到 .venv，用 uv run 会自动建环境装依赖（需要本机装了 uv）');
+    } else if (has('requirements.txt')) {
+      out.command = `uv run --with-requirements requirements.txt ${pyEntry}`;
+      out.notes.push('使用 requirements.txt 创建并复用 uv 运行环境（需要本机装了 uv）');
     } else {
       out.command = `python3 ${pyEntry}`;
     }

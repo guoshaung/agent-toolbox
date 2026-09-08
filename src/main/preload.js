@@ -248,6 +248,8 @@ contextBridge.exposeInMainWorld('toolbox', {
     filePath: (relPath) => ipcRenderer.invoke('container:filePath', relPath),
     toLiterature: (relPaths) => ipcRenderer.invoke('container:toLiterature', relPaths),
     open: () => ipcRenderer.invoke('container:open'),
+    /** 把二进制内容写进容器的某个子目录（画图工具导出走这条） */
+    saveBinary: (payload) => ipcRenderer.invoke('container:saveBinary', payload),
   },
 
   dsh: {
@@ -314,6 +316,8 @@ contextBridge.exposeInMainWorld('toolbox', {
   },
 
   remote: {
+    /** 把工具箱当前的工具列表告诉手机端 */
+    setTools: (list) => ipcRenderer.invoke('remote:setTools', list),
     status: () => ipcRenderer.invoke('remote:status'),
     start: () => ipcRenderer.invoke('remote:start'),
     stop: () => ipcRenderer.invoke('remote:stop'),

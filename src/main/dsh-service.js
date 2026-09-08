@@ -7,6 +7,17 @@ const http = require('node:http');
 const { spawn, execFileSync } = require('node:child_process');
 
 const DSH_PACKAGE = '@deepseek-ai/dsh@0.1.1-rc.2';
+
+/**
+ * DSH 的工作目录。
+ * 默认放在工具箱的容器里，而不是用户家目录 —— 它读写的文件就落在
+ * 「容器」那一栏里看得见、能整理，也不会散到 home 下面找不着。
+ */
+function dshWorkDir(userDataPath) {
+  if (!userDataPath) return os.homedir();
+  const dir = path.join(userDataPath, 'container', 'dsh');
+  try { fs.mkdirSync(dir, { recursive: true }); return dir; } catch { return os.homedir(); }
+}
 const DEFAULT_PORT = 3080;
 
 function resolveCommand(command, userDataPath = '') {
@@ -134,7 +145,7 @@ class DshService {
       // 新版 DSH 的 URL 含一次性认证 token。若 3080 已被另一个实例占用，
       // 让 DSH 自选空闲端口，避免要求用户手动寻找并关闭旧进程。
       const port = existing.running ? 0 : DEFAULT_PORT;
-      this.child = spawn(dsh, ['--profile', 'web', '--patch', overlay, '--no-open', '--port', String(port)], spawnOptions({ cwd: os.homedir(), stdio: ['ignore', 'pipe', 'pipe'] }));
+      this.child = spawn(dsh, ['--profile', 'web', '--patch', overlay, '--no-open', '--port', String(port)], spawnOptions({ cwd: dshWorkDir(this.app.getPath('userData')), stdio: ['ignore', 'pipe', 'pipe'] }));
       const captureUrl = (chunk) => {
         const url = findWebUrl(chunk);
         if (url) this.url = url;

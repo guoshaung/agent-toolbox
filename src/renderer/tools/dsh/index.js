@@ -68,13 +68,12 @@ export default {
     view.addEventListener('console-message', (event) => {
       if (event.level >= 2) console.error('[dsh webview]', event.message, event.sourceId, event.line);
     });
-    window.toolbox.dsh.onStatus(applyState);
-    window.toolbox.dsh.status().then(applyState);
-
     root.append(
       h('div', { class: 'bar bar--drag dsh__bar' }, h('strong', {}, 'DeepSeek Harness'), status, h('span', { style: { flex: 1 } }), start, reloadPlugins, openExternal),
       view,
     );
+    window.toolbox.dsh.onStatus(applyState);
+    window.toolbox.dsh.status().then(applyState);
     return { activate: startDsh };
   },
 };

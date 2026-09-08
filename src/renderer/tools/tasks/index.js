@@ -27,6 +27,7 @@ export default {
     let tasks = (config.get('tasks.items', []) || []).map((task) => ({
       id: task.id || makeId(), title: String(task.title || '').trim(), done: Boolean(task.done), priority: task.priority || 'normal', due: task.due || '', createdAt: task.createdAt || Date.now(), completedAt: task.completedAt || 0,
     })).filter((task) => task.title);
+    let notes = { ...(config.get('tasks.notes', {}) || {}) };
     let filter = config.get('tasks.filter', 'all');
     let draggingId = null;
 
@@ -39,6 +40,7 @@ export default {
     const quickDue = h('input', { class: 'field field--sm tasks__due-input', type: 'date', title: '截止日期' });
 
     function persist() { config.set('tasks.items', tasks); }
+    function persistNotes() { config.set('tasks.notes', notes); }
 
     function visibleTasks() {
       if (filter === 'active') return tasks.filter((task) => !task.done);
@@ -92,7 +94,9 @@ export default {
 
     function removeTask(task) {
       tasks = tasks.filter((item) => item.id !== task.id);
+      delete notes[task.id];
       persist();
+      persistNotes();
       render();
     }
 
@@ -117,9 +121,44 @@ export default {
     function renderTask(task) {
       const priority = PRIORITIES.find((item) => item.id === task.priority) || PRIORITIES[0];
       const dueText = task.due ? (task.due === todayKey() ? '今天到期' : `截止 ${task.due}`) : '';
+      const noteText = String(notes[task.id] || '');
+      const notePreview = h('div', { class: 'tasks__note-preview', hidden: !noteText }, noteText);
+      const noteInput = h('textarea', { class: 'field tasks__note-input', rows: '3', maxlength: '2000', placeholder: '写下这个任务的补充说明…', hidden: true }, noteText);
+      const noteEditor = h('div', { class: 'tasks__note-editor', hidden: true, draggable: 'false', onmousedown: (event) => event.stopPropagation() },
+        noteInput,
+        h('div', { class: 'tasks__note-actions' },
+          h('button', { class: 'btn btn--xs btn--primary', onclick: () => {
+            const value = noteInput.value.trim();
+            if (value) notes[task.id] = value;
+            else delete notes[task.id];
+            persistNotes();
+            notePreview.textContent = value;
+            notePreview.hidden = !value;
+            noteButton.textContent = value ? '有备注' : '备注';
+            noteButton.classList.toggle('has-note', Boolean(value));
+            noteEditor.hidden = true;
+          } }, '保存备注'),
+          h('button', { class: 'btn btn--xs', onclick: () => { noteInput.value = noteText; noteEditor.hidden = true; } }, '取消'),
+        ),
+      );
+      const noteButton = h('button', {
+        class: `tasks__note-toggle${noteText ? ' has-note' : ''}`,
+        title: noteText ? '编辑备注' : '添加备注',
+        draggable: 'false',
+        onmousedown: (event) => event.stopPropagation(),
+        onpointerdown: (event) => event.stopPropagation(),
+        onclick: () => { noteEditor.hidden = !noteEditor.hidden; if (!noteEditor.hidden) { noteInput.hidden = false; noteInput.value = String(notes[task.id] || ''); noteInput.focus(); } },
+      }, noteText ? '有备注' : '备注');
+      const copy = h('div', { class: 'tasks__copy' },
+        h('div', { class: 'tasks__title', title: '双击编辑任务', ondblclick: () => editTask(task) }, task.title),
+        h('div', { class: 'tasks__meta' }, h('button', { class: 'tasks__priority', style: { color: priority.color }, title: '点击切换优先级', onclick: () => cyclePriority(task) }, `● ${priority.label}`), dueText && h('span', {}, dueText), h('span', { class: 'faint' }, new Date(task.createdAt).toLocaleDateString('zh-CN'))),
+        notePreview,
+        noteEditor,
+      );
       const row = h('article', { class: `tasks__item${task.done ? ' is-done' : ''}`, dataset: { taskId: task.id }, draggable: 'true' },
         h('button', { class: 'tasks__check', title: task.done ? '标记未完成' : '标记完成', onclick: () => toggleTask(task) }, task.done ? '✓' : ''),
-        h('div', { class: 'tasks__copy' }, h('div', { class: 'tasks__title', title: '双击编辑任务', ondblclick: () => editTask(task) }, task.title), h('div', { class: 'tasks__meta' }, h('button', { class: 'tasks__priority', style: { color: priority.color }, title: '点击切换优先级', onclick: () => cyclePriority(task) }, `● ${priority.label}`), dueText && h('span', {}, dueText), h('span', { class: 'faint' }, new Date(task.createdAt).toLocaleDateString('zh-CN')))),
+        copy,
+        noteButton,
         h('button', { class: 'tasks__delete', title: '删除任务', onclick: () => removeTask(task) }, '×'),
       );
       row.addEventListener('dragstart', (event) => { draggingId = task.id; row.classList.add('is-dragging'); event.dataTransfer.effectAllowed = 'move'; event.dataTransfer.setData('text/plain', task.id); });
@@ -150,7 +189,7 @@ export default {
           listEl, emptyEl,
         ),
         h('aside', { class: 'tasks__side' },
-          h('section', { class: 'card tasks__help' }, h('h3', {}, '使用方式'), h('p', {}, '任务会自动保存到本机。双击任务文字编辑，拖动整行调整顺序，点击圆点完成。'), h('p', { class: 'faint' }, '快捷输入：在输入框回车即可创建；不限制任务数量。')),
+          h('section', { class: 'card tasks__help' }, h('h3', {}, '使用方式'), h('p', {}, '任务会自动保存到本机。双击任务文字编辑，点击“备注”记录补充说明，拖动整行调整顺序，点击圆点完成。'), h('p', { class: 'faint' }, '快捷输入：在输入框回车即可创建；不限制任务数量。')),
           h('section', { class: 'card tasks__today' }, h('h3', {}, '今天'), h('div', { class: 'tasks__today-copy' }, h('strong'), h('span', { class: 'faint' }, '先完成最重要的一项，再继续下一项。'))),
         ),
       ),

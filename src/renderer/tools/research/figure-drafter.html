@@ -1,0 +1,1731 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Figure Drafter — 论文示意图编辑器</title>
+<style>
+  :root{
+    --ink:#1a1d21;
+    --ink-2:#4a5058;
+    --ink-3:#858c96;
+    --rule:#d7dbe0;
+    --rule-2:#e8ebee;
+    --chrome:#f2f3f5;
+    --chrome-2:#fafbfc;
+    --paper:#ffffff;
+    --accent:#2f5d8a;
+    --accent-soft:#dbe7f2;
+    --warn:#a8500f;
+    --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+    --ui: system-ui, -apple-system, "Segoe UI", "Helvetica Neue", "PingFang SC", "Microsoft YaHei", sans-serif;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%;margin:0}
+  body{
+    font-family:var(--ui);
+    font-size:13px;
+    color:var(--ink);
+    background:var(--chrome);
+    overflow:hidden;
+    -webkit-font-smoothing:antialiased;
+  }
+  button,input,select,textarea{font-family:inherit;font-size:inherit;color:inherit}
+  button{cursor:pointer}
+
+  /* ---------- shell ---------- */
+  #shell{display:grid;grid-template-rows:auto 1fr auto;height:100%}
+  #body{display:grid;grid-template-columns:52px 1fr 268px;min-height:0}
+
+  /* ---------- top bar ---------- */
+  #topbar{
+    display:flex;align-items:center;gap:14px;
+    padding:0 12px;height:44px;
+    background:var(--chrome-2);
+    border-bottom:1px solid var(--rule);
+  }
+  #brand{
+    font-weight:600;letter-spacing:-.01em;
+    display:flex;align-items:baseline;gap:7px;
+  }
+  #brand small{font-weight:400;color:var(--ink-3);font-size:11px}
+  .bar-group{display:flex;align-items:center;gap:2px}
+  .bar-sep{width:1px;height:20px;background:var(--rule)}
+  .tb{
+    height:26px;padding:0 9px;border:1px solid transparent;border-radius:5px;
+    background:transparent;color:var(--ink-2);white-space:nowrap;
+  }
+  .tb:hover{background:var(--chrome);color:var(--ink)}
+  .tb:active{background:var(--rule-2)}
+  .tb.on{background:var(--accent-soft);color:var(--accent);border-color:#bcd2e6}
+  .tb[disabled]{opacity:.35;pointer-events:none}
+  .spacer{flex:1}
+
+  /* ---------- left rail ---------- */
+  #rail{
+    background:var(--chrome-2);border-right:1px solid var(--rule);
+    display:flex;flex-direction:column;align-items:center;gap:3px;padding:8px 0;
+    overflow-y:auto;overflow-x:hidden;
+  }
+  #rail::-webkit-scrollbar{width:0}
+  .tool{
+    width:38px;height:38px;border-radius:7px;border:1px solid transparent;
+    background:transparent;display:grid;place-items:center;color:var(--ink-2);
+    position:relative;
+  }
+  .tool:hover{background:var(--chrome)}
+  .tool.on{background:var(--accent);color:#fff}
+  .tool svg{width:19px;height:19px;stroke:currentColor;fill:none;stroke-width:1.5}
+  .tool .k{
+    position:absolute;right:3px;bottom:2px;font-size:8px;font-family:var(--mono);
+    color:var(--ink-3);
+  }
+  .tool.on .k{color:#cfe0ef}
+  .rail-rule{width:24px;height:1px;background:var(--rule);margin:5px 0}
+
+  /* ---------- canvas ---------- */
+  #stage{position:relative;background:#e9ebee;overflow:hidden}
+  #cv{position:absolute;inset:0;width:100%;height:100%;display:block;cursor:default}
+  #cv.pan{cursor:grab}
+  #cv.panning{cursor:grabbing}
+  #cv.plot{cursor:crosshair}
+  #hint{
+    position:absolute;left:50%;bottom:16px;transform:translateX(-50%);
+    background:rgba(26,29,33,.9);color:#fff;padding:5px 12px;border-radius:14px;
+    font-size:11.5px;pointer-events:none;opacity:0;transition:opacity .15s;
+  }
+  #hint.show{opacity:1}
+
+  /* ---------- inspector ---------- */
+  #insp{
+    background:var(--chrome-2);border-left:1px solid var(--rule);
+    overflow-y:auto;overflow-x:hidden;
+  }
+  .sec{border-bottom:1px solid var(--rule-2);padding:12px 14px}
+  .sec h3{
+    margin:0 0 9px;font-size:11px;font-weight:600;color:var(--ink-3);
+    letter-spacing:.02em;
+  }
+  .row{display:flex;align-items:center;gap:7px;margin-bottom:7px}
+  .row:last-child{margin-bottom:0}
+  .row label{width:46px;flex:none;color:var(--ink-3);font-size:11.5px}
+  .fld{
+    flex:1;min-width:0;height:27px;padding:0 7px;
+    border:1px solid var(--rule);border-radius:5px;background:var(--paper);
+  }
+  .fld:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 2px var(--accent-soft)}
+  input.num{font-family:var(--mono);font-size:11.5px}
+  textarea.fld{height:auto;padding:6px 7px;resize:vertical;line-height:1.45;font-size:12px}
+  .seg{display:flex;border:1px solid var(--rule);border-radius:5px;overflow:hidden;flex:1}
+  .seg button{
+    flex:1;height:25px;border:0;background:var(--paper);color:var(--ink-2);
+    border-right:1px solid var(--rule);font-size:11.5px;
+  }
+  .seg button:last-child{border-right:0}
+  .seg button.on{background:var(--accent);color:#fff}
+  .swatches{display:grid;grid-template-columns:repeat(8,1fr);gap:5px}
+  .sw{
+    aspect-ratio:1;border-radius:5px;border:1.5px solid;position:relative;
+  }
+  .sw.on::after{
+    content:"";position:absolute;inset:-4px;border:1.5px solid var(--accent);border-radius:8px;
+  }
+  .empty{color:var(--ink-3);font-size:12px;line-height:1.6}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+  .mini{height:26px;border:1px solid var(--rule);border-radius:5px;background:var(--paper);color:var(--ink-2);font-size:11.5px}
+  .mini:hover{background:var(--chrome);color:var(--ink)}
+  .align-grid{display:grid;grid-template-columns:repeat(6,1fr);gap:4px}
+  .align-grid button{
+    height:28px;border:1px solid var(--rule);border-radius:5px;background:var(--paper);
+    display:grid;place-items:center;
+  }
+  .align-grid button:hover{background:var(--accent-soft);border-color:#bcd2e6}
+  .align-grid button svg{width:15px;height:15px;stroke:var(--ink-2);fill:none;stroke-width:1.4}
+  .danger{color:#a33}
+  .note{font-size:11px;color:var(--ink-3);line-height:1.5;margin-top:7px}
+
+  /* print check */
+  .metric{
+    display:flex;align-items:baseline;justify-content:space-between;
+    padding:6px 0;border-bottom:1px dotted var(--rule);
+  }
+  .metric:last-child{border-bottom:0}
+  .metric .k{color:var(--ink-3);font-size:11.5px}
+  .metric .v{font-family:var(--mono);font-size:12.5px}
+  .metric .v.bad{color:var(--warn);font-weight:600}
+  .metric .v.good{color:#2b6b3f}
+
+  /* ---------- status ---------- */
+  #status{
+    height:26px;display:flex;align-items:center;gap:14px;padding:0 12px;
+    background:var(--chrome-2);border-top:1px solid var(--rule);
+    font-family:var(--mono);font-size:11px;color:var(--ink-3);
+  }
+  #status b{font-weight:500;color:var(--ink-2)}
+
+  /* ---------- help overlay ---------- */
+  #help{
+    position:absolute;inset:0;background:rgba(26,29,33,.55);
+    display:none;place-items:center;z-index:20;
+  }
+  #help.show{display:grid}
+  #helpcard{
+    background:var(--paper);border-radius:10px;padding:22px 26px;width:520px;max-height:80%;
+    overflow:auto;box-shadow:0 18px 50px rgba(0,0,0,.3);
+  }
+  #helpcard h2{margin:0 0 4px;font-size:16px}
+  #helpcard p.sub{margin:0 0 16px;color:var(--ink-3);font-size:12px}
+  #helpcard dl{display:grid;grid-template-columns:118px 1fr;gap:7px 14px;margin:0 0 18px;font-size:12.5px}
+  #helpcard dt{font-family:var(--mono);font-size:11.5px;color:var(--accent)}
+  #helpcard dd{margin:0;color:var(--ink-2)}
+  #helpcard h4{margin:16px 0 7px;font-size:12.5px}
+  #helpcard code{font-family:var(--mono);font-size:11.5px;background:var(--chrome);padding:1px 4px;border-radius:3px}
+  #helpclose{
+    margin-top:6px;height:30px;padding:0 16px;border:1px solid var(--rule);
+    border-radius:6px;background:var(--paper);
+  }
+  #helpclose:hover{background:var(--chrome)}
+
+  ::-webkit-scrollbar{width:9px;height:9px}
+  ::-webkit-scrollbar-thumb{background:#c8ccd2;border-radius:5px;border:2px solid var(--chrome-2)}
+  ::-webkit-scrollbar-track{background:transparent}
+  #mjstage{position:absolute;left:-9999px;top:0;visibility:hidden}
+</style>
+<script>
+/* MathJax：SVG 输出 + 本地字体缓存，保证公式导出后仍是独立矢量路径 */
+window.MathJax = {
+  tex: {inlineMath:[["$","$"]], displayMath:[["$$","$$"]], processEscapes:true},
+  svg: {fontCache:"local", scale:1},
+  options: {enableMenu:false},
+  startup: {
+    typeset:false,
+    ready(){
+      MathJax.startup.defaultReady();
+      window.__mathState = "ready";
+      window.__onMathReady && window.__onMathReady();
+    }
+  }
+};
+setTimeout(()=>{
+  if(window.__mathState !== "ready"){
+    window.__mathState = "failed";
+    window.__onMathReady && window.__onMathReady();
+  }
+}, 8000);
+</script>
+<script defer src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/3.2.2/es5/tex-svg.js"
+  onerror="var s=document.createElement('script');s.defer=true;s.src='https://cdn.jsdelivr.net/npm/mathjax@3.2.2/es5/tex-svg.js';document.head.appendChild(s);"></script>
+</head>
+<body>
+<div id="shell">
+
+  <div id="topbar">
+    <div id="brand">Figure Drafter <small>论文示意图</small></div>
+    <div class="bar-sep"></div>
+    <div class="bar-group">
+      <button class="tb" id="btnUndo" title="撤销 ⌘Z">撤销</button>
+      <button class="tb" id="btnRedo" title="重做 ⇧⌘Z">重做</button>
+    </div>
+    <div class="bar-sep"></div>
+    <div class="bar-group">
+      <button class="tb on" id="btnGrid" title="网格">网格</button>
+      <button class="tb on" id="btnSnap" title="吸附">吸附</button>
+      <button class="tb" id="btnCols" title="栏宽参考线">栏宽参考</button>
+    </div>
+    <div class="bar-sep"></div>
+    <div class="bar-group">
+      <button class="tb" id="btnFit">适应窗口</button>
+      <button class="tb" id="btnLegend">插入图例</button>
+    </div>
+    <div class="spacer"></div>
+    <div class="bar-group">
+      <button class="tb" id="btnOpen">打开</button>
+      <button class="tb" id="btnSave">保存 JSON</button>
+      <div class="bar-sep"></div>
+      <button class="tb" id="btnSVG">导出 SVG</button>
+      <button class="tb" id="btnPNG">导出 PNG</button>
+      <div class="bar-sep"></div>
+      <button class="tb" id="btnHelp">?</button>
+    </div>
+    <input type="file" id="fileIn" accept=".json" hidden>
+  </div>
+
+  <div id="body">
+    <div id="rail"></div>
+
+    <div id="stage">
+      <svg id="cv" xmlns="http://www.w3.org/2000/svg">
+        <defs id="defs"></defs>
+        <g id="world">
+          <g id="lyGrid"></g>
+          <g id="lyGuide"></g>
+          <g id="content">
+            <g id="lyGroup"></g>
+            <g id="lyEdge"></g>
+            <g id="lyNode"></g>
+          </g>
+          <g id="lyUI"></g>
+        </g>
+      </svg>
+      <div id="hint"></div>
+      <div id="help">
+        <div id="helpcard">
+          <h2>怎么用</h2>
+          <p class="sub">为「模块色块 + 语义箭头 + 图例」这一类论文示意图设计。</p>
+          <dl>
+            <dt>V</dt><dd>选择。拖动移动，空白处拖拽框选，Shift 点击加选</dd>
+            <dt>M</dt><dd>模块芯片 — 图里那种小色块</dd>
+            <dt>B</dt><dd>方框 — 带标题的处理单元</dd>
+            <dt>O</dt><dd>椭圆 — 环境、外部资源</dd>
+            <dt>G</dt><dd>虚线分组框 — 圈住一个阶段</dd>
+            <dt>T</dt><dd>纯文字标注</dd>
+            <dt>3</dt><dd>等距托盘 — 图里那种 3D 平台</dd>
+            <dt>S</dt><dd>叠层窗口 — 放代码截图那种层叠框</dd>
+            <dt>D</dt><dd>数据库圆柱</dd>
+            <dt>F</dt><dd>漏斗</dd>
+            <dt>I</dt><dd>图标 — 机器人、人、齿轮等</dd>
+            <dt>X</dt><dd>LaTeX 公式</dd>
+            <dt>C</dt><dd>连线。先点起点，再点终点</dd>
+            <dt>空格 / 中键</dt><dd>拖动画布；滚轮缩放</dd>
+            <dt>⌘D</dt><dd>原地复制</dd>
+            <dt>Delete</dt><dd>删除选中</dd>
+            <dt>方向键</dt><dd>微移 1px，Shift 加速到 10px</dd>
+          </dl>
+          <h4>标签写法</h4>
+          <p style="margin:0;font-size:12.5px;line-height:1.65;color:var(--ink-2)">
+            下标用 <code>P_0</code>，多字符下标用 <code>M_{t+1}</code>；上标用 <code>R^1</code>。
+            换行直接按回车。这样能写出 <code>P_0 R_0 T_0 M_0</code> 这种模块编号。
+          </p>
+          <h4>LaTeX 公式</h4>
+          <p style="margin:0;font-size:12.5px;line-height:1.65;color:var(--ink-2)">
+            按 <code>X</code> 放置，右侧输入 TeX 源码，例如
+            <code>\\mathcal{L} = \\sum_i w_i \\ell_i</code>。渲染出来是矢量路径，
+            导出 SVG 后不依赖任何字体，编辑器里也能直接改。首次使用需要联网加载引擎。
+          </p>
+          <h4>等距图形要统一</h4>
+          <p style="margin:0;font-size:12.5px;line-height:1.65;color:var(--ink-2)">
+            托盘的「斜切」和「厚度」决定观察角度。一张图里所有 3D 元素必须用同一组数值，
+            否则透视会打架 —— 这是自己画等距图最容易露馅的地方。
+          </p>
+          <h4>为什么要看印刷字号</h4>
+          <p style="margin:0;font-size:12.5px;line-height:1.65;color:var(--ink-2)">
+            右下角会按你选的目标栏宽，算出图里最小文字在纸上的实际磅值。
+            投稿图最容易犯的错就是屏幕上清楚、印出来读不了。低于 6pt 会标红。
+          </p>
+          <button id="helpclose">知道了</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="insp"></div>
+  </div>
+
+  <div id="mjstage"></div>
+
+  <div id="status">
+    <span id="stZoom">100%</span>
+    <span id="stPos">—</span>
+    <span id="stCount">—</span>
+    <span class="spacer" style="flex:1"></span>
+    <span id="stMsg"></span>
+  </div>
+</div>
+
+<script>
+"use strict";
+
+/* ============================================================
+   调色板 — 低饱和度，适合论文印刷，深色描边保证灰度打印可分辨
+   ============================================================ */
+const PALETTE = {
+  blue:   {fill:"#dbe5f4", stroke:"#5f83bb", name:"Planning"},
+  green:  {fill:"#dcead9", stroke:"#6da367", name:"Reasoning"},
+  amber:  {fill:"#f7e7c9", stroke:"#c9964a", name:"Tool Use"},
+  violet: {fill:"#e6dcef", stroke:"#8f74b3", name:"Memory"},
+  rose:   {fill:"#f6dde1", stroke:"#c07686", name:"Feedback"},
+  teal:   {fill:"#d2e7e5", stroke:"#54948f", name:"Environment"},
+  slate:  {fill:"#e2e5ea", stroke:"#828b98", name:"Other"},
+  paper:  {fill:"#ffffff", stroke:"#3a3f46", name:"Plain"},
+};
+const PKEYS = Object.keys(PALETTE);
+
+const TYPES = {
+  module: {w:36, h:28, fs:11, label:"P_0", color:"blue",  round:5},
+  box:    {w:124,h:42, fs:12.5,label:"Planning", color:"amber", round:4},
+  ellipse:{w:104,h:52, fs:12.5,label:"Environment", color:"teal", round:0},
+  group:  {w:280,h:170,fs:12,  label:"Evolution", color:"slate", round:6, fill:"none", dash:"6 4"},
+  text:   {w:80, h:20, fs:12,  label:"Evaluation", color:"paper", round:0},
+  legend: {w:132,h:0,  fs:11,  label:"", color:"paper", round:0},
+
+  slab:   {w:210,h:58, fs:12, label:"Module Pool", color:"blue", round:0,
+           depth:26, th:14, shear:20},
+  stack:  {w:170,h:104,fs:8.5, label:"", color:"paper", round:3,
+           layers:4, ox:9, oy:9,
+           code:"def Origin():\n  memory(concepts:List[str],\n         max_attempt:int)\n  while n_attempt < max_attempt:\n    ..."},
+  cylinder:{w:80,h:60, fs:11, label:"Memory\nDatabase", color:"rose", round:0, lip:0.17},
+  funnel: {w:110,h:76, fs:11, label:"", color:"slate", round:0, neck:0.34, waist:0.52},
+  icon:   {w:34, h:34, fs:11, label:"", color:"slate", round:0, glyph:"robot"},
+  math:   {w:70, h:24, fs:17, label:"", color:"paper", round:0,
+           tex:"\\mathcal{L} = \\sum_{i} w_i\\,\\ell_i"},
+};
+
+/* 简笔图标，24×24 网格，纯描边 */
+const ICONS = {
+  robot:{name:"机器人", d:'M12 2.2v2.6 M8 5h8a2.2 2.2 0 0 1 2.2 2.2v5.6A2.2 2.2 0 0 1 16 15H8a2.2 2.2 0 0 1-2.2-2.2V7.2A2.2 2.2 0 0 1 8 5z M9.6 9v1.6 M14.4 9v1.6 M9.3 15v3.4 M14.7 15v3.4 M3.6 8.6v3 M20.4 8.6v3', c:'M12 1.2a1 1 0 1 0 0 2 1 1 0 0 0 0-2z'},
+  user:{name:"人", d:'M12 12.4a4.1 4.1 0 1 0 0-8.2 4.1 4.1 0 0 0 0 8.2z M4.4 20.4a7.6 7.6 0 0 1 15.2 0'},
+  gear:{name:"齿轮", d:'M12 7.2a4.8 4.8 0 1 0 0 9.6 4.8 4.8 0 0 0 0-9.6z M12 3.2v2.6 M12 18.2v2.6 M20.8 12h-2.6 M5.8 12H3.2 M18.2 5.8l-1.8 1.8 M7.6 16.4l-1.8 1.8 M18.2 18.2l-1.8-1.8 M7.6 7.6L5.8 5.8'},
+  cloud:{name:"云", d:'M7 18.4h9.4a4.2 4.2 0 0 0 .6-8.4 5.8 5.8 0 0 0-11.1 1.5A3.8 3.8 0 0 0 7 18.4z'},
+  db:{name:"数据库", d:'M12 3c4.4 0 8 1.3 8 3s-3.6 3-8 3-8-1.3-8-3 3.6-3 8-3z M4 6v12c0 1.7 3.6 3 8 3s8-1.3 8-3V6 M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3'},
+  doc:{name:"文档", d:'M6.2 2.6h7.6l4.2 4.2v14.6H6.2z M13.8 2.6v4.2h4.2 M9 12h6 M9 15.6h6'},
+  chip:{name:"芯片", d:'M7.4 7.4h9.2v9.2H7.4z M9.8 2.8v4.6 M14.2 2.8v4.6 M9.8 16.6v4.6 M14.2 16.6v4.6 M2.8 9.8h4.6 M2.8 14.2h4.6 M16.6 9.8h4.6 M16.6 14.2h4.6'},
+  search:{name:"放大镜", d:'M10.8 18a7.2 7.2 0 1 0 0-14.4 7.2 7.2 0 0 0 0 14.4z M16 16l5 5'},
+};
+const IKEYS = Object.keys(ICONS);
+
+/* 颜色混合 —— 等距面需要同色系的三档明度 */
+function hex2rgb(h){
+  h = h.replace("#","");
+  if(h.length===3) h = h.split("").map(c=>c+c).join("");
+  return [parseInt(h.slice(0,2),16), parseInt(h.slice(2,4),16), parseInt(h.slice(4,6),16)];
+}
+function rgb2hex(r){
+  return "#" + r.map(v=>Math.max(0,Math.min(255,Math.round(v))).toString(16).padStart(2,"0")).join("");
+}
+function mix(a, b, t){
+  const A = hex2rgb(a), B = hex2rgb(b);
+  return rgb2hex(A.map((v,i)=> v + (B[i]-v)*t));
+}
+
+/* ============================================================
+   状态
+   ============================================================ */
+let S = {
+  nodes: [],
+  edges: [],
+  sel: new Set(),
+  tool: "select",
+  view: {x:-60, y:-60, k:1},
+  grid: 10,
+  snap: true,
+  showGrid: true,
+  showCols: false,
+  targetIn: 7,
+  font: "Helvetica, Arial, sans-serif",
+};
+let uidN = 1;
+const uid = p => p + (uidN++);
+
+/* undo */
+let past=[], future=[];
+const clone = o => JSON.parse(JSON.stringify(o));
+function snap(){
+  past.push(JSON.stringify({n:S.nodes,e:S.edges}));
+  if(past.length>120) past.shift();
+  future.length=0;
+  refreshUndo();
+}
+function restore(str){
+  const d = JSON.parse(str);
+  S.nodes=d.n; S.edges=d.e;
+  S.sel = new Set([...S.sel].filter(id=>find(id)));
+  render(); inspector();
+}
+function undo(){
+  if(!past.length) return;
+  future.push(JSON.stringify({n:S.nodes,e:S.edges}));
+  restore(past.pop()); refreshUndo();
+}
+function redo(){
+  if(!future.length) return;
+  past.push(JSON.stringify({n:S.nodes,e:S.edges}));
+  restore(future.pop()); refreshUndo();
+}
+function refreshUndo(){
+  $("#btnUndo").disabled = !past.length;
+  $("#btnRedo").disabled = !future.length;
+}
+
+const $  = s => document.querySelector(s);
+const cv = $("#cv");
+const find = id => S.nodes.find(n=>n.id===id) || S.edges.find(e=>e.id===id);
+const nodeById = id => S.nodes.find(n=>n.id===id);
+const esc = s => String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;");
+
+/* ============================================================
+   左侧工具栏
+   ============================================================ */
+const TOOLS = [
+  {id:"select", k:"V", label:"选择", icon:'<path d="M4 2l11 8-4.6.9L13 16.5l-2.2 1-2.5-5.5L4 15z"/>'},
+  {id:"module", k:"M", label:"模块芯片", icon:'<rect x="3" y="6" width="6.5" height="7" rx="1.5"/><rect x="11" y="6" width="6" height="7" rx="1.5"/>'},
+  {id:"box",    k:"B", label:"方框", icon:'<rect x="2.5" y="5" width="15" height="10" rx="1.5"/>'},
+  {id:"ellipse",k:"O", label:"椭圆", icon:'<ellipse cx="10" cy="10" rx="7.5" ry="5.2"/>'},
+  {id:"group",  k:"G", label:"分组框", icon:'<rect x="2.5" y="3.5" width="15" height="13" rx="1.5" stroke-dasharray="3 2.2"/>'},
+  {id:"text",   k:"T", label:"文字", icon:'<path d="M4 5h12M10 5v11M7.5 16h5"/>'},
+  {id:"slab",   k:"3", label:"等距托盘", icon:'<path d="M5 4h11l3 4H8z"/><path d="M5 4v6l3 4h11V8"/><path d="M8 8v6"/>'},
+  {id:"stack",  k:"S", label:"叠层窗口", icon:'<rect x="7" y="3" width="10" height="8" rx="1"/><rect x="5" y="6" width="10" height="8" rx="1"/><rect x="3" y="9" width="10" height="8" rx="1"/>'},
+  {id:"cylinder",k:"D",label:"数据库", icon:'<ellipse cx="10" cy="5.5" rx="6.5" ry="2.5"/><path d="M3.5 5.5v9c0 1.4 2.9 2.5 6.5 2.5s6.5-1.1 6.5-2.5v-9"/>'},
+  {id:"funnel", k:"F", label:"漏斗", icon:'<path d="M2.5 4h15l-5.5 6.5V17h-4v-6.5z"/>'},
+  {id:"icon",   k:"I", label:"图标", icon:'<path d="M10 2.5v2 M6.5 5h7a1.8 1.8 0 0 1 1.8 1.8v4.4A1.8 1.8 0 0 1 13.5 13h-7a1.8 1.8 0 0 1-1.8-1.8V6.8A1.8 1.8 0 0 1 6.5 5z"/><path d="M8 8v1.3M12 8v1.3M7.8 13v3.5M12.2 13v3.5"/>'},
+  {id:"math",   k:"X", label:"LaTeX 公式", icon:'<path d="M3 5h5l4 10h5"/><path d="M3 15h5"/><path d="M13.5 5H17"/>'},
+  {id:"edge",   k:"C", label:"连线", icon:'<path d="M3 15C3 8 8 5 16 5"/><path d="M12.5 3.2L16.4 5l-3.4 2.6"/>'},
+];
+function buildRail(){
+  const r = $("#rail");
+  r.innerHTML = TOOLS.map((t,i)=>
+    (i===1||i===6||i===12 ? '<div class="rail-rule"></div>' : '') +
+    `<button class="tool" data-tool="${t.id}" title="${t.label} (${t.k})">
+       <svg viewBox="0 0 20 20" stroke-linejoin="round" stroke-linecap="round">${t.icon}</svg>
+       <span class="k">${t.k}</span>
+     </button>`).join("");
+  r.addEventListener("click", e=>{
+    const b = e.target.closest("[data-tool]");
+    if(b) setTool(b.dataset.tool);
+  });
+}
+function setTool(t){
+  S.tool = t;
+  pending = null;
+  document.querySelectorAll(".tool").forEach(b=>b.classList.toggle("on", b.dataset.tool===t));
+  cv.classList.toggle("plot", t!=="select" && t!=="edge");
+  cv.classList.toggle("pan", false);
+  if(t==="edge") flash("点击起点图形，再点击终点");
+  render();
+}
+
+/* ============================================================
+   标签解析：支持 _下标 ^上标 换行
+   ============================================================ */
+function tspans(line, fs){
+  let out = "", i = 0;
+  while(i < line.length){
+    const c = line[i];
+    if((c==="_"||c==="^") && i+1 < line.length){
+      let txt, adv;
+      if(line[i+1]==="{"){
+        const close = line.indexOf("}", i+2);
+        if(close<0){ out += esc(c); i++; continue; }
+        txt = line.slice(i+2, close); adv = close - i + 1;
+      } else { txt = line[i+1]; adv = 2; }
+      const dy = c==="_" ? fs*0.26 : -fs*0.36;
+      out += `<tspan dy="${dy.toFixed(2)}" font-size="${(fs*0.72).toFixed(2)}">${esc(txt)}</tspan>`
+           + `<tspan dy="${(-dy).toFixed(2)}" font-size="${fs}"></tspan>`;
+      i += adv;
+    } else { out += esc(c); i++; }
+  }
+  return out;
+}
+function textBlock(label, cx, cy, fs, anchor, color){
+  const lines = String(label ?? "").split("\n");
+  const lh = fs * 1.28;
+  const start = cy - (lines.length-1) * lh / 2;
+  return lines.map((ln,i)=>
+    `<text x="${cx}" y="${(start + i*lh).toFixed(2)}" font-size="${fs}"
+       text-anchor="${anchor}" dominant-baseline="central"
+       fill="${color}" font-family="${S.font}">${tspans(ln, fs)}</text>`
+  ).join("");
+}
+/* 粗略估宽，用于文字节点包围盒与连线标签底衬 */
+function measure(label, fs){
+  const lines = String(label ?? "").split("\n");
+  let w = 0;
+  for(const ln of lines){
+    const clean = ln.replace(/[_^]\{[^}]*\}/g,"x").replace(/[_^]./g,"x");
+    let n = 0;
+    for(const ch of clean) n += /[\u4e00-\u9fa5]/.test(ch) ? 1 : 0.55;
+    w = Math.max(w, n*fs);
+  }
+  return {w, h: lines.length * fs * 1.28};
+}
+
+/* ============================================================
+   LaTeX → SVG
+   MathJax 的 viewBox 以 1/1000 em 为单位，所以 px 缩放系数就是 fs/1000
+   ============================================================ */
+const mathCache = new Map();
+function mathState(){ return window.__mathState || "loading"; }
+function getMath(tex){
+  if(!tex) return null;
+  if(mathCache.has(tex)) return mathCache.get(tex);
+  if(mathState() !== "ready") return null;
+  let res;
+  try{
+    const node = MathJax.tex2svg(tex, {display:false});
+    const svg = node.querySelector("svg");
+    const vb = (svg.getAttribute("viewBox") || "0 0 1000 1000").split(/\s+/).map(Number);
+    const err = node.querySelector("[data-mjx-error]");
+    res = err
+      ? {error: err.getAttribute("data-mjx-error") || "语法错误"}
+      : {inner: svg.innerHTML, vb};
+  }catch(e){
+    res = {error: String((e && e.message) || e)};
+  }
+  mathCache.set(tex, res);
+  return res;
+}
+window.__onMathReady = ()=>{ render(); inspector(); };
+
+/* ============================================================
+   几何
+   ============================================================ */
+const rectOf = n => ({x:n.x, y:n.y, w:n.w, h:n.h, cx:n.x+n.w/2, cy:n.y+n.h/2});
+
+function clipRect(r, tx, ty){
+  const dx = tx - r.cx, dy = ty - r.cy;
+  if(!dx && !dy) return {x:r.cx, y:r.cy};
+  const sx = dx ? (r.w/2) / Math.abs(dx) : Infinity;
+  const sy = dy ? (r.h/2) / Math.abs(dy) : Infinity;
+  const s = Math.min(sx, sy);
+  return {x: r.cx + dx*s, y: r.cy + dy*s};
+}
+function clipEllipse(r, tx, ty){
+  const dx = tx - r.cx, dy = ty - r.cy;
+  const a = r.w/2, b = r.h/2;
+  const d = Math.hypot(dx/a, dy/b);
+  if(!d) return {x:r.cx, y:r.cy};
+  return {x: r.cx + dx/d, y: r.cy + dy/d};
+}
+function anchor(n, tx, ty){
+  const r = rectOf(n);
+  return n.type==="ellipse" ? clipEllipse(r,tx,ty) : clipRect(r,tx,ty);
+}
+
+function edgeGeom(e){
+  const a = nodeById(e.from), b = nodeById(e.to);
+  if(!a || !b) return null;
+  const ra = rectOf(a), rb = rectOf(b);
+  const gap = 3;
+  if(e.route === "elbow"){
+    const dx = rb.cx - ra.cx, dy = rb.cy - ra.cy;
+    let p1, p2, mid;
+    if(Math.abs(dx) >= Math.abs(dy)){
+      const mx = (ra.cx + rb.cx)/2;
+      p1 = {x: ra.cx + Math.sign(dx)*(ra.w/2+gap), y: ra.cy};
+      p2 = {x: rb.cx - Math.sign(dx)*(rb.w/2+gap), y: rb.cy};
+      mid = [`${mx},${p1.y}`, `${mx},${p2.y}`];
+    } else {
+      const my = (ra.cy + rb.cy)/2;
+      p1 = {x: ra.cx, y: ra.cy + Math.sign(dy)*(ra.h/2+gap)};
+      p2 = {x: rb.cx, y: rb.cy - Math.sign(dy)*(rb.h/2+gap)};
+      mid = [`${p1.x},${my}`, `${p2.x},${my}`];
+    }
+    return {d:`M${p1.x},${p1.y} L${mid[0]} L${mid[1]} L${p2.x},${p2.y}`,
+            lx:(p1.x+p2.x)/2, ly:(p1.y+p2.y)/2, a:p1, b:p2};
+  }
+  let p1 = anchor(a, rb.cx, rb.cy), p2 = anchor(b, ra.cx, ra.cy);
+  const ux = p2.x-p1.x, uy = p2.y-p1.y, L = Math.hypot(ux,uy) || 1;
+  p1 = {x:p1.x + ux/L*gap, y:p1.y + uy/L*gap};
+  p2 = {x:p2.x - ux/L*gap, y:p2.y - uy/L*gap};
+  if(e.route === "curve"){
+    const mx = (p1.x+p2.x)/2, my = (p1.y+p2.y)/2;
+    const nx = -uy/L, ny = ux/L, bow = (e.bow ?? 26);
+    const c = {x: mx + nx*bow, y: my + ny*bow};
+    return {d:`M${p1.x.toFixed(2)},${p1.y.toFixed(2)} Q${c.x.toFixed(2)},${c.y.toFixed(2)} ${p2.x.toFixed(2)},${p2.y.toFixed(2)}`,
+            lx:(p1.x+2*c.x+p2.x)/4, ly:(p1.y+2*c.y+p2.y)/4, a:p1, b:p2};
+  }
+  return {d:`M${p1.x.toFixed(2)},${p1.y.toFixed(2)} L${p2.x.toFixed(2)},${p2.y.toFixed(2)}`,
+          lx:(p1.x+p2.x)/2, ly:(p1.y+p2.y)/2, a:p1, b:p2};
+}
+
+function bboxOf(ids){
+  let x0=1e9,y0=1e9,x1=-1e9,y1=-1e9;
+  for(const id of ids){
+    const n = nodeById(id); if(!n) continue;
+    x0=Math.min(x0,n.x); y0=Math.min(y0,n.y);
+    x1=Math.max(x1,n.x+n.w); y1=Math.max(y1,n.y+n.h);
+  }
+  return x1<x0 ? null : {x:x0,y:y0,w:x1-x0,h:y1-y0};
+}
+
+/* ============================================================
+   渲染
+   ============================================================ */
+function render(){
+  const vw = cv.clientWidth, vh = cv.clientHeight, k = S.view.k;
+  cv.setAttribute("viewBox", `${S.view.x} ${S.view.y} ${vw/k} ${vh/k}`);
+
+  /* defs：每种描边色一个箭头 marker */
+  const cols = new Set(["#3a3f46"]);
+  S.edges.forEach(e=>cols.add(e.color || "#3a3f46"));
+  $("#defs").innerHTML = [...cols].map(c=>{
+    const id = "ah" + c.replace("#","");
+    return `<marker id="${id}" viewBox="0 0 10 10" refX="9" refY="5"
+        markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+        <path d="M0,1 L10,5 L0,9 z" fill="${c}"/></marker>
+      <marker id="${id}o" viewBox="0 0 10 10" refX="1" refY="5"
+        markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+        <path d="M10,1 L0,5 L10,9 z" fill="${c}"/></marker>`;
+  }).join("");
+
+  /* 网格 */
+  if(S.showGrid){
+    const g = S.grid, x0 = Math.floor(S.view.x/g)*g, y0 = Math.floor(S.view.y/g)*g;
+    const w = vw/k, h = vh/k;
+    let d = "";
+    for(let x=x0; x<S.view.x+w; x+=g) d += `M${x},${y0} V${y0+h+g} `;
+    for(let y=y0; y<S.view.y+h; y+=g) d += `M${x0},${y} H${x0+w+g} `;
+    $("#lyGrid").innerHTML = `<path d="${d}" stroke="#d3d7dd" stroke-width="${(0.5/k).toFixed(3)}" fill="none"/>
+      <rect x="${S.view.x}" y="${S.view.y}" width="${w}" height="${h}" fill="none"/>`;
+  } else $("#lyGrid").innerHTML = "";
+
+  /* 栏宽参考线：3.5in 与 7in @96dpi */
+  if(S.showCols){
+    const one = 3.5*96, two = 7*96, H = 2000;
+    $("#lyGuide").innerHTML = `
+      <g stroke="#b98a5c" stroke-width="${(1/k).toFixed(3)}" stroke-dasharray="${6/k} ${4/k}" fill="none">
+        <path d="M0,-400 V${H}"/><path d="M${one},-400 V${H}"/><path d="M${two},-400 V${H}"/>
+      </g>
+      <g fill="#a8500f" font-size="${11/k}" font-family="var(--mono)">
+        <text x="${one+4/k}" y="${-386}">3.5in 单栏</text>
+        <text x="${two+4/k}" y="${-386}">7in 跨栏</text>
+      </g>`;
+  } else $("#lyGuide").innerHTML = "";
+
+  /* 图形 */
+  const BACK = {group:1, slab:1};
+  const groups = S.nodes.filter(n=>BACK[n.type]);
+  const rest   = S.nodes.filter(n=>!BACK[n.type]);
+  $("#lyGroup").innerHTML = groups.map(nodeSVG).join("");
+  $("#lyEdge").innerHTML  = S.edges.map(edgeSVG).join("");
+  $("#lyNode").innerHTML  = rest.map(nodeSVG).join("");
+  $("#lyUI").innerHTML    = uiSVG();
+
+  $("#stZoom").textContent = Math.round(k*100) + "%";
+  $("#stCount").textContent = `${S.nodes.length} 图形 · ${S.edges.length} 连线`;
+  updateMetrics();
+}
+
+function nodeSVG(n){
+  const p = PALETTE[n.color] || PALETTE.paper;
+  const fill = n.fill ?? p.fill, stroke = n.stroke ?? p.stroke;
+  const sw = n.sw ?? (n.type==="group" ? 1.2 : 1.1);
+  const ink = n.ink ?? "#1a1d21";
+  const hit = `data-id="${n.id}" class="nd"`;
+  let body = "";
+
+  if(n.type === "text"){
+    const m = measure(n.label, n.fs);
+    n.w = Math.max(12, m.w); n.h = Math.max(12, m.h);
+    body = `<rect x="${n.x}" y="${n.y}" width="${n.w}" height="${n.h}" fill="transparent"/>`
+         + textBlock(n.label, n.x + n.w/2, n.y + n.h/2, n.fs, "middle", ink);
+
+  } else if(n.type === "legend"){
+    const items = n.items || [];
+    const rowH = 18, pad = 6, sq = 12;
+    n.h = items.length*rowH + pad*2;
+    let rows = `<rect x="${n.x}" y="${n.y}" width="${n.w}" height="${n.h}"
+                  fill="#ffffff" stroke="${n.border===false?"none":"#b9bfc7"}"
+                  stroke-width="${sw}" rx="3"/>`;
+    items.forEach((it,i)=>{
+      const y = n.y + pad + i*rowH;
+      const pal = PALETTE[it.color];
+      if(it.kind === "line"){
+        rows += `<path d="M${n.x+pad},${y+rowH/2} H${n.x+pad+sq+4}" stroke="#3a3f46"
+                   stroke-width="1.3" ${it.dash?'stroke-dasharray="4 2.6"':''}/>`;
+      } else {
+        rows += `<rect x="${n.x+pad}" y="${y+(rowH-sq)/2}" width="${sq}" height="${sq}" rx="2.5"
+                   fill="${pal?pal.fill:"#eee"}" stroke="${pal?pal.stroke:"#999"}" stroke-width="1"/>`;
+      }
+      rows += `<text x="${n.x+pad+sq+10}" y="${y+rowH/2}" font-size="${n.fs}" dominant-baseline="central"
+                 fill="${ink}" font-family="${S.font}">${esc(it.text)}</text>`;
+    });
+    body = rows;
+
+  } else if(n.type === "slab"){
+    /* 等距托盘：顶面受剪切的平行四边形 + 正面 + 右侧面，三档明度 */
+    const s = Math.max(0, Math.min(n.w*0.45, n.shear ?? 20));
+    const th = Math.max(2, Math.min(n.h-4, n.th ?? 14));
+    const d = n.h - th;
+    const X = n.x, Y = n.y, W = n.w;
+    const top   = mix(fill, "#ffffff", 0.45);
+    const front = mix(fill, stroke, 0.30);
+    const side  = mix(fill, stroke, 0.58);
+    const P = (pts)=>pts.map(p=>p.join(",")).join(" ");
+    body = `
+      <polygon points="${P([[X+W-s,Y+d],[X+W,Y],[X+W,Y+th],[X+W-s,Y+n.h]])}"
+        fill="${side}" stroke="${stroke}" stroke-width="${sw}" stroke-linejoin="round"/>
+      <polygon points="${P([[X,Y+d],[X+W-s,Y+d],[X+W-s,Y+n.h],[X,Y+n.h]])}"
+        fill="${front}" stroke="${stroke}" stroke-width="${sw}" stroke-linejoin="round"/>
+      <polygon points="${P([[X+s,Y],[X+W,Y],[X+W-s,Y+d],[X,Y+d]])}"
+        fill="${top}" stroke="${stroke}" stroke-width="${sw}" stroke-linejoin="round"/>`;
+    if(n.label) body += `<text x="${X+W/2}" y="${Y+n.h+14}" font-size="${n.fs}"
+        text-anchor="middle" fill="${ink}" font-family="${S.font}">${tspans(n.label, n.fs)}</text>`;
+
+  } else if(n.type === "stack"){
+    /* 叠层窗口：后层错位偏移，前层承载等宽代码 */
+    const L = Math.max(1, Math.min(8, n.layers ?? 4));
+    const ox = n.ox ?? 9, oy = n.oy ?? 9;
+    const fw = n.w - (L-1)*ox, fh = n.h - (L-1)*oy;
+    const fy = n.y + (L-1)*oy;
+    let out = "";
+    for(let i=L-1; i>=1; i--){
+      out += `<rect x="${n.x + i*ox}" y="${fy - i*oy}" width="${fw}" height="${fh}" rx="${n.round}"
+        fill="#ffffff" stroke="${mix(stroke,"#ffffff",0.35)}" stroke-width="${sw}"/>`;
+    }
+    out += `<rect x="${n.x}" y="${fy}" width="${fw}" height="${fh}" rx="${n.round}"
+      fill="${n.fill ?? "#ffffff"}" stroke="${stroke}" stroke-width="${sw}"/>`;
+    const lines = String(n.code ?? "").split("\n");
+    const lh = n.fs * 1.42, pad = 6;
+    const cid = "clip" + n.id;
+    out += `<clipPath id="${cid}"><rect x="${n.x}" y="${fy}" width="${fw}" height="${fh}" rx="${n.round}"/></clipPath>
+      <g clip-path="url(#${cid})">`;
+    lines.forEach((ln,i)=>{
+      const y = fy + pad + n.fs*0.9 + i*lh;
+      if(y < fy + fh)
+        out += `<text x="${n.x+pad}" y="${y.toFixed(2)}" font-size="${n.fs}"
+          fill="${n.codeInk ?? "#3a3f46"}" font-family="ui-monospace, Menlo, Consolas, monospace"
+          xml:space="preserve">${esc(ln)}</text>`;
+    });
+    body = out + `</g>`;
+    if(n.label) body += `<text x="${n.x+fw/2}" y="${n.y+n.h+14}" font-size="${n.fs*1.3}"
+        text-anchor="middle" fill="${ink}" font-family="${S.font}">${tspans(n.label, n.fs*1.3)}</text>`;
+
+  } else if(n.type === "cylinder"){
+    const rx = n.w/2, ry = n.h * (n.lip ?? 0.17);
+    const cx = n.x + rx, top = n.y + ry, bot = n.y + n.h - ry;
+    body = `
+      <path d="M${n.x},${top} L${n.x},${bot} A${rx},${ry} 0 0 0 ${n.x+n.w},${bot} L${n.x+n.w},${top} Z"
+        fill="${fill}" stroke="${stroke}" stroke-width="${sw}"/>
+      <ellipse cx="${cx}" cy="${top}" rx="${rx}" ry="${ry}"
+        fill="${mix(fill,"#ffffff",0.5)}" stroke="${stroke}" stroke-width="${sw}"/>`
+      + textBlock(n.label, cx, n.y + n.h/2 + ry*0.4, n.fs, "middle", ink);
+
+  } else if(n.type === "funnel"){
+    const nk = n.neck ?? 0.34, ws = n.waist ?? 0.52;
+    const X = n.x, Y = n.y, W = n.w, H = n.h;
+    const l = X + W*(0.5 - nk/2), r = X + W*(0.5 + nk/2), my = Y + H*ws;
+    body = `<path d="M${X},${Y} L${X+W},${Y} L${r},${my} L${r},${Y+H} L${l},${Y+H} L${l},${my} Z"
+      fill="${fill}" stroke="${stroke}" stroke-width="${sw}" stroke-linejoin="round"/>`;
+    if(n.label) body += textBlock(n.label, X+W/2, Y+H*ws*0.45, n.fs, "middle", ink);
+
+  } else if(n.type === "icon"){
+    const g = ICONS[n.glyph] || ICONS.robot;
+    const k = Math.min(n.w, n.h) / 24;
+    const ox = n.x + (n.w - 24*k)/2, oy = n.y + (n.h - 24*k)/2;
+    body = `<rect x="${n.x}" y="${n.y}" width="${n.w}" height="${n.h}" fill="transparent"/>
+      <g transform="translate(${ox.toFixed(2)},${oy.toFixed(2)}) scale(${k.toFixed(4)})"
+         fill="none" stroke="${n.iconInk ?? stroke}" stroke-width="${(n.sw ?? 1.6)/k}"
+         stroke-linecap="round" stroke-linejoin="round">
+        <path d="${g.d}"/>${g.c ? `<path d="${g.c}" fill="${n.iconInk ?? stroke}" stroke="none"/>` : ""}
+      </g>`;
+    if(n.label) body += `<text x="${n.x+n.w/2}" y="${n.y+n.h+12}" font-size="${n.fs}"
+        text-anchor="middle" fill="${ink}" font-family="${S.font}">${tspans(n.label, n.fs)}</text>`;
+
+  } else if(n.type === "math"){
+    const m = getMath(n.tex);
+    if(m && m.inner){
+      const k = n.fs / 1000;
+      n.w = Math.max(4, m.vb[2] * k);
+      n.h = Math.max(4, m.vb[3] * k);
+      const inner = m.inner.replace(/currentColor/g, ink);
+      body = `<g transform="translate(${n.x},${n.y}) scale(${k.toFixed(6)}) translate(${-m.vb[0]},${-m.vb[1]})">${inner}</g>
+        <rect x="${n.x}" y="${n.y}" width="${n.w}" height="${n.h}" fill="transparent"/>`;
+    } else {
+      const msg = m && m.error ? "公式有误" : (mathState()==="failed" ? "公式引擎未加载" : "渲染中…");
+      const mm = measure(n.tex || msg, n.fs*0.7);
+      n.w = Math.max(56, Math.min(240, mm.w + 12)); n.h = Math.max(20, n.fs*1.3);
+      body = `<rect x="${n.x}" y="${n.y}" width="${n.w}" height="${n.h}" rx="3"
+          fill="#fdf3e7" stroke="#c9964a" stroke-width="1" stroke-dasharray="3 2"/>
+        <text x="${n.x+n.w/2}" y="${n.y+n.h/2}" font-size="${(n.fs*0.62).toFixed(1)}"
+          text-anchor="middle" dominant-baseline="central" fill="#a8500f"
+          font-family="${S.font}">${esc(msg)}</text>`;
+    }
+
+  } else if(n.type === "ellipse"){
+    body = `<ellipse cx="${n.x+n.w/2}" cy="${n.y+n.h/2}" rx="${n.w/2}" ry="${n.h/2}"
+              fill="${fill}" stroke="${stroke}" stroke-width="${sw}"/>`
+         + textBlock(n.label, n.x+n.w/2, n.y+n.h/2, n.fs, "middle", ink);
+
+  } else if(n.type === "group"){
+    body = `<rect x="${n.x}" y="${n.y}" width="${n.w}" height="${n.h}" rx="${n.round}"
+              fill="${n.fill ?? "none"}" stroke="${stroke}" stroke-width="${sw}"
+              stroke-dasharray="${n.dash ?? "6 4"}"/>`;
+    if(n.label) body += `<text x="${n.x+n.w/2}" y="${n.y+n.h+13}" font-size="${n.fs}"
+              text-anchor="middle" fill="${ink}" font-weight="600"
+              font-family="${S.font}">${tspans(n.label, n.fs)}</text>`;
+
+  } else {
+    body = `<rect x="${n.x}" y="${n.y}" width="${n.w}" height="${n.h}" rx="${n.round}"
+              fill="${fill}" stroke="${stroke}" stroke-width="${sw}"
+              ${n.dash?`stroke-dasharray="${n.dash}"`:""}/>`
+         + textBlock(n.label, n.x+n.w/2, n.y+n.h/2, n.fs, "middle", ink);
+  }
+  return `<g ${hit}>${body}</g>`;
+}
+
+function edgeSVG(e){
+  const g = edgeGeom(e); if(!g) return "";
+  const c = e.color || "#3a3f46";
+  const mid = "ah" + c.replace("#","");
+  const dash = e.style==="dashed" ? `stroke-dasharray="${e.dashPat || "5 3.5"}"` : "";
+  const end   = e.dir!=="none" ? `marker-end="url(#${mid})"` : "";
+  const start = e.dir==="both" ? `marker-start="url(#${mid}o)"` : "";
+  let out = `<g data-id="${e.id}" class="eg">
+      <path d="${g.d}" fill="none" stroke="transparent" stroke-width="11"/>
+      <path d="${g.d}" fill="none" stroke="${c}" stroke-width="${e.sw ?? 1.3}"
+        stroke-linejoin="round" stroke-linecap="round" ${dash} ${end} ${start}/>`;
+  if(e.label){
+    const m = measure(e.label, e.fs ?? 11);
+    out += `<rect x="${g.lx-m.w/2-3}" y="${g.ly-m.h/2-2}" width="${m.w+6}" height="${m.h+4}"
+              fill="#ffffff" opacity="${e.labelBg===false?0:0.92}"/>`
+        + textBlock(e.label, g.lx, g.ly, e.fs ?? 11, "middle", "#1a1d21");
+  }
+  return out + `</g>`;
+}
+
+function uiSVG(){
+  const k = S.view.k, out = [];
+  for(const id of S.sel){
+    const n = nodeById(id);
+    if(n){
+      out.push(`<rect x="${n.x-2.5/k}" y="${n.y-2.5/k}" width="${n.w+5/k}" height="${n.h+5/k}"
+        fill="none" stroke="#2f5d8a" stroke-width="${1.2/k}" stroke-dasharray="${3/k} ${2/k}"/>`);
+    } else {
+      const e = S.edges.find(x=>x.id===id), g = e && edgeGeom(e);
+      if(g) out.push(`<path d="${g.d}" fill="none" stroke="#2f5d8a" stroke-width="${3.5/k}" opacity=".3"/>`);
+    }
+  }
+  /* 单选节点的缩放手柄 */
+  if(S.sel.size===1){
+    const n = nodeById([...S.sel][0]);
+    if(n && n.type!=="text" && n.type!=="legend" && n.type!=="math"){
+      const s = 6/k;
+      const pts = [["nw",n.x,n.y],["n",n.x+n.w/2,n.y],["ne",n.x+n.w,n.y],
+                   ["w",n.x,n.y+n.h/2],["e",n.x+n.w,n.y+n.h/2],
+                   ["sw",n.x,n.y+n.h],["s",n.x+n.w/2,n.y+n.h],["se",n.x+n.w,n.y+n.h]];
+      for(const [h,x,y] of pts)
+        out.push(`<rect data-handle="${h}" x="${x-s/2}" y="${y-s/2}" width="${s}" height="${s}"
+          fill="#fff" stroke="#2f5d8a" stroke-width="${1.1/k}"/>`);
+    }
+  }
+  if(pending){
+    const n = nodeById(pending);
+    if(n) out.push(`<rect x="${n.x-4/k}" y="${n.y-4/k}" width="${n.w+8/k}" height="${n.h+8/k}"
+      fill="none" stroke="#c9964a" stroke-width="${1.6/k}"/>`);
+  }
+  if(marquee){
+    const m = marquee;
+    out.push(`<rect x="${Math.min(m.x0,m.x1)}" y="${Math.min(m.y0,m.y1)}"
+      width="${Math.abs(m.x1-m.x0)}" height="${Math.abs(m.y1-m.y0)}"
+      fill="#2f5d8a" fill-opacity=".07" stroke="#2f5d8a" stroke-width="${1/k}"/>`);
+  }
+  return out.join("");
+}
+
+/* ============================================================
+   坐标与交互
+   ============================================================ */
+function toWorld(ev){
+  const r = cv.getBoundingClientRect();
+  return {x: S.view.x + (ev.clientX-r.left)/S.view.k,
+          y: S.view.y + (ev.clientY-r.top)/S.view.k};
+}
+const snapV = v => S.snap ? Math.round(v/S.grid)*S.grid : Math.round(v*10)/10;
+
+let drag = null, marquee = null, pending = null, spaceDown = false;
+
+cv.addEventListener("pointerdown", ev=>{
+  if(ev.button===1 || spaceDown){
+    drag = {mode:"pan", sx:ev.clientX, sy:ev.clientY, vx:S.view.x, vy:S.view.y};
+    cv.classList.add("panning"); ev.preventDefault(); return;
+  }
+  if(ev.button!==0) return;
+  const p = toWorld(ev);
+  const hEl = ev.target.closest("[data-handle]");
+  const gEl = ev.target.closest("[data-id]");
+
+  /* 连线模式 */
+  if(S.tool==="edge"){
+    if(!gEl){ pending=null; render(); return; }
+    const n = nodeById(gEl.dataset.id);
+    if(!n) return;
+    if(!pending){ pending = n.id; flash("再点击终点图形"); render(); return; }
+    if(pending === n.id){ pending=null; render(); return; }
+    snap();
+    S.edges.push({id:uid("e"), from:pending, to:n.id, style:"solid",
+      route:"straight", dir:"one", color:"#3a3f46", sw:1.3, label:"", fs:11});
+    pending = null; render(); flash("已连接"); return;
+  }
+
+  /* 放置新图形 */
+  if(S.tool!=="select"){
+    snap();
+    const t = TYPES[S.tool];
+    const n = Object.assign({id:uid("n"), type:S.tool}, clone(t),
+      {x:snapV(p.x-t.w/2), y:snapV(p.y-t.h/2)});
+    S.nodes.push(n);
+    S.sel = new Set([n.id]);
+    setTool("select"); inspector();
+    return;
+  }
+
+  /* 缩放手柄 */
+  if(hEl && S.sel.size===1){
+    const n = nodeById([...S.sel][0]);
+    snap();
+    drag = {mode:"resize", h:hEl.dataset.handle, n, o:{x:n.x,y:n.y,w:n.w,h:n.h}, p};
+    return;
+  }
+
+  /* 选中/拖动 */
+  if(gEl){
+    const id = gEl.dataset.id;
+    if(ev.shiftKey){ S.sel.has(id) ? S.sel.delete(id) : S.sel.add(id); }
+    else if(!S.sel.has(id)){ S.sel = new Set([id]); }
+    inspector();
+    const movable = [...S.sel].map(nodeById).filter(Boolean);
+    if(movable.length){
+      snap();
+      drag = {mode:"move", p, orig: movable.map(n=>({n, x:n.x, y:n.y})), moved:false};
+    }
+    render(); return;
+  }
+
+  if(!ev.shiftKey) S.sel.clear();
+  marquee = {x0:p.x, y0:p.y, x1:p.x, y1:p.y, add:ev.shiftKey};
+  inspector(); render();
+});
+
+window.addEventListener("pointermove", ev=>{
+  const p = toWorld(ev);
+  $("#stPos").textContent = `${Math.round(p.x)}, ${Math.round(p.y)}`;
+
+  if(drag?.mode==="pan"){
+    S.view.x = drag.vx - (ev.clientX-drag.sx)/S.view.k;
+    S.view.y = drag.vy - (ev.clientY-drag.sy)/S.view.k;
+    render(); return;
+  }
+  if(drag?.mode==="move"){
+    const dx = p.x-drag.p.x, dy = p.y-drag.p.y;
+    if(Math.abs(dx)>0.5||Math.abs(dy)>0.5) drag.moved = true;
+    for(const o of drag.orig){ o.n.x = snapV(o.x+dx); o.n.y = snapV(o.y+dy); }
+    render(); syncGeomFields(); return;
+  }
+  if(drag?.mode==="resize"){
+    const {n,o,h} = drag, dx = p.x-drag.p.x, dy = p.y-drag.p.y, MIN = 14;
+    let x=o.x, y=o.y, w=o.w, hh=o.h;
+    if(h.includes("e")) w = Math.max(MIN, snapV(o.w+dx));
+    if(h.includes("s")) hh = Math.max(MIN, snapV(o.h+dy));
+    if(h.includes("w")){ const nx = snapV(o.x+dx); w = Math.max(MIN, o.x+o.w-nx); x = o.x+o.w-w; }
+    if(h.includes("n")){ const ny = snapV(o.y+dy); hh = Math.max(MIN, o.y+o.h-ny); y = o.y+o.h-hh; }
+    Object.assign(n,{x,y,w,h:hh});
+    render(); syncGeomFields(); return;
+  }
+  if(marquee){
+    marquee.x1 = p.x; marquee.y1 = p.y;
+    const x0=Math.min(marquee.x0,marquee.x1), x1=Math.max(marquee.x0,marquee.x1);
+    const y0=Math.min(marquee.y0,marquee.y1), y1=Math.max(marquee.y0,marquee.y1);
+    if(!marquee.add) S.sel.clear();
+    for(const n of S.nodes)
+      if(n.x < x1 && n.x+n.w > x0 && n.y < y1 && n.y+n.h > y0) S.sel.add(n.id);
+    render();
+  }
+});
+
+window.addEventListener("pointerup", ()=>{
+  if(drag?.mode==="move" && !drag.moved) past.pop(), refreshUndo();
+  drag = null;
+  if(marquee){ marquee = null; render(); inspector(); }
+  cv.classList.remove("panning");
+});
+
+cv.addEventListener("wheel", ev=>{
+  ev.preventDefault();
+  const r = cv.getBoundingClientRect();
+  const mx = ev.clientX-r.left, my = ev.clientY-r.top;
+  const wx = S.view.x + mx/S.view.k, wy = S.view.y + my/S.view.k;
+  const k = Math.min(6, Math.max(0.15, S.view.k * Math.pow(0.999, ev.deltaY*1.6)));
+  S.view.k = k;
+  S.view.x = wx - mx/k; S.view.y = wy - my/k;
+  render();
+}, {passive:false});
+
+cv.addEventListener("dblclick", ev=>{
+  const g = ev.target.closest("[data-id]");
+  if(!g) return;
+  S.sel = new Set([g.dataset.id]);
+  inspector(); render();
+  const f = $("#fLabel"); if(f){ f.focus(); f.select(); }
+});
+
+/* ============================================================
+   键盘
+   ============================================================ */
+window.addEventListener("keydown", ev=>{
+  const tag = ev.target.tagName;
+  if(tag==="INPUT"||tag==="TEXTAREA"||tag==="SELECT"){
+    if(ev.key==="Escape") ev.target.blur();
+    return;
+  }
+  const mod = ev.metaKey || ev.ctrlKey;
+  if(ev.code==="Space"){ spaceDown = true; cv.classList.add("pan"); ev.preventDefault(); return; }
+  if(mod && ev.key.toLowerCase()==="z"){ ev.preventDefault(); ev.shiftKey ? redo() : undo(); return; }
+  if(mod && ev.key.toLowerCase()==="d"){ ev.preventDefault(); duplicate(); return; }
+  if(mod && ev.key.toLowerCase()==="a"){
+    ev.preventDefault();
+    S.sel = new Set([...S.nodes.map(n=>n.id), ...S.edges.map(e=>e.id)]);
+    render(); inspector(); return;
+  }
+  if(ev.key==="Delete"||ev.key==="Backspace"){ ev.preventDefault(); del(); return; }
+  if(ev.key==="Escape"){ S.sel.clear(); pending=null; setTool("select"); inspector(); return; }
+  if(ev.key.startsWith("Arrow")){
+    const d = ev.shiftKey ? 10 : 1;
+    const map = {ArrowLeft:[-d,0],ArrowRight:[d,0],ArrowUp:[0,-d],ArrowDown:[0,d]};
+    const [dx,dy] = map[ev.key];
+    const ns = [...S.sel].map(nodeById).filter(Boolean);
+    if(ns.length){ snap(); ns.forEach(n=>{n.x+=dx;n.y+=dy}); render(); syncGeomFields(); }
+    ev.preventDefault(); return;
+  }
+  const t = TOOLS.find(t=>t.k.toLowerCase()===ev.key.toLowerCase());
+  if(t) setTool(t.id);
+});
+window.addEventListener("keyup", ev=>{
+  if(ev.code==="Space"){ spaceDown = false; cv.classList.remove("pan"); }
+});
+
+function del(){
+  if(!S.sel.size) return;
+  snap();
+  S.nodes = S.nodes.filter(n=>!S.sel.has(n.id));
+  S.edges = S.edges.filter(e=>!S.sel.has(e.id) && nodeById(e.from) && nodeById(e.to));
+  S.sel.clear(); render(); inspector();
+}
+function duplicate(){
+  const ns = [...S.sel].map(nodeById).filter(Boolean);
+  if(!ns.length) return;
+  snap();
+  const map = {}, fresh = [];
+  for(const n of ns){
+    const c = clone(n); c.id = uid("n"); c.x += 16; c.y += 16;
+    map[n.id] = c.id; fresh.push(c); S.nodes.push(c);
+  }
+  for(const e of [...S.edges])
+    if(map[e.from] && map[e.to]){
+      const c = clone(e); c.id = uid("e"); c.from = map[e.from]; c.to = map[e.to];
+      S.edges.push(c);
+    }
+  S.sel = new Set(fresh.map(n=>n.id));
+  render(); inspector();
+}
+
+/* ============================================================
+   右侧属性面板
+   ============================================================ */
+function inspector(){
+  const box = $("#insp");
+  const ids = [...S.sel];
+  const nodes = ids.map(nodeById).filter(Boolean);
+  const edges = ids.map(id=>S.edges.find(e=>e.id===id)).filter(Boolean);
+
+  let html = "";
+
+  if(!ids.length){
+    html += `<div class="sec"><h3>画布</h3>
+      <div class="row"><label>字体</label>
+        <select class="fld" id="fFont">
+          <option value="Helvetica, Arial, sans-serif">Helvetica / Arial</option>
+          <option value="&quot;Times New Roman&quot;, Times, serif">Times</option>
+          <option value="&quot;Nimbus Sans&quot;, Helvetica, sans-serif">Nimbus Sans</option>
+          <option value="system-ui, sans-serif">System UI</option>
+        </select></div>
+      <div class="row"><label>网格</label>
+        <input class="fld num" id="fGrid" type="number" min="2" max="50" value="${S.grid}"></div>
+      </div>`;
+    html += `<div class="sec"><h3>选中后可编辑</h3>
+      <p class="empty">在画布上点选图形，或用左侧工具放置新元素。<br>按 <b>?</b> 查看全部快捷键。</p></div>`;
+  }
+
+  if(nodes.length){
+    const n = nodes[0], multi = nodes.length>1;
+    html += `<div class="sec"><h3>${multi ? nodes.length+" 个图形" : typeName(n.type)}</h3>`;
+    if(!multi && n.type!=="legend" && n.type!=="math"){
+      html += `<div class="row"><label>标签</label>
+        <textarea class="fld" id="fLabel" rows="2">${esc(n.label ?? "")}</textarea></div>`;
+    }
+    if(!multi && n.type==="math"){
+      const m = getMath(n.tex);
+      html += `<div class="row" style="align-items:flex-start"><label>LaTeX</label>
+        <textarea class="fld" id="fTex" rows="3" spellcheck="false"
+          style="font-family:var(--mono);font-size:11.5px">${esc(n.tex ?? "")}</textarea></div>`;
+      if(m && m.error)
+        html += `<p class="note" style="color:var(--warn)">${esc(m.error)}</p>`;
+      else if(mathState()==="loading")
+        html += `<p class="note">公式引擎加载中…</p>`;
+      else if(mathState()==="failed")
+        html += `<p class="note" style="color:var(--warn)">公式引擎没加载成功。需要联网首次加载，之后会缓存。</p>`;
+    }
+    html += `<div class="row"><label>${n.type==="stack"?"代码字号":"字号"}</label>
+        <input class="fld num" id="fFs" type="number" step="0.5" min="4" max="60" value="${n.fs}"></div>`;
+    if(!multi && n.type!=="text" && n.type!=="legend" && n.type!=="math"){
+      html += `<div class="row"><label>X / Y</label>
+          <input class="fld num" id="fX" type="number" value="${Math.round(n.x)}">
+          <input class="fld num" id="fY" type="number" value="${Math.round(n.y)}"></div>
+        <div class="row"><label>宽 / 高</label>
+          <input class="fld num" id="fW" type="number" value="${Math.round(n.w)}">
+          <input class="fld num" id="fH" type="number" value="${Math.round(n.h)}"></div>
+        <div class="row"><label>圆角</label>
+          <input class="fld num" id="fR" type="number" min="0" max="40" value="${n.round ?? 0}"></div>`;
+    }
+    if(n.type==="legend"){
+      html += `<div class="row" style="align-items:flex-start"><label>条目</label>
+        <textarea class="fld" id="fItems" rows="6">${esc((n.items||[]).map(it=>
+          it.kind==="line" ? `line${it.dash?":dash":""}|${it.text}` : `${it.color}|${it.text}`
+        ).join("\n"))}</textarea></div>
+        <p class="note">每行一条：<code>颜色名|文字</code>，或 <code>line|文字</code> / <code>line:dash|文字</code> 表示线型说明。</p>`;
+    }
+    if(!multi && n.type==="slab"){
+      html += `<div class="row"><label>顶面深</label>
+          <input class="fld num" id="fDepth" type="number" min="4" value="${Math.round(n.h - (n.th ?? 14))}"></div>
+        <div class="row"><label>厚度</label>
+          <input class="fld num" id="fTh" type="number" min="2" value="${Math.round(n.th ?? 14)}"></div>
+        <div class="row"><label>斜切</label>
+          <input class="fld num" id="fShear" type="number" min="0" value="${Math.round(n.shear ?? 20)}"></div>
+        <p class="note">斜切量决定观察角度。同一张图里所有托盘用相同的斜切和厚度，透视才统一。</p>`;
+    }
+    if(!multi && n.type==="stack"){
+      html += `<div class="row"><label>层数</label>
+          <input class="fld num" id="fLayers" type="number" min="1" max="8" value="${n.layers ?? 4}"></div>
+        <div class="row"><label>错位</label>
+          <input class="fld num" id="fOx" type="number" value="${n.ox ?? 9}">
+          <input class="fld num" id="fOy" type="number" value="${n.oy ?? 9}"></div>
+        <div class="row" style="align-items:flex-start"><label>代码</label>
+          <textarea class="fld" id="fCode" rows="7" spellcheck="false"
+            style="font-family:var(--mono);font-size:11px">${esc(n.code ?? "")}</textarea></div>
+        <p class="note">直接粘贴真实代码。超出前层的部分会被裁掉，这正是论文里那种“露一角”的效果。</p>`;
+    }
+    if(!multi && n.type==="cylinder"){
+      html += `<div class="row"><label>顶盖</label>
+        <input class="fld num" id="fLip" type="number" step="0.02" min="0.05" max="0.4"
+          value="${(n.lip ?? 0.17).toFixed(2)}"></div>`;
+    }
+    if(!multi && n.type==="funnel"){
+      html += `<div class="row"><label>颈宽</label>
+          <input class="fld num" id="fNeck" type="number" step="0.02" min="0.05" max="0.9"
+            value="${(n.neck ?? 0.34).toFixed(2)}"></div>
+        <div class="row"><label>收口</label>
+          <input class="fld num" id="fWaist" type="number" step="0.02" min="0.1" max="0.9"
+            value="${(n.waist ?? 0.52).toFixed(2)}"></div>`;
+    }
+    if(!multi && n.type==="icon"){
+      html += `<div class="row"><label>图形</label>
+        <select class="fld" id="fGlyph">${IKEYS.map(k=>
+          `<option value="${k}" ${n.glyph===k?"selected":""}>${ICONS[k].name}</option>`).join("")}</select></div>
+        <div class="row"><label>线宽</label>
+          <input class="fld num" id="fISw" type="number" step="0.1" min="0.5" max="4"
+            value="${n.sw ?? 1.6}"></div>`;
+    }
+    html += `</div>`;
+
+    if(n.type!=="text" && n.type!=="math"){
+      html += `<div class="sec"><h3>配色</h3><div class="swatches">` +
+        PKEYS.map(k=>{
+          const p = PALETTE[k];
+          return `<button class="sw ${n.color===k?"on":""}" data-color="${k}" title="${p.name}"
+            style="background:${p.fill};border-color:${p.stroke}"></button>`;
+        }).join("") + `</div>`;
+      if(n.type==="group"){
+        html += `<div class="row" style="margin-top:9px"><label>虚线</label>
+          <input class="fld num" id="fDash" value="${esc(n.dash ?? "6 4")}"></div>`;
+      }
+      html += `</div>`;
+    }
+  }
+
+  if(edges.length){
+    const e = edges[0];
+    html += `<div class="sec"><h3>${edges.length>1 ? edges.length+" 条连线" : "连线"}</h3>
+      <div class="row"><label>线型</label><div class="seg" id="segStyle">
+        <button data-v="solid" class="${e.style==="solid"?"on":""}">实线</button>
+        <button data-v="dashed" class="${e.style==="dashed"?"on":""}">虚线</button>
+      </div></div>
+      <div class="row"><label>走线</label><div class="seg" id="segRoute">
+        <button data-v="straight" class="${e.route==="straight"?"on":""}">直</button>
+        <button data-v="elbow" class="${e.route==="elbow"?"on":""}">折</button>
+        <button data-v="curve" class="${e.route==="curve"?"on":""}">弧</button>
+      </div></div>
+      <div class="row"><label>箭头</label><div class="seg" id="segDir">
+        <button data-v="one" class="${e.dir==="one"?"on":""}">单向</button>
+        <button data-v="both" class="${e.dir==="both"?"on":""}">双向</button>
+        <button data-v="none" class="${e.dir==="none"?"on":""}">无</button>
+      </div></div>
+      ${e.route==="curve" ? `<div class="row"><label>弯度</label>
+        <input class="fld num" id="fBow" type="number" step="4" value="${e.bow ?? 26}"></div>` : ""}
+      <div class="row"><label>粗细</label>
+        <input class="fld num" id="fSw" type="number" step="0.1" min="0.4" max="6" value="${e.sw ?? 1.3}"></div>
+      <div class="row"><label>标注</label>
+        <input class="fld" id="fELabel" value="${esc(e.label ?? "")}"></div>
+      <div class="row"><label>颜色</label>
+        <input class="fld" id="fEColor" type="color" style="padding:2px" value="${e.color ?? "#3a3f46"}"></div>
+      <div class="row"><label></label>
+        <button class="mini" id="btnFlip" style="flex:1">反转方向</button></div>
+    </div>`;
+  }
+
+  if(nodes.length>1){
+    html += `<div class="sec"><h3>对齐</h3><div class="align-grid">
+      ${alignBtn("l","M3 2v11M6 4.5h8M6 10.5h5")}
+      ${alignBtn("cx","M8 2v11M4 4.5h8M5.5 10.5h5")}
+      ${alignBtn("r","M13 2v11M2 4.5h8M5 10.5h5")}
+      ${alignBtn("t","M2 3h11M4.5 6v8M10.5 6v5")}
+      ${alignBtn("cy","M2 8h11M4.5 4v8M10.5 5.5v5")}
+      ${alignBtn("b","M2 13h11M4.5 2v8M10.5 5v5")}
+    </div>
+    <div class="grid2" style="margin-top:6px">
+      <button class="mini" data-dist="h">水平等距</button>
+      <button class="mini" data-dist="v">垂直等距</button>
+    </div>
+    <div class="grid2" style="margin-top:6px">
+      <button class="mini" data-same="w">同宽</button>
+      <button class="mini" data-same="h">同高</button>
+    </div></div>`;
+  }
+
+  if(nodes.length){
+    html += `<div class="sec"><h3>层级</h3><div class="grid2">
+      <button class="mini" data-z="front">移到最上</button>
+      <button class="mini" data-z="back">移到最下</button>
+    </div>
+    <p class="note">托盘和分组框始终在最底层，芯片放上去不会被盖住。</p></div>`;
+  }
+  if(ids.length){
+    html += `<div class="sec"><div class="grid2">
+      <button class="mini" id="btnDup">复制一份</button>
+      <button class="mini danger" id="btnDel">删除</button>
+    </div></div>`;
+  }
+
+  /* 印刷检查 */
+  html += `<div class="sec"><h3>印刷检查</h3>
+    <div class="row"><label>目标宽</label>
+      <div class="seg" id="segTarget">
+        <button data-v="3.5" class="${S.targetIn===3.5?"on":""}">3.5in 单栏</button>
+        <button data-v="7" class="${S.targetIn===7?"on":""}">7in 跨栏</button>
+      </div></div>
+    <div id="metrics" style="margin-top:8px"></div>
+    <p class="note" id="metricNote"></p>
+  </div>`;
+
+  box.innerHTML = html;
+  bind();
+  updateMetrics();
+}
+function typeName(t){
+  return {module:"模块芯片",box:"方框",ellipse:"椭圆",group:"分组框",text:"文字",legend:"图例",
+    slab:"等距托盘",stack:"叠层窗口",cylinder:"数据库",funnel:"漏斗",icon:"图标",math:"LaTeX 公式"}[t] || t;
+}
+function alignBtn(v, d){
+  return `<button data-align="${v}"><svg viewBox="0 0 15 15" stroke-linecap="round"><path d="${d}"/></svg></button>`;
+}
+function syncGeomFields(){
+  if(S.sel.size!==1) return;
+  const n = nodeById([...S.sel][0]); if(!n) return;
+  const set = (id,v)=>{ const el=$(id); if(el && document.activeElement!==el) el.value = Math.round(v); };
+  set("#fX",n.x); set("#fY",n.y); set("#fW",n.w); set("#fH",n.h);
+}
+
+function bind(){
+  const nodes = [...S.sel].map(nodeById).filter(Boolean);
+  const edges = [...S.sel].map(id=>S.edges.find(e=>e.id===id)).filter(Boolean);
+  const on = (sel, ev, fn) => { const el = $(sel); if(el) el.addEventListener(ev, fn); };
+  const live = (sel, fn) => on(sel, "input", e=>{ fn(e.target.value); render(); });
+  const commit = sel => on(sel, "change", ()=>snap());
+
+  live("#fLabel", v => nodes[0] && (nodes[0].label = v));
+  commit("#fLabel");
+  live("#fFs", v => { const f = parseFloat(v); if(f>0) nodes.forEach(n=>n.fs=f); });
+  commit("#fFs");
+  ["X","Y","W","H","R"].forEach(a=>{
+    live("#f"+a, v=>{
+      const n = nodes[0]; if(!n) return;
+      const f = parseFloat(v); if(isNaN(f)) return;
+      if(a==="X") n.x=f; if(a==="Y") n.y=f;
+      if(a==="W") n.w=Math.max(6,f); if(a==="H") n.h=Math.max(6,f);
+      if(a==="R") n.round=Math.max(0,f);
+    });
+    commit("#f"+a);
+  });
+  live("#fDash", v => nodes[0] && (nodes[0].dash = v));
+  live("#fItems", v => {
+    const n = nodes[0]; if(!n) return;
+    n.items = v.split("\n").filter(Boolean).map(line=>{
+      const [k, ...rest] = line.split("|");
+      const text = rest.join("|").trim();
+      const key = k.trim();
+      if(key.startsWith("line")) return {kind:"line", dash:key.includes("dash"), text};
+      return {kind:"swatch", color: PALETTE[key] ? key : "slate", text};
+    });
+  });
+  commit("#fItems");
+
+  /* 新图形参数 */
+  const numField = (sel, key, min, max, target) => {
+    live(sel, v=>{
+      const n = nodes[0]; if(!n) return;
+      const f = parseFloat(v); if(isNaN(f)) return;
+      n[target ?? key] = Math.max(min, Math.min(max, f));
+    });
+    commit(sel);
+  };
+  live("#fDepth", v=>{
+    const n = nodes[0]; if(!n) return;
+    const f = parseFloat(v); if(isNaN(f)) return;
+    n.h = Math.max(6, f) + (n.th ?? 14);
+  });
+  commit("#fDepth");
+  live("#fTh", v=>{
+    const n = nodes[0]; if(!n) return;
+    const f = parseFloat(v); if(isNaN(f)) return;
+    const d = n.h - (n.th ?? 14);
+    n.th = Math.max(2, f); n.h = d + n.th;
+  });
+  commit("#fTh");
+  numField("#fShear", "shear", 0, 400);
+  numField("#fLayers", "layers", 1, 8);
+  numField("#fOx", "ox", -60, 60);
+  numField("#fOy", "oy", -60, 60);
+  numField("#fLip", "lip", 0.02, 0.45);
+  numField("#fNeck", "neck", 0.04, 0.92);
+  numField("#fWaist", "waist", 0.08, 0.92);
+  numField("#fISw", "sw", 0.3, 6);
+  live("#fCode", v => nodes[0] && (nodes[0].code = v));
+  commit("#fCode");
+  live("#fTex", v => nodes[0] && (nodes[0].tex = v));
+  on("#fTex","change", ()=>{ snap(); inspector(); });
+  on("#fGlyph","change", e=>{
+    snap(); if(nodes[0]) nodes[0].glyph = e.target.value; render();
+  });
+
+  on("#insp","click", e=>{
+    const sw = e.target.closest("[data-color]");
+    if(sw){ snap(); nodes.forEach(n=>n.color = sw.dataset.color); render(); inspector(); return; }
+    const al = e.target.closest("[data-align]");
+    if(al){ align(al.dataset.align); return; }
+    const di = e.target.closest("[data-dist]");
+    if(di){ distribute(di.dataset.dist); return; }
+    const z = e.target.closest("[data-z]");
+    if(z){
+      snap();
+      const keep = S.nodes.filter(n=>!S.sel.has(n.id));
+      const move = S.nodes.filter(n=>S.sel.has(n.id));
+      S.nodes = z.dataset.z==="front" ? [...keep, ...move] : [...move, ...keep];
+      render(); return;
+    }
+    const sa = e.target.closest("[data-same]");
+    if(sa){
+      snap(); const ref = nodes[0];
+      nodes.forEach(n=> sa.dataset.same==="w" ? n.w=ref.w : n.h=ref.h);
+      render(); return;
+    }
+  });
+
+  const segs = {"#segStyle":"style", "#segRoute":"route", "#segDir":"dir"};
+  for(const [sel, key] of Object.entries(segs))
+    on(sel,"click", e=>{
+      const b = e.target.closest("[data-v]"); if(!b) return;
+      snap(); edges.forEach(x=>x[key]=b.dataset.v); render(); inspector();
+    });
+  live("#fELabel", v => edges.forEach(x=>x.label=v));
+  commit("#fELabel");
+  live("#fEColor", v => edges.forEach(x=>x.color=v));
+  commit("#fEColor");
+  live("#fSw", v => { const f=parseFloat(v); if(f>0) edges.forEach(x=>x.sw=f); });
+  commit("#fSw");
+  live("#fBow", v => { const f=parseFloat(v); if(!isNaN(f)) edges.forEach(x=>x.bow=f); });
+  commit("#fBow");
+  on("#btnFlip","click", ()=>{
+    snap(); edges.forEach(x=>{ const t=x.from; x.from=x.to; x.to=t; }); render();
+  });
+
+  on("#btnDup","click", duplicate);
+  on("#btnDel","click", del);
+  on("#fFont","change", e=>{ S.font = e.target.value; render(); });
+  on("#fGrid","input", e=>{ S.grid = Math.max(2, +e.target.value || 10); render(); });
+  if($("#fFont")) $("#fFont").value = S.font;
+
+  on("#segTarget","click", e=>{
+    const b = e.target.closest("[data-v]"); if(!b) return;
+    S.targetIn = parseFloat(b.dataset.v);
+    inspector();
+  });
+}
+
+function align(mode){
+  const ns = [...S.sel].map(nodeById).filter(Boolean);
+  if(ns.length<2) return;
+  snap();
+  const x0 = Math.min(...ns.map(n=>n.x)), x1 = Math.max(...ns.map(n=>n.x+n.w));
+  const y0 = Math.min(...ns.map(n=>n.y)), y1 = Math.max(...ns.map(n=>n.y+n.h));
+  for(const n of ns){
+    if(mode==="l") n.x = x0;
+    if(mode==="r") n.x = x1 - n.w;
+    if(mode==="cx") n.x = (x0+x1)/2 - n.w/2;
+    if(mode==="t") n.y = y0;
+    if(mode==="b") n.y = y1 - n.h;
+    if(mode==="cy") n.y = (y0+y1)/2 - n.h/2;
+  }
+  render(); syncGeomFields();
+}
+function distribute(axis){
+  const ns = [...S.sel].map(nodeById).filter(Boolean);
+  if(ns.length<3) return;
+  snap();
+  const h = axis==="h";
+  ns.sort((a,b)=> h ? a.x-b.x : a.y-b.y);
+  const first = ns[0], last = ns[ns.length-1];
+  const total = h ? (last.x+last.w) - first.x : (last.y+last.h) - first.y;
+  const used = ns.reduce((s,n)=> s + (h?n.w:n.h), 0);
+  const gap = (total - used) / (ns.length-1);
+  let cur = h ? first.x : first.y;
+  for(const n of ns){
+    if(h){ n.x = cur; cur += n.w + gap; } else { n.y = cur; cur += n.h + gap; }
+  }
+  render(); syncGeomFields();
+}
+
+/* ============================================================
+   印刷字号检查
+   ============================================================ */
+function updateMetrics(){
+  const box = $("#metrics"); if(!box) return;
+  const el = $("#content");
+  let bb;
+  try { bb = el.getBBox(); } catch { bb = null; }
+  if(!bb || !bb.width){
+    box.innerHTML = `<div class="metric"><span class="k">画布为空</span><span class="v">—</span></div>`;
+    $("#metricNote").textContent = "";
+    return;
+  }
+  const pad = 8;
+  const wPx = bb.width + pad*2, hPx = bb.height + pad*2;
+  const scale = 96 * S.targetIn / wPx;
+  /* 叠层窗口里的代码是纹理不是内容，故意看不清，不计入 */
+  const fss = [
+    ...S.nodes.filter(n=>n.type!=="stack" && n.label !== "").map(n=>n.fs),
+    ...S.edges.filter(e=>e.label).map(e=>e.fs ?? 11)
+  ].filter(v=>typeof v === "number" && v>0);
+  const minFs = fss.length ? Math.min(...fss) : 0;
+  const minPt = minFs * 0.75 * scale;
+  const ratio = hPx/wPx;
+  const bad = minPt < 6, warn = minPt < 7;
+  const hasStack = S.nodes.some(n=>n.type==="stack");
+
+  box.innerHTML = `
+    <div class="metric"><span class="k">图形尺寸</span>
+      <span class="v">${Math.round(wPx)} × ${Math.round(hPx)} px</span></div>
+    <div class="metric"><span class="k">缩放到目标</span>
+      <span class="v">${(scale*100).toFixed(0)}%</span></div>
+    <div class="metric"><span class="k">印后高度</span>
+      <span class="v">${(S.targetIn*ratio).toFixed(2)} in</span></div>
+    <div class="metric"><span class="k">最小文字</span>
+      <span class="v ${bad?"bad":(warn?"":"good")}">${minPt ? minPt.toFixed(1)+" pt" : "—"}</span></div>`;
+  $("#metricNote").textContent = (bad
+    ? "最小文字低于 6pt，印刷后基本读不清。放大字号、精简内容，或换成跨栏。"
+    : warn ? "接近下限。多数会议要求图内文字不小于正文字号减 2pt。"
+    : "字号安全。")
+    + (hasStack ? " 叠层窗口里的代码按装饰处理，不计入。" : "");
+}
+
+/* ============================================================
+   导出
+   ============================================================ */
+function buildExportSVG(){
+  const el = $("#content");
+  const bb = el.getBBox();
+  const pad = 8;
+  const w = Math.ceil(bb.width + pad*2), h = Math.ceil(bb.height + pad*2);
+  const defs = $("#defs").innerHTML;
+  const inner = el.innerHTML.replace(/ data-id="[^"]*"/g,"").replace(/ class="(nd|eg)"/g,"");
+  return {
+    text: `<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink"
+  width="${w}" height="${h}" viewBox="${(bb.x-pad).toFixed(2)} ${(bb.y-pad).toFixed(2)} ${w} ${h}">
+<defs>${defs}</defs>
+<rect x="${(bb.x-pad).toFixed(2)}" y="${(bb.y-pad).toFixed(2)}" width="${w}" height="${h}" fill="#ffffff"/>
+${inner}
+</svg>`, w, h };
+}
+function download(blob, name){
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = name; a.click();
+  setTimeout(()=>URL.revokeObjectURL(url), 1500);
+}
+function exportSVG(){
+  if(!S.nodes.length) return flash("画布是空的");
+  const {text} = buildExportSVG();
+  download(new Blob([text], {type:"image/svg+xml"}), "figure.svg");
+  flash("已导出 SVG — 论文里请用这个");
+}
+function exportPNG(){
+  if(!S.nodes.length) return flash("画布是空的");
+  const {text, w, h} = buildExportSVG();
+  const scale = 4;
+  const img = new Image();
+  img.onload = ()=>{
+    const c = document.createElement("canvas");
+    c.width = w*scale; c.height = h*scale;
+    const ctx = c.getContext("2d");
+    ctx.fillStyle = "#fff"; ctx.fillRect(0,0,c.width,c.height);
+    ctx.drawImage(img, 0, 0, c.width, c.height);
+    c.toBlob(b => download(b, "figure.png"), "image/png");
+    flash(`已导出 PNG — ${w*scale}×${h*scale}，仅供预览`);
+  };
+  img.onerror = ()=>flash("PNG 导出失败，请改用 SVG");
+  img.src = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(text);
+}
+function saveJSON(){
+  const data = {v:1, nodes:S.nodes, edges:S.edges, font:S.font, grid:S.grid};
+  download(new Blob([JSON.stringify(data,null,1)], {type:"application/json"}), "figure.json");
+  flash("已保存");
+}
+function openJSON(file){
+  const r = new FileReader();
+  r.onload = ()=>{
+    try{
+      const d = JSON.parse(r.result);
+      snap();
+      S.nodes = d.nodes || []; S.edges = d.edges || [];
+      S.font = d.font || S.font; S.grid = d.grid || S.grid;
+      S.sel.clear();
+      uidN = 1;
+      [...S.nodes, ...S.edges].forEach(o=>{
+        const n = parseInt(String(o.id).slice(1)); if(n>=uidN) uidN = n+1;
+      });
+      fit(); inspector(); flash("已打开");
+    } catch { flash("文件读不出来，可能不是本工具保存的 JSON"); }
+  };
+  r.readAsText(file);
+}
+
+function fit(){
+  render();
+  const el = $("#content");
+  let bb; try{ bb = el.getBBox(); } catch { bb = null; }
+  if(!bb || !bb.width){ S.view = {x:-60,y:-60,k:1}; render(); return; }
+  const pad = 60;
+  const k = Math.min(3, Math.min(cv.clientWidth/(bb.width+pad*2), cv.clientHeight/(bb.height+pad*2)));
+  S.view.k = k;
+  S.view.x = bb.x + bb.width/2 - cv.clientWidth/(2*k);
+  S.view.y = bb.y + bb.height/2 - cv.clientHeight/(2*k);
+  render();
+}
+
+let hintT;
+function flash(msg){
+  const h = $("#hint");
+  h.textContent = msg; h.classList.add("show");
+  clearTimeout(hintT);
+  hintT = setTimeout(()=>h.classList.remove("show"), 1900);
+  $("#stMsg").textContent = msg;
+}
+
+/* ============================================================
+   顶栏
+   ============================================================ */
+$("#btnUndo").onclick = undo;
+$("#btnRedo").onclick = redo;
+$("#btnGrid").onclick = e => { S.showGrid=!S.showGrid; e.currentTarget.classList.toggle("on",S.showGrid); render(); };
+$("#btnSnap").onclick = e => { S.snap=!S.snap; e.currentTarget.classList.toggle("on",S.snap); };
+$("#btnCols").onclick = e => { S.showCols=!S.showCols; e.currentTarget.classList.toggle("on",S.showCols); render(); };
+$("#btnFit").onclick = fit;
+$("#btnSVG").onclick = exportSVG;
+$("#btnPNG").onclick = exportPNG;
+$("#btnSave").onclick = saveJSON;
+$("#btnOpen").onclick = ()=>$("#fileIn").click();
+$("#fileIn").onchange = e => { if(e.target.files[0]) openJSON(e.target.files[0]); e.target.value=""; };
+$("#btnHelp").onclick = ()=>$("#help").classList.add("show");
+$("#helpclose").onclick = ()=>$("#help").classList.remove("show");
+$("#help").onclick = e => { if(e.target.id==="help") $("#help").classList.remove("show"); };
+$("#btnLegend").onclick = ()=>{
+  snap();
+  const n = {id:uid("n"), type:"legend", x:snapV(S.view.x+40), y:snapV(S.view.y+40),
+    w:132, h:0, fs:11, color:"paper", round:0,
+    items:[
+      {kind:"swatch", color:"blue",   text:"Planning"},
+      {kind:"swatch", color:"green",  text:"Reasoning"},
+      {kind:"swatch", color:"amber",  text:"Tool Use"},
+      {kind:"swatch", color:"violet", text:"Memory"},
+      {kind:"line", dash:false, text:"Agent Search"},
+      {kind:"line", dash:true,  text:"Feedback"},
+    ]};
+  S.nodes.push(n); S.sel = new Set([n.id]);
+  render(); inspector(); flash("图例已插入，右侧可改条目");
+};
+
+window.addEventListener("resize", render);
+
+/* ============================================================
+   起始场景 — 直接演示这类图的画法
+   ============================================================ */
+function seed(){
+  const N = (o) => {
+    const t = TYPES[o.type] || {};
+    S.nodes.push(Object.assign({id:uid("n")}, clone(t), o));
+    return S.nodes[S.nodes.length-1];
+  };
+  const E = (a,b,o={}) => S.edges.push(Object.assign({id:uid("e"), from:a.id, to:b.id,
+    style:"solid", route:"straight", dir:"one", color:"#3a3f46", sw:1.3, label:"", fs:11}, o));
+  const CS = ["blue","green","amber","violet"];
+  const chip = (x,y,label,color) => N({type:"module", x, y, label, color});
+  const chipRow = (x,y,labels) => labels.map((lb,j)=>chip(x+j*38, y, lb, CS[j]));
+
+  /* —— 上半：演化搜索 —— */
+  N({type:"group", x:236, y:52, w:268, h:206, label:"Evolution"});
+
+  const a0 = chipRow(20, 140, ["P_0","R_0","T_0","M_0"]);
+  const llm = N({type:"ellipse", x:262, y:132, w:56, h:48, label:"LLM", color:"paper", fs:11.5});
+
+  const outs = [];
+  [["P'","R_1","T_1","M_1"],["P_1","R'","T_2","M_2"],
+   ["P_2","R_2","T'","M_3"],["P_3","R_3","T_3","M'"]].forEach((r,i)=>{
+    const y = 74 + i*44;
+    outs.push(chipRow(344, y, r));
+    N({type:"ellipse", x:504, y:y-1, w:32, h:32, label:String(87+i*3), color:"blue", fs:11.5});
+  });
+
+  N({type:"box", x:300, y:0, w:150, h:28, label:"Task Evaluation", color:"paper", fs:12});
+  N({type:"text", x:216, y:14, label:"Evaluation", fs:11});
+  a0.forEach(c => E(c, llm));
+  outs.forEach(r => E(llm, r[0], {route:"curve", bow:0}));
+
+  /* —— 下半：托盘 + 图标 + 叠层代码 —— */
+  const tray = N({type:"slab", x:60, y:400, w:230, h:60, label:"Module Pool", color:"blue"});
+  [0,1,2].forEach(i => chipRow(96, 330 + i*32, ["P_"+(i+1),"R_"+(i+1),"T_"+(i+1),"M_"+(i+1)]));
+
+  const tray2 = N({type:"slab", x:360, y:400, w:230, h:60, label:"Experience Pool", color:"green"});
+  [0,1,2].forEach(i => {
+    chipRow(392, 330 + i*32, ["P_"+(i+1),"R_"+(i+1),"T_"+(i+1),"M_"+(i+1)]);
+    N({type:"ellipse", x:556, y:330 + i*32, w:30, h:30, label:String(90+i*3), color:"green", fs:11});
+  });
+  N({type:"icon", x:356, y:334, w:26, h:26, glyph:"robot", color:"slate"});
+  N({type:"icon", x:356, y:366, w:26, h:26, glyph:"gear",  color:"slate"});
+  N({type:"icon", x:356, y:398, w:26, h:26, glyph:"user",  color:"slate"});
+
+  E(tray, llm,  {style:"dashed", route:"curve", bow:-40, label:"Feedback"});
+  E(tray2, tray,{style:"dashed", route:"curve", bow:22, dir:"both"});
+
+  /* —— 右侧：代码抽象 —— */
+  const stk = N({type:"stack", x:660, y:60, w:190, h:120, color:"paper", fs:8.5,
+    code:"def Origin(memory(concepts:List[str],\n           max_attempt:int)):\n  while n_attempt < max_attempt:\n    sent_to_fb = concept_fb(\n      commonsense_fb + bank_feedback)\n    if concept_fb.lower() != 'none':\n      n_attempt += 1\n  return sent_to_fb"});
+  const fun = N({type:"funnel", x:700, y:210, w:110, h:70, color:"slate"});
+  const cls = N({type:"box", x:690, y:310, w:130, h:44, label:"class Planning():", color:"amber", fs:11});
+  const db  = N({type:"cylinder", x:700, y:390, w:82, h:62, label:"Memory\nDatabase", color:"rose", fs:11});
+
+  E(stk, fun, {dir:"none"});
+  E(fun, cls, {label:"Abstract", fs:10});
+  E(cls, db,  {style:"dashed", dir:"both"});
+
+  /* —— 公式 —— */
+  N({type:"math", x:60, y:500, fs:19, tex:"\\mathcal{A}^{*} = \\arg\\max_{\\mathcal{A}} \\; \\mathbb{E}_{\\tau\\sim\\mathcal{T}}\\big[\\, r(\\mathcal{A},\\tau) \\,\\big]"});
+
+  render(); inspector();
+}
+
+buildRail();
+setTool("select");
+seed();
+fit();
+refreshUndo();
+past.length = 0; refreshUndo();
+</script>
+</body>
+</html>

@@ -319,6 +319,9 @@ window.addEventListener('keydown', (e) => {
   }
 });
 
+// 把工具表推给手机端。写死的话每加一个工具手机上就少一个。
+window.toolbox.remote?.setTools?.(TOOLS.map((t) => ({ id: t.id, title: t.title, emoji: t.emoji || '' })));
+
 const last = config.get('ui.lastTool');
 activate(TOOLS.some((t) => t.id === last) ? last : TOOLS[0].id);
 

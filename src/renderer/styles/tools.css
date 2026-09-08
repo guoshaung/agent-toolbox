@@ -184,6 +184,13 @@
 .tasks__item.is-done .tasks__title { color: var(--text-faint); text-decoration: line-through; }
 .tasks__meta { display: flex; align-items: center; gap: 10px; margin-top: 5px; color: var(--text-faint); font-size: 11px; }
 .tasks__priority { padding: 0; border: 0; background: transparent; cursor: pointer; font-size: 11px; }
+.tasks__note-toggle { flex: 0 0 auto; padding: 5px 8px; border: 1px solid var(--line-soft); border-radius: 7px; color: var(--text-faint); background: transparent; cursor: pointer; font-size: 11px; }
+.tasks__note-toggle:hover, .tasks__note-toggle.has-note { border-color: rgba(223,161,69,.55); color: #e7bd70; background: rgba(223,161,69,.1); }
+.tasks__note-preview { flex: 1 0 100%; margin-top: 7px; padding: 7px 9px; border-left: 2px solid rgba(223,161,69,.65); border-radius: 0 6px 6px 0; color: var(--text-dim); background: rgba(223,161,69,.06); font-size: 12px; line-height: 1.6; white-space: pre-wrap; word-break: break-word; }
+.tasks__note-editor { flex: 1 0 100%; display: flex; flex-direction: column; gap: 7px; margin-top: 7px; }
+.tasks__note-editor[hidden] { display: none; }
+.tasks__note-input { width: 100%; min-height: 64px; resize: vertical; font-size: 12px; line-height: 1.6; }
+.tasks__note-actions { display: flex; gap: 6px; }
 .tasks__delete { flex: 0 0 auto; padding: 1px 5px; border: 0; background: transparent; color: var(--text-faint); cursor: pointer; font-size: 18px; opacity: .5; }
 .tasks__delete:hover { color: var(--bad); opacity: 1; }
 .tasks__edit-input { width: 100%; }
@@ -835,6 +842,8 @@
 .figureboard__toolbar-toggle:hover { color: #fff; border-color: var(--accent); background: rgba(91,140,255,.22); }
 .figureboard__tool-btn { color: #a9bdf0; background: rgba(91,140,255,.09); border-color: rgba(91,140,255,.24); }
 .figureboard__tool-btn:hover { color: #fff; background: rgba(91,140,255,.24); border-color: var(--accent); }
+.figureboard__clear-btn { padding-inline: 10px; color: #f0a4a0; border-color: rgba(229,100,95,.4); background: rgba(229,100,95,.08); }
+.figureboard__clear-btn:hover { color: #fff; border-color: var(--bad); background: rgba(229,100,95,.22); }
 .figureboard__tool-sep { width: 1px; height: 22px; margin: 0 3px; background: var(--line); }
 .figureboard__color { width: 25px; height: 25px; padding: 2px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); cursor: pointer; }
 .figureboard__range { width: 54px; accent-color: var(--accent); cursor: ew-resize; }
@@ -2739,3 +2748,10 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
   font: 11.5px/1.7 var(--mono);
   white-space: pre-wrap; word-break: break-word;
 }
+
+/* ---------- 科研：论文示意图编辑器 ---------- */
+.drafter__bar { gap: 8px; flex: 0 0 auto; }
+.drafter__status { font-size: 11px; }
+/* webview 必须在 flex 容器里，否则 guest 视口会缩回 150px 固有高度 */
+.drafter__stage { flex: 1; min-height: 0; display: flex; }
+.drafter__stage webview { flex: 1; min-width: 0; background: #fff; }

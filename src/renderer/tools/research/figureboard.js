@@ -306,6 +306,18 @@ export function createFigureboard(root, ctx) {
     renderBoard();
   }
 
+  function clearCanvas() {
+    if (!items.length) return toast('当前画布已经是空的', 'info');
+    if (!window.confirm('确定清空当前画布吗？模板和素材库不会受影响，之后可以用撤销恢复。')) return;
+    record(cloneItems());
+    items = [];
+    selectedId = null;
+    selectedIds.clear();
+    persist();
+    renderBoard();
+    toast('当前画布已清空，可用撤销恢复', 'good');
+  }
+
   function addImage(dataUrl, naturalWidth = 900, naturalHeight = 600) {
     record(cloneItems());
     const maxWidth = Math.min(420, Math.max(180, board.clientWidth * 0.55));
@@ -501,7 +513,40 @@ export function createFigureboard(root, ctx) {
   }
 
   function buildPreset(kind, offset = 0) {
-    const title = kind === 'pipeline' ? '研究流程图' : kind === 'architecture' ? '模型架构图' : kind === 'experiment' ? '实验对比图' : kind === 'paper-architecture' ? '论文架构图 · Data Prune / Collaborative Structure / Semantic Fusion' : kind === 'agentarchive' ? 'Agent Archive 发现与迭代' : 'AgentSquare 模块化智能体框架';
+    const title = kind === 'pipeline' ? '研究流程图' : kind === 'architecture' ? '模型架构图' : kind === 'experiment' ? '实验对比图' : kind === 'paper-architecture' ? '论文架构图 · Data Prune / Collaborative Structure / Semantic Fusion' : kind === 'harness-loop' ? 'Data-Driven Harness Improvement' : kind === 'agentarchive' ? 'Agent Archive 发现与迭代' : 'AgentSquare 模块化智能体框架';
+    if (kind === 'harness-loop') {
+      const harnessAsset = FIGURE_ASSETS.find((asset) => asset.id === 'harness-stack');
+      const traceAsset = FIGURE_ASSETS.find((asset) => asset.id === 'trace-log');
+      const evalAsset = FIGURE_ASSETS.find((asset) => asset.id === 'evaluation-score');
+      const dataAsset = FIGURE_ASSETS.find((asset) => asset.id === 'data-filter');
+      const updateAsset = FIGURE_ASSETS.find((asset) => asset.id === 'harness-update');
+      const heldoutAsset = FIGURE_ASSETS.find((asset) => asset.id === 'heldout-check');
+      const frame = presetShape('container', { x: 24 + offset, y: 28 + offset, width: 1160, height: 610, fill: '#ffffff', stroke: '#cbd4dc', strokeWidth: 2, radius: 22, effect: 'soft' });
+      const task = presetShape('roundRect', { x: 65 + offset, y: 190 + offset, width: 190, height: 112, fill: '#edf5fc', stroke: '#3e6f9e', strokeWidth: 2.2, radius: 16, effect: 'soft' });
+      const harness = presetShape('roundRect', { x: 330 + offset, y: 158 + offset, width: 235, height: 176, fill: '#f3faef', stroke: '#3d7837', strokeWidth: 2.4, radius: 18, effect: 'lift' });
+      const trace = presetShape('roundRect', { x: 650 + offset, y: 85 + offset, width: 225, height: 112, fill: '#fff5ec', stroke: '#c7833d', strokeWidth: 2.2, radius: 16, effect: 'soft' });
+      const evaluation = presetShape('roundRect', { x: 650 + offset, y: 245 + offset, width: 225, height: 112, fill: '#edf5fc', stroke: '#3e6f9e', strokeWidth: 2.2, radius: 16, effect: 'soft' });
+      const data = presetShape('roundRect', { x: 935 + offset, y: 155 + offset, width: 205, height: 170, fill: '#fffaf3', stroke: '#c7833d', strokeWidth: 2.4, radius: 18, effect: 'lift' });
+      const candidate = presetShape('roundRect', { x: 330 + offset, y: 425 + offset, width: 235, height: 130, fill: '#f2e9ff', stroke: '#7c5ac8', strokeWidth: 2.4, radius: 18, effect: 'lift' });
+      const heldout = presetShape('roundRect', { x: 650 + offset, y: 435 + offset, width: 225, height: 112, fill: '#e8f7f1', stroke: '#2f9a83', strokeWidth: 2.2, radius: 16, effect: 'soft' });
+      const legend = presetShape('container', { x: 925 + offset, y: 410 + offset, width: 220, height: 145, fill: '#fafbfc', stroke: '#9aa4ad', strokeWidth: 1.5, radius: 12, dash: 'dashed', effect: 'soft' });
+      const wire = (from, to, props = {}) => presetWire(from.id, to.id, { route: props.route || 'paper', from: { id: from.id, port: props.fromPort || 'auto' }, to: { id: to.id, port: props.toPort || 'auto' }, stroke: props.stroke || '#50647a', strokeWidth: props.strokeWidth || 2.2, arrowStyle: props.arrowStyle || 'standard', label: props.label || '', ...props });
+      return [frame,
+        presetText(title, 58 + offset, 48 + offset, { width: 620, fontSize: 25, color: '#17202f' }),
+        presetText('Execution evidence is transformed into data that drives the next harness version.', 60 + offset, 93 + offset, { width: 770, fontSize: 14, color: '#68727d' }),
+        task, harness, trace, evaluation, data, candidate, heldout, legend,
+        presetImage(harnessAsset, 354 + offset, 181 + offset, 62, 62), presetImage(traceAsset, 671 + offset, 98 + offset, 46, 46), presetImage(evalAsset, 671 + offset, 258 + offset, 46, 46), presetImage(dataAsset, 951 + offset, 175 + offset, 42, 42), presetImage(updateAsset, 354 + offset, 438 + offset, 56, 56), presetImage(heldoutAsset, 671 + offset, 446 + offset, 46, 46),
+        presetText('Task episodes', 140 + offset, 226 + offset, { width: 105, fontSize: 17 }), presetText('user requests · app tasks', 136 + offset, 260 + offset, { width: 112, fontSize: 10, color: '#68727d' }),
+        presetText('Harness $H_t$', 434 + offset, 187 + offset, { width: 125, fontSize: 20, color: '#3d7837' }), presetText('prompts · skills · memory\ntools · Agent Team · workflow', 403 + offset, 246 + offset, { width: 170, height: 48, fontSize: 11, color: '#4d6651' }),
+        presetText('Execution traces $\\tau_t$', 724 + offset, 101 + offset, { width: 160, fontSize: 16, color: '#a85d28' }), presetText('tool calls · artifacts\nfailures · timing', 724 + offset, 151 + offset, { width: 125, height: 34, fontSize: 11, color: '#7c6756' }),
+        presetText('Evaluation $E_t$', 729 + offset, 261 + offset, { width: 140, fontSize: 16, color: '#3e6f9e' }), presetText('tests · scores\nfindings · feedback', 724 + offset, 310 + offset, { width: 140, height: 34, fontSize: 11, color: '#586d7e' }),
+        presetText('Data construction\nG', 1010 + offset, 170 + offset, { width: 110, height: 38, fontSize: 13, color: '#a85d28' }), presetText('filter · select\nsummarize · synthesize', 990 + offset, 236 + offset, { width: 130, height: 40, fontSize: 11, color: '#7c6756' }),
+        presetText('Candidate $H_{t+1}$', 433 + offset, 447 + offset, { width: 145, fontSize: 18, color: '#6c4bb2' }), presetText('prompt / skill / workflow\nupdate proposal', 401 + offset, 497 + offset, { width: 175, height: 36, fontSize: 11, color: '#665980' }),
+        presetText('Held-out validation', 720 + offset, 451 + offset, { width: 160, fontSize: 16, color: '#2f806f' }), presetText('accept · reject · rollback', 718 + offset, 503 + offset, { width: 145, fontSize: 11, color: '#4f746b' }),
+        presetText('Round record', 965 + offset, 428 + offset, { width: 130, fontSize: 15, color: '#4f5d6d' }), presetText('version\ndata provenance\nperformance · cost\nregression', 964 + offset, 464 + offset, { width: 120, height: 70, fontSize: 11, color: '#68727d' }),
+        wire(task, harness, { fromPort: 'right', toPort: 'left', stroke: '#3e6f9e', label: 'execute' }), wire(harness, trace, { fromPort: 'right', toPort: 'left', stroke: '#c7833d', label: 'log' }), wire(harness, evaluation, { fromPort: 'right', toPort: 'left', stroke: '#3e6f9e', label: 'test' }), wire(trace, data, { fromPort: 'right', toPort: 'left', stroke: '#c7833d', label: 'collect' }), wire(evaluation, data, { fromPort: 'right', toPort: 'left', stroke: '#3e6f9e', label: 'feedback' }), wire(data, candidate, { fromPort: 'bottom', toPort: 'right', stroke: '#7c5ac8', label: 'update' }), wire(candidate, heldout, { fromPort: 'right', toPort: 'left', stroke: '#7c5ac8', label: 'validate' }), wire(heldout, harness, { fromPort: 'top', toPort: 'bottom', stroke: '#2f9a83', label: 'accept / repeat', route: 'curve', curveBend: -70 }), presetWire(heldout.id, candidate.id, { from: { id: heldout.id, port: 'bottom' }, to: { id: candidate.id, port: 'bottom' }, route: 'curve', curveBend: 60, stroke: '#c7833d', dash: 'dashed', label: 'reject / rollback' }),
+        presetText('One improvement round', 390 + offset, 595 + offset, { width: 300, fontSize: 13, color: '#68727d' })];
+    }
     if (kind === 'agentarchive') {
       const agentAsset = FIGURE_ASSETS.find((asset) => asset.id === 'agent-square');
       const eagleAsset = FIGURE_ASSETS.find((asset) => asset.id === 'eagle-solid');
@@ -742,7 +787,7 @@ export function createFigureboard(root, ctx) {
     selectedId = null;
     persist();
     renderBoard();
-    toast(`已插入${kind === 'pipeline' ? '流程图' : kind === 'architecture' ? '模型架构图' : kind === 'experiment' ? '实验对比图' : kind === 'paper-architecture' ? '计算机论文架构图（已保存模板）' : kind === 'agentarchive' ? 'Agent Archive 复合图' : 'AgentSquare 复合图'}，可继续拖动和改层级`, 'good');
+    toast(`已插入${kind === 'pipeline' ? '流程图' : kind === 'architecture' ? '模型架构图' : kind === 'experiment' ? '实验对比图' : kind === 'paper-architecture' ? '计算机论文架构图（已保存模板）' : kind === 'harness-loop' ? 'Data-Driven Harness 改进图' : kind === 'agentarchive' ? 'Agent Archive 复合图' : 'AgentSquare 复合图'}，可继续拖动和改层级`, 'good');
   }
 
   function addText() {
@@ -1615,6 +1660,7 @@ export function createFigureboard(root, ctx) {
   const alignCenterBtn = toolBtn('alignCenterH', '水平居中：让选中对象的中心线重合', () => alignSelected('center'));
   const alignTopBtn = toolBtn('alignTop', '顶端对齐：按最上方对象的边缘对齐', () => alignSelected('top'));
   const deleteBtn = toolBtn('trash', '删除：移除选中的对象和关联连线', () => selectedId && removeItem(selectedId), 'figureboard__danger');
+  const clearCanvasBtn = h('button', { class: 'btn btn--sm figureboard__danger figureboard__clear-btn', title: '清空当前画布全部对象；模板和素材库不受影响，可用撤销恢复', onclick: clearCanvas }, '清空');
   const pasteBtn = toolBtn('image', '把剪贴板里的图片贴进画布', pasteImage);
   const importBtn = toolBtn('image', '从文件导入图片', importImage);
   const addSiteBtn = h('button', { class: 'btn btn--sm btn--primary', onclick: addSite }, '添加网站');
@@ -1678,6 +1724,7 @@ export function createFigureboard(root, ctx) {
     h('option', { value: 'pipeline' }, '流程图模板'),
     h('option', { value: 'architecture' }, '架构图模板'),
     h('option', { value: 'paper-architecture' }, '计算机论文架构图（已保存）'),
+    h('option', { value: 'harness-loop' }, 'Data-Driven Harness 改进闭环'),
     h('option', { value: 'experiment' }, '实验图模板'),
     h('option', { value: 'agentsquare' }, 'AgentSquare 复合图'),
     h('option', { value: 'agentarchive' }, 'Agent Archive 复合图'),
@@ -1806,7 +1853,7 @@ export function createFigureboard(root, ctx) {
       layerUpBtn, layerTopBtn, rotateBtn),
     h('span', { class: 'figureboard__tool-sep' }),
     h('div', { class: 'figureboard__group', title: '编辑' },
-      undoBtn, redoBtn, copyBtn, cutBtn, pasteObjectBtn, duplicateBtn, deleteBtn),
+      undoBtn, redoBtn, copyBtn, cutBtn, pasteObjectBtn, duplicateBtn, deleteBtn, clearCanvasBtn),
     h('span', { class: 'figureboard__tool-sep' }),
     h('div', { class: 'figureboard__group', title: '画布与导出' },
       presetSelect, presetBtn, pasteBtn, importBtn, iconFor('canvasBg', 'ui-icon figureboard__tool-icon'), bgSelect, zoomOutBtn, zoomLabel, zoomInBtn, exportSvgBtn, exportPngBtn, exportJpgBtn),

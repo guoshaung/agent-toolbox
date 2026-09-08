@@ -16,10 +16,12 @@ test('third-party partitions preserve Content-Security-Policy headers', () => {
   assert.match(mainSource, /function configurePartition/);
 });
 
-test('BrowserWindows and attached webviews enable Chromium sandboxing', () => {
+test('BrowserWindows and attached webviews keep sandboxing with Mac compatibility', () => {
   assert.doesNotMatch(mainSource, /sandbox:\s*false/);
   assert.doesNotMatch(dockSource, /sandbox:\s*false/);
-  assert.match(mainSource, /webPreferences\.sandbox = true/);
+  assert.match(mainSource, /webPreferences\.sandbox = process\.platform !== 'darwin'/);
+  assert.match(mainSource, /sandbox:\s*process\.platform !== 'darwin'/);
+  assert.match(mainSource, /sandbox:\s*true/);
 });
 
 test('DeepSeek background uses Electron user CSS instead of page style injection', () => {
