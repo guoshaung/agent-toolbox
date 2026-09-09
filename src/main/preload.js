@@ -134,6 +134,17 @@ contextBridge.exposeInMainWorld('toolbox', {
     onExplainRequest: (callback) => ipcRenderer.on('term:explain-request', (_event, payload) => callback(payload)),
   },
 
+  appControls: {
+    /** 当前启停状态 + 使用的快捷键 */
+    status: () => ipcRenderer.invoke('appControls:status'),
+    /** 开启/关闭快捷控制，返回注册结果 */
+    setEnabled: (enabled) => ipcRenderer.invoke('appControls:setEnabled', enabled),
+    /** 强制关闭当前前台应用（Ctrl+Q，带安全名单） */
+    closeForeground: () => ipcRenderer.invoke('appControls:closeForeground'),
+    /** 在当前前台应用的多个窗口间循环（Ctrl+~） */
+    cycleWindows: () => ipcRenderer.invoke('appControls:cycleWindows'),
+  },
+
   lit: {
     /** 弹文件选择框导入文献到 userData/literature/，返回导入的文件列表 */
     import: () => ipcRenderer.invoke('lit:import'),

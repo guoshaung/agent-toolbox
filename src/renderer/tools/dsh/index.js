@@ -9,17 +9,16 @@ export default {
   create(root) {
     const status = h('span', { class: 'faint dsh__status' }, '正在连接 DSH…');
     let currentUrl = '';
-    let loadedLaunchUrl = '';
-    const view = h('webview', { class: 'dsh__view', partition: 'persist:dsh', src: 'about:blank', allowpopups: true });
-    const openExternal = h('button', { class: 'btn btn--sm', onclick: () => currentUrl && window.toolbox.shell.openExternal(currentUrl) }, '浏览器打开');
+    const view = h('div', { class: 'dsh__external-panel' },
+      h('strong', {}, 'DSH Web 在系统浏览器中运行'),
+      h('span', { class: 'faint' }, '启动后点击“在浏览器打开”；关闭浏览器不会停止本地 DSH 服务。'),
+    );
+    const openExternal = h('button', { class: 'btn btn--sm', onclick: () => currentUrl && window.toolbox.shell.openExternal(currentUrl) }, '在浏览器打开');
     const reloadPlugins = h('button', {
       class: 'btn btn--sm',
-      title: '忽略缓存重新加载 DSH 前端，安装或更新插件后使用',
-      onclick: () => {
-        view.reloadIgnoringCache();
-        status.textContent = '正在刷新 DSH 插件…';
-      },
-    }, '刷新插件');
+      title: '在系统浏览器中重新打开 DSH',
+      onclick: () => currentUrl && window.toolbox.shell.openExternal(currentUrl),
+    }, '重新打开');
     const start = h('button', { class: 'btn btn--sm btn--primary', onclick: startDsh }, '启动 DSH');
 
     function applyState(state) {
@@ -29,12 +28,7 @@ export default {
       status.className = `tag dsh__status ${running ? 'tag--good' : state?.status === 'error' ? 'tag--bad' : 'tag--warn'}`;
       start.disabled = running || state?.status === 'installing' || state?.status === 'starting';
       openExternal.disabled = !running;
-      // token 是一次性的：认证后 DSH 会跳转到不含 token 的根地址。
-      // 不能用 getURL() 与启动 URL 比较，否则再次进入板块会重放已消费 token。
-      if (running && currentUrl && loadedLaunchUrl !== currentUrl) {
-        loadedLaunchUrl = currentUrl;
-        view.src = currentUrl;
-      }
+      // token 是一次性的；浏览器只在用户点击按钮时打开启动地址。
     }
 
     async function startDsh() {
@@ -42,32 +36,9 @@ export default {
       const result = await window.toolbox.dsh.start();
       applyState(result);
       if (!result.ok) toast(result.error || 'DSH 启动失败', 'bad', 6000);
+      else if (result.url) window.toolbox.shell.openExternal(result.url);
     }
-    view.addEventListener('did-finish-load', async () => {
-      try {
-        const report = await view.executeJavaScript(`({
-          title: document.title,
-          textLength: document.body?.innerText?.trim().length || 0,
-          htmlLength: document.body?.innerHTML?.length || 0,
-          background: getComputedStyle(document.body).backgroundColor
-        })`);
-        status.textContent = report.textLength
-          ? `DSH Harness 已加载 · ${report.title}`
-          : `DSH 页面为空 · HTML ${report.htmlLength} 字符`;
-        console.log('[dsh webview] render report', report);
-      } catch (error) {
-        status.textContent = `DSH 页面诊断失败：${error.message}`;
-      }
-    });
-    view.addEventListener('dom-ready', () => { status.textContent = 'DSH Harness 正在渲染…'; });
-    view.addEventListener('did-fail-load', (event) => {
-      if (event.errorCode === -3) return;
-      status.textContent = `DSH 加载失败：${event.errorDescription || event.errorCode}`;
-      toast(status.textContent, 'bad', 6000);
-    });
-    view.addEventListener('console-message', (event) => {
-      if (event.level >= 2) console.error('[dsh webview]', event.message, event.sourceId, event.line);
-    });
+
     window.toolbox.dsh.onStatus(applyState);
     window.toolbox.dsh.status().then(applyState);
 
