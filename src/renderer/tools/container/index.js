@@ -136,6 +136,11 @@ export default {
           row.insertBefore(
             h('span', { class: 'container__run' },
               h('span', { class: `container__run-kind${isRunning ? ' is-on' : ''}`, title: info.command }, info.kind),
+              info.kind === 'Python' ? h('button', {
+                class: 'btn btn--xs',
+                title: '依赖管理：查看 / 安装 Python 库',
+                onclick: (event) => { event.stopPropagation(); openDeps(abs, item.name, info); },
+              }, '⬇') : null,
               h('button', {
                 class: `btn btn--xs${isRunning ? '' : ' btn--primary'}`,
                 title: isRunning ? '停止' : `启动：${info.command}`,
@@ -374,6 +379,93 @@ export default {
       runLog,
     );
 
+    // ---------- 依赖管理（Python 工具）：查看 / 手动装 / AI 补库 ----------
+    let activeDeps = null;       // { abs, name }
+    const depsTitle = h('span', { class: 'container__run-title faint' });
+    const depsDeclared = h('div', { class: 'container__deps-declared' });
+    const depsInput = h('input', { class: 'field field--sm container__deps-input', placeholder: '包名，如 requests numpy pandas（空格分隔）' });
+    const depsLog = h('pre', { class: 'container__run-log' });
+    const depsPanel = h('div', { class: 'container__run-panel container__deps-panel', hidden: true },
+      h('div', { class: 'container__run-head' },
+        h('strong', {}, '依赖管理'),
+        depsTitle,
+        h('span', { style: { flex: 1 } }),
+        h('button', { class: 'btn btn--xs btn--ghost', onclick: () => { depsPanel.hidden = true; activeDeps = null; } }, '收起')),
+      depsDeclared,
+      h('div', { class: 'container__deps-row' },
+        depsInput,
+        h('button', { class: 'btn btn--xs btn--primary', onclick: installDepsNow }, '安装'),
+        h('button', { class: 'btn btn--xs', title: '让免费 Agnes AI 分析项目缺什么库并自动安装', onclick: aiSuggestDeps }, '✦ AI 补库')),
+      depsLog,
+    );
+
+    function relFromRoot(abs) {
+      const prefix = `${containerRoot}/`;
+      return abs && abs.startsWith(prefix) ? abs.slice(prefix.length) : '';
+    }
+
+    async function refreshDeclared() {
+      if (!activeDeps) return;
+      const listed = await window.toolbox.shelf.depsList(activeDeps.abs);
+      depsDeclared.textContent = listed.ok
+        ? (listed.kind === 'uv'
+          ? `已声明（pyproject.toml）：${listed.deps.join('、') || '（空）'}`
+          : listed.kind === 'requirements'
+            ? `requirements.txt：${listed.deps.join('、') || '（空）'}`
+            : '还没有 pyproject.toml 或 requirements.txt，点「安装」会让 uv 自动建一个最小项目。')
+        : listed.error;
+      depsDeclared.classList.toggle('container__deps-declared--warn', !listed.ok);
+    }
+
+    function openDeps(abs, name) {
+      activeDeps = { abs, name };
+      depsTitle.textContent = name;
+      depsLog.textContent = '';
+      depsPanel.hidden = false;
+      refreshDeclared();
+    }
+
+    async function installDepsNow() {
+      if (!activeDeps) return;
+      const text = depsInput.value.trim();
+      if (!text) return toast('先输入要安装的包名', 'info');
+      depsLog.textContent = '正在安装（uv init/add）…';
+      const result = await window.toolbox.shelf.depsInstall({ cwd: activeDeps.abs, packages: text });
+      depsLog.textContent = result.log || '(无输出)';
+      if (result.ok) toast(`已安装：${text}`, 'good');
+      refreshDeclared();
+    }
+
+    async function aiSuggestDeps() {
+      if (!activeDeps) return;
+      status.textContent = 'AI 正在分析缺什么依赖…';
+      try {
+        // 把项目入口源码 + 已声明依赖喂给 AI，让它判断缺哪些库。
+        const relPath = relFromRoot(activeDeps.abs);
+        const entries = ['main.py', 'app.py', 'run.py', '__main__.py', 'requirements.txt', 'pyproject.toml'];
+        const snippets = [];
+        for (const entry of entries.slice(0, 4)) {
+          if (!relPath) continue;
+          const target = relPath ? `${relPath}/${entry}` : entry;
+          const read = await window.toolbox.container.readFile(target);
+          if (read.ok && read.content) snippets.push(`--- ${entry} ---\n${String(read.content).slice(0, 1200)}`);
+        }
+        const req = relPath ? await window.toolbox.container.readFile(`${relPath}/requirements.txt`) : null;
+        const declared = req && req.ok ? String(req.content || '') : '';
+        const prompt = `你是 Python 依赖分析助手。容器里有一个工具项目，以下是它的部分源码${declared ? '和已声明的依赖' : ''}。请判断运行它至少需要哪些第三方 Python 库。\n规则：1. 不重复列出已声明的库；2. 只返回标准 PyPI 包名；3. 只返回 JSON，不要 Markdown 和解释。格式：{"packages":["包名"]}\n\n已声明依赖：\n${declared || '（无）'}\n\n源码：\n${snippets.join('\n') || '（读不到源码，请按目录名推断）'}`;
+        const raw = await ai.json(prompt, { timeout: 90000 });
+        const packages = [...new Set((Array.isArray(raw?.packages) ? raw.packages : []).map(String).filter(Boolean))];
+        if (!packages.length) { depsLog.textContent = 'AI 没有给出可安装的包，可能已经够用或源码信息不足。'; return; }
+        depsLog.textContent = `AI 建议安装：${packages.join('、')}`;
+        depsInput.value = packages.join(' ');
+        await installDepsNow();
+      } catch (error) {
+        depsLog.textContent = `AI 补库失败：${error.message}`;
+      } finally {
+        status.textContent = '隔离容器 · 外部可访问，工具不越界';
+      }
+    }
+
     root.append(
       h('div', { class: 'bar bar--drag container__bar' }, h('strong', {}, '容器'), h('span', { class: 'faint' }, '工具箱本地资料空间'), h('span', { style: { flex: 1 } }), h('button', { class: 'btn btn--sm', onclick: () => window.toolbox.container.open().then((r) => r.ok ? toast('已在 Finder 中打开容器', 'good') : toast(r.error, 'bad')) }, '在 Finder 中打开')),
       h('div', { class: 'container__toolbar' },
@@ -388,6 +480,7 @@ export default {
       ),
       workspace,
       runPanel,
+      depsPanel,
     );
     newFolderInput.addEventListener('keydown', (event) => { if (event.key === 'Enter') makeFolder(); });
     refresh('');

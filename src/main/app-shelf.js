@@ -10,11 +10,54 @@
  * 不自动扫描、不自动运行、不联网取命令。
  */
 const path = require('node:path');
+const os = require('node:os');
 const fs = require('node:fs');
-const { spawn } = require('node:child_process');
+const { spawn, execFileSync } = require('node:child_process');
 
 const MAX_LOG_LINES = 400;
 const running = new Map();   // id -> { child, log: string[], startedAt, command, cwd }
+
+// 包名（可带版本约束）。AI 建议或用户输入最终都会拼进 uv 命令，
+// 过不了这个白名单的直接拒绝，防止把任意命令塞进来。
+const SAFE_PACKAGE = /^[A-Za-z0-9][A-Za-z0-9._-]*(?:(?:==|~=|!=|>=|<=|>|<)[A-Za-z0-9.*+!_-]+)?$/;
+
+/** GUI 启动的 Electron 拿到的 PATH 往往缺用户级安装目录（uv 就在 ~/.local/bin），主动补上。 */
+function toolEnv() {
+  const env = { ...process.env, PYTHONUTF8: '1', PYTHONIOENCODING: 'utf-8' };
+  const extra = [path.join(os.homedir(), '.local', 'bin'), path.join(process.env.APPDATA || '', 'npm')]
+    .filter(Boolean)
+    .filter((dir) => !String(env.PATH || '').split(path.delimiter).includes(dir));
+  if (extra.length) env.PATH = `${extra.reverse().join(path.delimiter)}${path.delimiter}${env.PATH || ''}`;
+  return env;
+}
+
+function resolveToolCommand(command) {
+  const exts = process.platform === 'win32' ? ['.exe', '.cmd', '.bat', ''] : [''];
+  for (const dir of [path.join(os.homedir(), '.local', 'bin'), path.join(os.homedir(), '.cargo', 'bin')]) {
+    for (const ext of exts) {
+      const candidate = path.join(dir, command + ext);
+      try { if (fs.statSync(candidate).isFile()) return candidate; } catch { /* 下一个位置 */ }
+    }
+  }
+  const finder = process.platform === 'win32' ? 'where.exe' : 'which';
+  try {
+    return execFileSync(finder, [command], { encoding: 'utf8', timeout: 2000 })
+      .split(/\r?\n/).map((line) => line.trim()).find(Boolean) || '';
+  } catch { return ''; }
+}
+
+/** 跑一条不会常驻的命令（uv init / uv add），把输出原样收回来展示给用户。 */
+function runCapture(command, args, cwd, timeout = 240000) {
+  return new Promise((resolve) => {
+    const child = spawn(command, args, { cwd, env: toolEnv(), stdio: ['ignore', 'pipe', 'pipe'] });
+    let out = '';
+    child.stdout.on('data', (chunk) => { out += chunk; });
+    child.stderr.on('data', (chunk) => { out += chunk; });
+    const timer = setTimeout(() => { try { child.kill(); } catch { /* 已经没了 */ } }, timeout);
+    child.on('error', (error) => { clearTimeout(timer); resolve({ ok: false, log: `${out}\n[启动失败] ${error.message}` }); });
+    child.on('close', (code) => { clearTimeout(timer); resolve({ ok: code === 0, log: out }); });
+  });
+}
 
 function tail(id) {
   const entry = running.get(id);
@@ -34,8 +77,7 @@ function pushLog(entry, chunk) {
 /**
  * 看一眼目录，猜出这是什么项目、该怎么启动。
  * 猜错没关系 —— 结果只是填进输入框的默认值，你可以改。
- */
-function probe(dir) {
+ */function probe(dir) {
   if (!dir || !fs.existsSync(dir)) return { ok: false, error: '目录不存在' };
   const has = (name) => fs.existsSync(path.join(dir, name));
   const out = { ok: true, dir, name: path.basename(dir), kind: '未知', command: '', notes: [] };
@@ -57,7 +99,7 @@ function probe(dir) {
       out.command = `uv run --with-requirements requirements.txt ${pyEntry}`;
       out.notes.push('使用 requirements.txt 创建并复用 uv 运行环境（需要本机装了 uv）');
     } else {
-      out.command = `python3 ${pyEntry}`;
+      out.command = `${process.platform === 'win32' ? 'python' : 'python3'} ${pyEntry}`;
     }
     if (has('requirements.txt')) out.notes.push('有 requirements.txt，首次启动前可以点「装依赖」');
   } else if (has('package.json')) {
@@ -77,6 +119,66 @@ function probe(dir) {
   return out;
 }
 
+function normalizePackages(value) {
+  const packages = String(value || '').split(/[\s,]+/).map((item) => item.trim()).filter(Boolean);
+  if (!packages.length) return { packages: [], error: '请输入至少一个包名，例如 requests 或 numpy。' };
+  if (packages.length > 20) return { packages: [], error: '一次最多安装 20 个包。' };
+  const invalid = packages.find((item) => !SAFE_PACKAGE.test(item));
+  if (invalid) return { packages: [], error: `包名格式不安全：${invalid}` };
+  return { packages };
+}
+
+/** 列出容器里某个工具目录已声明的依赖，给「装依赖」面板做展示。 */
+function depsList(dir) {
+  if (!dir || !fs.existsSync(dir)) return { ok: false, error: '目录不存在' };
+  const deps = [];
+  let kind = 'none';
+  const pyproject = path.join(dir, 'pyproject.toml');
+  const requirements = path.join(dir, 'requirements.txt');
+  if (fs.existsSync(pyproject)) {
+    kind = 'uv';
+    try {
+      // 只做展示用的宽松解析：抓 [project] dependencies 数组里的字符串项。
+      const block = fs.readFileSync(pyproject, 'utf8').match(/dependencies\s*=\s*\[([\s\S]*?)\]/);
+      if (block) for (const match of block[1].matchAll(/["']([^"']+)["']/g)) deps.push(match[1]);
+    } catch { /* 读不出来就当空列表 */ }
+  } else if (fs.existsSync(requirements)) {
+    kind = 'requirements';
+    try {
+      for (const line of fs.readFileSync(requirements, 'utf8').split(/\r?\n/)) {
+        const item = line.trim();
+        if (item && !item.startsWith('#') && !item.startsWith('-')) deps.push(item);
+      }
+    } catch { /* 同上 */ }
+  }
+  return { ok: true, kind, deps };
+}
+
+/**
+ * 给容器里的工具装依赖。有 pyproject.toml 就直接 uv add（以后 uv run 复用同一个环境）；
+ * 纯脚本目录先 uv init --bare 建一个最小项目，再 add，让「放进来就能装库」对任何工具成立。
+ */
+async function installDeps({ cwd, packages }) {
+  if (!cwd || !fs.existsSync(cwd)) return { ok: false, log: '目录不存在' };
+  const normalized = normalizePackages(packages);
+  if (normalized.error) return { ok: false, log: normalized.error };
+  const uv = resolveToolCommand('uv');
+  if (!uv) return { ok: false, log: '没有找到 uv。请先安装 uv（https://docs.astral.sh/uv/），装完重启工具箱。' };
+
+  const log = [];
+  if (!fs.existsSync(path.join(cwd, 'pyproject.toml'))) {
+    const init = await runCapture(uv, ['init', '--bare', '--quiet'], cwd);
+    log.push('$ uv init --bare', init.log.trim() || '(已创建 pyproject.toml)');
+    if (!init.ok) return { ok: false, log: [...log, '初始化 uv 项目失败，请看上方输出。'].join('\n') };
+  }
+  log.push(`$ uv add ${normalized.packages.join(' ')}`);
+  const install = await runCapture(uv, ['add', ...normalized.packages], cwd);
+  log.push(install.log.trim() || '(无输出)');
+  if (install.ok) log.push(`[完成] 已安装：${normalized.packages.join(', ')}`);
+  else log.push('[失败] 依赖没有装上，请看上方输出。');
+  return { ok: install.ok, log: log.join('\n') };
+}
+
 function start({ id, cwd, command }) {
   if (!id || !command) return { ok: false, error: '缺少启动命令' };
   if (running.has(id)) return { ok: false, error: '这个工具已经在运行了' };
@@ -84,12 +186,22 @@ function start({ id, cwd, command }) {
 
   // 走登录 shell：这样 PATH 里才有 uv / pyenv / nvm 装的东西，
   // 不然从 GUI 启动的 Electron 拿到的是一个很干净的 PATH，常见的「命令找不到」都出在这。
-  const child = spawn(process.env.SHELL || '/bin/bash', ['-lc', command], {
-    cwd: cwd || process.env.HOME,
-    env: { ...process.env },
-    stdio: ['ignore', 'pipe', 'pipe'],
-    detached: false,
-  });
+  // Windows 没有 bash 登录 shell（-lc 会被 PowerShell 当成命令名报
+  // CommandNotFoundException），改用 cmd.exe；PATH 和编码由 toolEnv() 补齐。
+  const isWin = process.platform === 'win32';
+  const child = isWin
+    ? spawn(process.env.ComSpec || 'cmd.exe', ['/d', '/s', '/c', command], {
+      cwd: cwd || os.homedir(),
+      env: toolEnv(),
+      stdio: ['ignore', 'pipe', 'pipe'],
+      detached: false,
+    })
+    : spawn(process.env.SHELL || '/bin/bash', ['-lc', command], {
+      cwd: cwd || process.env.HOME,
+      env: toolEnv(),
+      stdio: ['ignore', 'pipe', 'pipe'],
+      detached: false,
+    });
 
   const entry = { child, log: [], startedAt: Date.now(), command, cwd };
   running.set(id, entry);
@@ -111,10 +223,16 @@ function stop(id) {
   const entry = running.get(id);
   if (!entry) return { ok: false, error: '没在运行' };
   if (entry.child) {
-    try { entry.child.kill('SIGTERM'); } catch { /* 已经没了 */ }
-    // 给 2 秒体面退出，不行再来硬的
-    const child = entry.child;
-    setTimeout(() => { try { child?.kill('SIGKILL'); } catch { /* 忽略 */ } }, 2000);
+    // Windows 上是 cmd.exe 包了一层，直接 kill 只杀 shell，会留下它拉起的子进程；
+    // 用 taskkill /T 把整棵进程树收掉，避免工具停在后台占着端口。
+    if (process.platform === 'win32') {
+      try { execFileSync('taskkill', ['/pid', String(entry.child.pid), '/T', '/F'], { windowsHide: true, stdio: 'ignore' }); } catch { /* 进程可能已经没了 */ }
+    } else {
+      try { entry.child.kill('SIGTERM'); } catch { /* 已经没了 */ }
+      // 给 2 秒体面退出，不行再来硬的
+      const child = entry.child;
+      setTimeout(() => { try { child?.kill('SIGKILL'); } catch { /* 忽略 */ } }, 2000);
+    }
   }
   return { ok: true };
 }
@@ -163,6 +281,8 @@ function registerShelfIpc(ipcMain, { dialog, getWindow }) {
   ipcMain.handle('shelf:forget', (_e, id) => forget(id));
   ipcMain.handle('shelf:status', () => status());
   ipcMain.handle('shelf:log', (_e, id) => tail(id));
+  ipcMain.handle('shelf:depsList', (_e, dir) => depsList(dir));
+  ipcMain.handle('shelf:depsInstall', (_e, payload) => installDeps(payload || {}));
 }
 
 /** 应用退出时把还开着的子进程收掉，别留孤儿。 */
@@ -170,4 +290,4 @@ function stopAllShelfApps() {
   for (const id of [...running.keys()]) stop(id);
 }
 
-module.exports = { registerShelfIpc, stopAllShelfApps, probe };
+module.exports = { registerShelfIpc, stopAllShelfApps, probe, depsList, installDeps, normalizePackages };
