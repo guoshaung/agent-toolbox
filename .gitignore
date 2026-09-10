@@ -10,3 +10,19 @@ assets/coach-extension/defaults.local.json
 
 # 本地构建环境（Android SDK / Gradle 缓存等，勿提交）
 work/
+
+# Voicebox 外部工具产物：二进制/模型/音频/发音样本/下载包一律不入库。
+# 实际产物都在 userData/external/voicebox（仓库外），以下为纵深防御。
+external/
+voicebox/
+downloads/
+models/
+audio/
+profiles/
+generations/
+captures/
+*.wav
+*.mp3
+*.m4a
+*.flac
+*.ogg
