@@ -1,5 +1,8 @@
 'use strict';
 
+const fs = require('node:fs');
+const os = require('node:os');
+const path = require('node:path');
 const { execFile } = require('node:child_process');
 const { promisify } = require('node:util');
 
@@ -13,6 +16,7 @@ const SAFE_PROCESS_NAMES = new Set([
 ]);
 
 const WINDOWS_SCRIPT = String.raw`
+param([string]$Command, [string[]]$Rest)
 Add-Type @'
 using System;
 using System.Text;
@@ -35,7 +39,7 @@ public static class AppControlsWin32 {
   public static string Title(IntPtr h) { var s = new StringBuilder(512); GetWindowText(h, s, s.Capacity); return s.ToString(); }
 }
 '@
-function Out($value) { $value | ConvertTo-Json -Compress }
+function Out($value) { Write-Output (($value | ConvertTo-Json -Compress) -join '') }
 $own = [uint32]$env:AGENT_TOOLBOX_OWN_PID
 if ($Command -eq 'foreground') { $h=[AppControlsWin32]::Foreground(); @{handle=$h.ToInt64().ToString();pid=[AppControlsWin32]::Pid($h);title=[AppControlsWin32]::Title($h)} | Out; exit }
 if ($Command -eq 'windows') { $items = @([AppControlsWin32]::Windows() | ForEach-Object { @{handle=$_.ToInt64().ToString();pid=[AppControlsWin32]::Pid($_);title=[AppControlsWin32]::Title($_)} }); @{windows=$items} | Out; exit }
@@ -44,9 +48,15 @@ if ($Command -eq 'activate') { $ok=[AppControlsWin32]::Activate([IntPtr]::new([l
 `;
 
 function runPowerShell(command, args, { exec = execFileAsync, env = process.env } = {}) {
+  // PowerShell 5 的 -Command 只取第一个字符串作为命令，多余的参数会被当成独立命令
+  // 解析（日志里常见的 “foreground 不是 cmdlet” 就是这么来的）。
+  // 改成写临时 .ps1 再用 -File 执行，与 window-dock 同一模式；脚本含中文，需带 BOM。
+  const script = path.join(os.tmpdir(), `agent-toolbox-appcontrols-${process.pid}.ps1`);
+  fs.writeFileSync(script, `\uFEFF${WINDOWS_SCRIPT}`, 'utf8');
   const nextEnv = { ...env, AGENT_TOOLBOX_OWN_PID: String(process.pid) };
-  return exec('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', WINDOWS_SCRIPT, command, ...(args || []).map(String)], { env: nextEnv, timeout: 5000 })
-    .then(({ stdout }) => JSON.parse(String(stdout || '{}').trim() || '{}'));
+  return exec('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', script, command, ...(args || []).map(String)], { env: nextEnv, timeout: 5000 })
+    .then(({ stdout }) => JSON.parse(String(stdout || '{}').trim() || '{}'))
+    .finally(() => { try { fs.unlinkSync(script); } catch { /* 临时脚本清理失败可忽略 */ } });
 }
 
 class AppControls {

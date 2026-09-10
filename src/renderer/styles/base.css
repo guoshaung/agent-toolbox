@@ -139,6 +139,27 @@ button, input, textarea, select { font-family: inherit; font-size: inherit; colo
 .rail__icon .ui-icon { width: 21px; height: 21px; stroke-width: 1.7; }
 .rail__item:hover .rail__icon { transform: scale(1.12) translateY(-1px); }
 .rail__item.is-active .rail__icon { transform: translateY(-2px) scale(1.12); filter: drop-shadow(0 0 10px rgba(91,140,255,.45)); }
+
+.rail--right {
+  order: 3;
+  border-right: 0;
+  border-left: 1px solid var(--line-soft);
+  background-position: top left;
+}
+.rail--right[hidden] { display: none; }
+.rail--right .rail__pinned { overflow-y: auto; }
+.rail--right .rail__item { cursor: pointer; }
+.rail--right .rail__item::after {
+  content: '右键移除';
+  position: absolute;
+  right: 5px;
+  bottom: 2px;
+  opacity: 0;
+  color: var(--text-faint);
+  font-size: 7px;
+  pointer-events: none;
+}
+.rail--right .rail__item:hover::after { opacity: .8; }
 .rail__label { font-size: 10.5px; letter-spacing: .2px; position: relative; }
 .rail__spacer { flex: 1; }
 .rail__pinned { display: flex; min-height: 0; flex-direction: column; }
@@ -421,7 +442,6 @@ webview { display: flex; flex: 1; min-height: 0; background: #fff; }
     0%, 100% { filter: drop-shadow(0 0 8px rgba(0,255,156,.22)) brightness(1); }
     30%      { filter: drop-shadow(0 0 20px rgba(0,255,156,.9)) brightness(1.6); }
   }
-}
 }
 .rail__logo svg { display: block; width: 100%; height: 100%; }
 .rail__pin {
