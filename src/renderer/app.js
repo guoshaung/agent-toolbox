@@ -3,7 +3,8 @@ import { DeepSeekBridge } from './core/deepseek-bridge.js';
 import { Config } from './core/config.js';
 import { AI } from './core/ai.js';
 import { h, toast } from './core/ui.js';
-import { LOGO_MARK_SVG } from './core/logo.js';
+import { logoById, applyAppIcon, applyLogo } from './core/logos.js';
+import { applyStoredTheme, applyStoredEffect } from './core/themes.js';
 import { iconFor } from './core/icons.js';
 import { buildTermPrompt, buildTermSystemPrompt, normalizeTermResult } from './tools/terms/prompt.js';
 import { createSwitcher } from './core/switcher.js';
@@ -25,6 +26,8 @@ const atelierBanner = h('header', { class: 'atelier-banner', 'aria-label': 'Agen
 stage.appendChild(atelierBanner);
 
 const config = await Config.load();
+applyStoredTheme(config);
+applyStoredEffect(config);
 const bridge = new DeepSeekBridge();
 bridge.attach(document.getElementById('bridge-host'));
 
@@ -63,12 +66,21 @@ let switcher = null;
 let currentId = null;
 const SETTINGS_ID = 'settings';
 const MAX_PINNED = 7;
-const DEFAULT_PINNED = ['ask', 'terms', 'docs', 'typing', 'focus', 'skills', 'research'];
+const DEFAULT_PINNED = ['ask', 'terms', 'docs', 'controls', 'focus', 'skills', 'research'];
 const pinEligibleTools = TOOLS.filter((tool) => tool.id !== SETTINGS_ID && tool.id !== 'tasks');
-let pinnedIds = config.get('ui.pinnedTools', DEFAULT_PINNED)
-  .filter((id, index, list) => pinEligibleTools.some((tool) => tool.id === id) && list.indexOf(id) === index)
-  .slice(0, MAX_PINNED);
-if (!pinnedIds.length) pinnedIds = [...DEFAULT_PINNED];
+let pinnedIds = config.get('ui.pinnedTools', null);
+if (!pinnedIds || !pinnedIds.length) {
+  pinnedIds = [...DEFAULT_PINNED]; // 首次运行或已清空：用含快捷控制的默认列表
+} else {
+  pinnedIds = pinnedIds
+    .filter((id, index, list) => pinEligibleTools.some((tool) => tool.id === id) && list.indexOf(id) === index)
+    .slice(0, MAX_PINNED);
+  // 老配置里没有快捷控制：自动补到左侧，否则新栏目在存量用户这边永远藏在「更多」里
+  if (!pinnedIds.includes('controls')) {
+    if (pinnedIds.length >= MAX_PINNED) pinnedIds = [...pinnedIds.slice(0, MAX_PINNED - 1), 'controls'];
+    else pinnedIds = [...pinnedIds, 'controls'];
+  }
+}
 
 const pinnedHost = h('div', { class: 'rail__pinned' });
 const libraryBody = h('div', { class: 'rail-library__body' });
@@ -263,7 +275,11 @@ function renderDockPin(state) {
 }
 
 /** 侧栏 logo。切工具时让它响应一下 —— 静止的标记会让整个侧栏显得是死的 */
-const railLogo = h('div', { class: 'rail__logo', title: 'Agent 工具箱 · 双击重启应用', html: LOGO_MARK_SVG });
+const railLogo = h('div', { class: 'rail__logo', title: 'Agent 工具箱 · 双击重启应用', html: logoById(config.get('ui.logo', 'neon')).svg });
+// 侧栏标记 + 右下角品牌纹章统一应用当前 logo
+applyLogo(config.get('ui.logo', 'neon'));
+// 同步应用图标（窗口/任务栏/Dock）：渲染进程把 SVG 转成 PNG 后交给主进程
+applyAppIcon(config.get('ui.logo', 'neon')).catch((error) => console.warn('[app] 应用图标更新失败:', error.message));
 let restarting = false;
 railLogo.addEventListener('dblclick', async () => {
   if (restarting) return;
