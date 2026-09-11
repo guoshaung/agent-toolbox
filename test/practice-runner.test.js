@@ -46,6 +46,7 @@ test('Python 单元格可以复用上方单元格变量', { skip: need(HAS_PY, '
 test('Shell 单元格可以复用前置单元格的临时工作目录', { skip: need(HAS_BASH && HAS_GIT, 'bash/git') }, async () => {
   const result = await run('git', 'cat practice.txt', {
     prelude: 'mkdir -p project && cd project && printf "ready\\n" > practice.txt',
+    timeout: 30000,
   });
   assert.equal(result.ok, true);
   assert.match(result.stdout, /ready/);

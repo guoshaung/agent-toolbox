@@ -111,6 +111,11 @@ contextBridge.exposeInMainWorld('toolbox', {
     terminal: (payload) => ipcRenderer.invoke('practice:terminal', payload),
   },
 
+  presentation: {
+    /** 导出结构化科研演示为可编辑 PPTX */
+    exportPptx: (deck) => ipcRenderer.invoke('presentation:exportPptx', deck),
+  },
+
   dock: {
     status: () => ipcRenderer.invoke('dock:status'),
     requestPermission: () => ipcRenderer.invoke('dock:requestPermission'),
