@@ -6,6 +6,7 @@ import { diffWords } from './text-diff.js';
 import {
   progressLabel, scrollProgress, scrollTopForProgress, visiblePage,
 } from './reading-progress.js';
+import { pushSearchHistory } from './search-history.js';
 
 const FORMAT_ICONS = {
   pdf: '📕', doc: '📘', docx: '📘', txt: '📄', md: '📄',
@@ -61,6 +62,7 @@ export function createLiterature(root, ctx) {
   let paperCandidates = [];
   let libraryCandidates = [];
   let autoDownloadBusy = false;
+  let searchHistory = (config.get('research.litSearchHistory', []) || []).filter((entry) => entry?.query);
   let readingProgressTimer = null;
   let pdfProgressHandler = null;
   let textProgressElement = null;
@@ -68,6 +70,7 @@ export function createLiterature(root, ctx) {
 
   const listEl = h('div', { class: 'lit__list' });
   const discoveryList = h('div', { class: 'lit__discovery-list' });
+  const searchHistoryEl = h('div', { class: 'lit__search-history' });
   const libraryList = h('div', { class: 'lit__library-list' });
   const noticeEl = h('div', { class: 'lit__notice', hidden: true });
   const viewerEl = h('div', { class: 'lit__viewer' });
@@ -2261,6 +2264,48 @@ export function createLiterature(root, ctx) {
     }
   }
 
+  async function clearSearchHistory() {
+    searchHistory = [];
+    await config.set('research.litSearchHistory', searchHistory);
+    renderSearchHistory();
+  }
+
+  function rememberSearch(entry) {
+    searchHistory = pushSearchHistory(searchHistory, entry);
+    void config.set('research.litSearchHistory', searchHistory);
+    renderSearchHistory();
+  }
+
+  function renderSearchHistory() {
+    searchHistoryEl.replaceChildren();
+    if (!searchHistory.length) return;
+    const list = h('div', { class: 'lit__search-history-list' });
+    for (const entry of searchHistory) {
+      const button = h('button', {
+        class: 'lit__search-history-item',
+        title: '恢复这次检索条件并重新搜索',
+        onclick: () => {
+          directionInput.value = entry.query;
+          yearFromInput.value = String(entry.yearFrom || '');
+          yearToInput.value = String(entry.yearTo || '');
+          openOnlyInput.checked = Boolean(entry.openAccessOnly);
+          discoverByDirection();
+        },
+      },
+        h('strong', {}, entry.query),
+        h('span', { class: 'faint' }, `${entry.yearFrom || '不限'}-${entry.yearTo || '不限'}${entry.openAccessOnly ? ' · 开放全文' : ''}`),
+      );
+      list.appendChild(button);
+    }
+    searchHistoryEl.append(
+      h('div', { class: 'lit__search-history-head' },
+        h('span', {}, '最近检索'),
+        h('button', { class: 'lit__search-history-clear', onclick: clearSearchHistory }, '清空'),
+      ),
+      list,
+    );
+  }
+
   async function discoverByDirection() {
     const direction = directionInput.value.trim();
     if (!direction) return toast('先写一个研究方向，例如：多模态大模型的幻觉评测', 'info');
@@ -2281,6 +2326,12 @@ export function createLiterature(root, ctx) {
         return;
       }
       paperCandidates = result.papers || [];
+      rememberSearch({
+        query: direction,
+        yearFrom: result.yearFrom,
+        yearTo: result.yearTo,
+        openAccessOnly: openOnlyInput.checked,
+      });
       discoveryStatus.textContent = paperCandidates.length
         ? `${result.sources.join(' + ')} · ${result.yearFrom}-${result.yearTo} · 已过滤标题低相关结果`
         : '没有找到标题高度相关的论文。请减少泛词，改用 2-5 个核心主题词，或扩大年份范围。';
@@ -2443,6 +2494,7 @@ export function createLiterature(root, ctx) {
         h('label', { class: 'lit__oa-label' }, openOnlyInput, '只看开放全文'),
         discoverBtn,
       ),
+      searchHistoryEl,
       discoveryStatus,
       discoveryList,
     ),
@@ -2519,6 +2571,7 @@ export function createLiterature(root, ctx) {
       ),
     ),
   );
+  renderSearchHistory();
   viewerIdle();
   renderList();
   lit.onDownloaded(importDownloaded);
