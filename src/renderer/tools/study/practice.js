@@ -8,6 +8,7 @@ import { FRAMEWORK_TRACKS } from './data/frameworks.js';
 import { attachEditorKeys } from './editor-keys.js';
 import { highlight, LANG_BY_TRACK } from './highlight.js';
 import { EXTRA_TRACKS } from './data/practice-extra.js';
+import { PRACTICE_PROJECTS } from './data/projects.js';
 import {
   buildErrorDiagnosisPrompt,
   diagnoseRunError,
@@ -81,6 +82,7 @@ export function createPracticePanel(ctx) {
   const { ai, config } = ctx;
   let track = PRACTICE_TRACKS[0];
   let sampleIndex = 0;
+  let projectId = null;
   let environment = {};
   let annotationRunId = 0;
   let setupBusy = false;
@@ -91,6 +93,11 @@ export function createPracticePanel(ctx) {
 
   const trackSelect = h('select', { class: 'field practice__track-select' }, ...PRACTICE_TRACKS.map((item) => h('option', { value: item.id }, `${item.icon} ${item.name}`)));
   const levelSelect = h('select', { class: 'field practice__sample-select' });
+  const projectSelect = h('select', { class: 'field practice__project-select' },
+    h('option', { value: '' }, '— 选择项目挑战 —'),
+    ...PRACTICE_PROJECTS.map((project) => h('option', { value: project.id }, `${project.icon} ${project.title}`)));
+  const projectInfo = h('section', { class: 'practice__project-info', hidden: true });
+  const projectLoadBtn = h('button', { class: 'btn btn--sm btn--primary', onclick: loadProject }, '载入项目');
   const description = h('span', { class: 'practice__description' });
   const runtimeStatus = h('span', { class: 'practice__runtime-status' }, '检测中…');
   const cellCount = h('span', { class: 'faint' }, '0 个单元格');
@@ -100,13 +107,15 @@ export function createPracticePanel(ctx) {
 
   function currentSample() { return track.samples[sampleIndex] || track.samples[0]; }
 
-  function notebookStateKey() { return `${track.id}:${sampleIndex}`; }
+  function notebookStateKey() { return projectId ? `project:${projectId}` : `${track.id}:${sampleIndex}`; }
 
   function persistNotebook() {
     if (!cells.length) return;
     const notebooks = { ...(config.get('practice.notebooks', {}) || {}) };
     notebooks[notebookStateKey()] = cells.slice(0, 40).map((cell) => ({
       code: cell.editor.value,
+      title: cell.title,
+      purpose: cell.purpose,
       executionCount: cell.executionCount || 0,
       result: cell.result ? {
         ok: Boolean(cell.result.ok),
@@ -129,6 +138,59 @@ export function createPracticePanel(ctx) {
     cells = Array.isArray(saved) && saved.length ? saved.map((snapshot) => restoreNotebookCell(snapshot)) : [createCell(currentSample().code)];
     renderNotebook(cells[0], false);
     updateMeta();
+  }
+
+  function selectedProject() {
+    return PRACTICE_PROJECTS.find((project) => project.id === projectSelect.value) || null;
+  }
+
+  function renderProjectInfo(project = selectedProject()) {
+    projectInfo.textContent = '';
+    if (!project) {
+      projectInfo.setAttribute('hidden', '');
+      return;
+    }
+    projectInfo.removeAttribute('hidden');
+    projectInfo.append(
+      h('div', { class: 'practice__project-head' },
+        h('div', {}, h('strong', {}, `${project.icon} ${project.title}`), h('span', { class: 'tag tag--good' }, project.category)),
+        projectLoadBtn,
+      ),
+      h('p', { class: 'practice__project-summary' }, project.summary),
+      h('div', { class: 'practice__project-objective' }, h('strong', {}, '完成目标：'), project.objective),
+      h('div', { class: 'practice__project-meta' },
+        h('span', {}, `轨道：${project.trackId}`),
+        h('span', {}, `难度：${project.level}`),
+        h('span', {}, `技能：${project.skills.join(' · ')}`),
+      ),
+      h('div', { class: 'practice__project-steps' },
+        ...project.steps.map((step, index) => h('span', { class: 'practice__project-step' }, `${index + 1}. ${step}`)),
+      ),
+    );
+  }
+
+  function renderProjectCells(project) {
+    const saved = (config.get('practice.notebooks', {}) || {})[notebookStateKey()];
+    cells = Array.isArray(saved) && saved.length
+      ? saved.map((snapshot) => restoreNotebookCell(snapshot))
+      : project.cells.map((snapshot) => createCell(snapshot.code, snapshot));
+    renderNotebook(cells[0], false);
+    updateMeta();
+  }
+
+  function loadProject() {
+    const project = selectedProject();
+    if (!project) return toast('先选择一个项目挑战', 'info');
+    persistNotebook();
+    projectId = project.id;
+    track = PRACTICE_TRACKS.find((item) => item.id === project.trackId) || PRACTICE_TRACKS[0];
+    trackSelect.value = track.id;
+    sampleIndex = 0;
+    levelSelect.replaceChildren(...track.samples.map((item, index) => h('option', { value: String(index) }, `${item.level} · ${item.title}`)));
+    levelSelect.value = '0';
+    renderProjectCells(project);
+    renderProjectInfo(project);
+    toast(`已载入项目：${project.title}`, 'good');
   }
 
   function updateMeta(cell = activeCell) {
@@ -274,7 +336,7 @@ export function createPracticePanel(ctx) {
     cell.resultStatus.className = 'practice__result-status is-running';
     try {
       const cellIndex = cells.indexOf(cell);
-      const prelude = track.runtime.includes('python3')
+      const prelude = track.runtime.includes('python3') || track.runtime.includes('bash')
         ? cells.slice(0, Math.max(0, cellIndex)).map((item) => item.editor.value.trim()).filter(Boolean).join('\n\n')
         : '';
       const result = await window.toolbox.practice.run({ track: track.id, code: cell.editor.value, prelude, timeout: 12000 });
@@ -539,8 +601,12 @@ export function createPracticePanel(ctx) {
     for (const cell of cells) paintHighlight(cell);
   }
 
-  function createCell(code = '') {
-    const cell = { id: nextCellId++, code, runId: 0, executionCount: 0 };
+  function createCell(code = '', metadata = {}) {
+    const cell = {
+      id: nextCellId++, code, runId: 0, executionCount: 0,
+      title: metadata.title || '代码单元格',
+      purpose: metadata.purpose || '',
+    };
     cell.gutter = h('div', { class: 'practice__cell-gutter' }, 'In [ ]');
     cell.editor = h('textarea', { class: 'practice__editor', spellcheck: false, wrap: 'off' }, code);
     // 高亮层：垫在文本框底下，文本框自己的字设成透明，只留光标。
@@ -599,7 +665,7 @@ export function createPracticePanel(ctx) {
       cell.gutter,
       h('div', { class: 'practice__cell-main' },
         h('div', { class: 'practice__pane-head' },
-          h('div', {}, h('strong', {}, '代码单元格'), h('span', { class: 'faint' }, track.runtime.includes('python3') ? ' 可自由修改 · 可复用上方变量' : ' 可自由修改')),
+          h('div', {}, h('strong', {}, cell.title), h('span', { class: 'faint' }, cell.purpose || (track.runtime.includes('python3') ? ' 可自由修改 · 可复用上方变量' : ' 可自由修改'))),
           cell.lineCount,
         ),
         cell.editorWrap,
@@ -641,7 +707,7 @@ export function createPracticePanel(ctx) {
   }
 
   function restoreNotebookCell(snapshot = {}) {
-    const cell = createCell(String(snapshot.code || ''));
+    const cell = createCell(String(snapshot.code || ''), snapshot);
     cell.executionCount = Number(snapshot.executionCount) || 0;
     cell.gutter.textContent = cell.executionCount ? `In [${cell.executionCount}]` : 'In [ ]';
     if (snapshot.result) {
@@ -674,11 +740,22 @@ export function createPracticePanel(ctx) {
 
   trackSelect.addEventListener('change', () => {
     persistNotebook();
+    projectId = null;
+    projectSelect.value = '';
+    renderProjectInfo(null);
     track = PRACTICE_TRACKS.find((item) => item.id === trackSelect.value) || PRACTICE_TRACKS[0];
     sampleIndex = 0;
     renderSamples();
   });
-  levelSelect.addEventListener('change', () => { persistNotebook(); sampleIndex = Number(levelSelect.value); renderSamples(); });
+  levelSelect.addEventListener('change', () => {
+    persistNotebook();
+    projectId = null;
+    projectSelect.value = '';
+    renderProjectInfo(null);
+    sampleIndex = Number(levelSelect.value);
+    renderSamples();
+  });
+  projectSelect.addEventListener('change', () => renderProjectInfo());
 
   // ---------- 代码文件夹：把练的东西存到本机，下次接着改 ----------
   //
@@ -926,12 +1003,14 @@ export function createPracticePanel(ctx) {
     h('div', { class: 'practice__head' },
       h('label', {}, h('span', { class: 'practice__label' }, '领域'), trackSelect),
       h('label', {}, h('span', { class: 'practice__label' }, '练习'), levelSelect),
+      h('label', {}, h('span', { class: 'practice__label' }, '项目挑战'), projectSelect),
     ),
     h('div', { class: 'practice__info-row' },
       description,
       setupBtn,
       runtimeStatus,
     ),
+    projectInfo,
     terminalPanel,
     workspacePanel,
     h('div', { class: 'practice__notebook' },

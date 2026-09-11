@@ -14,6 +14,8 @@ function hasCommand(name) {
   try { execFileSync(probe, [name], { stdio: 'ignore' }); return true; } catch { return false; }
 }
 const HAS_UV = hasCommand('uv');
+const HAS_BASH = hasCommand('bash');
+const HAS_GIT = hasCommand('git');
 // 判断要和被测代码实际调用的命令一致：runner 调的是 python3。
 // 写成 python3 || python 会在 Windows 上误判 —— 那里有 python 没有 python3，
 // 于是用例照跑，然后挂在「找不到 python3」上。
@@ -39,6 +41,14 @@ test('Python 单元格可以复用上方单元格变量', { skip: need(HAS_PY, '
   const result = await run('python', 'print(answer + 1)', { prelude: 'answer = 41' });
   assert.equal(result.ok, true);
   assert.match(result.stdout, /42/);
+});
+
+test('Shell 单元格可以复用前置单元格的临时工作目录', { skip: need(HAS_BASH && HAS_GIT, 'bash/git') }, async () => {
+  const result = await run('git', 'cat practice.txt', {
+    prelude: 'mkdir -p project && cd project && printf "ready\\n" > practice.txt',
+  });
+  assert.equal(result.ok, true);
+  assert.match(result.stdout, /ready/);
 });
 
 test('SQL 实践在临时数据库中运行查询', { skip: need(HAS_SQLITE, 'sqlite3') }, async () => {

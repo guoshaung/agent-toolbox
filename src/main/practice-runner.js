@@ -242,7 +242,8 @@ async function run(trackId, code, options = {}) {
       const shell = resolveCommand('bash');
       const uvPath = trackId === 'uv' ? resolveCommand('uv') : '';
       const pathPrefix = uvPath ? `export PATH=${JSON.stringify(path.dirname(uvPath))}:$PATH\n` : '';
-      return { ...(await runProcess(shell, ['-lc', `set -o pipefail\n${pathPrefix}source /dev/stdin`], code, cwd, options.timeout)), engine: trackId === 'uv' ? 'uv' : 'bash' };
+      const source = prelude.trim() ? `${prelude}\n\n${code}` : code;
+      return { ...(await runProcess(shell, ['-lc', `set -o pipefail\n${pathPrefix}source /dev/stdin`], source, cwd, options.timeout)), engine: trackId === 'uv' ? 'uv' : 'bash' };
     }
     if (trackId === 'sql') {
       const database = path.join(cwd, 'practice.sqlite');
