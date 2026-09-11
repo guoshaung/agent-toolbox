@@ -277,17 +277,6 @@ contextBridge.exposeInMainWorld('toolbox', {
     onStatus: (callback) => ipcRenderer.on('tavern:status', (_event, state) => callback(state)),
   },
 
-  appControls: {
-    /** 当前启停状态 + 使用的快捷键 */
-    status: () => ipcRenderer.invoke('appControls:status'),
-    /** 开启/关闭快捷控制，返回注册结果 */
-    setEnabled: (enabled) => ipcRenderer.invoke('appControls:setEnabled', enabled),
-    /** 强制关闭当前前台应用（Ctrl+Q，带安全名单） */
-    closeForeground: () => ipcRenderer.invoke('appControls:closeForeground'),
-    /** 在当前前台应用的多个窗口间循环（Ctrl+~） */
-    cycleWindows: () => ipcRenderer.invoke('appControls:cycleWindows'),
-  },
-
   update: {
     /** 手动检查更新（会弹窗告诉你结果） */
     check: () => ipcRenderer.invoke('update:check'),

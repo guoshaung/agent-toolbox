@@ -11,9 +11,10 @@ const execFileAsync = promisify(execFile);
  * 按文献名自动下载免费 PDF。
  *
  * 检索顺序（export.arxiv.org 限流、Semantic Scholar 被墙，不用）：
- *   1. 输入直接是 arXiv 号/链接 → arxiv.org/pdf 直下
- *   2. OpenAlex autocomplete 标题直查 + 全文 search → arXiv 位置 / OA PDF
- *   3. Crossref 标题搜索 → link 里 content-type 为 application/pdf 的直链
+ *   1. arXiv 号/链接 → 规范化为 arxiv.org/pdf 直链
+ *   2. DOI 链接/编号 → OpenAlex 解析开放全文位置
+ *   3. 普通 HTTP(S) → 直接尝试下载并校验 PDF 魔数
+ *   4. 普通文献名 → DBLP / OpenAlex / Crossref / Europe PMC 并行检索
  * 都找不到免费源就明确报错，让用户自己下载后手动导入。
  */
 
@@ -173,6 +174,11 @@ function extractArxivId(input) {
   return m ? m[1] : null;
 }
 
+function extractDoi(input) {
+  const match = String(input || '').match(/\b10\.\d{4,9}\/[-._;()/:A-Z0-9]+/i);
+  return match ? normalizeDoi(match[0]) : '';
+}
+
 /** 从一条 OpenAlex 记录里挑最靠谱的 PDF：arXiv 号（含 doi.org/10.48550 形式）> 任意 PDF 直链 > OA 位置 */
 function pickPdfFromWork(w) {
   let anyPdf = null;
@@ -305,7 +311,12 @@ function titleFromPdfUrl(value) {
 }
 
 function normalizeDoi(value) {
-  return String(value || '').trim().replace(/^https?:\/\/(?:dx\.)?doi\.org\//i, '').replace(/^doi:\s*/i, '');
+  return String(value || '')
+    .trim()
+    .replace(/^https?:\/\/(?:dx\.)?doi\.org\//i, '')
+    .replace(/^doi:\s*/i, '')
+    .split(/[?#\s]/, 1)[0]
+    .replace(/[.,;]+$/, '');
 }
 
 function restoreAbstract(index) {
@@ -510,6 +521,21 @@ function safeHttpUrl(value) {
   }
 }
 
+function classifyLiteratureInput(value) {
+  const raw = String(value || '').trim();
+  const arxivId = extractArxivId(raw);
+  if (arxivId && (/arxiv\.org/i.test(raw) || /^(?:\d{4}\.\d{4,5}|[a-z-]+\/\d{7})(?:v\d+)?$/i.test(raw))) {
+    return { kind: 'arxiv', id: arxivId };
+  }
+  const doi = extractDoi(raw);
+  if (doi && (/doi\.org/i.test(raw) || /^doi:\s*/i.test(raw) || /^10\.\d{4,9}\//i.test(raw))) {
+    return { kind: 'doi', doi };
+  }
+  const url = safeHttpUrl(raw);
+  if (url) return { kind: 'url', url };
+  return { kind: 'text', query: raw };
+}
+
 async function resolveOpenPdf(paper) {
   const direct = safeHttpUrl(paper?.pdfUrl);
   if (direct) return { pdfUrl: direct, source: paper.source || '开放全文' };
@@ -603,12 +629,12 @@ async function fetchPaperByTitle(litDir, query) {
   fs.mkdirSync(litDir, { recursive: true });
 
   let hits = [];
-  const directUrl = safeHttpUrl(q);
-  if (directUrl) {
-    const title = titleFromPdfUrl(directUrl);
-    const buf = await downloadPdf(directUrl);
+  const input = classifyLiteratureInput(q);
+  if (input.kind === 'url') {
+    const title = titleFromPdfUrl(input.url);
+    const buf = await downloadPdf(input.url);
     if (!buf) {
-      return { ok: false, code: 'direct-download-failed', title, url: directUrl, error: '这个地址没有返回可读取的 PDF，可能需要登录、Cookie 或人工验证。可以先在登录浏览器打开后，再用「导入文献」入库。' };
+      return { ok: false, code: 'direct-download-failed', title, url: input.url, error: '这个地址没有返回可读取的 PDF，可能需要登录、Cookie 或人工验证。可以先在登录浏览器打开后，再用「导入文献」入库。' };
     }
     const stem = sanitizeFileStem(title);
     let file = `${stem}.pdf`;
@@ -616,11 +642,32 @@ async function fetchPaperByTitle(litDir, query) {
     while (fs.existsSync(path.join(litDir, file))) file = `${stem}-${n++}.pdf`;
     fs.writeFileSync(path.join(litDir, file), buf);
     const stat = fs.statSync(path.join(litDir, file));
-    return { ok: true, file, title, source: directUrl, size: stat.size, format: 'pdf' };
+    return { ok: true, file, title, source: input.url, size: stat.size, format: 'pdf' };
   }
-  const directId = extractArxivId(q);
-  if (directId) {
-    hits = [{ title: `arXiv ${directId}`, pdfUrl: `https://arxiv.org/pdf/${directId}`, score: 1 }];
+  if (input.kind === 'arxiv') {
+    hits = [{ title: `arXiv ${input.id}`, pdfUrl: `https://arxiv.org/pdf/${input.id}`, score: 1 }];
+  } else if (input.kind === 'doi') {
+    const work = await fetchJson(`https://api.openalex.org/works/https://doi.org/${encodeURIComponent(input.doi)}?${WORK_SELECT}`);
+    const pdfUrl = pickPdfFromWork(work || {});
+    if (pdfUrl) {
+      hits = [{
+        title: work.title || input.doi,
+        pdfUrl,
+        score: 1,
+        doi: input.doi,
+        landingUrl: `https://doi.org/${input.doi}`,
+      }];
+    } else {
+      return {
+        ok: false,
+        code: work ? 'login-required' : 'doi-not-found',
+        title: work?.title || input.doi,
+        url: `https://doi.org/${input.doi}`,
+        error: work
+          ? 'DOI 已识别，但没有发现开放 PDF。可以打开登录浏览器，使用学校或出版社账号下载。'
+          : `没有找到 DOI：${input.doi}`,
+      };
+    }
   } else {
     const seen = new Set();
     const merge = (list) => {
@@ -632,12 +679,14 @@ async function fetchPaperByTitle(litDir, query) {
       }
     };
     // 多源并行补候选：一个索引暂时不可用，不应让用户失去其他可下载的版本。
-    merge(await searchDblp(q));
-    merge(await searchOpenAlex(q));
-    const [crossref, europePmc] = await Promise.all([
-      searchCrossref(q),
-      searchEuropePmcByTitle(q),
+    const [dblp, openAlex, crossref, europePmc] = await Promise.all([
+      searchDblp(q).catch(() => []),
+      searchOpenAlex(q).catch(() => []),
+      searchCrossref(q).catch(() => []),
+      searchEuropePmcByTitle(q).catch(() => []),
     ]);
+    merge(dblp);
+    merge(openAlex);
     merge(crossref);
     merge(europePmc);
     hits.sort((a, b) => (b.score - a.score)
@@ -678,6 +727,8 @@ module.exports = {
   downloadPapersBatch,
   restoreAbstract,
   normalizeDoi,
+  extractDoi,
+  classifyLiteratureInput,
   normalize,
   queryTerms,
   relevanceDetail,
