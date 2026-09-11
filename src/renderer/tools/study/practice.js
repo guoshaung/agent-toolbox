@@ -969,7 +969,7 @@ export function createPracticePanel(ctx) {
     }
   });
 
-  const terminalPanel = h('details', { class: 'practice__terminal-panel', open: true },
+  const terminalPanel = h('details', { class: 'practice__terminal-panel' },
     h('summary', {}, h('strong', {}, '学习终端'), h('span', { class: 'faint' }, 'uv / python / pip · python 指向共享 .venv')),
     h('div', { class: 'practice__terminal-body' },
       h('div', { class: 'practice__terminal-toolbar' }, terminalCommand, h('div', { class: 'practice__terminal-actions' }, terminalRunBtn, h('button', { class: 'btn btn--sm', onclick: clearTerminal }, '清空'))),
@@ -1001,9 +1001,16 @@ export function createPracticePanel(ctx) {
 
   const el = h('div', { class: 'practice' },
     h('div', { class: 'practice__head' },
-      h('label', {}, h('span', { class: 'practice__label' }, '领域'), trackSelect),
-      h('label', {}, h('span', { class: 'practice__label' }, '练习'), levelSelect),
-      h('label', {}, h('span', { class: 'practice__label' }, '项目挑战'), projectSelect),
+      h('div', { class: 'practice__hero-copy' },
+        h('span', { class: 'practice__eyebrow' }, '学习实践'),
+        h('h1', {}, '把知识练成手感'),
+        h('p', {}, '从一个小问题开始，写出来、运行它，再把原因讲清楚。'),
+      ),
+      h('div', { class: 'practice__selectors' },
+        h('label', {}, h('span', { class: 'practice__label' }, '领域'), trackSelect),
+        h('label', {}, h('span', { class: 'practice__label' }, '练习'), levelSelect),
+        h('label', { class: 'practice__selector--project' }, h('span', { class: 'practice__label' }, '项目挑战'), projectSelect),
+      ),
     ),
     h('div', { class: 'practice__info-row' },
       description,
