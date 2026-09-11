@@ -108,14 +108,8 @@ export function wirePath(wire, byId) {
   }
 
   if (route === 'curve') {
-    // 控制点沿各自端口的法线外推，出入口都垂直于图形边缘，看着才顺
-    const bend = Number(wire.curveBend) || 0;
-    const dist = Math.max(16, Math.hypot(b.point.x - a.point.x, b.point.y - a.point.y) * 0.45 + bend);
-    const na = normal(a.port);
-    const nb = normal(b.port);
-    const c1 = { x: a.point.x + na.x * dist, y: a.point.y + na.y * dist };
-    const c2 = { x: b.point.x + nb.x * dist, y: b.point.y + nb.y * dist };
-    return `M${a.point.x},${a.point.y} C${c1.x},${c1.y} ${c2.x},${c2.y} ${b.point.x},${b.point.y}`;
+    const controls = curveControlPoints(a.point, b.point, a.port, b.port, wire.curveBend);
+    return `M${a.point.x},${a.point.y} C${controls.c1.x},${controls.c1.y} ${controls.c2.x},${controls.c2.y} ${b.point.x},${b.point.y}`;
   }
 
   if (route === 'wave' || route === 'cartoon') {
@@ -174,6 +168,30 @@ export function wirePath(wire, byId) {
 
   if (route === 'rounded') return roundedPolylinePath(best.pts, 14);
   return best.pts.map((p, i) => `${i === 0 ? 'M' : 'L'}${Math.round(p.x)},${Math.round(p.y)}`).join(' ');
+}
+
+export function curveControlPoints(start, end, startPort = 'auto', endPort = 'auto', bendValue = 0) {
+  const dx = end.x - start.x;
+  const dy = end.y - start.y;
+  const distance = Math.max(1, Math.hypot(dx, dy));
+  const startDirection = curveDirection(startPort, dx, dy);
+  const endDirection = curveDirection(endPort, -dx, -dy);
+  const base = distance * 0.45;
+  const minimum = Math.min(18, distance * 0.25);
+  const maximum = Math.max(minimum, distance * 0.85);
+  const extension = Math.max(minimum, Math.min(maximum, base + (Number(bendValue) || 0)));
+  return {
+    distance,
+    extension,
+    c1: { x: start.x + startDirection.x * extension, y: start.y + startDirection.y * extension },
+    c2: { x: end.x + endDirection.x * extension, y: end.y + endDirection.y * extension },
+  };
+}
+
+function curveDirection(port, dx, dy) {
+  if (port !== 'auto') return normal(port);
+  const length = Math.hypot(dx, dy) || 1;
+  return { x: dx / length, y: dy / length };
 }
 
 function roundedPolylinePath(points, radius = 14) {
