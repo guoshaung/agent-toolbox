@@ -1038,7 +1038,7 @@ export function createLiterature(root, ctx) {
   async function paragraphs() {
     if (rawText != null) {
       const all = String(rawText).split(/\n+/).map((source) => source.trim()).filter(Boolean);
-      return { items: all.slice(0, 180).map((source, index) => ({ source, paragraphId: `p_${String(index + 1).padStart(3, '0')}` })), truncated: all.length > 180 };
+      return { items: all.map((source, index) => ({ source, paragraphId: `p_${String(index + 1).padStart(4, '0')}` })), truncated: false };
     }
     if (!pdfDoc) return { items: [], truncated: false };
     const items = [];
@@ -1061,10 +1061,8 @@ export function createLiterature(root, ctx) {
         items.push({ source: line, page: pageNo, paragraphId: `p_${String(items.length + 1).padStart(3, '0')}` });
         chars += line.length;
       }
-      if (items.length >= 220 || chars >= 60000) {
-        truncated = pageNo < pdfDoc.numPages;
-        break;
-      }
+      // 中英双栏代表整篇文献，不在这里截断段落或字数。
+      // 翻译端逐段执行并持久化，避免一次请求整篇造成超时或重复付费。
     }
     return { items, truncated };
   }
@@ -1151,9 +1149,8 @@ export function createLiterature(root, ctx) {
     bilingBtn.classList.add('is-on');
     bilingBtn.textContent = '准备对照…';
     const extracted = await paragraphs();
-    const allItems = extracted.items;
-    const items = allItems.slice(0, 40);
-    const truncated = extracted.truncated || allItems.length > items.length;
+    const items = extracted.items;
+    const truncated = false;
     if (runId !== bilingualRunId) return;
     if (!items.length) {
       closeBilingual();
@@ -1190,7 +1187,10 @@ export function createLiterature(root, ctx) {
     window.addEventListener('mouseup', stopSplitter);
     bilingualCleanups.push(() => window.removeEventListener('mousemove', dragSplitter));
     bilingualCleanups.push(() => window.removeEventListener('mouseup', stopSplitter));
-    const bilingualStatus = h('span', { class: 'faint' }, truncated ? '文献较长，先展示前 6 万字' : `${items.length} 段`);
+    const cachedCount = items.filter((item) => cachedFor(item)?.translation).length;
+    const bilingualStatus = h('span', { class: 'faint' }, cachedCount === items.length
+      ? `整篇 ${items.length} 段 · 已保存`
+      : `整篇 ${items.length} 段 · 已保存 ${cachedCount} 段`);
     const bilingualModeButton = h('button', { class: 'btn btn--sm is-on' }, '中英双栏');
     const chineseModeButton = h('button', {
       class: 'btn btn--sm',
@@ -1271,7 +1271,7 @@ export function createLiterature(root, ctx) {
     cells.forEach((cell) => { sourceObserver.observe(cell.source); targetObserver.observe(cell.target); });
 
     const pendingIdx = items.map((_, i) => i).filter((i) => !cachedFor(items[i])?.translation);
-    if (!pendingIdx.length) { bilingBtn.textContent = '中英双栏'; return; }
+    if (!pendingIdx.length) { bilingBtn.textContent = '中英双栏'; bilingualStatus.textContent = `整篇 ${items.length} 段 · 已全部保存`; return; }
     bilingualTranslating = true;
     const pending = new Set(pendingIdx);
     const visible = new Set();
@@ -1330,7 +1330,7 @@ export function createLiterature(root, ctx) {
         applyBilingualHighlights();
         done += 1;
         bilingBtn.textContent = `对照 ${done}/${pendingIdx.length}`;
-        bilingualStatus.textContent = `${done}/${pendingIdx.length} 段已翻译`;
+        bilingualStatus.textContent = `整篇 ${items.length} 段 · 已保存 ${cachedCount + done}/${items.length}`;
         await new Promise((resolve) => setTimeout(resolve, 0));
       }
     } finally {

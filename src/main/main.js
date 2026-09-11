@@ -1436,6 +1436,14 @@ function registerIpc() {
     termPopupWindow?.hide();
   });
 
+  ipcMain.handle('appControls:status', () => appControls.status());
+  ipcMain.handle('appControls:setEnabled', (_e, enabled) => {
+    appControls.setEnabled(Boolean(enabled));
+    return appControls.register(globalShortcut);
+  });
+  ipcMain.handle('appControls:closeForeground', () => appControls.closeForeground());
+  ipcMain.handle('appControls:cycleWindows', () => appControls.cycleWindows());
+
   ipcMain.handle('shell:openExternal', (_e, url) => {
     if (!/^https?:\/\//i.test(String(url))) return false; // 只放行 http(s)，挡掉 file:// 之类
     shell.openExternal(url);
@@ -2364,12 +2372,6 @@ app.whenReady().then(async () => {
   dshService = new DshService({ app, getWindow: () => mainWindow });
   tavernService = new TavernService({ app, getWindow: () => mainWindow });
   appControls = new AppControls({ store });
-  const controlsShortcut = appControls.register(globalShortcut);
-  if (controlsShortcut.enabled && !controlsShortcut.registered) {
-    console.warn('[appControls]', controlsShortcut.closeRegistered || controlsShortcut.cycleRegistered
-      ? '快捷键有冲突，部分未注册。'
-      : '快捷键被其他应用占用了。');
-  }
 
   registerIpc();
   hookLiteratureDownloads();
@@ -2386,6 +2388,12 @@ app.whenReady().then(async () => {
   if (!termShortcut.ok) console.warn('[terms]', termShortcut.error);
   const dockShortcut = registerDockShortcut();
   if (!dockShortcut.ok) console.warn('[dock]', dockShortcut.error);
+  const controlsShortcut = appControls.register(globalShortcut);
+  if (controlsShortcut.enabled && !controlsShortcut.registered) {
+    console.warn('[appControls]', controlsShortcut.closeRegistered || controlsShortcut.cycleRegistered
+      ? '快捷键有冲突，部分未注册。'
+      : '快捷键被其他应用占用了。');
+  }
 
   app.on('activate', () => {
     if (!mainWindow || mainWindow.isDestroyed()) createWindow();

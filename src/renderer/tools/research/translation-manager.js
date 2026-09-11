@@ -117,7 +117,9 @@ export class TranslationManager {
         provider: result.provider,
         createdAt: Date.now(),
       });
-      this.config?.set(`research.translationCache.${this.paperId}`, Object.fromEntries(this.cache));
+      // 每段成功后必须等待持久化完成，再翻译下一段。这样中途关闭、崩溃或断网
+      // 都只会补译尚未保存的段落，不会让已经产生费用的译文丢失。
+      await this.config?.set(`research.translationCache.${this.paperId}`, Object.fromEntries(this.cache));
     }
     return result;
   }
