@@ -1436,14 +1436,6 @@ function registerIpc() {
     termPopupWindow?.hide();
   });
 
-  ipcMain.handle('appControls:status', () => appControls.status());
-  ipcMain.handle('appControls:setEnabled', (_e, enabled) => {
-    appControls.setEnabled(Boolean(enabled));
-    return appControls.register(globalShortcut);
-  });
-  ipcMain.handle('appControls:closeForeground', () => appControls.closeForeground());
-  ipcMain.handle('appControls:cycleWindows', () => appControls.cycleWindows());
-
   ipcMain.handle('shell:openExternal', (_e, url) => {
     if (!/^https?:\/\//i.test(String(url))) return false; // 只放行 http(s)，挡掉 file:// 之类
     shell.openExternal(url);
