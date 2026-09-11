@@ -52,20 +52,34 @@ function commandExists(command) {
 
 function resolveCommand(command) {
   if (command.includes(path.sep)) return fs.existsSync(command) ? command : '';
-  const candidates = [
-    command,
-    path.join(os.homedir(), '.local', 'bin', command),
-    path.join(os.homedir(), '.cargo', 'bin', command),
-    path.join('/opt/homebrew/bin', command),
-    path.join('/usr/local/bin', command),
+  // Windows 上命令几乎都带扩展名（uv.exe / npm.cmd），~/.local/bin 这类
+  // 用户级目录也不会进 GUI 进程的 PATH，先把这两层补齐再交给 where.exe。
+  const exts = process.platform === 'win32' ? ['', '.exe', '.cmd', '.bat'] : [''];
+  const knownDirs = [
+    path.join(os.homedir(), '.local', 'bin'),
+    path.join(os.homedir(), '.cargo', 'bin'),
+    path.join('/opt/homebrew/bin'),
+    path.join('/usr/local/bin'),
   ];
-  for (const candidate of candidates.slice(1)) {
-    try {
-      if (fs.statSync(candidate).isFile()) return candidate;
-    } catch { /* try the next known install location */ }
+  for (const dir of knownDirs) {
+    for (const ext of exts) {
+      const candidate = path.join(dir, command + ext);
+      try {
+        if (fs.statSync(candidate).isFile()) return candidate;
+      } catch { /* try the next known install location */ }
+    }
   }
+  // System32 里的 bash.exe 是 WSL 的，行为和 Git Bash 完全不同，宁缺毋滥。
+  if (process.platform === 'win32' && command === 'bash') {
+    for (const candidate of ['C:\\Program Files\\Git\\bin\\bash.exe', 'C:\\Program Files\\Git\\usr\\bin\\bash.exe']) {
+      if (fs.existsSync(candidate)) return candidate;
+    }
+    return '';
+  }
+  const finder = process.platform === 'win32' ? 'where.exe' : 'which';
   try {
-    return execFileSync('which', [command], { encoding: 'utf8', timeout: 2000 }).trim();
+    return execFileSync(finder, [command], { encoding: 'utf8', timeout: 2000 })
+      .split(/\r?\n/).map((line) => line.trim()).find(Boolean) || '';
   } catch {
     return '';
   }
@@ -86,7 +100,8 @@ function pythonInterpreter(trackId) {
   if (fs.existsSync(isolated)) return isolated;
   const legacy = legacyVenvPython(trackId);
   if (fs.existsSync(legacy)) return legacy;
-  return resolveCommand('python3') || null;
+  // Windows 只有 python.exe（python3 常常是商店占位 stub），反过来 mac/linux 只有 python3。
+  return resolveCommand(process.platform === 'win32' ? 'python' : 'python3') || null;
 }
 
 function pythonPackageExists(modules, interpreter = 'python3') {

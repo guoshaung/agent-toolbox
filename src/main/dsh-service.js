@@ -4,7 +4,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const http = require('node:http');
-const { spawn, execFileSync } = require('node:child_process');
+const { spawn, execFile, execFileSync } = require('node:child_process');
 
 const DSH_PACKAGE = '@deepseek-ai/dsh@0.1.1-rc.2';
 
@@ -68,6 +68,23 @@ function probe(port = DEFAULT_PORT, requestPath = '/') {
 
 function findWebUrl(text) {
   return String(text || '').match(/https?:\/\/[^\s"'<>]+/)?.[0] || '';
+}
+
+/**
+ * 杀掉 spawn 出来的进程树。
+ * Windows 上 spawn 带 shell:true 时 child.pid 是 cmd.exe 的 pid，
+ * child.kill() 只会杀 cmd，它拉起的 node 子进程会变成残留 DSH —— 端口就这样被占掉的。
+ * 所以 Windows 必须用 taskkill /T 连子树一起杀。
+ */
+function killTree(child) {
+  if (!child || !child.pid) return Promise.resolve();
+  if (process.platform === 'win32') {
+    return new Promise((resolve) => {
+      execFile('taskkill', ['/pid', String(child.pid), '/T', '/F'], { windowsHide: true }, () => resolve());
+    });
+  }
+  try { process.kill(-child.pid, 'SIGKILL'); } catch { try { child.kill('SIGTERM'); } catch { /* 进程已经没了 */ } }
+  return Promise.resolve();
 }
 
 class DshService {
@@ -182,7 +199,7 @@ class DshService {
   async stop() {
     if (!this.child || this.child.killed) return { ok: true, ...this.state };
     this.emit({ status: 'stopping' });
-    this.child.kill('SIGTERM');
+    await killTree(this.child);
     this.child = null;
     this.emit({ status: 'idle', managed: false });
     return { ok: true, ...this.state };
