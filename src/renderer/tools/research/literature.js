@@ -3,6 +3,9 @@ import { paperToMeta } from './citation.js';
 import { buildPaperQaPrompt, buildReadingSummaryPrompt, ANNO_TAGS, tagOf } from './readprompt.js';
 import { TranslationManager } from './translation-manager.js';
 import { diffWords } from './text-diff.js';
+import {
+  progressLabel, scrollProgress, scrollTopForProgress, visiblePage,
+} from './reading-progress.js';
 
 const FORMAT_ICONS = {
   pdf: '📕', doc: '📘', docx: '📘', txt: '📄', md: '📄',
@@ -58,6 +61,10 @@ export function createLiterature(root, ctx) {
   let paperCandidates = [];
   let libraryCandidates = [];
   let autoDownloadBusy = false;
+  let readingProgressTimer = null;
+  let pdfProgressHandler = null;
+  let textProgressElement = null;
+  let textProgressHandler = null;
 
   const listEl = h('div', { class: 'lit__list' });
   const discoveryList = h('div', { class: 'lit__discovery-list' });
@@ -83,8 +90,12 @@ export function createLiterature(root, ctx) {
   const snipBtn = h('button', { class: 'btn btn--sm', title: '默认方式：在 PDF 页面右键后圈选区域；也可点击此按钮', onclick: () => startSnip() }, '圈译');
   const transToggleBtn = h('button', { class: 'btn btn--sm', title: '打开固定译文栏', onclick: () => toggleTransPanel() }, '译文栏');
   const compareBtn = h('button', { class: 'btn btn--sm', onclick: () => toggleCompare() }, '差异');
+  const readingProgress = h('span', { class: 'tag tag--neutral lit__reading-progress', title: '阅读进度会按文献自动保存' }, '未开始');
+  const markReadBtn = h('button', { class: 'btn btn--sm', disabled: true, title: '把当前文献标记为已读', onclick: markCurrentRead }, '标记已读');
   const viewerBar = h('div', { class: 'bar lit__viewerbar', hidden: true },
     h('span', { class: 'lit__viewer-name', title: '' }, ''),
+    readingProgress,
+    markReadBtn,
     h('span', { style: { flex: 1 } }),
     handBtn, selectBtn,
     h('span', { class: 'subbar__sep' }),
@@ -591,6 +602,142 @@ export function createLiterature(root, ctx) {
   function targetLang(text) {
     const cjk = (String(text).match(/[\u4e00-\u9fff]/g) || []).length;
     return cjk > String(text).length * 0.2 ? '英文' : '中文';
+  }
+
+  function savedReadingProgress(file) {
+    return config.get('research.litProgress')?.[file] || null;
+  }
+
+  function readingProgressSnapshot() {
+    if (!current) return null;
+    if (pdfScrollEl) {
+      const pageOffsets = Object.entries(pdfPageEls)
+        .map(([page, element]) => ({ page: Number(page), offset: element.offsetTop }))
+        .sort((left, right) => left.offset - right.offset);
+      return {
+        mode: 'pdf',
+        progress: scrollProgress(pdfScrollEl),
+        page: visiblePage(pageOffsets, pdfScrollEl.scrollTop, pdfScrollEl.clientHeight),
+        pageCount: pdfDoc?.numPages || 0,
+        scrollTop: pdfScrollEl.scrollTop,
+        scrollLeft: pdfScrollEl.scrollLeft,
+      };
+    }
+    const textElement = viewerEl.querySelector('.lit__text');
+    if (textElement) {
+      return {
+        mode: 'text',
+        progress: scrollProgress(textElement),
+        page: 0,
+        pageCount: 0,
+        scrollTop: textElement.scrollTop,
+        scrollLeft: textElement.scrollLeft,
+      };
+    }
+    return null;
+  }
+
+  function renderReadingProgress(snapshot = readingProgressSnapshot()) {
+    const saved = current ? savedReadingProgress(current.file) : null;
+    const value = snapshot || saved;
+    const progress = Number(value?.progress) || 0;
+    const page = Number(value?.page) || 0;
+    const pageCount = Number(value?.pageCount) || 0;
+    const status = current ? (meta()[current.file]?.readStatus || 'unread') : 'unread';
+    const tone = status === 'read' || progress >= 1 ? 'tag--good' : progress > 0 ? 'tag--warn' : 'tag--neutral';
+    readingProgress.className = `tag ${tone} lit__reading-progress`;
+    readingProgress.textContent = progressLabel({ progress, page, pageCount });
+    markReadBtn.disabled = !current || status === 'read';
+    markReadBtn.textContent = status === 'read' ? '已读 ✓' : '标记已读';
+  }
+
+  async function saveReadingProgressSnapshot(snapshot) {
+    if (!current || !snapshot) return;
+    const progressMap = config.get('research.litProgress') || {};
+    progressMap[current.file] = {
+      ...(progressMap[current.file] || {}),
+      ...snapshot,
+      updatedAt: Date.now(),
+    };
+    await config.set('research.litProgress', progressMap);
+  }
+
+  async function persistCurrentProgress() {
+    clearTimeout(readingProgressTimer);
+    readingProgressTimer = null;
+    await saveReadingProgressSnapshot(readingProgressSnapshot());
+  }
+
+  function queueReadingProgressSave() {
+    renderReadingProgress();
+    clearTimeout(readingProgressTimer);
+    readingProgressTimer = setTimeout(() => {
+      readingProgressTimer = null;
+      void saveReadingProgressSnapshot(readingProgressSnapshot());
+    }, 350);
+  }
+
+  function detachReadingProgress() {
+    if (pdfScrollEl && pdfProgressHandler) pdfScrollEl.removeEventListener('scroll', pdfProgressHandler);
+    if (textProgressElement && textProgressHandler) textProgressElement.removeEventListener('scroll', textProgressHandler);
+    pdfProgressHandler = null;
+    textProgressElement = null;
+    textProgressHandler = null;
+    clearTimeout(readingProgressTimer);
+    readingProgressTimer = null;
+  }
+
+  function attachPdfReadingProgress(scrollElement) {
+    pdfProgressHandler = queueReadingProgressSave;
+    scrollElement.addEventListener('scroll', pdfProgressHandler, { passive: true });
+    const saved = savedReadingProgress(current.file);
+    requestAnimationFrame(() => {
+      if (!pdfScrollEl || !saved) return renderReadingProgress();
+      pdfScrollEl.scrollTop = Number.isFinite(Number(saved.scrollTop))
+        ? Number(saved.scrollTop)
+        : scrollTopForProgress(saved.progress, pdfScrollEl.scrollHeight, pdfScrollEl.clientHeight);
+      pdfScrollEl.scrollLeft = Number(saved.scrollLeft) || 0;
+      renderReadingProgress();
+    });
+  }
+
+  function attachTextReadingProgress() {
+    const textElement = viewerEl.querySelector('.lit__text');
+    if (!textElement) return;
+    textProgressElement = textElement;
+    textProgressHandler = queueReadingProgressSave;
+    textElement.addEventListener('scroll', textProgressHandler, { passive: true });
+    const saved = savedReadingProgress(current.file);
+    requestAnimationFrame(() => {
+      if (!textProgressElement || !saved) return renderReadingProgress();
+      textProgressElement.scrollTop = Number.isFinite(Number(saved.scrollTop))
+        ? Number(saved.scrollTop)
+        : scrollTopForProgress(saved.progress, textElement.scrollHeight, textElement.clientHeight);
+      textProgressElement.scrollLeft = Number(saved.scrollLeft) || 0;
+      renderReadingProgress();
+    });
+  }
+
+  function markReading() {
+    if (!current) return;
+    const metaMap = meta();
+    const previous = metaMap[current.file] || {};
+    if (previous.readStatus === 'read') return;
+    metaMap[current.file] = { ...previous, readStatus: 'reading', lastReadAt: new Date().toISOString() };
+    void config.set('research.litMeta', metaMap);
+  }
+
+  async function markCurrentRead() {
+    if (!current) return;
+    const file = current.file;
+    const metaMap = meta();
+    metaMap[file] = { ...(metaMap[file] || {}), readStatus: 'read', readAt: new Date().toISOString() };
+    await config.set('research.litMeta', metaMap);
+    const snapshot = readingProgressSnapshot();
+    if (snapshot) await saveReadingProgressSnapshot({ ...snapshot, progress: 1 });
+    renderReadingProgress({ ...(snapshot || {}), progress: 1 });
+    await renderList();
+    toast('已标记为已读', 'good');
   }
 
   function isSingleWord(text) {
@@ -1344,6 +1491,8 @@ export function createLiterature(root, ctx) {
     viewerEl.appendChild(h('div', { class: 'lit__text' }, rawText));
     viewerEl.appendChild(selectionAction);
     zoom(0);
+    attachTextReadingProgress();
+    renderReadingProgress();
   }
 
   // ---- 阅读器 ----
@@ -1471,6 +1620,8 @@ export function createLiterature(root, ctx) {
 
     viewerEl.appendChild(selectionAction);
     applyCursorMode();
+    attachPdfReadingProgress(scrollEl);
+    renderReadingProgress();
   }
 
   async function renderPdfPage(n) {
@@ -1642,6 +1793,7 @@ export function createLiterature(root, ctx) {
   });
 
   function viewerIdle() {
+    detachReadingProgress();
     closeBilingual();
     closeTransPanel();
     lastTransResult = null;
@@ -1655,9 +1807,12 @@ export function createLiterature(root, ctx) {
       h('br'),
       h('span', { class: 'faint' }, 'PDF 用内置查看器打开，不用再启动 WPS。'),
     ));
+    renderReadingProgress();
   }
 
   async function openReader(item) {
+    await persistCurrentProgress();
+    detachReadingProgress();
     current = item;
     for (const row of listEl.querySelectorAll('.lit__item')) {
       row.classList.toggle('is-reading', row.dataset.file === item.file);
@@ -1684,6 +1839,8 @@ export function createLiterature(root, ctx) {
     viewerBar.removeAttribute('hidden');
     viewerBar.querySelector('.lit__viewer-name').textContent = item.file;
     viewerBar.querySelector('.lit__viewer-name').title = item.file;
+    markReading();
+    renderReadingProgress();
     viewerEl.textContent = '';
     annoPanel.setAttribute('hidden', '');
     resetChat();
