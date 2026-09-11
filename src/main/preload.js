@@ -259,6 +259,13 @@ contextBridge.exposeInMainWorld('toolbox', {
     onStatus: (callback) => ipcRenderer.on('dsh:status', (_event, state) => callback(state)),
   },
 
+  tavern: {
+    status: () => ipcRenderer.invoke('tavern:status'),
+    start: () => ipcRenderer.invoke('tavern:start'),
+    stop: () => ipcRenderer.invoke('tavern:stop'),
+    onStatus: (callback) => ipcRenderer.on('tavern:status', (_event, state) => callback(state)),
+  },
+
   appControls: {
     /** 当前启停状态 + 使用的快捷键 */
     status: () => ipcRenderer.invoke('appControls:status'),
@@ -361,5 +368,7 @@ contextBridge.exposeInMainWorld('toolbox', {
     reload: () => ipcRenderer.invoke('app:reload'),
     openDevTools: () => ipcRenderer.invoke('app:openDevTools'),
     onNavigateTool: (callback) => ipcRenderer.on('app:navigate-tool', (_event, target) => callback(target)),
+    /** 用 PNG data URL 替换窗口/任务栏图标（macOS 上同时换 Dock 图标） */
+    setAppIcon: (dataUrl) => ipcRenderer.invoke('app:setAppIcon', dataUrl),
   },
 });

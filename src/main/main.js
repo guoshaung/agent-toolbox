@@ -34,6 +34,8 @@ const edgeCookies = require('./edge-cookies');
 const { RemoteControl } = require('./remote-control');
 const { registerContainerIpc, seedContainer, syncContainerLiterature, containerRoot } = require('./container-storage');
 const { DshService } = require('./dsh-service');
+const { TavernService } = require('./tavern-service');
+const { AppControls } = require('./app-controls');
 
 async function remoteStatusWithQr(state) {
   const current = state || remoteControl.status();
@@ -52,6 +54,8 @@ const { ArgosService } = require('./argos-service');
 
 const IS_DEV = process.argv.includes('--dev');
 const ICON_PATH = path.join(__dirname, '..', '..', 'assets', 'icon.png');
+const APP_USER_MODEL_ID = 'Guoshaung.AgentToolbox';
+let runtimeAppIcon = null;
 
 /** DeepSeek 会拒绝 Electron 默认 UA，统一伪装成同版本内核的 Chrome。 */
 const CHROME_UA =
@@ -85,7 +89,9 @@ let windowDock;
 let quittingForDock = false;
 let remoteControl;
 let dshService;
+let tavernService;
 let argosService;
+let appControls;
 const siteFloatWindows = new Map();
 const pendingRemoteCommands = new Map();
 const watchAvatarCache = new Map();
@@ -464,13 +470,25 @@ function restoreBounds() {
   return bounds;
 }
 
+function loadRuntimeAppIcon() {
+  if (runtimeAppIcon && !runtimeAppIcon.isEmpty()) return runtimeAppIcon;
+  const dataUrl = store?.get('ui.appIconDataUrl', '');
+  if (typeof dataUrl !== 'string' || !/^data:image\/(?:png|jpeg);base64,/.test(dataUrl)) return null;
+  try {
+    const image = nativeImage.createFromDataURL(dataUrl);
+    if (!image.isEmpty()) runtimeAppIcon = image;
+  } catch { /* 回退到随包默认图标 */ }
+  return runtimeAppIcon;
+}
+
 function createWindow(showOnReady = true) {
+  loadRuntimeAppIcon();
   mainWindow = new BrowserWindow({
     ...restoreBounds(),
     minWidth: 900,
     minHeight: 620,
     title: 'Agent 工具箱',
-    icon: ICON_PATH,          // macOS 上窗口图标无效，靠下面的 dock.setIcon
+    icon: runtimeAppIcon && !runtimeAppIcon.isEmpty() ? runtimeAppIcon : ICON_PATH,          // macOS 上窗口图标无效，靠下面的 dock.setIcon
     titleBarStyle: 'hiddenInset',
     backgroundColor: '#12141a',
     show: false,
@@ -483,6 +501,7 @@ function createWindow(showOnReady = true) {
       spellcheck: false,
     },
   });
+  if (runtimeAppIcon && !runtimeAppIcon.isEmpty()) mainWindow.setIcon(runtimeAppIcon);
 
   mainWindow.once('ready-to-show', () => {
     clearTimeout(showFallback);
@@ -533,13 +552,14 @@ function createWindow(showOnReady = true) {
   mainWindow.webContents.on('will-attach-webview', (_event, webPreferences, params) => {
     const source = String(params?.src || '');
     const isDsh = webPreferences.partition === 'persist:dsh' || /^https?:\/\/127\.0\.0\.1:3080(?:\/|$)/i.test(source);
+    const isTavern = webPreferences.partition === 'persist:tavern';
     // 示意图编辑器不套站点清理脚本：它是本地单文件应用，不需要拆登录墙。
     const isDrafter = webPreferences.partition === 'persist:drafter' || /figure-drafter\.html$/i.test(source);
-    // DSH 是完整的本地 Web 应用，不要套用站点清理脚本。该脚本会主动改写
-    // html/body 的滚动和 user-select，且监听整个 DOM；对 DSH 这种模块化 SPA
-    // 可能造成启动阶段黑屏。保留空 preload 只为明确隔离边界。
+    // DSH / 酒馆 / 示意图编辑器都是完整的本地 Web 应用，不要套用站点清理脚本。
+    // 该脚本会主动改写 html/body 的滚动和 user-select，且监听整个 DOM，对这些
+    // 模块化 SPA 可能造成启动阶段黑屏。保留空 preload 只为明确隔离边界。
     webPreferences.preload = path.join(__dirname,
-      (isDsh || isDrafter) ? 'dsh-preload.js' : 'site-bypass-preload.js');
+      (isDsh || isDrafter || isTavern) ? 'dsh-preload.js' : 'site-bypass-preload.js');
     console.log('[main] will-attach-webview preload:', webPreferences.preload, source);
     webPreferences.nodeIntegration = false;
     webPreferences.contextIsolation = true;
@@ -1293,6 +1313,7 @@ function registerIpc() {
     }
   });
   hookContainerDownloads('persist:dsh', 'dsh');
+  hookContainerDownloads('persist:tavern', '酒馆');
   // 把随包附带的工具铺进容器（只补缺，不覆盖）。
   // 打包后种子在 resources/container-seed，开发时在仓库根目录。
   const seedDir = app.isPackaged
@@ -1304,6 +1325,16 @@ function registerIpc() {
   ipcMain.handle('dsh:status', () => dshService.status());
   ipcMain.handle('dsh:start', () => dshService.start());
   ipcMain.handle('dsh:stop', () => dshService.stop());
+  ipcMain.handle('tavern:status', () => tavernService.status());
+  ipcMain.handle('tavern:start', () => tavernService.start());
+  ipcMain.handle('tavern:stop', () => tavernService.stop());
+  ipcMain.handle('appControls:status', () => appControls.status());
+  ipcMain.handle('appControls:setEnabled', (_e, enabled) => {
+    appControls.setEnabled(Boolean(enabled));
+    return appControls.register(globalShortcut);
+  });
+  ipcMain.handle('appControls:closeForeground', () => appControls.closeForeground());
+  ipcMain.handle('appControls:cycleWindows', () => appControls.cycleWindows());
 
   ipcMain.handle('config:all', () => safeConfig());
   ipcMain.handle('config:get', (_e, key, fallback) => {
@@ -1448,6 +1479,22 @@ function registerIpc() {
   ipcMain.handle('app:reload', () => { if (mainWindow) mainWindow.reload(); });
   ipcMain.handle('app:openDevTools', () => {
     if (mainWindow) mainWindow.webContents.openDevTools({ mode: 'detach' });
+  });
+  ipcMain.handle('app:setAppIcon', (_e, dataUrl) => {
+    if (typeof dataUrl !== 'string' || !/^data:image\/(?:png|jpeg);base64,/.test(dataUrl)) return { ok: false, error: '图标格式无效' };
+    try {
+      const image = nativeImage.createFromDataURL(dataUrl);
+      if (image.isEmpty()) return { ok: false, error: '图标解析失败' };
+      runtimeAppIcon = image;
+      store?.set('ui.appIconDataUrl', dataUrl);
+      if (mainWindow && !mainWindow.isDestroyed()) mainWindow.setIcon(image);
+      if (process.platform === 'darwin' && app.dock) app.dock.setIcon(image);
+      // Windows 下显式提示：setIcon 只更新运行中的窗口图标；
+      // 若用户把应用“固定”到了任务栏，固定项图标来自 .lnk 缓存，需要取消固定再固定才刷新。
+      return { ok: true, pinnedHint: process.platform === 'win32' };
+    } catch (error) {
+      return { ok: false, error: error.message };
+    }
   });
 
   /**
@@ -2269,13 +2316,15 @@ function forwardSwitcherKeys(contents) {
 app.on('web-contents-created', (_e, contents) => forwardSwitcherKeys(contents));
 
 app.whenReady().then(async () => {
+  if (process.platform === 'win32') app.setAppUserModelId(APP_USER_MODEL_ID);
   store = new Store(app.getPath('userData'));
   migrateLegacyApiKey();
   nativeTheme.themeSource = 'dark';
 
   // 不打包直接 npm start 时，dock 里是 Electron 的默认图标，换成我们自己的
   if (process.platform === 'darwin' && app.dock) {
-    const icon = nativeImage.createFromPath(ICON_PATH);
+    loadRuntimeAppIcon();
+    const icon = runtimeAppIcon && !runtimeAppIcon.isEmpty() ? runtimeAppIcon : nativeImage.createFromPath(ICON_PATH);
     if (!icon.isEmpty()) app.dock.setIcon(icon);
   }
 
@@ -2313,6 +2362,14 @@ app.whenReady().then(async () => {
   argosService = new ArgosService();
 
   dshService = new DshService({ app, getWindow: () => mainWindow });
+  tavernService = new TavernService({ app, getWindow: () => mainWindow });
+  appControls = new AppControls({ store });
+  const controlsShortcut = appControls.register(globalShortcut);
+  if (controlsShortcut.enabled && !controlsShortcut.registered) {
+    console.warn('[appControls]', controlsShortcut.closeRegistered || controlsShortcut.cycleRegistered
+      ? '快捷键有冲突，部分未注册。'
+      : '快捷键被其他应用占用了。');
+  }
 
   registerIpc();
   hookLiteratureDownloads();
@@ -2358,4 +2415,5 @@ app.on('will-quit', () => {
   }
   pendingRemoteCommands.clear();
   dshService?.stop();
+  tavernService?.stop();
 });
