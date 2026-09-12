@@ -12,6 +12,9 @@ export default {
     const statusTag = h('span', { class: 'tag' }, '未检测');
     const startBtn = h('button', { class: 'btn btn--sm btn--primary', onclick: start }, '启动 Voicebox');
     const stopBtn = h('button', { class: 'btn btn--sm', onclick: stop, disabled: true }, '停止');
+    const dlBar = h('div', { class: 'voice__dlbar', style: { display: 'none' } });
+    const dlBarFill = h('div', { class: 'voice__dlbar-fill', style: { width: '0%' } });
+    dlBar.appendChild(dlBarFill);
 
     const engineStatus = h('span', { class: 'faint' }, '—');
     const mcpUrlEl = h('code', { class: 'mono' }, '—');
@@ -64,7 +67,9 @@ export default {
     function applyState(state) {
       const running = state?.status === 'running';
       const busy = state?.status === 'installing' || state?.status === 'starting';
-      statusTag.textContent = state?.status === 'running' ? '运行中' : state?.status === 'installing' ? '下载安装中' : state?.status === 'starting' ? '启动中' : state?.status === 'error' ? '错误' : state?.supported === false ? '不支持' : '未启动';
+      const progress = state?.progress;
+      const installing = state?.status === 'installing';
+      statusTag.textContent = running ? '运行中' : installing && progress?.phase === 'extracting' ? '正在解压…' : installing && typeof progress?.percent === 'number' ? `下载中 ${progress.percent}%` : state?.status === 'installing' ? '下载安装中…' : state?.status === 'starting' ? '启动中…' : state?.status === 'error' ? '错误' : state?.supported === false ? '不支持' : '未启动';
       statusTag.className = `tag ${running ? 'tag--good' : state?.status === 'error' ? 'tag--bad' : busy ? 'tag--warn' : ''}`;
       startBtn.disabled = running || busy;
       stopBtn.disabled = !running || !state?.managed;
@@ -73,20 +78,40 @@ export default {
       gpuBtn.disabled = !running || state?.gpu;
       engineStatus.textContent = running ? `${state?.manifest?.display || ''} · 端口 ${state?.port}` : state?.error || (state?.manifest ? `已就绪待启动 · ${state.manifest.display}` : '未安装');
       mcpUrlEl.textContent = running ? state?.mcpUrl || '' : '—';
+      if (installing && typeof progress?.percent === 'number') {
+        dlBar.style.display = 'block';
+        dlBarFill.style.width = `${Math.min(100, progress.percent)}%`;
+      } else {
+        dlBar.style.display = 'none';
+      }
       if (state?.status === 'error') toast(state.error, 'bad', 6000);
     }
 
     async function refresh() {
-      applyState(await window.toolbox.voicebox.status());
+      try {
+        applyState(await window.toolbox.voicebox.status());
+      } catch (error) {
+        startBtn.disabled = false;
+        statusTag.textContent = '检测失败';
+        statusTag.className = 'tag tag--bad';
+        engineStatus.textContent = error.message || '无法读取 Voicebox 状态';
+      }
     }
 
     async function start() {
       startBtn.disabled = true;
       statusTag.textContent = '启动中…';
-      const result = await window.toolbox.voicebox.start();
-      applyState(result);
-      if (!result.ok) toast(result.error || 'Voicebox 启动失败', 'bad', 6000);
-      else toast(result.managed ? 'Voicebox 已启动' : '复用已有 Voicebox 实例', 'good');
+      try {
+        const result = await window.toolbox.voicebox.start();
+        applyState(result);
+        if (!result.ok) toast(result.error || 'Voicebox 启动失败', 'bad', 6000);
+        else toast(result.managed ? 'Voicebox 已启动' : '复用已有 Voicebox 实例', 'good');
+      } catch (error) {
+        startBtn.disabled = false;
+        statusTag.textContent = '错误';
+        statusTag.className = 'tag tag--bad';
+        toast(error.message || 'Voicebox 启动失败', 'bad', 6000);
+      }
     }
 
     async function stop() {
@@ -173,6 +198,7 @@ export default {
             ),
             mcpUrlEl,
           ),
+          dlBar,
           gpuBtn,
         ),
         h('section', { class: 'card' },

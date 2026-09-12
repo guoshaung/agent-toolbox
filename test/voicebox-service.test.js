@@ -98,13 +98,62 @@ test('service：下载器流式写入 .part 后原子完成', async () => {
       },
     });
     const result = await downloadFile('https://example.invalid/file', output, {
-      fetchImpl: async () => ({ ok: true, status: 200, body }),
+      fetchImpl: async () => ({ ok: true, status: 200, headers: { get: () => null }, body }),
     });
     assert.equal(result.ok, true);
     assert.equal(fs.readFileSync(output, 'utf8'), 'part-one-part-two');
     assert.equal(fs.existsSync(`${output}.part`), false);
   } finally {
     fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('service：下载器支持断点续传（Range 请求 + .part 续写）', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'vbsvc-resume-'));
+  try {
+    const output = path.join(dir, 'Voicebox.msi');
+    const part = `${output}.part`;
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(part, 'part-a-'); // 模拟已下载 7 字节
+
+    let requestedRange = null;
+    const body = new ReadableStream({
+      start(controller) {
+        controller.enqueue(Buffer.from('part-b'));
+        controller.close();
+      },
+    });
+    const result = await downloadFile('https://example.invalid/file', output, {
+      fetchImpl: async (_url, init) => {
+        requestedRange = init.headers.Range || null;
+        return {
+          ok: true,
+          status: requestedRange ? 206 : 200,
+          headers: { get: (name) => (name.toLowerCase() === 'content-length' ? '6' : null) },
+          body,
+        };
+      },
+    });
+    assert.equal(requestedRange, 'bytes=7-', '应从 7 字节处续传');
+    assert.equal(result.ok, true);
+    assert.equal(fs.readFileSync(output, 'utf8'), 'part-a-part-b', '.part 应被续写后原子重命名');
+    assert.equal(result.resumed, true);
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('service：refreshStatus 能识别应用重启前已运行的外部实例', async () => {
+  const userData = fs.mkdtempSync(path.join(os.tmpdir(), 'vbsvc-refresh-'));
+  try {
+    const { service } = setup({ userData, healthFactory: () => response(200, { status: 'healthy', backend_type: 'pytorch', gpu_available: false }), makeServerFile: false });
+    assert.equal(service.status().status, 'idle');
+    const refreshed = await service.refreshStatus();
+    assert.equal(refreshed.status, 'running');
+    assert.equal(refreshed.managed, false);
+    assert.equal(refreshed.backend, 'pytorch');
+  } finally {
+    fs.rmSync(userData, { recursive: true, force: true });
   }
 });
 

@@ -69,7 +69,7 @@ class VoiceboxRestClient {
   }
 
   /** 带退避的请求包装；只对 429/5xx 重试，其余状态立即返回。 */
-  async request(path, { method = 'GET', body } = {}) {
+  async request(path, { method = 'GET', body, maxRetries = this.maxRetries } = {}) {
     let attempt = 0;
     for (;;) {
       attempt += 1;
@@ -81,14 +81,14 @@ class VoiceboxRestClient {
           body: body ? JSON.stringify(body) : undefined,
         });
       } catch (error) {
-        if (attempt <= this.maxRetries) {
+        if (attempt <= maxRetries) {
           await sleep(this.retryBaseMs * 2 ** (attempt - 1));
           continue;
         }
         return { ok: false, error: `网络错误：${error.message}`, attempts: attempt };
       }
       if (response.status === 429 || response.status >= 500) {
-        if (attempt <= this.maxRetries) {
+        if (attempt <= maxRetries) {
           const retryAfter = Number(response.headers?.get?.('retry-after'));
           const delay = Number.isFinite(retryAfter) && retryAfter > 0
             ? retryAfter * 1000
@@ -96,7 +96,7 @@ class VoiceboxRestClient {
           await sleep(delay);
           continue;
         }
-        return { ok: false, error: `HTTP ${response.status}（已重试 ${this.maxRetries} 次）`, attempts: attempt };
+        return { ok: false, error: `HTTP ${response.status}（已重试 ${maxRetries} 次）`, attempts: attempt };
       }
       const text = await response.text().catch(() => '');
       let json = null;
@@ -108,9 +108,9 @@ class VoiceboxRestClient {
     }
   }
 
-  /** 健康探测：未运行也返回 { ok:false, running:false }，不抛异常。 */
+  /** 健康探测：未运行也快速返回，不因连接拒绝等待重试。 */
   async probeHealth() {
-    const result = await this.request('/health', {});
+    const result = await this.request('/health', { maxRetries: 0 });
     if (!result.ok && !result.status) {
       // 网络层失败（连接被拒）
       return { ok: false, running: false, healthy: false, error: result.error };

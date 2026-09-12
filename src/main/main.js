@@ -1361,7 +1361,7 @@ function registerIpc() {
   ipcMain.handle('appControls:cycleWindows', () => appControls.cycleWindows());
 
   // Voicebox：本机语音服务（REST /generate，model_size 0.6B；MCP 仅供 Agent）
-  ipcMain.handle('voicebox:status', () => voiceboxService.status());
+  ipcMain.handle('voicebox:status', () => voiceboxService.refreshStatus());
   ipcMain.handle('voicebox:start', () => voiceboxService.start());
   ipcMain.handle('voicebox:stop', () => voiceboxService.stop());
   ipcMain.handle('voicebox:mcpInfo', () => voiceboxService.mcpInfo());

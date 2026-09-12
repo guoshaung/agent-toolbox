@@ -53,15 +53,25 @@ test('rest：ensureZhPresetProfile 只创建一次并缓存', async () => {
   assert.equal(creates, 1);
 });
 
-test('rest：429 退避后成功', async () => {
+test('rest：普通 REST 请求遇到 429 退避后成功', async () => {
   let calls = 0;
   const client = new VoiceboxRestClient({ retryBaseMs: 1, fetchImpl: async () => {
     calls += 1;
-    return calls === 1 ? response(429, { detail: 'busy' }, { 'retry-after': '0' }) : response(200, { status: 'healthy' });
+    return calls === 1 ? response(429, { detail: 'busy' }, { 'retry-after': '0' }) : response(200, []);
   } });
-  const result = await client.probeHealth();
-  assert.equal(result.healthy, true);
+  const result = await client.listProfiles();
+  assert.equal(result.ok, true);
   assert.equal(calls, 2);
+});
+
+test('rest：健康探测连接失败时不做指数退避', async () => {
+  let calls = 0;
+  const client = new VoiceboxRestClient({ retryBaseMs: 1000, fetchImpl: async () => { calls += 1; throw new Error('connection refused'); } });
+  const started = Date.now();
+  const result = await client.probeHealth();
+  assert.equal(result.running, false);
+  assert.equal(calls, 1);
+  assert.ok(Date.now() - started < 500, '健康探测应快速失败，避免点击按钮后长时间无反馈');
 });
 
 test('rest：pollGeneration completed 与超时', async () => {

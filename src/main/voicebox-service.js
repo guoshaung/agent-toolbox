@@ -16,7 +16,7 @@
 
 const fs = require('node:fs');
 const path = require('node:path');
-const { Readable } = require('node:stream');
+const { Readable, Transform } = require('node:stream');
 const { pipeline } = require('node:stream/promises');
 const { spawn, execFile } = require('node:child_process');
 
@@ -25,6 +25,9 @@ const { resolveManifest, pickAsset, pickGpuAsset, isSupported } = require('./voi
 
 const GITHUB_API = 'https://api.github.com/repos/jamiepine/voicebox/releases/latest';
 const BOOT_TIMEOUT_MS = 180000;      // 服务端启动就绪上限（模型下载发生在首次生成，不算在内）
+const NET_TIMEOUT_MS = 15 * 1000;    // 元数据请求超时（查版本）
+const DOWNLOAD_TIMEOUT_MS = 30 * 60 * 1000; // 大包下载总超时，防无限挂起
+const PROGRESS_EVERY = 2 * 1024 * 1024;     // 每 2MB 上报一次进度
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -53,26 +56,73 @@ function killTree(child, platform = process.platform) {
   } catch { try { child.kill('SIGKILL'); } catch { /* 已退出 */ } }
 }
 
-/** HTTP 流式下载（跟随重定向），避免把 500MB+ 发行包整个放进 Electron 堆内存。 */
-async function downloadFile(url, filePath, { fetchImpl = globalThis.fetch, onProgress } = {}) {
+/**
+ * HTTP 流式下载，支持断点续传与进度上报。
+ * - 存在 .part 时用 Range 从断点继续，中断后不用整包重下；
+ * - 每约 2MB 回调一次 onProgress({ received, total, bytes, percent })；
+ * - 带总超时，不无限挂起；失败保留 .part 供续传。
+ */
+async function downloadFile(url, filePath, { fetchImpl = globalThis.fetch, onProgress, timeoutMs = DOWNLOAD_TIMEOUT_MS } = {}) {
   const tempPath = `${filePath}.part`;
-  try {
-    const response = await fetchImpl(url, { redirect: 'follow' });
-    if (!response.ok) return { ok: false, error: `下载失败：HTTP ${response.status}` };
-    fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  let existing = 0;
+  try { existing = fs.existsSync(tempPath) ? fs.statSync(tempPath).size : 0; } catch { existing = 0; }
 
+  let response;
+  try {
+    response = await fetchImpl(url, {
+      redirect: 'follow',
+      headers: existing > 0 ? { Range: `bytes=${existing}-` } : {},
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+  } catch (error) {
+    return { ok: false, error: `下载失败：${error.message}`, partial: existing };
+  }
+
+  if (response.status === 416) {
+    // 已有部分恰好等于完整大小：直接完成
+    fs.renameSync(tempPath, filePath);
+    const bytes = fs.statSync(filePath).size;
+    if (onProgress) onProgress({ received: bytes, total: bytes, bytes, percent: 100 });
+    return { ok: true, bytes, filePath, resumed: true };
+  }
+  if (response.status !== 200 && response.status !== 206) {
+    return { ok: false, error: `下载失败：HTTP ${response.status}`, partial: existing };
+  }
+
+  const resumed = response.status === 206 && existing > 0;
+  const resumeFrom = resumed ? existing : 0;
+  const contentLength = Number(response.headers.get('content-length')) || 0;
+  const total = contentLength + resumeFrom;
+  let received = resumeFrom;
+  let lastEmit = 0;
+
+  const counter = new Transform({
+    transform(chunk, _enc, cb) {
+      received += chunk.length;
+      if (onProgress && received - lastEmit >= PROGRESS_EVERY) {
+        lastEmit = received;
+        onProgress({ received, total, bytes: received, percent: total ? Math.min(100, Math.round((received / total) * 100)) : received });
+      }
+      cb(null, chunk);
+    },
+  });
+
+  try {
     if (response.body && typeof response.body.getReader === 'function') {
-      await pipeline(Readable.fromWeb(response.body), fs.createWriteStream(tempPath));
+      await pipeline(Readable.fromWeb(response.body), counter, fs.createWriteStream(tempPath, { flags: resumed ? 'a' : 'w' }));
     } else {
-      fs.writeFileSync(tempPath, Buffer.from(await response.arrayBuffer()));
+      const buffer = Buffer.from(await response.arrayBuffer());
+      received += buffer.length;
+      fs.writeFileSync(tempPath, buffer, { flag: resumed ? 'a' : 'w' });
     }
     fs.renameSync(tempPath, filePath);
     const bytes = fs.statSync(filePath).size;
-    if (onProgress) onProgress({ bytes, filePath });
-    return { ok: true, bytes, filePath };
+    if (onProgress) onProgress({ received: bytes, total, bytes, percent: 100 });
+    return { ok: true, bytes, filePath, resumed };
   } catch (error) {
-    try { fs.rmSync(tempPath, { force: true }); } catch { /* 清理失败不覆盖原错误 */ }
-    return { ok: false, error: `下载失败：${error.message}` };
+    // 失败保留 .part，下次续传
+    return { ok: false, error: `下载失败：${error.message}`, partial: received };
   }
 }
 
@@ -161,6 +211,23 @@ class VoiceboxService {
     return { ...this.state, exists, manifest: manifest ? { key: manifest.key, display: manifest.display, extract: manifest.extract } : null, supported: isSupported(this.platform, this.arch) };
   }
 
+  /** 页面刷新时同步外部 Voicebox 的实际运行状态。 */
+  async refreshStatus() {
+    const health = await this.client.probeHealth();
+    if (health.ok && health.running && health.healthy) {
+      this.emit({
+        status: 'running',
+        managed: Boolean(this.child && !this.child.killed),
+        error: '',
+        backend: health.backend,
+        gpuAvailable: health.gpuAvailable,
+      });
+    } else if (this.state.status === 'running' && !this.child) {
+      this.emit({ status: 'idle', managed: false, error: '' });
+    }
+    return this.status();
+  }
+
   mcpInfo() {
     return {
       url: `http://127.0.0.1:${this.port}/mcp/`,
@@ -175,7 +242,7 @@ class VoiceboxService {
     if (!manifest) return { ok: false, error: `当前平台不受支持：${this.platform}-${this.arch}` };
     let response;
     try {
-      response = await this.fetchImpl(GITHUB_API, { headers: { 'User-Agent': 'agent-toolbox' } });
+      response = await this.fetchImpl(GITHUB_API, { headers: { 'User-Agent': 'agent-toolbox' }, signal: AbortSignal.timeout(NET_TIMEOUT_MS) });
     } catch (error) {
       return { ok: false, error: `查询 Voicebox 版本失败：${error.message}` };
     }
@@ -238,20 +305,24 @@ class VoiceboxService {
     const info = await this.fetchReleaseAsset();
     if (!info.ok) return info;
 
-    this.emit({ status: 'installing', error: '', exists: false });
+    this.emit({ status: 'installing', error: '', exists: false, progress: null });
     const archivePath = path.join(this.downloadsDir(), info.asset.name);
     if (!fs.existsSync(archivePath)) {
-      const dl = await downloadFile(info.asset.url, archivePath, { fetchImpl: this.fetchImpl });
-      if (!dl.ok) { this.emit({ status: 'error', error: dl.error }); return dl; }
+      const dl = await downloadFile(info.asset.url, archivePath, {
+        fetchImpl: this.fetchImpl,
+        onProgress: (progress) => this.emit({ status: 'installing', error: '', progress }),
+      });
+      if (!dl.ok) { this.emit({ status: 'error', error: dl.error, progress: null }); return dl; }
     }
+    this.emit({ status: 'installing', error: '', progress: { percent: 100, phase: 'extracting' } });
     const ex = await this.extractDownload(archivePath, this.rootDir());
-    if (!ex.ok) { this.emit({ status: 'error', error: ex.error }); return ex; }
+    if (!ex.ok) { this.emit({ status: 'error', error: ex.error, progress: null }); return ex; }
     if (!fs.existsSync(serverPath)) {
       const err = `安装完成但未找到服务端二进制：${serverPath}`;
-      this.emit({ status: 'error', error: err });
+      this.emit({ status: 'error', error: err, progress: null });
       return { ok: false, error: err };
     }
-    this.emit({ status: 'idle', error: '', exists: true });
+    this.emit({ status: 'idle', error: '', exists: true, progress: null });
     return { ok: true, reused: false, serverPath, version: info.version };
   }
 
@@ -351,8 +422,11 @@ class VoiceboxService {
     if (!assetUrl) return { ok: false, error: 'CUDA 资产缺少下载地址。' };
     const archivePath = path.join(this.downloadsDir(), asset.name);
     if (!fs.existsSync(archivePath)) {
-      const dl = await downloadFile(assetUrl, archivePath, { fetchImpl: this.fetchImpl });
-      if (!dl.ok) return dl;
+      const dl = await downloadFile(assetUrl, archivePath, {
+        fetchImpl: this.fetchImpl,
+        onProgress: (progress) => this.emit({ status: 'installing', error: '', progress, gpuInstall: true }),
+      });
+      if (!dl.ok) { this.emit({ status: 'error', error: dl.error, progress: null }); return dl; }
     }
     const ex = await this.extractTarArchive(archivePath, this.cudaDir());
     if (!ex.ok) return ex;

@@ -2901,3 +2901,5 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .voice__player { display: block; width: 100%; margin-top: 10px; }
 .voice__tts-status { font-size: 11.5px; align-self: center; }
 .voice__slide-out { white-space: pre-wrap; font-size: 12px; line-height: 1.7; margin-top: 8px; }
+.voice__dlbar { height: 6px; margin: 4px 0; border-radius: 4px; background: var(--bg-sunken); overflow: hidden; }
+.voice__dlbar-fill { height: 100%; width: 0; background: linear-gradient(90deg, var(--accent), var(--accent-secondary)); border-radius: 4px; transition: width .3s ease; }

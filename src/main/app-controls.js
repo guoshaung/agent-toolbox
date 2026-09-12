@@ -39,12 +39,12 @@ public static class AppControlsWin32 {
   public static string Title(IntPtr h) { var s = new StringBuilder(512); GetWindowText(h, s, s.Capacity); return s.ToString(); }
 }
 '@
-function Out($value) { Write-Output (($value | ConvertTo-Json -Compress) -join '') }
+function EmitJson($value) { $value | ConvertTo-Json -Compress }
 $own = [uint32]$env:AGENT_TOOLBOX_OWN_PID
-if ($Command -eq 'foreground') { $h=[AppControlsWin32]::Foreground(); @{handle=$h.ToInt64().ToString();pid=[AppControlsWin32]::Pid($h);title=[AppControlsWin32]::Title($h)} | Out; exit }
-if ($Command -eq 'windows') { $items = @([AppControlsWin32]::Windows() | ForEach-Object { @{handle=$_.ToInt64().ToString();pid=[AppControlsWin32]::Pid($_);title=[AppControlsWin32]::Title($_)} }); @{windows=$items} | Out; exit }
-if ($Command -eq 'activate') { $ok=[AppControlsWin32]::Activate([IntPtr]::new([long]$Rest[0])); @{ok=$ok} | Out; exit }
-@{ok=$false;error='unknown command'} | Out
+if ($Command -eq 'foreground') { $h=[AppControlsWin32]::Foreground(); @{handle=$h.ToInt64().ToString();pid=[AppControlsWin32]::Pid($h);title=[AppControlsWin32]::Title($h)} | EmitJson; exit }
+if ($Command -eq 'windows') { $items = @([AppControlsWin32]::Windows() | ForEach-Object { @{handle=$_.ToInt64().ToString();pid=[AppControlsWin32]::Pid($_);title=[AppControlsWin32]::Title($_)} }); @{windows=$items} | EmitJson; exit }
+if ($Command -eq 'activate') { $ok=[AppControlsWin32]::Activate([IntPtr]::new([long]$Rest[0])); @{ok=$ok} | EmitJson; exit }
+@{ok=$false;error='unknown command'} | EmitJson
 `;
 
 function runPowerShell(command, args, { exec = execFileAsync, env = process.env } = {}) {
