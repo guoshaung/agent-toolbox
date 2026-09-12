@@ -111,6 +111,11 @@ contextBridge.exposeInMainWorld('toolbox', {
     terminal: (payload) => ipcRenderer.invoke('practice:terminal', payload),
   },
 
+  presentation: {
+    /** 导出结构化科研演示为可编辑 PPTX */
+    exportPptx: (deck) => ipcRenderer.invoke('presentation:exportPptx', deck),
+  },
+
   dock: {
     status: () => ipcRenderer.invoke('dock:status'),
     requestPermission: () => ipcRenderer.invoke('dock:requestPermission'),
@@ -132,6 +137,17 @@ contextBridge.exposeInMainWorld('toolbox', {
     shortcutLabel: () => process.platform === 'darwin' ? '⌘⇧E' : 'Ctrl+Shift+E',
     resolve: (payload) => ipcRenderer.invoke('term:resolve', payload),
     onExplainRequest: (callback) => ipcRenderer.on('term:explain-request', (_event, payload) => callback(payload)),
+  },
+
+  appControls: {
+    /** 当前启停状态 + 使用的快捷键 */
+    status: () => ipcRenderer.invoke('appControls:status'),
+    /** 开启/关闭快捷控制，返回注册结果 */
+    setEnabled: (enabled) => ipcRenderer.invoke('appControls:setEnabled', enabled),
+    /** 强制关闭当前前台应用（Ctrl+Q，带安全名单） */
+    closeForeground: () => ipcRenderer.invoke('appControls:closeForeground'),
+    /** 在当前前台应用的多个窗口间循环（Ctrl+~） */
+    cycleWindows: () => ipcRenderer.invoke('appControls:cycleWindows'),
   },
 
   lit: {

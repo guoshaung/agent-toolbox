@@ -1,4 +1,8 @@
 import { h, toast } from '../../core/ui.js';
+import {
+  ZOOM_MIN, ZOOM_MAX, ZOOM_STEP, WHEEL_SENSITIVITY,
+  SMART_WIDTH_RATIO, MAX_VIEWPORT_RATIO, MIN_PLAYER_WIDTH, formatPercent,
+} from './zoom-math.js';
 
 const BILIBILI_STUDY_URL = 'https://www.bilibili.com/v/knowledge/learning/';
 const VIDEO_PLUGIN_KEY = 'video.plugins';
@@ -26,6 +30,12 @@ const VIDEO_PLUGINS = [
     id: 'swipe-back',
     name: '双指左滑返回',
     description: '在学习区双指向左滑，返回 B 站上一个页面；只识别明显的横向手势，不影响普通滚动。',
+    defaultOn: true,
+  },
+  {
+    id: 'smart-zoom',
+    name: '视频智能尺寸与缩放',
+    description: '智能尺寸让视频铺满窗口宽度；支持 −/+ 按钮与 Ctrl/Cmd 滚轮、触控板捏合缩放，重置恢复原始尺寸。不影响双指左滑返回。',
     defaultOn: true,
   },
   {
@@ -321,10 +331,240 @@ export default {
       }
     }
 
+    /**
+     * 视频智能尺寸与缩放（注入式，与倍速条同一套模式）：
+     * - 智能尺寸：把播放器铺满窗口宽度，保持原始宽高比并居中；
+     * - 缩放：以「原始宽度 或 智能尺寸宽度」为基准放大/缩小（50%–200%）；
+     * - Ctrl/Cmd + 滚轮（含触控板捏合）连续缩放，普通滚动与横向滑动手势不受影响；
+     * - 状态存 localStorage，跨页面保持；重置 / 关闭插件时完整还原播放器样式。
+     * command: 'toggle-smart' | 'zoom-in' | 'zoom-out' | 'reset' | 'refresh' | 'get-state'
+     */
+    async function applyVideoZoomPlugin(command) {
+      if (!pluginEnabled('smart-zoom')) {
+        try {
+          await studyView.executeJavaScript(`(() => {
+            const m = window.__agentToolboxSmartZoom;
+            if (m) m.disable();
+            return { applied: false, smart: false, scale: 1 };
+          })()`, true);
+        } catch {}
+        return { applied: false, smart: false, scale: 1 };
+      }
+      const url = studyView.getURL();
+      if (!/bilibili\.com/i.test(url || '')) return null;
+      const cmd = ['toggle-smart', 'zoom-in', 'zoom-out', 'reset', 'get-state'].includes(command) ? command : 'refresh';
+      try {
+        const result = await studyView.executeJavaScript(`(() => {
+          const key = '__agentToolboxSmartZoom';
+          if (window[key]) {
+            return window[key].command(${JSON.stringify(cmd)});
+          }
+          const MIN = ${ZOOM_MIN}, MAX = ${ZOOM_MAX}, STEP = ${ZOOM_STEP};
+          const SENSITIVITY = ${WHEEL_SENSITIVITY};
+          const SMART_RATIO = ${SMART_WIDTH_RATIO};
+          const MAX_VW = ${MAX_VIEWPORT_RATIO};
+          const MIN_W = ${MIN_PLAYER_WIDTH};
+          const STORE_KEY = 'agent-toolbox-smart-zoom';
+          const clamp = (n) => Math.max(MIN, Math.min(MAX, n));
+          const state = { enabled: true, smart: false, scale: 1, target: null, natural: null, original: null, overflow: null, tipTimer: null };
+
+          const resolveTarget = () => {
+            const el = document.querySelector('.bpx-player-container');
+            if (el) return el;
+            const video = document.querySelector('.bpx-player-video-wrap video, .bilibili-player-video-wrap video, video');
+            if (video) {
+              return video.closest('.bpx-player-container')
+                || video.closest('.bpx-player-video-wrap, .bilibili-player-video-wrap, .html5-video-player')
+                || video.parentElement;
+            }
+            return null;
+          };
+          const measure = (el) => {
+            if (!el) return { w: 0, h: 0 };
+            const rect = el.getBoundingClientRect();
+            const w = rect.width || el.offsetWidth || 640;
+            const h = rect.height || el.offsetHeight || Math.round((w / 16) * 9);
+            return { w, h };
+          };
+          const natural = () => {
+            if (state.natural) return state.natural;
+            const el = state.target;
+            if (el && el.tagName === 'VIDEO' && el.videoWidth && el.videoHeight) {
+              state.natural = { w: el.videoWidth, h: el.videoHeight };
+              return state.natural;
+            }
+            state.natural = measure(el);
+            return state.natural;
+          };
+          const ensureOriginal = () => {
+            const el = state.target;
+            if (!el || state.original) return;
+            state.original = { width: el.style.width || '', height: el.style.height || '', zIndex: el.style.zIndex || '' };
+          };
+          const captureOverflow = () => {
+            if (state.overflow) return;
+            state.overflow = [];
+            let node = state.target ? state.target.parentElement : null;
+            let depth = 0;
+            while (node && depth < 3) {
+              const cs = getComputedStyle(node);
+              if (cs.overflowX !== 'visible' || cs.overflowY !== 'visible') {
+                state.overflow.push({ el: node, x: cs.overflowX, y: cs.overflowY });
+                node.style.overflowX = 'visible';
+                node.style.overflowY = 'visible';
+              }
+              node = node.parentElement;
+              depth += 1;
+            }
+          };
+          const restoreOverflow = () => {
+            if (!state.overflow) return;
+            for (const o of state.overflow) {
+              o.el.style.overflowX = o.x;
+              o.el.style.overflowY = o.y;
+            }
+            state.overflow = null;
+          };
+          const showTip = () => {
+            const label = Math.round(state.scale * 100) + '%' + (state.smart ? ' · 智能尺寸' : '');
+            let tip = document.getElementById('agent-toolbox-zoom-tip');
+            if (!tip) {
+              tip = document.createElement('div');
+              tip.id = 'agent-toolbox-zoom-tip';
+              tip.style.cssText = 'position:fixed;left:50%;bottom:92px;transform:translateX(-50%);z-index:2147483647;padding:6px 12px;border-radius:10px;background:rgba(18,20,25,.84);border:1px solid rgba(255,255,255,.18);color:#eef3ff;font:600 12px/1 Arial,sans-serif;backdrop-filter:blur(10px);pointer-events:none;transition:opacity .25s;opacity:1;';
+              document.body.appendChild(tip);
+            }
+            tip.textContent = label;
+            tip.style.opacity = '1';
+            clearTimeout(state.tipTimer);
+            state.tipTimer = setTimeout(() => { if (tip) tip.style.opacity = '0'; }, 900);
+          };
+          const apply = () => {
+            const el = state.target;
+            if (!el || !state.enabled) return;
+            ensureOriginal();
+            captureOverflow();
+            const n = natural();
+            if (!n.w) return;
+            const vw = Math.max(320, document.documentElement.clientWidth || window.innerWidth || 960);
+            const base = state.smart ? Math.round(vw * SMART_RATIO) : n.w;
+            const wanted = Math.round(base * state.scale);
+            const maxW = Math.max(n.w * MAX, Math.round(vw * MAX_VW));
+            const w = Math.max(MIN_W, Math.min(maxW, wanted));
+            const h = Math.round((w * n.h) / n.w);
+            el.style.width = w + 'px';
+            el.style.height = h + 'px';
+            el.style.marginLeft = 'auto';
+            el.style.marginRight = 'auto';
+            el.style.maxWidth = 'none';
+            el.style.zIndex = '110';
+          };
+          const clearSize = () => {
+            const el = state.target;
+            if (!el) return;
+            if (state.original) {
+              el.style.width = state.original.width;
+              el.style.height = state.original.height;
+              el.style.zIndex = state.original.zIndex;
+            }
+            el.style.marginLeft = '';
+            el.style.marginRight = '';
+            el.style.maxWidth = '';
+            restoreOverflow();
+            state.natural = null;
+          };
+          const persist = () => {
+            try { localStorage.setItem(STORE_KEY, JSON.stringify({ smart: state.smart, scale: state.scale })); } catch {}
+          };
+          const restore = () => {
+            try {
+              const saved = JSON.parse(localStorage.getItem(STORE_KEY) || 'null');
+              if (saved) {
+                if (typeof saved.scale === 'number') state.scale = clamp(saved.scale);
+                if (typeof saved.smart === 'boolean') state.smart = saved.smart;
+              }
+            } catch {}
+          };
+          const shouldApply = () => state.smart || Math.abs(state.scale - 1) > 1e-9;
+          const getState = () => ({ applied: Boolean(state.target), smart: state.smart, scale: state.scale });
+          const onWheel = (event) => {
+            if (!state.enabled) return;
+            if (!(event.ctrlKey || event.metaKey)) return; // 普通滚动、双指横滑交给页面与 swipe-back
+            const t = event.target;
+            if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+            const el = state.target || resolveTarget();
+            if (!el) return;
+            event.preventDefault(); // 拦掉页面自身的 Ctrl 缩放，只做视频缩放
+            let delta = event.deltaY;
+            if (event.deltaMode === 1) delta *= 33;
+            else if (event.deltaMode === 2) delta *= 800;
+            state.scale = clamp(state.scale * Math.exp(-delta * SENSITIVITY));
+            persist();
+            apply();
+            showTip();
+          };
+          const command = (cmd) => {
+            state.enabled = true;
+            if (cmd === 'refresh' || !state.target) state.refresh();
+            if (cmd === 'toggle-smart') state.smart = !state.smart;
+            else if (cmd === 'zoom-in') state.scale = clamp(state.scale + STEP);
+            else if (cmd === 'zoom-out') state.scale = clamp(state.scale - STEP);
+            else if (cmd === 'reset') {
+              state.smart = false;
+              state.scale = 1;
+              clearSize();
+              persist();
+              return getState();
+            }
+            if (cmd === 'toggle-smart' || cmd === 'zoom-in' || cmd === 'zoom-out') persist();
+            if (shouldApply()) {
+              apply();
+              if (cmd && cmd !== 'refresh' && cmd !== 'get-state') showTip();
+            } else {
+              clearSize();
+            }
+            return getState();
+          };
+          state.refresh = () => {
+            const next = resolveTarget();
+            if (next) {
+              if (next !== state.target) {
+                state.original = null;
+                state.natural = null;
+              }
+              state.target = next;
+              ensureOriginal();
+            }
+            return state.target;
+          };
+          const disable = () => {
+            state.enabled = false;
+            clearSize();
+          };
+
+          restore();
+          state.target = resolveTarget();
+          if (state.target) ensureOriginal();
+          document.addEventListener('wheel', onWheel, { capture: true, passive: false });
+          window[key] = { command, disable, getState };
+          return window[key].command(${JSON.stringify(cmd)});
+        })()`, true);
+        if (result && typeof result.scale === 'number') {
+          zoomState.smart = Boolean(result.smart);
+          zoomState.scale = result.scale;
+        }
+        return result;
+      } catch (err) {
+        return null;
+      }
+    }
+
     async function applyStudyPlugins() {
       await applySpeedPlugin();
       await applySwipeBackPlugin();
       await applyWebFullscreen();
+      const zoomResult = await applyVideoZoomPlugin('refresh');
+      if (zoomResult && typeof zoomResult.scale === 'number') syncZoomUI(zoomResult);
       if (!pluginEnabled('subtitle-auto-open')) {
         subtitleStatus.textContent = '自动字幕插件已关闭';
         subtitleStatus.className = 'tag tag--warn video__subtitle-status';
@@ -991,7 +1231,7 @@ export default {
             toggle.addEventListener('change', async () => {
               pluginPrefs = { ...pluginPrefs, [plugin.id]: toggle.checked };
               await config.set(VIDEO_PLUGIN_KEY, pluginPrefs);
-              if (['subtitle-auto-open', 'playback-speed', 'swipe-back', 'study-web-fullscreen'].includes(plugin.id)) scheduleStudyPlugins();
+              if (['subtitle-auto-open', 'playback-speed', 'swipe-back', 'smart-zoom', 'study-web-fullscreen'].includes(plugin.id)) scheduleStudyPlugins();
               renderPluginLibrary();
             });
             return h('div', { class: 'video__plugin-card' },
@@ -1004,6 +1244,8 @@ export default {
                 ? h('button', { class: 'btn btn--sm video__plugin-action', onclick: triggerAiSubtitle }, '当前视频用 AI 字幕') : null,
               plugin.id === 'playback-speed'
                 ? h('button', { class: 'btn btn--sm video__plugin-action', onclick: applySpeedPlugin }, '重新显示倍速条') : null,
+              plugin.id === 'smart-zoom'
+                ? h('button', { class: 'btn btn--sm video__plugin-action', onclick: () => runZoomCommand('reset') }, '恢复原始尺寸') : null,
               plugin.id === 'userscript-compat'
                 ? h('button', { class: 'btn btn--sm video__plugin-action', onclick: () => renderPluginLibrary() }, '编辑脚本 ↓') : null,
             );
@@ -1025,6 +1267,47 @@ export default {
       }
     }
 
+    const zoomState = { smart: false, scale: 1 };
+    const smartZoomBtn = h('button', {
+      class: 'btn btn--sm video__smart-btn',
+      title: '智能尺寸：让视频铺满当前窗口宽度，再点恢复',
+      onclick: () => runZoomCommand('toggle-smart'),
+    }, '智能尺寸');
+    const zoomOutBtn = h('button', {
+      class: 'btn btn--sm video__zoom-step',
+      title: '缩小 15%（也可 Ctrl/Cmd 滚轮或触控板捏合）',
+      onclick: () => runZoomCommand('zoom-out'),
+    }, '−');
+    const zoomPercent = h('span', { class: 'video__zoom-percent', title: '当前视频缩放比例（50%–200%）' }, '100%');
+    const zoomInBtn = h('button', {
+      class: 'btn btn--sm video__zoom-step',
+      title: '放大 15%（也可 Ctrl/Cmd 滚轮或触控板捏合）',
+      onclick: () => runZoomCommand('zoom-in'),
+    }, '+');
+    const zoomResetBtn = h('button', {
+      class: 'btn btn--sm video__zoom-step',
+      title: '恢复视频原始尺寸（智能尺寸关闭、缩放回到 100%）',
+      onclick: () => runZoomCommand('reset'),
+    }, '重置');
+    const zoomBar = h('div', { class: 'video__zoombar' }, smartZoomBtn, zoomOutBtn, zoomPercent, zoomInBtn, zoomResetBtn);
+
+    function syncZoomUI(result) {
+      if (!result || typeof result.scale !== 'number') return;
+      zoomState.smart = Boolean(result.smart);
+      zoomState.scale = result.scale;
+      zoomPercent.textContent = formatPercent(zoomState.scale);
+      smartZoomBtn.classList.toggle('is-active', zoomState.smart);
+    }
+
+    async function runZoomCommand(command) {
+      if (!pluginEnabled('smart-zoom')) return toast('视频尺寸缩放插件已关闭，去「插件库」打开', 'info', 4200);
+      const url = studyView.getURL();
+      if (!/bilibili\.com/i.test(url || '')) return toast('请先在 B 站打开视频页面', 'info', 4200);
+      const result = await applyVideoZoomPlugin(command);
+      if (!result) return toast('页面还没就绪，稍后再试', 'info');
+      syncZoomUI(result);
+    }
+
     const pluginBtn = h('button', { class: 'btn btn--sm video__plugin-btn', onclick: () => { pluginPanel.hidden = !pluginPanel.hidden; if (!pluginPanel.hidden) renderPluginLibrary(); } }, '插件库');
     const studyTab = h('button', { class: 'btn btn--sm video__mode-tab', onclick: () => setView('study') }, '学习区');
     const reportTab = h('button', { class: 'btn btn--sm video__mode-tab', onclick: () => setView('report') }, '视频报告');
@@ -1041,6 +1324,7 @@ export default {
       h('button', { class: 'btn btn--sm btn--primary', title: '回到固定的 B 站学习区入口', onclick: resetStudyArea }, '回到学习区'),
       studyStatus,
       subtitleStatus,
+      zoomBar,
       h('span', { style: { flex: 1 } }),
       studyUrl,
       h('button', { class: 'btn btn--sm', title: '当前视频无字幕时，尝试 B 站 AI 字幕并进入报告流程', onclick: triggerAiSubtitle }, 'AI字幕兜底'),

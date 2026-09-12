@@ -40,6 +40,7 @@ const { computeBounds, canApplyGesture } = require('./window-gesture');
 const { VoiceboxService } = require('./voicebox-service');
 const { OpenAIImageClient } = require('./openai-image');
 const { generateTeachingSlides } = require('./teaching-slides');
+const { exportPptx } = require('./pptx-export');
 
 async function remoteStatusWithQr(state) {
   const current = state || remoteControl.status();
@@ -1743,6 +1744,20 @@ function registerIpc() {
     return { name: path.basename(filePath) };
   });
 
+  ipcMain.handle('presentation:exportPptx', async (_event, deck = {}) => {
+    const result = await dialog.showSaveDialog(mainWindow, {
+      title: '导出科研 PPTX',
+      defaultPath: `${String(deck.title || '科研演示').replace(/[\\/:*?"<>|]+/g, '_').slice(0, 80)}.pptx`,
+      filters: [{ name: 'PowerPoint 演示文稿', extensions: ['pptx'] }],
+    });
+    if (result.canceled || !result.filePath) return { ok: false, canceled: true };
+    try {
+      return await exportPptx(result.filePath, deck);
+    } catch (error) {
+      return { ok: false, error: `PPTX 导出失败：${error.message}` };
+    }
+  });
+
   // ---- 聊天记录迁移：读 Codex / Claude 的本地会话，导出或打包 ----
 
   ipcMain.handle('chat:sources', () => chatBridge.SOURCES);
@@ -2448,12 +2463,6 @@ app.whenReady().then(async () => {
   tavernService = new TavernService({ app, getWindow: () => mainWindow });
   voiceboxService = new VoiceboxService({ getUserDataPath: () => app.getPath('userData'), getWindow: () => mainWindow });
   appControls = new AppControls({ store });
-  const controlsShortcut = appControls.register(globalShortcut);
-  if (controlsShortcut.enabled && !controlsShortcut.registered) {
-    console.warn('[appControls]', controlsShortcut.closeRegistered || controlsShortcut.cycleRegistered
-      ? '快捷键有冲突，部分未注册。'
-      : '快捷键被其他应用占用了。');
-  }
 
   registerIpc();
   hookLiteratureDownloads();
@@ -2471,6 +2480,12 @@ app.whenReady().then(async () => {
   if (!termShortcut.ok) console.warn('[terms]', termShortcut.error);
   const dockShortcut = registerDockShortcut();
   if (!dockShortcut.ok) console.warn('[dock]', dockShortcut.error);
+  const controlsShortcut = appControls.register(globalShortcut);
+  if (controlsShortcut.enabled && !controlsShortcut.registered) {
+    console.warn('[appControls]', controlsShortcut.closeRegistered || controlsShortcut.cycleRegistered
+      ? '快捷键有冲突，部分未注册。'
+      : '快捷键被其他应用占用了。');
+  }
 
   app.on('activate', () => {
     if (!mainWindow || mainWindow.isDestroyed()) createWindow();

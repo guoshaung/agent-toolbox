@@ -5,11 +5,24 @@ const http = require('node:http');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
-const { downloadPapersBatch, fetchPaperByTitle, normalizeDoi, restoreAbstract, queryTerms, relevanceDetail, rankPaper } = require('../src/main/lit-fetch');
+const {
+  downloadPapersBatch, fetchPaperByTitle, normalizeDoi, extractDoi, classifyLiteratureInput,
+  restoreAbstract, queryTerms, relevanceDetail, rankPaper,
+} = require('../src/main/lit-fetch');
 
 test('DOI 规范化去掉链接和 doi 前缀', () => {
   assert.equal(normalizeDoi('https://doi.org/10.1234/ABC'), '10.1234/ABC');
   assert.equal(normalizeDoi('doi: 10.1234/ABC'), '10.1234/ABC');
+  assert.equal(normalizeDoi('https://doi.org/10.1234/ABC?utm_source=test'), '10.1234/ABC');
+  assert.equal(extractDoi('论文 DOI: 10.48550/arXiv.2401.12345.'), '10.48550/arXiv.2401.12345');
+});
+
+test('文献输入路由不会把 DOI 和 arXiv 摘要页误当成 PDF 直链', () => {
+  assert.deepEqual(classifyLiteratureInput('https://doi.org/10.1234/ABC'), { kind: 'doi', doi: '10.1234/ABC' });
+  assert.deepEqual(classifyLiteratureInput('https://arxiv.org/abs/2401.12345v2'), { kind: 'arxiv', id: '2401.12345' });
+  assert.deepEqual(classifyLiteratureInput('2401.12345'), { kind: 'arxiv', id: '2401.12345' });
+  assert.deepEqual(classifyLiteratureInput('https://example.com/download?id=1'), { kind: 'url', url: 'https://example.com/download?id=1' });
+  assert.deepEqual(classifyLiteratureInput('attention is all you need'), { kind: 'text', query: 'attention is all you need' });
 });
 
 test('OpenAlex 倒排摘要按位置还原', () => {
