@@ -282,6 +282,42 @@ contextBridge.exposeInMainWorld('toolbox', {
     onStatus: (callback) => ipcRenderer.on('tavern:status', (_event, state) => callback(state)),
   },
 
+  voicebox: {
+    /** 当前状态：idle|installing|starting|running|error + platform/manifest */
+    status: () => ipcRenderer.invoke('voicebox:status'),
+    /** 启动（复用已运行实例 / 本地已安装 / 自动下载安装） */
+    start: () => ipcRenderer.invoke('voicebox:start'),
+    /** 停止受管进程（不影响外部已运行的实例） */
+    stop: () => ipcRenderer.invoke('voicebox:stop'),
+    /** REST TTS：POST /generate，model_size 0.6B，返回文件路径与播放地址 */
+    tts: (text) => ipcRenderer.invoke('voicebox:tts', text),
+    /** 可选 GPU 加速（Windows x64，用户点击后才下载 CUDA 服务端） */
+    installGpu: () => ipcRenderer.invoke('voicebox:installGpu'),
+    /** MCP 端点信息（Agent 用；内部配音走 REST） */
+    mcpInfo: () => ipcRenderer.invoke('voicebox:mcpInfo'),
+    onStatus: (callback) => ipcRenderer.on('voicebox:status', (_event, state) => callback(state)),
+  },
+
+  slides: {
+    /** 生成 5 页教学 storyboard + 5 张 GPT Image 配图（第一版，不做视频） */
+    generateTeaching: (topic) => ipcRenderer.invoke('slides:generateTeaching', topic),
+  },
+
+  appControls: {
+    /** 当前启停状态 + 使用的快捷键 */
+    status: () => ipcRenderer.invoke('appControls:status'),
+    /** 开启/关闭快捷控制，返回注册结果 */
+    setEnabled: (enabled) => ipcRenderer.invoke('appControls:setEnabled', enabled),
+    /** 强制关闭当前前台应用（Ctrl+Q，带安全名单） */
+    closeForeground: () => ipcRenderer.invoke('appControls:closeForeground'),
+    /** 在当前前台应用的多个窗口间循环（Ctrl+~） */
+    cycleWindows: () => ipcRenderer.invoke('appControls:cycleWindows'),
+  },
+
+  gesture: {
+    control: (action, side) => ipcRenderer.invoke('gesture:control', action, side),
+    playMusic: (url) => ipcRenderer.invoke('music:play', url),
+  },
   update: {
     /** 手动检查更新（会弹窗告诉你结果） */
     check: () => ipcRenderer.invoke('update:check'),

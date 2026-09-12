@@ -24,6 +24,13 @@ test('BrowserWindows and attached webviews keep sandboxing with Mac compatibilit
   assert.match(mainSource, /sandbox:\s*true/);
 });
 
+test('image credentials stay behind safeStorage and are stripped from renderer config', () => {
+  assert.match(mainSource, /scope === 'image'[^\n]+image\.api\.keyEncrypted/);
+  assert.match(mainSource, /delete data\.image\.api\.keyEncrypted/);
+  assert.match(mainSource, /API_KEY_PATHS\.has\(key\)/);
+  assert.doesNotMatch(mainSource, /sk-[A-Za-z0-9_-]{16,}/);
+});
+
 test('DeepSeek background uses Electron user CSS instead of page style injection', () => {
   assert.match(askSource, /view\.insertCSS\(css\)/);
   assert.match(askSource, /view\.removeInsertedCSS\(backgroundCssKey\)/);
