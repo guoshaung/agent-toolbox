@@ -1,5 +1,8 @@
 'use strict';
 
+import { createAvatarRenderer } from './render.mjs';
+import { generateMockAvatarFrame } from './mock-avatar-frame.mjs';
+
 const elements = {
   camera: document.getElementById('camera'), refreshCameras: document.getElementById('refresh-cameras'),
   pickModel: document.getElementById('pick-model'), modelName: document.getElementById('model-name'),
@@ -7,9 +10,53 @@ const elements = {
   frameless: document.getElementById('frameless'), closeWindow: document.getElementById('close-window'),
   toggleSettings: document.getElementById('toggle-settings'),
   status: document.getElementById('status'),
+  canvas: document.getElementById('avatar-canvas'), renderState: document.getElementById('render-state'),
+  fps: document.getElementById('fps'),
 };
 let settings;
 const rootStyle = [...document.styleSheets[0].cssRules].find((rule) => rule.selectorText === ':root').style;
+const frameTimes = [];
+const frameSource = {
+  subscribe(listener) {
+    let request;
+    const tick = (timestampMs) => {
+      listener(generateMockAvatarFrame(timestampMs));
+      frameTimes.push(timestampMs);
+      const cutoff = timestampMs - 1000;
+      while (frameTimes[0] < cutoff) frameTimes.shift();
+      if (frameTimes.length > 1) {
+        elements.fps.textContent = ((frameTimes.length - 1) * 1000 / (frameTimes.at(-1) - frameTimes[0])).toFixed(1);
+      }
+      request = requestAnimationFrame(tick);
+    };
+    request = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(request);
+  },
+};
+const avatarRenderer = createAvatarRenderer({ canvas: elements.canvas, frameSource });
+let loadedModelPath = '';
+
+async function loadConfiguredModel() {
+  if (!settings.modelPath) {
+    loadedModelPath = '';
+    elements.renderState.textContent = '等待选择 VRM 模型';
+    return;
+  }
+  if (settings.modelPath === loadedModelPath) return;
+  elements.renderState.dataset.error = 'false';
+  elements.renderState.textContent = '正在加载 VRM…';
+  try {
+    const modelUrl = await window.avatar.getModelUrl();
+    if (!modelUrl) throw new Error('配置的模型不是 .vrm 文件');
+    await avatarRenderer.loadModel(modelUrl);
+    loadedModelPath = settings.modelPath;
+    elements.renderState.textContent = 'VRM 已加载 · Mock 驱动';
+  } catch (error) {
+    elements.renderState.dataset.error = 'true';
+    elements.renderState.textContent = `加载失败：${error.message}`;
+    throw error;
+  }
+}
 
 function setStatus(message, isError = false) {
   elements.status.textContent = message;
@@ -26,6 +73,7 @@ function applySettings(next) {
   elements.frameless.checked = next.frameless;
   document.querySelector(`input[name="background"][value="${next.backgroundMode}"]`).checked = true;
   rootStyle.setProperty('--stage-background', next.backgroundMode === 'solid' ? next.backgroundColor : 'transparent');
+  loadConfiguredModel().catch((error) => setStatus(`模型加载失败：${error.message}`, true));
 }
 async function save(patch, message = '设置已保存') {
   try {
@@ -73,3 +121,4 @@ window.avatar.onSettingsChanged(applySettings);
 window.avatar.getSettings()
   .then((initialSettings) => { applySettings(initialSettings); return refreshCameras(false); })
   .catch((error) => setStatus(`初始化失败：${error.message}`, true));
+window.addEventListener('pagehide', () => avatarRenderer.dispose(), { once: true });

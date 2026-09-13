@@ -9,6 +9,7 @@ contextBridge.exposeInMainWorld('avatar', {
   getSettings: () => ipcRenderer.invoke('avatar:settings:get'),
   updateSettings: (patch) => ipcRenderer.invoke('avatar:settings:update', patch),
   pickModel: () => ipcRenderer.invoke('avatar:model:pick'),
+  getModelUrl: () => ipcRenderer.invoke('avatar:model:url'),
   onSettingsChanged: (callback) => {
     const listener = (_event, settings) => callback(settings);
     ipcRenderer.on('avatar:settings-changed', listener);

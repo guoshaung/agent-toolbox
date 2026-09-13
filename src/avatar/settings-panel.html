@@ -3,9 +3,18 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; media-src 'self' blob:">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self' file: blob:; script-src 'self' 'nonce-avatar-output'; style-src 'self'; img-src 'self' file: blob: data:; media-src 'self' file: blob:">
   <title>Avatar Output</title>
   <link rel="stylesheet" href="settings-panel.css">
+  <script type="importmap" nonce="avatar-output">
+    {
+      "imports": {
+        "three": "../../node_modules/three/build/three.module.js",
+        "three/addons/": "../../node_modules/three/examples/jsm/",
+        "@pixiv/three-vrm": "../../node_modules/@pixiv/three-vrm/lib/three-vrm.module.js"
+      }
+    }
+  </script>
 </head>
 <body>
   <main class="layout">
@@ -17,14 +26,11 @@
           <button id="close-window" class="icon-button" type="button" aria-label="关闭窗口">×</button>
         </div>
       </div>
-      <div class="cube-scene" aria-label="临时渲染占位符：旋转立方体">
-        <div class="cube">
-          <span class="face front">A</span><span class="face back">A</span>
-          <span class="face right">A</span><span class="face left">A</span>
-          <span class="face top">A</span><span class="face bottom">A</span>
-        </div>
+      <canvas id="avatar-canvas" aria-label="虚拟形象输出"></canvas>
+      <div class="render-status">
+        <span id="render-state">等待选择 VRM 模型</span>
+        <strong><span id="fps">0.0</span> FPS</strong>
       </div>
-      <p class="placeholder-note">渲染层占位符</p>
     </section>
 
     <aside class="settings" aria-label="虚拟形象设置">
@@ -51,6 +57,6 @@
       <p id="status" class="status" role="status">设置会自动保存；录制前可点左上角齿轮隐藏面板</p>
     </aside>
   </main>
-  <script src="settings-panel.js"></script>
+  <script type="module" src="settings-panel.js"></script>
 </body>
 </html>

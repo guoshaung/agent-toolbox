@@ -15,14 +15,10 @@ button, select, input { font: inherit; }
 .window-actions { display: flex; gap: 6px; }
 .icon-button { width: 28px; height: 28px; border: 0; border-radius: 8px; background: #10151dc9; color: #dae3ec; font-size: 20px; cursor: pointer; }
 .icon-button:hover { background: #b8424c; color: white; }
-.cube-scene { width: 150px; height: 150px; perspective: 650px; }
-.cube { position: relative; width: 100%; height: 100%; transform-style: preserve-3d; animation: spin 7s linear infinite; }
-.face { position: absolute; display: grid; place-items: center; width: 150px; height: 150px; border: 1px solid #80f5d9aa; background: linear-gradient(145deg, #29cba883, #286cb783); box-shadow: inset 0 0 30px #d7fff52c; color: #effffc; font-size: 48px; font-weight: 800; }
-.front { transform: rotateY(0deg) translateZ(75px); }.back { transform: rotateY(180deg) translateZ(75px); }
-.right { transform: rotateY(90deg) translateZ(75px); }.left { transform: rotateY(-90deg) translateZ(75px); }
-.top { transform: rotateX(90deg) translateZ(75px); }.bottom { transform: rotateX(-90deg) translateZ(75px); }
-.placeholder-note { position: absolute; bottom: 20px; margin: 0; color: #ffffff70; font-size: 12px; letter-spacing: .08em; }
-@keyframes spin { to { transform: rotateX(360deg) rotateY(540deg); } }
+#avatar-canvas { width: 100%; height: 100%; display: block; }
+.render-status { position: absolute; right: 16px; bottom: 14px; display: flex; gap: 12px; padding: 7px 10px; border: 1px solid #ffffff18; border-radius: 9px; background: #10151dbd; color: #aab7c5; font-size: 11px; pointer-events: none; }
+.render-status strong { color: #55e4c2; font-variant-numeric: tabular-nums; }
+.render-status [data-error="true"] { color: #ff8d96; }
 .settings { overflow: auto; padding: 28px 22px; border-left: 1px solid #ffffff14; background: #111720f2; box-shadow: -12px 0 40px #0005; }
 .settings header { margin-bottom: 25px; }
 .eyebrow { margin: 0 0 6px; color: #55e4c2; font: 750 10px/1 ui-monospace, monospace; letter-spacing: 1.4px; }
@@ -49,4 +45,3 @@ body.settings-hidden .settings { display: none; }
   .layout { grid-template-columns: 1fr; grid-template-rows: minmax(260px, 1fr) auto; overflow: auto; }
   .settings { overflow: visible; border-top: 1px solid #ffffff14; border-left: 0; }
 }
-@media (prefers-reduced-motion: reduce) { .cube { animation-duration: 30s; } }

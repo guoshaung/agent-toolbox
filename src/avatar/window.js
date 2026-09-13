@@ -2,6 +2,7 @@
 
 const fs = require('node:fs');
 const path = require('node:path');
+const { pathToFileURL } = require('node:url');
 const { app, BrowserWindow, dialog, ipcMain, session } = require('electron');
 
 const PARTITION = 'persist:avatar-output';
@@ -130,6 +131,11 @@ function createAvatarWindowController({ getMainWindow = () => null } = {}) {
     });
     if (result.canceled || !result.filePaths[0]) return null;
     return { path: result.filePaths[0], name: path.basename(result.filePaths[0]) };
+  });
+  ipcMain.handle('avatar:model:url', (event) => {
+    if (!isAvatarSender(event)) throw new Error('Avatar model is only available to the avatar window');
+    if (!settings.modelPath || path.extname(settings.modelPath).toLowerCase() !== '.vrm') return '';
+    return pathToFileURL(settings.modelPath).href;
   });
 
   function installEntryButton() {
