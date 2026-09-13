@@ -1,13 +1,5 @@
-# 打一个 v 开头的 tag 就自动出包并发到 Releases。
-#
-#   npm version patch
-#   git push && git push --tags
-#
-# 结构上分两段，是有原因的：
-# 让 mac 和 windows 两个 job 各自 --publish always 的话，它们会并行地
-# 各建一个 draft release，产物散落在两个草稿里，最后上传报 400。
-# 所以矩阵只管构建、把产物存成 workflow artifact，最后由一个 job 统一发布。
-name: 构建并发布
+# Build and validate Windows artifacts before a separate job publishes them.
+name: Build and release
 
 on:
   push:
@@ -19,17 +11,7 @@ permissions:
 
 jobs:
   build:
-    strategy:
-      fail-fast: false          # 一个平台挂了，另一个照样出包
-      matrix:
-        include:
-          - os: macos-latest
-            build: npx electron-builder --mac dmg zip --arm64
-            artifact: mac
-          - os: windows-latest
-            build: npx electron-builder --win nsis --x64
-            artifact: win
-    runs-on: ${{ matrix.os }}
+    runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -39,40 +21,35 @@ jobs:
       - run: npm ci
       - run: npm run check
 
-      # 只构建，不发布。latest*.yml 是自动更新要读的元数据，一并留在 dist 里。
-      - name: 构建
-        run: ${{ matrix.build }} --publish never
+      - name: Build Windows x64 NSIS installer
+        run: npm run dist:win -- --publish never
         env:
-          # 不签名。别在这写 CSC_LINK: ${{ secrets.XXX }} 占位 —— secret 不存在时
-          # 是空字符串，electron-builder 会当成「给了证书路径」去读，直接失败。
           CSC_IDENTITY_AUTO_DISCOVERY: false
+
+      - name: Verify update metadata and installer
+        run: node scripts/verify-update-artifacts.js
 
       - uses: actions/upload-artifact@v4
         with:
-          name: dist-${{ matrix.artifact }}
+          name: dist-win
           retention-days: 3
+          if-no-files-found: error
           path: |
-            dist/*.dmg
-            dist/*.zip
-            dist/*.exe
-            dist/*.blockmap
-            dist/latest*.yml
+            dist/Agent-Toolbox-*-win-x64.exe
+            dist/Agent-Toolbox-*-win-x64.exe.blockmap
+            dist/latest.yml
 
   publish:
+    # The default success condition skips this job if any build step fails.
     needs: build
-    if: always() && needs.build.result != 'cancelled'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v4
         with:
+          name: dist-win
           path: artifacts
-          merge-multiple: true      # 两个平台的产物合到同一个目录
 
-      - name: 看看收到了什么
-        run: ls -lh artifacts/
-
-      # 一个 release，一次传完。已存在就补传，不重复建草稿。
-      - name: 发布
+      - name: Publish release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
