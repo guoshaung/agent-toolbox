@@ -22,6 +22,7 @@ const { registerBiblioIpc } = require('./biblio');
 const { registerDocSearchIpc } = require('./doc-search');
 const { registerShelfIpc, stopAllShelfApps, start: startShelfTool, stop: stopShelfTool, status: shelfStatus, tail: shelfTail, resolveToolCommand } = require('./app-shelf');
 const { registerUpdaterIpc, startAutoCheck, stopAutoCheck } = require('./updater');
+const { createAvatarWindowController } = require('../avatar/window');
 const { registerCertTrust } = require('./certtrust');
 const translator = require('./translate');
 const ocr = require('./ocr');
@@ -2616,6 +2617,7 @@ app.whenReady().then(async () => {
   hookLiteratureDownloads();
   hookResearchDownloads();
   createWindow();
+  createAvatarWindowController({ getMainWindow: () => mainWindow });
   startAutoCheck();
   // Voicebox 不自动安装/启动：避免开机即下载几百 MB；页面内手动启动，已有实例时自动复用 17493。
   dshService.start().catch((error) => console.warn('[dsh] background start failed:', error.message));

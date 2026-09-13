@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; media-src 'self' blob:">
+  <title>Avatar Output</title>
+  <link rel="stylesheet" href="settings-panel.css">
+</head>
+<body>
+  <main class="layout">
+    <section class="stage" aria-label="虚拟形象输出预览">
+      <div class="drag-region">
+        <span>AVATAR OUTPUT</span>
+        <div class="window-actions no-drag">
+          <button id="toggle-settings" class="icon-button" type="button" aria-label="隐藏设置" title="显示或隐藏设置">⚙</button>
+          <button id="close-window" class="icon-button" type="button" aria-label="关闭窗口">×</button>
+        </div>
+      </div>
+      <div class="cube-scene" aria-label="临时渲染占位符：旋转立方体">
+        <div class="cube">
+          <span class="face front">A</span><span class="face back">A</span>
+          <span class="face right">A</span><span class="face left">A</span>
+          <span class="face top">A</span><span class="face bottom">A</span>
+        </div>
+      </div>
+      <p class="placeholder-note">渲染层占位符</p>
+    </section>
+
+    <aside class="settings" aria-label="虚拟形象设置">
+      <header><p class="eyebrow">OUTPUT SETTINGS</p><h1>虚拟形象</h1></header>
+      <label class="field">
+        <span>摄像头</span>
+        <select id="camera"><option value="">正在读取设备…</option></select>
+      </label>
+      <button id="refresh-cameras" class="secondary" type="button">授权并刷新摄像头</button>
+      <div class="field">
+        <span>VRM 模型</span>
+        <button id="pick-model" class="file-picker" type="button">
+          <strong id="model-name">尚未选择</strong><small>选择 .vrm 文件</small>
+        </button>
+      </div>
+      <fieldset>
+        <legend>背景</legend>
+        <label class="radio"><input type="radio" name="background" value="transparent">透明</label>
+        <label class="radio"><input type="radio" name="background" value="solid">纯色</label>
+        <input id="background-color" type="color" value="#18202b" aria-label="背景颜色">
+      </fieldset>
+      <label class="toggle"><input id="always-on-top" type="checkbox"><span>窗口置顶</span></label>
+      <label class="toggle"><input id="frameless" type="checkbox"><span>无边框窗口</span></label>
+      <p id="status" class="status" role="status">设置会自动保存；录制前可点左上角齿轮隐藏面板</p>
+    </aside>
+  </main>
+  <script src="settings-panel.js"></script>
+</body>
+</html>
