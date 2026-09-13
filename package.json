@@ -9,7 +9,7 @@
     "dev": "electron . --dev",
     "dist": "electron-builder --mac dmg zip",
     "dist:dir": "electron-builder --mac dir",
-    "dist:win": "electron-builder --win nsis portable --x64",
+    "dist:win": "electron-builder --win nsis --x64",
     "icon": "electron scripts/build-icon.js",
     "test": "node --test \"test/*.test.js\"",
     "check": "node --check src/main/main.js && node --check src/main/preload.js && node --test \"test/*.test.js\"",
@@ -18,7 +18,8 @@
   },
   "devDependencies": {
     "electron": "^33.2.0",
-    "electron-builder": "^26.15.3"
+    "electron-builder": "^26.15.3",
+    "js-yaml": "^4.3.2"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.30.0",
@@ -83,12 +84,6 @@
       "target": [
         {
           "target": "nsis",
-          "arch": [
-            "x64"
-          ]
-        },
-        {
-          "target": "portable",
           "arch": [
             "x64"
           ]
