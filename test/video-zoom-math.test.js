@@ -6,7 +6,7 @@ test('视频工具：智能尺寸与缩放的纯数值逻辑', async () => {
   const m = await import('../src/renderer/tools/video/zoom-math.js');
   const {
     ZOOM_MIN, ZOOM_MAX, ZOOM_STEP, clamp, zoomStep,
-    wheelDeltaPixels, wheelZoomFactor, applyZoom,
+    wheelDeltaPixels, wheelZoomFactor, applyZoom, isZoomGesture,
     smartBaseWidth, playerWidth, playerHeight, formatPercent,
   } = m;
 
@@ -29,6 +29,9 @@ test('视频工具：智能尺寸与缩放的纯数值逻辑', async () => {
   assert.ok(wheelZoomFactor(100, 0) < 1, '下滚应缩小');
   assert.ok(Math.abs(wheelZoomFactor(0, 0) - 1) < 1e-9, '零增量不缩放');
   assert.ok(wheelZoomFactor(99, 1) < 1, '以行计量的增量同样缩小');
+  assert.equal(isZoomGesture({}), false, '普通触摸板上下滚动不能触发缩放');
+  assert.equal(isZoomGesture({ ctrlKey: true }), true, 'Ctrl+滚轮应触发缩放');
+  assert.equal(isZoomGesture({ metaKey: true }), true, 'Cmd+滚轮应触发缩放');
 
   // 应用系数后夹取
   assert.equal(Math.abs(applyZoom(1, 0.9) - 0.9) < 1e-9, true);

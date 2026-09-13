@@ -39,6 +39,19 @@ export default {
 
     const subBar = h('div', { class: 'research__subbar' });
     const body = h('div', { class: 'research__subbody' });
+    let compact = Boolean(config.get('research.chromeCompact', false));
+    const compactToggle = h('button', {
+      class: 'btn btn--sm research__compact-toggle',
+      title: '收起或展开科研顶部导航和网页地址栏',
+      onclick: () => { compact = !compact; config.set('research.chromeCompact', compact); applyCompact(); },
+    });
+
+    function applyCompact() {
+      root.classList.toggle('is-compact', compact);
+      body.classList.toggle('is-compact', compact);
+      compactToggle.textContent = compact ? '展开顶部' : '收起顶部';
+      compactToggle.setAttribute('aria-expanded', String(!compact));
+    }
 
     const factories = {
       portal: createPortal,
@@ -72,6 +85,16 @@ export default {
       }
     }
 
+    function activate() {
+      panels.get(currentSub)?._instance?.activate?.();
+    }
+
+    function deactivate() {
+      for (const panel of panels.values()) {
+        try { panel._instance?.deactivate?.(); } catch (error) { console.error('[research] 子区清理失败', error); }
+      }
+    }
+
     for (const s of SUB_SECTIONS) {
       subBar.appendChild(h('button', {
         class: 'btn btn--sm research__subbtn',
@@ -81,15 +104,18 @@ export default {
     }
 
     root.append(
-      h('div', { class: 'bar bar--drag' },
+      h('div', { class: 'bar bar--drag research__topbar' },
         h('strong', {}, '科研'),
         subBar,
+        h('span', { class: 'research__topbar-spacer' }),
+        compactToggle,
       ),
       body,
     );
 
+    applyCompact();
     selectSub(SUB_SECTIONS.some((s) => s.id === currentSub) ? currentSub : 'portal');
 
-    return {};
+    return { activate, deactivate };
   },
 };

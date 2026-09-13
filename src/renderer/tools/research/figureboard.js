@@ -6,7 +6,7 @@ import {
 } from './figureshapes.js';
 import {
   ROUTES, PORTS, portPoint, wireEnds, wireMarkup, wireLabelMarkup, isWire,
-  wireMidpoint as wireMidpointOf,
+  wireMidpoint as wireMidpointOf, wireEndpointDelta,
 } from './figurewires.js';
 import { FIGURE_ASSETS, FIGURE_SOURCE_LINKS } from './figureassets.js';
 
@@ -31,6 +31,13 @@ const AI_PROMPT_PRESETS = [
 
 function imageDataUrl(data) {
   return `data:${data.mime};base64,${data.base64}`;
+}
+
+export function removeFigureItems(sourceItems, selectedIds, fallbackId = null) {
+  const ids = new Set(selectedIds || []);
+  if (!ids.size && fallbackId) ids.add(fallbackId);
+  return sourceItems.filter((item) => !ids.has(item.id)
+    && !(isWire(item) && (ids.has(item.from?.id) || ids.has(item.to?.id))));
 }
 
 async function compressImage(data) {
@@ -294,12 +301,12 @@ export function createFigureboard(root, ctx) {
   }
 
   function removeItem(id) {
-    // 连在这个图形上的线也要一起删，不然会剩下指向空气的线
-    items = items.filter((entry) => !(isWire(entry)
-      && (entry.from?.id === id || entry.to?.id === id)));
-    record(cloneItems());
     const ids = selectedIds.size ? selectedIds : new Set([id]);
-    items = items.filter((item) => !ids.has(item.id));
+    const before = cloneItems();
+    const nextItems = removeFigureItems(items, ids, id);
+    if (nextItems.length === items.length) return;
+    record(before);
+    items = nextItems;
     selectedId = null;
     selectedIds.clear();
     persist();
@@ -954,11 +961,8 @@ export function createFigureboard(root, ctx) {
       let distance = arrow.width || 180;
       let endpointDelta = null;
       if (isWire(arrow)) {
-        const ends = wireEnds(arrow, byId);
-        if (ends) {
-          endpointDelta = { x: Math.abs(ends.b.x - ends.a.x), y: Math.abs(ends.b.y - ends.a.y) };
-          distance = Math.hypot(ends.b.x - ends.a.x, ends.b.y - ends.a.y);
-        }
+        const geometry = wireEndpointDelta(arrow, byId);
+        if (geometry) { endpointDelta = geometry; distance = geometry.distance; }
       }
       const prominent = !dashed && distance >= 280;
       arrow.strokeWidth = dashed ? 1.5 : prominent ? 3 : 2;
@@ -1040,6 +1044,22 @@ export function createFigureboard(root, ctx) {
     return String(value || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
   }
 
+  function finiteNumber(value, fallback = 0) {
+    const number = Number(value);
+    return Number.isFinite(number) ? number : fallback;
+  }
+
+  function exportFrame(item) {
+    return {
+      x: finiteNumber(item.x),
+      y: finiteNumber(item.y),
+      width: Math.max(1, finiteNumber(item.width, 1)),
+      height: Math.max(1, finiteNumber(item.height, 1)),
+      angle: finiteNumber(item.angle),
+      opacity: Math.min(1, Math.max(0, finiteNumber(item.opacity, 1))),
+    };
+  }
+
   function effectSpec(effect) {
     return {
       soft: { dx: 0, dy: 4, blur: 7, color: '#53627a66' },
@@ -1060,8 +1080,14 @@ export function createFigureboard(root, ctx) {
   }
 
   function canvasSize() {
-    const maxX = Math.max(board.clientWidth, ...items.map((item) => item.x + item.width + 40), 900);
-    const maxY = Math.max(board.clientHeight, ...items.map((item) => item.y + item.height + 40), 650);
+    const maxX = Math.max(board.clientWidth, ...items.map((item) => {
+      const frame = exportFrame(item);
+      return frame.x + frame.width + 40;
+    }), 900);
+    const maxY = Math.max(board.clientHeight, ...items.map((item) => {
+      const frame = exportFrame(item);
+      return frame.y + frame.height + 40;
+    }), 650);
     return { width: Math.round(maxX), height: Math.round(maxY) };
   }
 
@@ -1072,28 +1098,29 @@ export function createFigureboard(root, ctx) {
     // 和画布共用 shapeMarkup / lineMarkup —— 导出和屏幕上看到的必然一致
     const defs = [];
     const body = items.filter((item) => !isWire(item)).map((item) => {
-      const g = (inner) => `<g transform="translate(${item.x} ${item.y}) rotate(${item.angle || 0} ${item.width / 2} ${item.height / 2})" opacity="${item.opacity ?? 1}">${inner}</g>`;
+      const frame = exportFrame(item);
+      const g = (inner) => `<g transform="translate(${frame.x} ${frame.y}) rotate(${frame.angle} ${frame.width / 2} ${frame.height / 2})" opacity="${frame.opacity}">${inner}</g>`;
 
       if (item.type === 'image') {
         const filterId = `fbE${String(item.id).replace(/[^a-zA-Z0-9]/g, '')}`;
         if (item.effect) defs.push(effectFilter(item.effect, filterId));
-        return g(`<image href="${item.dataUrl}" x="0" y="0" width="${item.width}" height="${item.height}" preserveAspectRatio="xMidYMid meet"${item.effect ? ` filter="url(#${filterId})"` : ''}/>`);
+        return g(`<image href="${escapeXml(item.dataUrl)}" x="0" y="0" width="${frame.width}" height="${frame.height}" preserveAspectRatio="xMidYMid meet"${item.effect ? ` filter="url(#${filterId})"` : ''}/>`);
       }
       if (item.type === 'text') {
         // 逐行输出，导出的换行才和画布一致
         const lines = String(item.text || '').split('\n');
-        const size = item.fontSize || 22;
+        const size = Math.max(1, finiteNumber(item.fontSize, 22));
         const tspans = lines.map((line, i) => `<tspan x="0" dy="${i === 0 ? 0 : size * 1.35}">${escapeXml(line)}</tspan>`).join('');
-        return g(`<text x="0" y="${size}" font-family="${escapeXml(item.fontFamily || 'Arial, Helvetica, sans-serif')}" font-size="${size}" font-weight="600" fill="${item.color}">${tspans}</text>`);
+        return g(`<text x="0" y="${size}" font-family="${escapeXml(item.fontFamily || 'Arial, Helvetica, sans-serif')}" font-size="${size}" font-weight="600" fill="${escapeXml(item.color || '#14213d')}">${tspans}</text>`);
       }
       if (isLine(item.type)) {
         const markerId = `fbA${String(item.id).replace(/[^a-zA-Z0-9]/g, '')}`;
-      defs.push(arrowDefs(item.stroke || '#3d6fe8', markerId, item.arrowStyle));
-        return g(lineMarkup(item, markerId));
+        defs.push(arrowDefs(item.stroke || '#3d6fe8', markerId, item.arrowStyle));
+        return g(lineMarkup({ ...item, width: frame.width, height: frame.height }, markerId));
       }
       const filterId = `fbE${String(item.id).replace(/[^a-zA-Z0-9]/g, '')}`;
       if (item.effect) defs.push(effectFilter(item.effect, filterId));
-      return g(item.effect ? `<g filter="url(#${filterId})">${shapeMarkup(item)}</g>` : shapeMarkup(item));
+      return g(item.effect ? `<g filter="url(#${filterId})">${shapeMarkup({ ...item, width: frame.width, height: frame.height })}</g>` : shapeMarkup({ ...item, width: frame.width, height: frame.height }));
     }).join('');
 
     // 连线也要进导出，而且和画布共用同一份路径算法
@@ -1779,7 +1806,7 @@ export function createFigureboard(root, ctx) {
   }
 
   function handleShortcut(event) {
-    if (!root.isConnected) return;
+    if (!root.isConnected || root.hasAttribute('hidden')) return;
     if (isEditableTarget(event.target)) return;
     const key = event.key.toLowerCase();
     const modifier = event.metaKey || event.ctrlKey;
@@ -1806,7 +1833,7 @@ export function createFigureboard(root, ctx) {
   board.addEventListener('dragleave', (event) => { if (event.target === board) board.classList.remove('is-dragover'); });
   board.addEventListener('drop', handlePaletteDrop);
   board.addEventListener('wheel', (event) => {
-    if (!event.ctrlKey) return;
+    if (!(event.ctrlKey || event.metaKey)) return;
     event.preventDefault();
     const factor = Math.exp(-event.deltaY * 0.01);
     setCanvasZoom(canvasZoom * factor, { x: event.clientX, y: event.clientY });
@@ -1930,4 +1957,12 @@ export function createFigureboard(root, ctx) {
   renderLocalAssets();
   renderSites();
   renderBoard();
+
+  return {
+    deactivate() {
+      closeSite();
+      closeContextMenu();
+      hideTooltip();
+    },
+  };
 }

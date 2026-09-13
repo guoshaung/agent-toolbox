@@ -96,6 +96,14 @@ export function wireEnds(wire, byId) {
   return { a: a2, b: b2 };
 }
 
+export function wireEndpointDelta(wire, byId) {
+  const ends = wireEnds(wire, byId);
+  if (!ends) return null;
+  const x = Math.abs(ends.b.point.x - ends.a.point.x);
+  const y = Math.abs(ends.b.point.y - ends.a.point.y);
+  return { x, y, distance: Math.hypot(x, y) };
+}
+
 /** 生成路径 d */
 export function wirePath(wire, byId) {
   const ends = wireEnds(wire, byId);

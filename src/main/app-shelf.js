@@ -181,7 +181,9 @@ async function installDeps({ cwd, packages }) {
 
 function start({ id, cwd, command }) {
   if (!id || !command) return { ok: false, error: '缺少启动命令' };
-  if (running.has(id)) return { ok: false, error: '这个工具已经在运行了' };
+  const previous = running.get(id);
+  if (previous?.child) return { ok: false, error: '这个工具已经在运行了' };
+  if (previous) running.delete(id);
   if (cwd && !fs.existsSync(cwd)) return { ok: false, error: `工作目录不存在：${cwd}` };
 
   // 走登录 shell：这样 PATH 里才有 uv / pyenv / nvm 装的东西，
@@ -290,4 +292,4 @@ function stopAllShelfApps() {
   for (const id of [...running.keys()]) stop(id);
 }
 
-module.exports = { registerShelfIpc, stopAllShelfApps, probe, depsList, installDeps, normalizePackages };
+module.exports = { registerShelfIpc, stopAllShelfApps, probe, depsList, installDeps, normalizePackages, start, stop, status, tail, resolveToolCommand };

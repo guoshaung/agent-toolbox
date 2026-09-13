@@ -27,8 +27,20 @@ const atelierBanner = h('header', { class: 'atelier-banner', 'aria-label': 'Agen
 stage.appendChild(atelierBanner);
 
 const config = await Config.load();
+const calmVisualMigrationDone = config.get('ui.visualMigration.crystalCalm', false);
+if (!calmVisualMigrationDone && config.get('ui.theme') === 'cyber' && config.get('ui.effect') === 'neon') {
+  void config.set('ui.theme', 'violet');
+  void config.set('ui.effect', 'flat');
+}
+if (!calmVisualMigrationDone) void config.set('ui.visualMigration.crystalCalm', true);
 applyStoredTheme(config);
 applyStoredEffect(config);
+const logoMigrationDone = config.get('ui.logoMigration.prismCore', false);
+const startupLogoId = logoMigrationDone ? config.get('ui.logo', 'prism-core') : 'prism-core';
+if (!logoMigrationDone) {
+  void config.set('ui.logo', 'prism-core');
+  void config.set('ui.logoMigration.prismCore', true);
+}
 const bridge = new DeepSeekBridge();
 bridge.attach(document.getElementById('bridge-host'));
 
@@ -131,7 +143,11 @@ function activate(id) {
   if (currentId && currentId !== id) {
     const prev = mounted.get(currentId);
     prev?.el.setAttribute('hidden', '');
-    prev?.instance.deactivate?.();
+    try {
+      prev?.instance.deactivate?.();
+    } catch (err) {
+      console.error(`[${currentId}] 停止失败`, err);
+    }
   }
 
   // 首次打开才创建；之后只是显示/隐藏 —— webview 不重载，切换是瞬时的，
@@ -155,7 +171,12 @@ function activate(id) {
   entry.el.classList.remove('tool--enter');
   void entry.el.offsetWidth;
   entry.el.classList.add('tool--enter');
-  entry.instance.activate?.();
+  try {
+    entry.instance.activate?.();
+  } catch (err) {
+    console.error(`[${id}] 激活失败`, err);
+    entry.el.replaceChildren(h('div', { class: 'empty' }, `「${tool.title}」暂时无法打开：${err.message}`));
+  }
   currentId = id;
 
   for (const btn of rail.querySelectorAll('[data-id]')) {
@@ -299,6 +320,8 @@ const dockPin = h('button', {
 
 const taskTool = TOOLS.find((tool) => tool.id === 'tasks');
 const taskButton = railButton(taskTool, 'rail__task');
+const voiceboxTool = TOOLS.find((tool) => tool.id === 'voicebox');
+const voiceboxButton = railButton(voiceboxTool, 'rail__voicebox');
 
 function renderDockPin(state) {
   dockPin.classList.toggle('is-armed', Boolean(state.armed));
@@ -313,11 +336,11 @@ function renderDockPin(state) {
 }
 
 /** 侧栏 logo。切工具时让它响应一下 —— 静止的标记会让整个侧栏显得是死的 */
-const railLogo = h('div', { class: 'rail__logo', title: 'Agent 工具箱 · 双击重启应用', html: logoById(config.get('ui.logo', 'neon')).svg });
+const railLogo = h('div', { class: 'rail__logo', title: 'Agent 工具箱 · 双击重启应用', html: logoById(startupLogoId).svg });
 // 侧栏标记 + 右下角品牌纹章统一应用当前 logo
-applyLogo(config.get('ui.logo', 'neon'));
+applyLogo(startupLogoId);
 // 同步应用图标（窗口/任务栏/Dock）：渲染进程把 SVG 转成 PNG 后交给主进程
-applyAppIcon(config.get('ui.logo', 'neon')).catch((error) => console.warn('[app] 应用图标更新失败:', error.message));
+applyAppIcon(startupLogoId).catch((error) => console.warn('[app] 应用图标更新失败:', error.message));
 let restarting = false;
 railLogo.addEventListener('dblclick', async () => {
   if (restarting) return;
@@ -336,6 +359,7 @@ rail.append(
   railLogo,
   dockPin,
   taskButton,
+  voiceboxButton,
   pinnedHost,
   h('div', { class: 'rail__spacer' }),
   moreButton,

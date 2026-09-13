@@ -68,7 +68,7 @@ class VoiceInterface(QWidget):
         self.access_key_edit.setPlaceholderText("旧版控制台：X-Api-Access-Key")
         self.access_key_edit.setEchoMode(QLineEdit.Password)
 
-        self.resource_id_edit = QLineEdit("volc.bigasr.sauc.duration")
+        self.resource_id_edit = QLineEdit("volc.seedasr.sauc.duration")
         self.resource_id_edit.setPlaceholderText("X-Api-Resource-Id")
 
         for label, widget in [

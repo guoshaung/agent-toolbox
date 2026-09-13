@@ -1,49 +1,25 @@
 <svg viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">
   <defs>
-    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#0B2A1D"/>
-      <stop offset="0.55" stop-color="#05160E"/>
-      <stop offset="1" stop-color="#010805"/>
+    <radialGradient id="pcbg" cx="32%" cy="20%" r="88%">
+      <stop offset="0" stop-color="#24335b"/><stop offset=".62" stop-color="#11182f"/><stop offset="1" stop-color="#080c1b"/>
+    </radialGradient>
+    <linearGradient id="pcface" x1=".1" y1=".05" x2=".9" y2=".95">
+      <stop offset="0" stop-color="#73efff"/><stop offset=".42" stop-color="#9f8cff"/><stop offset=".76" stop-color="#d66eff"/><stop offset="1" stop-color="#ff9bd7"/>
     </linearGradient>
-    <linearGradient id="neon" x1="0.1" y1="0" x2="0.9" y2="1">
-      <stop offset="0" stop-color="#3BFFB4"/>
-      <stop offset="0.45" stop-color="#00FF9C"/>
-      <stop offset="1" stop-color="#00A867"/>
+    <linearGradient id="pcedge" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#c9fbff"/><stop offset=".5" stop-color="#aa9dff"/><stop offset="1" stop-color="#ffb7df"/>
     </linearGradient>
-    <filter id="glow" x="-30%" y="-30%" width="160%" height="160%">
-      <feGaussianBlur stdDeviation="14"/>
+    <filter id="pcglow" x="-35%" y="-35%" width="170%" height="170%">
+      <feGaussianBlur stdDeviation="18"/>
     </filter>
-    <mask id="cut">
-      <rect width="1024" height="1024" fill="black"/>
-      <rect x="224" y="224" width="576" height="576" rx="88" fill="white"/>
-      <path d="M512 276 Q533.24 490.76, 748 512 Q533.24 533.24, 512 748 Q490.76 533.24, 276 512 Q490.76 490.76, 512 276 Z" fill="black"/>
-    </mask>
   </defs>
-  <rect width="1024" height="1024" rx="224" fill="url(#bg)"/>
-  <g filter="url(#glow)" opacity="0.6"><g fill="url(#neon)">
-      <rect x="128" y="332" width="132" height="60" rx="30"/>
-      <rect x="764" y="332" width="132" height="60" rx="30"/>
-      <rect x="332" y="128" width="60" height="132" rx="30"/>
-      <rect x="332" y="764" width="60" height="132" rx="30"/>
-      <rect x="128" y="632" width="132" height="60" rx="30"/>
-      <rect x="764" y="632" width="132" height="60" rx="30"/>
-      <rect x="632" y="128" width="60" height="132" rx="30"/>
-      <rect x="632" y="764" width="60" height="132" rx="30"/>
-    </g>
-    <rect x="224" y="224" width="576" height="576" rx="92"
-        fill="none" stroke="url(#neon)" stroke-width="92"/>
-      <path d="M512 365.68 Q525.1688 498.8312, 658.3199999999999 512 Q525.1688 525.1688, 512 658.3199999999999 Q498.8312 525.1688, 365.68 512 Q498.8312 498.8312, 512 365.68 Z" fill="url(#neon)"/></g>
-  <g fill="url(#neon)">
-      <rect x="128" y="332" width="132" height="60" rx="30"/>
-      <rect x="764" y="332" width="132" height="60" rx="30"/>
-      <rect x="332" y="128" width="60" height="132" rx="30"/>
-      <rect x="332" y="764" width="60" height="132" rx="30"/>
-      <rect x="128" y="632" width="132" height="60" rx="30"/>
-      <rect x="764" y="632" width="132" height="60" rx="30"/>
-      <rect x="632" y="128" width="60" height="132" rx="30"/>
-      <rect x="632" y="764" width="60" height="132" rx="30"/>
-    </g>
-    <rect x="224" y="224" width="576" height="576" rx="92"
-        fill="none" stroke="url(#neon)" stroke-width="92"/>
-      <path d="M512 365.68 Q525.1688 498.8312, 658.3199999999999 512 Q525.1688 525.1688, 512 658.3199999999999 Q498.8312 525.1688, 365.68 512 Q498.8312 498.8312, 512 365.68 Z" fill="url(#neon)"/>
+  <rect x="104" y="104" width="816" height="816" rx="236" fill="url(#pcbg)" stroke="#6f7fc6" stroke-opacity=".56" stroke-width="18"/>
+  <path d="M512 142 L824 322 L824 684 L512 864 L200 684 L200 322 Z" fill="none" stroke="url(#pcface)" stroke-opacity=".5" stroke-width="48" stroke-linejoin="round" filter="url(#pcglow)"/>
+  <path d="M512 142 L824 322 L824 684 L512 864 L200 684 L200 322 Z" fill="url(#pcface)" fill-opacity=".96" stroke="url(#pcedge)" stroke-width="22" stroke-linejoin="round"/>
+  <path d="M512 142 L512 864 M200 322 L824 684 M824 322 L200 684" fill="none" stroke="#f5f3ff" stroke-opacity=".28" stroke-width="16" stroke-linecap="round"/>
+  <path d="M512 270 C648 270 760 378 760 512 C760 646 648 754 512 754 C376 754 264 646 264 512 C264 378 376 270 512 270 Z" fill="none" stroke="#f7f5ff" stroke-opacity=".68" stroke-width="18" stroke-dasharray="420 250" stroke-linecap="round" transform="rotate(-28 512 512)"/>
+  <circle cx="512" cy="512" r="112" fill="#10172e" fill-opacity=".66" stroke="#f7f5ff" stroke-opacity=".55" stroke-width="14"/>
+  <path d="M512 420 L570 454 L604 512 L570 570 L512 604 L454 570 L420 512 L454 454 Z" fill="url(#pcedge)"/>
+  <path d="M512 444 L552 472 L576 512 L552 552 L512 580 L472 552 L448 512 L472 472 Z" fill="#ffffff" fill-opacity=".42"/>
+  <circle cx="512" cy="512" r="22" fill="#ffffff"/>
 </svg>

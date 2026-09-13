@@ -24,6 +24,7 @@
     "@modelcontextprotocol/sdk": "^1.30.0",
     "electron-updater": "^6.8.9",
     "katex": "^0.18.5",
+    "mathjax": "^3.2.2",
     "pdfjs-dist": "^4.10.38",
     "pptxgenjs": "^4.0.1",
     "qrcode": "^1.5.4",
@@ -109,7 +110,11 @@
     ],
     "nsis": {
       "oneClick": false,
-      "allowToChangeInstallationDirectory": true
+      "allowToChangeInstallationDirectory": true,
+      "artifactName": "Agent-Toolbox-${version}-Setup-${arch}.${ext}"
+    },
+    "portable": {
+      "artifactName": "Agent-Toolbox-${version}-Portable-${arch}.${ext}"
     },
     "publish": [
       {

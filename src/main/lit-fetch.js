@@ -148,7 +148,23 @@ function arxivPdfFromLink(link) {
   return m ? `https://arxiv.org/pdf/${m[1]}` : null;
 }
 
-/** dblp：CS 领域标题检索最准，ee 链接常带 arXiv 号 */
+function directPdfFromLink(link) {
+  const value = decodeEntities(link);
+  const arxiv = arxivPdfFromLink(value);
+  if (arxiv) return arxiv;
+  try {
+    const url = new URL(value);
+    if (!['http:', 'https:'].includes(url.protocol)) return null;
+    const pathLooksLikePdf = /\.pdf$/i.test(url.pathname)
+      || /\/(?:pdf|download)(?:\/|$)/i.test(url.pathname);
+    const queryLooksLikePdf = /(?:^|&)(?:download|attachment|format)=pdf(?:&|$)/i.test(url.search.slice(1));
+    return pathLooksLikePdf || queryLooksLikePdf ? url.toString() : null;
+  } catch {
+    return null;
+  }
+}
+
+/** dblp：CS 领域标题检索最准，优先使用 arXiv 或明确的开放 PDF 链接。 */
 async function searchDblp(query) {
   const data = await fetchJson(`https://dblp.org/search/publ/api?q=${encodeURIComponent(query)}&format=json&h=10`);
   const hits = [];
@@ -159,7 +175,7 @@ async function searchDblp(query) {
     if (!score) continue;
     const ees = Array.isArray(info.ee) ? info.ee : [info.ee];
     for (const ee of ees.filter(Boolean)) {
-      const pdfUrl = arxivPdfFromLink(ee);
+      const pdfUrl = directPdfFromLink(ee);
       if (pdfUrl) { hits.push({ title, pdfUrl, score }); break; }
     }
   }
@@ -271,24 +287,71 @@ async function searchEuropePmcByTitle(query) {
   return hits;
 }
 
-/**
- * 下载 PDF。Node fetch（undici）被 arXiv 按 TLS 指纹挂起，curl 能过，
- * 所以统一走 curl。下载到临时文件，校验 %PDF- 魔数后读回 Buffer。
- */
+function isPdfBuffer(buf) {
+  return Buffer.isBuffer(buf) && buf.length <= MAX_PDF_BYTES && buf.subarray(0, 5).equals(Buffer.from('%PDF-'));
+}
+
+async function readResponseBuffer(response) {
+  if (!response.body?.getReader) {
+    const buf = Buffer.from(await response.arrayBuffer());
+    return buf.length <= MAX_PDF_BYTES ? buf : null;
+  }
+  const reader = response.body.getReader();
+  const chunks = [];
+  let total = 0;
+  try {
+    while (true) {
+      const next = await reader.read();
+      if (next.done) break;
+      const chunk = Buffer.from(next.value);
+      total += chunk.length;
+      if (total > MAX_PDF_BYTES) {
+        await reader.cancel();
+        return null;
+      }
+      chunks.push(chunk);
+    }
+    return Buffer.concat(chunks, total);
+  } catch {
+    try { await reader.cancel(); } catch {}
+    return null;
+  }
+}
+
+async function downloadPdfWithFetch(url, timeout = 60000) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeout);
+  try {
+    const response = await fetch(url, {
+      headers: { 'User-Agent': UA, Accept: 'application/pdf,application/octet-stream;q=0.9,*/*;q=0.8' },
+      redirect: 'follow',
+      signal: controller.signal,
+    });
+    if (!response.ok) return null;
+    const length = Number(response.headers.get('content-length') || 0);
+    if (length > MAX_PDF_BYTES) return null;
+    const buf = await readResponseBuffer(response);
+    return isPdfBuffer(buf) ? buf : null;
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/** 下载 PDF，优先用 curl 兼容 arXiv，再用原生 fetch 兼容没有 curl 的 Windows 环境。 */
 async function downloadPdf(url, timeout = 60000) {
   const tmp = path.join(os.tmpdir(), `toolbox-pdf-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
   try {
     await execFileAsync('curl', [
       '-fL', '--retry', '2', '--retry-delay', '1', '--connect-timeout', '15',
       '--max-filesize', String(MAX_PDF_BYTES), '--max-time', String(Math.ceil(timeout / 1000)),
-      '-A', UA, '-o', tmp, url,
+      '-A', UA, '-H', 'Accept: application/pdf,application/octet-stream;q=0.9,*/*;q=0.8', '-o', tmp, url,
     ], { timeout: timeout + 10000 });
     const buf = fs.readFileSync(tmp);
-    if (!buf.slice(0, 5).equals(Buffer.from('%PDF-'))) return null;
-    if (buf.length > MAX_PDF_BYTES) return null;
-    return buf;
+    return isPdfBuffer(buf) ? buf : null;
   } catch {
-    return null;
+    return downloadPdfWithFetch(url, timeout);
   } finally {
     try { fs.rmSync(tmp, { force: true }); } catch { /* 临时文件清不掉就算了 */ }
   }
@@ -514,7 +577,11 @@ async function discoverReferences(query, limit = 40) {
 
 function safeHttpUrl(value) {
   try {
-    const url = new URL(String(value || ''));
+    const raw = String(value || '').trim();
+    const embedded = raw.match(/https?:\/\/[^\s<>"']+/i)?.[0] || raw;
+    const decoded = decodeEntities(embedded);
+    const cleaned = decoded.replace(/[)\]}>，。！？；、]+$/u, '');
+    const url = new URL(cleaned);
     return ['http:', 'https:'].includes(url.protocol) ? url.toString() : '';
   } catch {
     return '';
@@ -725,10 +792,12 @@ module.exports = {
   discoverReferences,
   downloadPaperCandidate,
   downloadPapersBatch,
+  downloadPdfWithFetch,
   restoreAbstract,
   normalizeDoi,
   extractDoi,
   classifyLiteratureInput,
+  directPdfFromLink,
   normalize,
   queryTerms,
   relevanceDetail,

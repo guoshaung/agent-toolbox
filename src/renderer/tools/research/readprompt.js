@@ -35,6 +35,59 @@ ${history ? `\n之前的问答：\n${history}\n` : ''}
 用中文回答，纯文本，不要 markdown 标题。`;
 }
 
+export function buildPaperReportPrompt({ title, context }) {
+  return `你是严谨的论文精读助手。请只根据下面这篇论文的原文，生成一份给初学者看的结构化分析报告。
+
+论文：《${title}》
+${FIELD_HINT}
+
+论文全文文本（可能来自 PDF 文本层；每段带有页码提示）：
+<<<
+${context}
+>>>
+
+要求：
+1. 所有结论都要尽量指出原文依据，例如页码、小节、图表或实验名称；原文没有明确说明就写“原文未说明”，不要猜。
+2. “方法”要解释关键机制，不要只罗列模块名；“证据”要区分作者报告的结果和你的推断。
+3. 术语用大白话解释，并说明它在本文中具体做什么；不要给脱离本文的百科式解释。
+4. 给读者 3-6 条可执行的下一步建议，优先解决读者最可能卡住的地方。
+5. 只输出一个 JSON 对象，不要 markdown 代码块，不要额外说明：
+{"oneLine":"一句话总结",
+ "researchQuestion":"研究问题与动机，指出原文依据",
+ "method":"核心方法与关键机制，指出原文依据",
+ "data":"数据集、数据规模、预处理或任务设置，原文没有说明就写未说明",
+ "experiments":"实验设计、baseline、指标和关键结果，指出图表/章节依据",
+ "conclusion":"作者结论与适用范围",
+ "limitations":["作者承认或原文可直接看出的局限，每条带依据"],
+ "terms":[{"term":"术语","plain":"大白话解释","inPaper":"它在本文中的作用"}],
+ "quickAdvice":["给读者的下一步学习建议"],
+ "confidence":"high|medium|low，并说明文本是否完整"}`;
+}
+
+export function buildPaperReportMergePrompt({ title, parts }) {
+  return `你是严谨的论文精读助手。请把同一篇论文的分段分析合并成一份完整结构化报告。
+
+论文：《${title}》
+下面的 JSON 均来自论文原文不同页码片段。请去重、合并互补事实；不要把某一段没有提到的内容补成论文结论。保留页码、小节、图表等依据；无法确认的地方写“原文未说明”。
+
+分段分析：
+<<<
+${JSON.stringify(parts)}
+>>>
+
+只输出一个 JSON 对象，不要 markdown 代码块：
+{"oneLine":"一句话总结",
+ "researchQuestion":"研究问题与动机，带原文依据",
+ "method":"核心方法与关键机制，带原文依据",
+ "data":"数据集、数据规模、预处理或任务设置",
+ "experiments":"实验设计、baseline、指标和关键结果，带图表/章节依据",
+ "conclusion":"作者结论与适用范围",
+ "limitations":["局限与对应依据"],
+ "terms":[{"term":"术语","plain":"大白话解释","inPaper":"本文中的作用"}],
+ "quickAdvice":["给读者的下一步学习建议"],
+ "confidence":"high|medium|low，并说明文本是否完整"}`;
+}
+
 /**
  * 读后总结：把"划过的重点"和"论文主线"接起来。
  * 只做摘要没有意义 —— 关键是回答"我标的这些东西在这篇论文里是什么位置"。

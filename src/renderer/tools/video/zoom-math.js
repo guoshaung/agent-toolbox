@@ -33,6 +33,11 @@ export function wheelZoomFactor(deltaY, deltaMode = 0, sensitivity = WHEEL_SENSI
   return Math.exp(-wheelDeltaPixels(deltaY, deltaMode) * sensitivity);
 }
 
+/** 只有 Ctrl/Cmd+滚轮或触控板捏合才进入缩放，普通上下滚动留给页面。 */
+export function isZoomGesture({ ctrlKey = false, metaKey = false } = {}) {
+  return Boolean(ctrlKey || metaKey);
+}
+
 /** 应用一个缩放系数并夹取到合法区间 */
 export function applyZoom(scale, factor) {
   return clamp(scale * factor);
