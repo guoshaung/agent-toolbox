@@ -74,3 +74,41 @@ test('camera permission failure resolves and emits a contract-safe undetected fr
     });
   }
 });
+
+test('restart waits for an in-flight stopped start before acquiring the camera again', async () => {
+  const { createAvatarCapture } = await import('../src/avatar/capture.mjs');
+  const originalNavigator = globalThis.navigator;
+  const originalConsoleError = console.error;
+  let rejectFirst;
+  let calls = 0;
+  Object.defineProperty(globalThis, 'navigator', {
+    configurable: true,
+    value: {
+      mediaDevices: {
+        getUserMedia() {
+          calls += 1;
+          if (calls === 1) return new Promise((_resolve, reject) => { rejectFirst = reject; });
+          return Promise.reject(new Error('camera occupied'));
+        },
+      },
+    },
+  });
+  console.error = () => {};
+
+  try {
+    const capture = createAvatarCapture();
+    const firstStart = capture.start();
+    capture.stop();
+    const restart = capture.start();
+    assert.equal(calls, 1);
+    rejectFirst(new Error('permission denied'));
+    await Promise.all([firstStart, restart]);
+    assert.equal(calls, 2);
+  } finally {
+    console.error = originalConsoleError;
+    Object.defineProperty(globalThis, 'navigator', {
+      configurable: true,
+      value: originalNavigator,
+    });
+  }
+});

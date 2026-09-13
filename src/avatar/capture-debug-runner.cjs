@@ -17,19 +17,27 @@ app.whenReady().then(async () => {
     backgroundColor: '#080b12',
     webPreferences: { sandbox: true },
   });
+  window.webContents.on('console-message', (_event, _level, message) => {
+    console.error(`[capture debug] ${message}`);
+  });
   await window.loadFile(path.join(__dirname, 'capture-debug.html'));
 
   const deadline = Date.now() + 20_000;
+  let detected = false;
   while (Date.now() < deadline) {
-    const detected = await window.webContents.executeJavaScript(
+    detected = await window.webContents.executeJavaScript(
       "document.querySelector('#status')?.dataset.detected === 'true'",
     );
     if (detected) break;
     await new Promise((resolve) => setTimeout(resolve, 250));
   }
+  if (!detected) throw new Error('No face was detected before the screenshot deadline');
 
   await new Promise((resolve) => setTimeout(resolve, 1500));
   const screenshot = await window.webContents.capturePage();
   await fs.writeFile(path.join(__dirname, 'capture-debug.png'), screenshot.toPNG());
   app.quit();
+}).catch((error) => {
+  console.error(error);
+  app.exit(1);
 });

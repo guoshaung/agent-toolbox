@@ -281,16 +281,20 @@ export function createAvatarCapture(options = {}) {
     }
   }
 
+  function start() {
+    if (running) return startPromise ?? Promise.resolve();
+    if (startPromise) return startPromise.then(start);
+
+    running = true;
+    const expectedGeneration = ++generation;
+    startPromise = initialize(expectedGeneration).finally(() => {
+      startPromise = null;
+    });
+    return startPromise;
+  }
+
   return {
-    start() {
-      if (running) return startPromise ?? Promise.resolve();
-      running = true;
-      const expectedGeneration = ++generation;
-      startPromise = initialize(expectedGeneration).finally(() => {
-        startPromise = null;
-      });
-      return startPromise;
-    },
+    start,
 
     stop() {
       if (!running && !startPromise) return;
