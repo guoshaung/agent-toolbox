@@ -8,6 +8,7 @@ import { applyStoredTheme, applyStoredEffect } from './core/themes.js';
 import { iconFor } from './core/icons.js';
 import { buildTermPrompt, buildTermSystemPrompt, normalizeTermResult } from './tools/terms/prompt.js';
 import { createSwitcher } from './core/switcher.js';
+import { togglePinned as togglePinnedState, addToRight, removePinned, LEFT_MAX, RIGHT_MAX } from './core/right-rail.js';
 
 const rail = document.getElementById('rail');
 const stage = document.getElementById('stage');
@@ -77,12 +78,14 @@ const mounted = new Map(); // id -> { el, instance }
 let switcher = null;
 let currentId = null;
 const SETTINGS_ID = 'settings';
-const MAX_PINNED = 7;
-const DEFAULT_PINNED = ['ask', 'terms', 'docs', 'controls', 'focus', 'skills', 'research'];
+const MAX_PINNED = LEFT_MAX;
+const DEFAULT_PINNED = ['ask', 'terms', 'docs', 'controls', 'voice', 'focus', 'skills', 'research'];
 const pinEligibleTools = TOOLS.filter((tool) => tool.id !== SETTINGS_ID && tool.id !== 'tasks');
 let pinnedIds = config.get('ui.pinnedTools', null);
+let rightPinnedIds = config.get('ui.rightPinnedTools', []);
+if (!Array.isArray(rightPinnedIds)) rightPinnedIds = [];
 if (!pinnedIds || !pinnedIds.length) {
-  pinnedIds = [...DEFAULT_PINNED]; // 首次运行或已清空：用含快捷控制的默认列表
+  pinnedIds = [...DEFAULT_PINNED].slice(0, MAX_PINNED); // 首次运行或已清空：用含快捷控制/语音的默认列表
 } else {
   pinnedIds = pinnedIds
     .filter((id, index, list) => pinEligibleTools.some((tool) => tool.id === id) && list.indexOf(id) === index)
@@ -92,9 +95,19 @@ if (!pinnedIds || !pinnedIds.length) {
     if (pinnedIds.length >= MAX_PINNED) pinnedIds = [...pinnedIds.slice(0, MAX_PINNED - 1), 'controls'];
     else pinnedIds = [...pinnedIds, 'controls'];
   }
+  if (!pinnedIds.includes('voice')) {
+    if (pinnedIds.length >= MAX_PINNED) pinnedIds = [...pinnedIds.slice(0, MAX_PINNED - 1), 'voice'];
+    else pinnedIds = [...pinnedIds, 'voice'];
+  }
 }
 
+rightPinnedIds = rightPinnedIds
+  .filter((id, index, list) => pinEligibleTools.some((tool) => tool.id === id) && !pinnedIds.includes(id) && list.indexOf(id) === index)
+  .slice(0, RIGHT_MAX);
+
 const pinnedHost = h('div', { class: 'rail__pinned' });
+const rightPinnedHost = h('div', { class: 'rail__pinned' });
+const rightRail = h('nav', { class: 'rail rail--right', id: 'rail-right', hidden: true, 'aria-label': '右侧收藏栏' }, rightPinnedHost);
 const libraryBody = h('div', { class: 'rail-library__body' });
 const libraryCount = h('span', { class: 'rail-library__count' });
 const libraryPanel = h('section', { class: 'rail-library', hidden: true },
@@ -198,12 +211,19 @@ function railButton(tool, extraClass = '') {
 }
 
 async function togglePinned(id) {
-  if (pinnedIds.includes(id)) pinnedIds = pinnedIds.filter((item) => item !== id);
-  else {
-    if (pinnedIds.length >= MAX_PINNED) return toast(`左侧最多固定 ${MAX_PINNED} 个工具，先取消一个星标。`, 'info');
-    pinnedIds = [...pinnedIds, id];
+  const next = togglePinnedState({ left: pinnedIds, right: rightPinnedIds }, id, pinEligibleTools.map((tool) => tool.id), MAX_PINNED, RIGHT_MAX);
+  if (!next.overflow) {
+    pinnedIds = next.left;
+    rightPinnedIds = next.right;
+  } else {
+    const moveRight = window.confirm('左侧常用栏已满，是否把这个工具固定到右侧栏？');
+    if (!moveRight) return;
+    const added = addToRight({ left: pinnedIds, right: rightPinnedIds }, id, pinEligibleTools.map((tool) => tool.id), MAX_PINNED, RIGHT_MAX);
+    if (added.full) return toast(`右侧常用栏也已达到 ${RIGHT_MAX} 个，请先取消一个收藏。`, 'info');
+    rightPinnedIds = added.right;
   }
   await config.set('ui.pinnedTools', pinnedIds);
+  await config.set('ui.rightPinnedTools', rightPinnedIds);
   renderRail();
 }
 
@@ -238,21 +258,39 @@ function librarySection(title, tools, pinned) {
   );
 }
 
+function rightRailButton(tool) {
+  const button = railButton(tool, 'rail__right-item');
+  button.title = `${tool.hint || tool.title} · 右键取消收藏`;
+  button.addEventListener('contextmenu', async (event) => {
+    event.preventDefault();
+    rightPinnedIds = removePinned({ left: [], right: rightPinnedIds }, tool.id).right;
+    await config.set('ui.rightPinnedTools', rightPinnedIds);
+    renderRail();
+  });
+  return button;
+}
+
 function renderRail() {
   pinnedHost.replaceChildren(...pinnedIds
     .map((id) => TOOLS.find((tool) => tool.id === id))
     .filter(Boolean)
     .map((tool) => railButton(tool)));
+  rightPinnedHost.replaceChildren(...rightPinnedIds
+    .map((id) => TOOLS.find((tool) => tool.id === id))
+    .filter(Boolean)
+    .map(rightRailButton));
+  rightRail.hidden = rightPinnedIds.length === 0;
 
   const pinnedTools = pinnedIds.map((id) => pinEligibleTools.find((tool) => tool.id === id)).filter(Boolean);
-  const otherTools = pinEligibleTools.filter((tool) => !pinnedIds.includes(tool.id));
+  const otherTools = pinEligibleTools.filter((tool) => !pinnedIds.includes(tool.id) && !rightPinnedIds.includes(tool.id));
   libraryCount.textContent = `${pinEligibleTools.length} 个`;
   libraryBody.replaceChildren(
     librarySection('左侧常用', pinnedTools, true),
     librarySection('全部其他', otherTools, false),
   );
   for (const btn of rail.querySelectorAll('[data-id]')) btn.classList.toggle('is-active', btn.dataset.id === currentId);
-  moreButton.classList.toggle('has-current', Boolean(currentId && currentId !== 'tasks' && !pinnedIds.includes(currentId) && currentId !== SETTINGS_ID));
+  for (const btn of rightRail.querySelectorAll('[data-id]')) btn.classList.toggle('is-active', btn.dataset.id === currentId);
+  moreButton.classList.toggle('has-current', Boolean(currentId && currentId !== 'tasks' && !pinnedIds.includes(currentId) && !rightPinnedIds.includes(currentId) && currentId !== SETTINGS_ID));
 }
 
 function setLibraryOpen(open) {
@@ -328,6 +366,7 @@ rail.append(
   railButton(TOOLS.find((tool) => tool.id === SETTINGS_ID), 'rail__settings'),
   libraryPanel,
 );
+document.getElementById('app').appendChild(rightRail);
 renderRail();
 window.toolbox.dock.onStatus(renderDockPin);
 window.toolbox.dock.onError((message) => toast(message, 'bad', 5200));

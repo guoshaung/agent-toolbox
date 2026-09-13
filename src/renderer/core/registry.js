@@ -22,10 +22,12 @@ import voicebox from '../tools/voicebox/index.js';
 import digitalHuman from '../tools/digital-human/index.js';
 import controls from '../tools/controls/index.js';
 import appearance from '../tools/appearance/index.js';
+import voice from '../tools/voice/index.js';
+import gesture from '../tools/gesture/index.js';
 
 /**
  * 工具注册表 —— 需求第 5 条「以后还要更多工具」就靠这里。
  * 加一个工具：写 tools/<id>/index.js，默认导出 { id, title, icon, create(root, ctx) }，
  * 然后在这个数组里加一行。详见 docs/ADD-A-TOOL.md。
  */
-export const TOOLS = [ask, docs, typing, focus, study, notebook, container, dsh, tavern, voicebox, digitalHuman, pet, history, video, research, coach, terms, dock, skills, remote, controls, appearance, tasks, settings];
+export const TOOLS = [ask, docs, typing, focus, study, notebook, container, dsh, tavern, voicebox, digitalHuman, pet, history, video, research, coach, terms, dock, skills, remote, controls, appearance, voice, gesture, tasks, settings];

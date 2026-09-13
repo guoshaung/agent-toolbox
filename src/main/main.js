@@ -36,6 +36,10 @@ const { registerContainerIpc, seedContainer, syncContainerLiterature, containerR
 const { DshService } = require('./dsh-service');
 const { TavernService } = require('./tavern-service');
 const { AppControls } = require('./app-controls');
+const { computeBounds, canApplyGesture } = require('./window-gesture');
+const { VoiceboxService } = require('./voicebox-service');
+const { OpenAIImageClient } = require('./openai-image');
+const { generateTeachingSlides } = require('./teaching-slides');
 const { exportPptx } = require('./pptx-export');
 const { VoiceBoxService } = require('./voicebox-service');
 const voiceboxApi = require('./voicebox-api');
@@ -99,6 +103,7 @@ let tavernService;
 let argosService;
 let appControls;
 let voiceBoxService;
+let voiceboxService;
 const siteFloatWindows = new Map();
 const pendingRemoteCommands = new Map();
 const watchAvatarCache = new Map();
@@ -368,6 +373,7 @@ function petAvatarSize(scale = petSettings().size) {
 function credentialPath(scope = 'default') {
   if (scope === 'translation') return 'research.translation.keyEncrypted';
   if (scope === 'quiz') return 'study.quiz.keyEncrypted';
+  if (scope === 'image') return 'image.api.keyEncrypted';
   return 'ai.api.keyEncrypted';
 }
 
@@ -431,6 +437,11 @@ function safeConfig() {
     delete data.study.quiz.key;
     delete data.study.quiz.keyEncrypted;
     data.study.quiz.hasKey = Boolean(readApiKey('quiz'));
+  }
+  if (data.image?.api) {
+    delete data.image.api.key;
+    delete data.image.api.keyEncrypted;
+    data.image.api.hasKey = Boolean(readApiKey('image'));
   }
   if (data.remote) delete data.remote.tokenEncrypted;
   return data;
@@ -506,6 +517,7 @@ function createWindow(showOnReady = true) {
       sandbox: true,
       webviewTag: true, // 四个工具全靠它内嵌 Chromium
       spellcheck: false,
+      backgroundThrottling: false,
     },
   });
   if (runtimeAppIcon && !runtimeAppIcon.isEmpty()) mainWindow.setIcon(runtimeAppIcon);
@@ -526,6 +538,16 @@ function createWindow(showOnReady = true) {
     }
   }, 6000);
   mainWindow.loadFile(path.join(__dirname, '..', 'renderer', 'index.html'));
+  mainWindow.webContents.on('did-fail-load', (_event, code, description, url) => {
+    console.error('[renderer] did-fail-load', code, description, url);
+  });
+  mainWindow.webContents.on('console-message', (_event, level, message, line, sourceId) => {
+    if (level >= 2) console.error('[renderer]', message, `${sourceId}:${line}`);
+  });
+  mainWindow.webContents.on('render-process-gone', (_event, details) => {
+    console.error('[renderer] render-process-gone', details.reason, details.exitCode);
+  });
+  mainWindow.webContents.on('unresponsive', () => console.error('[renderer] unresponsive'));
   if (IS_DEV) mainWindow.webContents.openDevTools({ mode: 'detach' });
 
   let rendererRecoveries = 0;
@@ -1359,6 +1381,8 @@ async function callQuizApi({ messages, temperature = 0.2, timeout = 120000 }) {
   });
 }
 
+const API_KEY_PATHS = new Set(['ai.api.key', 'ai.api.keyEncrypted', 'study.quiz.keyEncrypted', 'research.translation.keyEncrypted', 'image.api.key', 'image.api.keyEncrypted']);
+
 function registerIpc() {
   // 证书例外：按域名放行，不做全局关闭
   registerCertTrust(app, ipcMain, { getStore: () => store, getWindow: () => mainWindow });
@@ -1404,8 +1428,19 @@ function registerIpc() {
   const seeded = seedContainer(() => app.getPath('userData'), seedDir);
   if (seeded.copied.length) console.log('[container] 已放入随包工具:', seeded.copied.join(', '));
 
-  ipcMain.handle('voicebox:status', () => voiceBoxService.status());
-  ipcMain.handle('voicebox:start', () => voiceBoxService.start());
+  ipcMain.handle('voicebox:status', async () => {
+    const legacy = voiceBoxService?.status?.() || {};
+    const managed = voiceboxService?.refreshStatus ? await voiceboxService.refreshStatus() : {};
+    return { ...managed, ...legacy, status: managed.status || legacy.status, installed: Boolean(legacy.installed || managed.exists), appPath: legacy.appPath || '' };
+  });
+  ipcMain.handle('voicebox:start', async () => {
+    const legacy = voiceBoxService ? await voiceBoxService.start() : { ok: false };
+    if (legacy.ok) {
+      const managed = voiceboxService?.refreshStatus ? await voiceboxService.refreshStatus() : {};
+      return { ...managed, ...legacy, status: managed.status || legacy.state?.status || 'installed', installed: true, appPath: legacy.state?.appPath || '' };
+    }
+    return voiceboxService?.start ? voiceboxService.start() : legacy;
+  });
   ipcMain.handle('voicebox:openProject', () => voiceBoxService.openProject());
   ipcMain.handle('voicebox:openDownload', () => voiceBoxService.openDownload());
   ipcMain.handle('voicebox:openDocs', () => voiceBoxService.openDocs());
@@ -1432,6 +1467,13 @@ function registerIpc() {
     try { return await voiceboxApi.generateAudio(payload || {}); }
     catch (error) { return { ok: false, error: error.message, code: error.code }; }
   });
+  ipcMain.handle('voicebox:stop', () => voiceboxService?.stop?.() || { ok: true });
+  ipcMain.handle('voicebox:mcpInfo', () => voiceboxService?.mcpInfo?.() || {});
+  ipcMain.handle('voicebox:tts', (_e, text) => {
+    if (typeof text !== 'string' || !text.trim()) return { ok: false, error: 'text 不能为空' };
+    return voiceboxService.tts(text);
+  });
+  ipcMain.handle('voicebox:installGpu', () => voiceboxService?.installGpuAcceleration?.() || { ok: false, error: 'Voicebox 服务不可用。' });
 
   ipcMain.handle('dsh:status', () => dshService.status());
   ipcMain.handle('dsh:start', () => dshService.start());
@@ -1447,13 +1489,50 @@ function registerIpc() {
   ipcMain.handle('appControls:closeForeground', () => appControls.closeForeground());
   ipcMain.handle('appControls:cycleWindows', () => appControls.cycleWindows());
 
+  // 教学幻灯片：5 页 storyboard + 5 张 GPT Image（Key 来自环境变量，绝不硬编码）
+  ipcMain.handle('slides:generateTeaching', async (_e, topic) => {
+    const outputDir = path.join(app.getPath('userData'), 'teaching-slides');
+    const apiKey = process.env.OPENAI_API_KEY || readApiKey('image');
+    if (!apiKey) return { ok: false, error: '缺少图片 API Key：请在「语音」栏目保存，或设置 OPENAI_API_KEY。' };
+    const configuredBase = process.env.OPENAI_BASE_URL || store.get('image.api.baseUrl', 'https://api.openai.com/v1');
+    const baseUrl = /^https?:\/\/[^\s]+$/i.test(String(configuredBase)) ? String(configuredBase) : 'https://api.openai.com/v1';
+    const imageClient = new OpenAIImageClient({ apiKey, baseUrl });
+    const result = await generateTeachingSlides(String(topic || ''), { outputDir, imageClient, concurrency: 2 });
+    return result.ok ? result : { ok: false, error: result.error || '教学幻灯片生成失败', ...result };
+  });
+
+  // 手势识别 → 窗口动作：作用于当前前台窗口（全屏 / 左半 / 右半）
+  ipcMain.handle('gesture:control', async (_e, action, side) => {
+    const gesture = action === 'fullscreen' ? 'fullscreen' : action === 'snap' ? (side === 'right' ? 'snap-right' : 'snap-left') : null;
+    if (!gesture || !windowDock) return { ok: false, error: '不支持的窗口动作' };
+    const front = await windowDock.run(['frontmost']);
+    if (!front.ok) return { ok: false, error: front.error || '无法获取前台窗口' };
+    if (!canApplyGesture(front, { currentPid: process.pid })) return { ok: false, error: '当前前台窗口受保护，已跳过。' };
+    const point = front.bounds
+      ? { x: front.bounds.x + front.bounds.width / 2, y: front.bounds.y + front.bounds.height / 2 }
+      : screen.getCursorScreenPoint();
+    const display = screen.getDisplayNearestPoint(point);
+    const bounds = computeBounds(gesture, display);
+    if (!bounds) return { ok: false, error: '无法计算目标区域' };
+    const moved = await windowDock.run([
+      'set', front.handle || '', front.title || '', bounds.x, bounds.y, bounds.width, bounds.height,
+    ]);
+    if (!moved.ok) return { ok: false, error: moved.error || '窗口移动失败' };
+    return { ok: true, ...bounds };
+  });
+  ipcMain.handle('music:play', (_e, url) => {
+    if (typeof url !== 'string' || !/^https:\/\/[^\s]+$/i.test(url)) return { ok: false, error: '音乐网址无效' };
+    shell.openExternal(url);
+    return { ok: true };
+  });
+
   ipcMain.handle('config:all', () => safeConfig());
   ipcMain.handle('config:get', (_e, key, fallback) => {
-    if (key === 'ai.api.key' || key === 'ai.api.keyEncrypted' || key === 'study.quiz.keyEncrypted' || key === 'research.translation.keyEncrypted') return fallback;
+    if (API_KEY_PATHS.has(key)) return fallback;
     return store.get(key, fallback);
   });
   ipcMain.handle('config:set', (_e, key, value) => {
-    if (key === 'ai.api.key' || key === 'ai.api.keyEncrypted' || key === 'study.quiz.keyEncrypted' || key === 'research.translation.keyEncrypted') {
+    if (API_KEY_PATHS.has(key)) {
       throw new Error('API Key 必须通过安全凭据接口保存。');
     }
     const result = store.set(key, value);
@@ -2483,6 +2562,17 @@ app.whenReady().then(async () => {
   for (const partition of Object.values(PARTITIONS)) configurePartition(partition);
   configureBilibiliPartition();
 
+  // 手势识别需要主窗口渲染进程调用摄像头：只放行主窗口自身的 media 请求
+  session.defaultSession.setPermissionRequestHandler((webContents, permission, callback, details) => {
+    const isMainWindow = mainWindow && !mainWindow.isDestroyed() && webContents === mainWindow.webContents;
+    if (permission === 'media' && isMainWindow) return callback(true);
+    callback(false);
+  });
+  session.defaultSession.setPermissionCheckHandler((webContents, permission) => {
+    const isMainWindow = mainWindow && !mainWindow.isDestroyed() && webContents === mainWindow.webContents;
+    return permission === 'media' && isMainWindow;
+  });
+
   // 启动时清空专注/情报分区的缓存和 cookie，避免站点记住上次的登录重定向状态
   try {
     const focusSes = session.fromPartition(PARTITIONS.focus);
@@ -2515,6 +2605,7 @@ app.whenReady().then(async () => {
 
   dshService = new DshService({ app, getWindow: () => mainWindow });
   tavernService = new TavernService({ app, getWindow: () => mainWindow });
+  voiceboxService = new VoiceboxService({ getUserDataPath: () => app.getPath('userData'), getWindow: () => mainWindow });
   appControls = new AppControls({ store });
   voiceBoxService = new VoiceBoxService({
     app,
@@ -2526,6 +2617,7 @@ app.whenReady().then(async () => {
   hookLiteratureDownloads();
   hookResearchDownloads();
   createWindow();
+  // Voicebox 不自动安装/启动：避免开机即下载几百 MB；页面内手动启动，已有实例时自动复用 17493。
   dshService.start().catch((error) => console.warn('[dsh] background start failed:', error.message));
   createPetWindow();
   if (store.get('remote.autoStart', false)) {
@@ -2573,4 +2665,6 @@ app.on('will-quit', () => {
   pendingRemoteCommands.clear();
   dshService?.stop();
   tavernService?.stop();
+  voiceBoxService?.stop();
+  voiceboxService?.stop();
 });

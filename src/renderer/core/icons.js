@@ -7,6 +7,7 @@ const PATHS = {
   target: '<circle cx="12" cy="12" r="8.5"/><circle cx="12" cy="12" r="4.5"/><circle cx="12" cy="12" r="1" fill="currentColor" stroke="none"/>',
   flask: '<path d="M9 3h6M10 3v5l-5.2 9.1A2 2 0 0 0 6.5 20h11a2 2 0 0 0 1.7-2.9L14 8V3"/><path d="M7.5 15h9"/>',
   search: '<circle cx="10.8" cy="10.8" r="6.8"/><path d="m16 16 5 5"/>',
+  mic: '<rect x="8" y="3" width="8" height="12" rx="4"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3M9 21h6"/>',
   bot: '<rect x="4" y="7" width="16" height="13" rx="3"/><path d="M12 3v4M8 12h.01M16 12h.01M8 16h8"/><circle cx="12" cy="3" r="1"/>',
   waveform: '<path d="M4 12h2l1.5-5 3 10 3-14 3 14 1.5-5H20"/>',
   archive: '<path d="M4 7h16v13H4zM3 4h18v3H3zM9 11h6"/>',
@@ -72,6 +73,7 @@ const PATHS = {
   trash: '<path d="M4 7h16M9 7V5h6v2M6.5 7l1 13h9l1-13"/>',
   download: '<path d="M12 4v11M7.5 10.5 12 15l4.5-4.5M4 19h16"/>',
   palette: '<path d="M12 3a9 9 0 1 0 0 18c1.3 0 2-.8 2-1.8 0-1.6-1.4-1.7-1.4-3 0-1 .8-1.7 1.9-1.7H16a5 5 0 0 0 5-5C21 6 17 3 12 3Z"/><circle cx="7.5" cy="11" r="1"/><circle cx="10.5" cy="7.5" r="1"/><circle cx="15" cy="8" r="1"/>',
+  hand: '<path d="M7 11V6a1.5 1.5 0 0 1 3 0v4V4a1.5 1.5 0 0 1 3 0v6V5a1.5 1.5 0 0 1 3 0v6l1.3-1.8a1.5 1.5 0 0 1 2.4 1.8l-3.5 5A5 5 0 0 1 12.1 19H11a5 5 0 0 1-5-5v-3a1 1 0 0 1 1-1Z"/>',
   canvasBg: '<rect x="3.5" y="4.5" width="17" height="15" rx="2"/><path d="M3.5 9.5h17M9 4.5v15M14.5 4.5v15M3.5 14.5h17" stroke-opacity=".45"/>',
   x: '<path d="M5 4h3.1l4 5.2L16.5 4H19l-5.7 6.7L20 20h-3.1l-4.4-5.8L7.2 20H4.7l6-7.1L5 4Z" fill="currentColor" stroke="none"/>',
 };
