@@ -46,6 +46,10 @@ contextBridge.exposeInMainWorld('toolbox', {
     fetchInfo: (url) => ipcRenderer.invoke('video:fetchInfo', url),
     /** 拉字幕：官方字幕优先，没有则 AI 字幕；scope: 'p1' | 'p5' | 'all' */
     fetchSubs: (payload) => ipcRenderer.invoke('video:fetchSubs', payload),
+    onSubsProgress: (callback) => ipcRenderer.on('video:subProgress', (_event, state) => callback(state)),
+    /** 准备本地视频：展开拖入的文件夹，读取同名字幕，必要时调用本机 Whisper 转写 */
+    prepareLocal: (paths, options) => ipcRenderer.invoke('video:prepareLocal', { paths, options }),
+    onPrepareProgress: (callback) => ipcRenderer.on('video:prepareProgress', (_event, state) => callback(state)),
     /** 报告落盘 userData/reports/*.md，publish=true 时再用 lark-cli 发飞书 */
     saveReport: (payload) => ipcRenderer.invoke('video:saveReport', payload),
     publishReport: (fileName, force = false) => ipcRenderer.invoke('video:publishReport', fileName, force),
@@ -183,6 +187,7 @@ contextBridge.exposeInMainWorld('toolbox', {
     openAccessBrowser: (url) => ipcRenderer.invoke('lit:openAccessBrowser', url),
     scanBrowserPage: () => ipcRenderer.invoke('lit:scanBrowserPage'),
     downloadBatch: (items) => ipcRenderer.invoke('lit:downloadBatch', items),
+    cancelBatch: () => ipcRenderer.invoke('lit:cancelBatch'),
     onBatchProgress: (callback) => ipcRenderer.on('lit:batch-progress', (_event, state) => callback(state)),
     onAutoProgress: (callback) => ipcRenderer.on('lit:auto-progress', (_event, state) => callback(state)),
     onDownloaded: (callback) => ipcRenderer.on('lit:downloaded', (_event, item) => callback(item)),
@@ -190,6 +195,8 @@ contextBridge.exposeInMainWorld('toolbox', {
     translate: (text, options) => ipcRenderer.invoke('lit:translate', text, options),
     /** 圈选截图 OCR（只识别不翻译，翻译走本地优先 TranslationManager），返回 { ok, text | error } */
     snipOcr: (dataUrl) => ipcRenderer.invoke('lit:snipOcr', dataUrl),
+    /** 保存论文分析 Markdown 到科研报告目录，并可选调用 lark-cli 发布到飞书 */
+    saveAnalysisReport: (payload) => ipcRenderer.invoke('lit:saveAnalysisReport', payload),
   },
 
   translation: {
@@ -280,6 +287,20 @@ contextBridge.exposeInMainWorld('toolbox', {
     start: () => ipcRenderer.invoke('tavern:start'),
     stop: () => ipcRenderer.invoke('tavern:stop'),
     onStatus: (callback) => ipcRenderer.on('tavern:status', (_event, state) => callback(state)),
+  },
+
+  voicebox: {
+    status: () => ipcRenderer.invoke('voicebox:status'),
+    start: () => ipcRenderer.invoke('voicebox:start'),
+    openProject: () => ipcRenderer.invoke('voicebox:openProject'),
+    openDownload: () => ipcRenderer.invoke('voicebox:openDownload'),
+    openDocs: () => ipcRenderer.invoke('voicebox:openDocs'),
+    apiHealth: () => ipcRenderer.invoke('voicebox:apiHealth'),
+    apiProfiles: () => ipcRenderer.invoke('voicebox:apiProfiles'),
+    apiActiveTasks: () => ipcRenderer.invoke('voicebox:apiActiveTasks'),
+    apiCancelDownload: (modelName) => ipcRenderer.invoke('voicebox:apiCancelDownload', modelName),
+    apiGenerateAudio: (payload) => ipcRenderer.invoke('voicebox:apiGenerateAudio', payload),
+    onStatus: (callback) => ipcRenderer.on('voicebox:status', (_event, state) => callback(state)),
   },
 
   update: {

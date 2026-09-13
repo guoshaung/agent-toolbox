@@ -215,6 +215,12 @@ export function createSiteGrid(root, {
    * 用户完全不知道发生了什么，只会觉得"这工具坏了"。
    */
   const errorPane = h('div', { class: 'sitegrid__error', hidden: true });
+  const loadingPane = h('div', { class: 'sitegrid__loading', hidden: true },
+    h('div', { class: 'sitegrid__loading-spinner', 'aria-hidden': 'true' }),
+    h('strong', {}, '正在打开网页…'),
+    h('span', { class: 'faint' }, '如果站点拒绝内嵌访问，会提供重试或系统浏览器入口。'),
+  );
+  let loadingTimer = null;
 
   const NET_REASON = {
     '-105': '域名解析失败（DNS 查不到这个站点）',
@@ -229,6 +235,49 @@ export function createSiteGrid(root, {
   function hideError() {
     errorPane.setAttribute('hidden', '');
     errorPane.textContent = '';
+  }
+
+  function hideLoading() {
+    clearTimeout(loadingTimer);
+    loadingTimer = null;
+    loadingPane.setAttribute('hidden', '');
+  }
+
+  function showLoading(view, siteUrl) {
+    if (activeUrl !== siteUrl) return;
+    hideError();
+    loadingPane.removeAttribute('hidden');
+    clearTimeout(loadingTimer);
+    loadingTimer = setTimeout(async () => {
+      if (activeUrl !== siteUrl || loadingPane.hasAttribute('hidden')) return;
+      let hasContent = false;
+      try {
+        hasContent = await view.executeJavaScript(
+          '(() => { const t = document.body ? document.body.innerText.trim().length : 0;'
+          + ' const nodes = document.body ? document.body.querySelectorAll("img,canvas,svg,video,iframe,[id],[class]").length : 0;'
+          + ' return t >= 8 || nodes > 0; })()',
+        );
+      } catch { /* 页面仍未响应，继续显示超时面板 */ }
+      if (activeUrl !== siteUrl || loadingPane.hasAttribute('hidden')) return;
+      if (hasContent) {
+        hideLoading();
+        setTimeout(() => checkBlank(view, siteUrl), 400);
+        return;
+      }
+      hideLoading();
+      errorPane.textContent = '';
+      errorPane.append(
+        h('div', { class: 'sitegrid__error-title' }, '网页加载超时'),
+        h('div', { class: 'sitegrid__error-reason' }, '站点可能拒绝了 Electron 内嵌访问，或当前网络连接没有完成。你可以重试，或者交给系统浏览器打开。'),
+        h('div', { class: 'sitegrid__error-url mono' }, view.getURL() || siteUrl),
+        h('div', { class: 'sitegrid__error-actions' },
+          h('button', { class: 'btn btn--sm btn--primary', onclick: () => { hideError(); showLoading(view, siteUrl); view.reload(); } }, '重试'),
+          h('button', { class: 'btn btn--sm', onclick: () => window.toolbox.shell.openExternal(view.getURL() || siteUrl) }, '用系统浏览器打开'),
+          h('button', { class: 'btn btn--sm', onclick: () => { hideError(); view.goBack(); } }, '返回上一页'),
+        ),
+      );
+      errorPane.removeAttribute('hidden');
+    }, 15000);
   }
 
   async function showError(view, { errorCode, errorDescription, validatedURL }) {
@@ -286,7 +335,10 @@ export function createSiteGrid(root, {
         + ' const nodes = document.body ? document.body.querySelectorAll("img,canvas,svg,video,iframe").length : 0;'
         + ' return t < 8 && nodes === 0; })()',
       );
-    } catch { return; }                                  // 页面还没准备好，不做判断
+    } catch {
+      setTimeout(() => checkBlank(view, siteUrl), 1000);
+      return;
+    }                                  // 页面还没准备好，稍后再判断
     if (!empty) return;
 
     errorPane.textContent = '';
@@ -323,14 +375,16 @@ export function createSiteGrid(root, {
       view.addEventListener('did-navigate', (e) => { if (activeUrl === site.url) address.value = e.url; });
       view.addEventListener('did-navigate-in-page', (e) => { if (activeUrl === site.url) address.value = e.url; });
       view.addEventListener('dom-ready', () => injectBypass(view));
-      view.addEventListener('did-start-loading', () => { if (activeUrl === site.url) hideError(); });
+      view.addEventListener('did-start-loading', () => showLoading(view, site.url));
       // 有些站点（知网就是典型）对内嵌浏览器直接返回 418 之类的空响应：
       // 不触发 did-fail-load，但页面是空的。不检查就又是一片白屏。
       view.addEventListener('did-finish-load', () => {
         if (activeUrl !== site.url) return;
+        hideLoading();
         setTimeout(() => checkBlank(view, site.url), 1400);   // 留点时间给前端渲染
       });
       view.addEventListener('did-fail-load', (e) => {
+        hideLoading();
         if (e.errorCode === -3) return;                 // -3 是主动取消的导航，不是故障
         if (!e.isMainFrame && e.isMainFrame !== undefined) return;   // 子框架失败不弹整页错误
         if (activeUrl !== site.url) return;
@@ -360,13 +414,14 @@ export function createSiteGrid(root, {
 
   function showGrid() {
     activeUrl = null;
+    hideLoading();
     viewBar.setAttribute('hidden', '');
     viewHost.setAttribute('hidden', '');
     grid.removeAttribute('hidden');
   }
 
   renderCategoryBar();
-  viewHost.appendChild(errorPane);
+  viewHost.append(loadingPane, errorPane);
   root.append(viewBar, h('div', { class: 'research__portalbody' }, categoryBar, grid, viewHost));
   renderGrid();
 }

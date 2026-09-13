@@ -320,6 +320,7 @@ webview { display: flex; flex: 1; min-height: 0; background: #fff; }
   opacity: 0;
   pointer-events: none;
 }
+#bridge-host > webview { display: flex; width: 1200px; height: 900px; border: 0; }
 
 /* ---------- toast ---------- */
 
@@ -373,12 +374,12 @@ webview { display: flex; flex: 1; min-height: 0; background: #fff; }
   /* 不加 border 也不加 padding —— 加了会把它撑出一个方框，看着大一圈，
      而那圈静止的框恰恰是唯一"看得见"的变化，方向反了。
      常态只留一点微光，所有变化都交给切换时的动画。 */
-  filter: drop-shadow(0 0 8px rgba(0, 255, 156, .22));
+  filter: drop-shadow(0 0 10px rgba(94, 231, 255, .24));
   transition: filter .3s ease, opacity .3s ease;
 }
 .rail__logo:hover {
   opacity: 1;
-  filter: drop-shadow(0 0 16px rgba(0, 255, 156, .5));
+  filter: drop-shadow(0 0 18px rgba(167, 120, 255, .52));
 }
 .rail__logo { cursor: pointer; }
 .rail__logo.is-restarting { opacity: .58; transform: scale(.92); transition: opacity .15s, transform .15s; }
@@ -389,7 +390,7 @@ webview { display: flex; flex: 1; min-height: 0; background: #fff; }
   position: absolute;
   inset: 0;
   border-radius: 11px;
-  border: 2px solid rgba(0, 255, 156, .9);
+  border: 2px solid rgba(167, 120, 255, .9);
   opacity: 0;
   pointer-events: none;
 }
@@ -402,10 +403,10 @@ webview { display: flex; flex: 1; min-height: 0; background: #fff; }
  * 之前做的是缩小 12% + 微弱光晕，两样都是"往回收"的变化，在这个尺寸下等于没有。
  */
 @keyframes logo-pop {
-  0%   { transform: scale(1);    filter: drop-shadow(0 0 8px rgba(0,255,156,.22)) brightness(1); }
-  22%  { transform: scale(1.24); filter: drop-shadow(0 0 24px rgba(0,255,156,1)) brightness(1.8); }
-  55%  { transform: scale(.96);  filter: drop-shadow(0 0 14px rgba(0,255,156,.5)) brightness(1.15); }
-  100% { transform: scale(1);    filter: drop-shadow(0 0 8px rgba(0,255,156,.22)) brightness(1); }
+  0%   { transform: scale(1);    filter: drop-shadow(0 0 10px rgba(94,231,255,.24)) brightness(1); }
+  22%  { transform: scale(1.24); filter: drop-shadow(0 0 24px rgba(167,120,255,1)) brightness(1.8); }
+  55%  { transform: scale(.96);  filter: drop-shadow(0 0 14px rgba(94,231,255,.5)) brightness(1.15); }
+  100% { transform: scale(1);    filter: drop-shadow(0 0 10px rgba(94,231,255,.24)) brightness(1); }
 }
 @keyframes logo-ring {
   0%   { opacity: 1;  transform: scale(.75); border-width: 2px; }
@@ -418,10 +419,9 @@ webview { display: flex; flex: 1; min-height: 0; background: #fff; }
   .rail__logo.is-pulse { animation: logo-flash .5s ease-out; }
   .rail__logo.is-pulse::after { animation: none; }
   @keyframes logo-flash {
-    0%, 100% { filter: drop-shadow(0 0 8px rgba(0,255,156,.22)) brightness(1); }
-    30%      { filter: drop-shadow(0 0 20px rgba(0,255,156,.9)) brightness(1.6); }
+    0%, 100% { filter: drop-shadow(0 0 10px rgba(94,231,255,.24)) brightness(1); }
+    30%      { filter: drop-shadow(0 0 20px rgba(167,120,255,.9)) brightness(1.6); }
   }
-}
 }
 .rail__logo svg { display: block; width: 100%; height: 100%; }
 .rail__pin {
@@ -649,6 +649,20 @@ html[data-theme='violet'] .stage::before,
 html[data-theme='violet'] .rail,
 html[data-theme='cyber'] .stage::before,
 html[data-theme='cyber'] .rail { background-image: none; }
+html[data-theme='violet'] .atelier-banner,
+html[data-theme='cyber'] .atelier-banner { background: var(--bg-raised); border-bottom-color: var(--line-soft); box-shadow: none; }
+html[data-theme='violet'] .atelier-banner::before,
+html[data-theme='violet'] .atelier-banner::after,
+html[data-theme='violet'] .atelier-banner__bow,
+html[data-theme='cyber'] .atelier-banner::before,
+html[data-theme='cyber'] .atelier-banner::after,
+html[data-theme='cyber'] .atelier-banner__bow { display: none; }
+html[data-theme='violet'] .atelier-banner__brand,
+html[data-theme='cyber'] .atelier-banner__brand { color: var(--accent); text-shadow: none; }
+html[data-theme='violet'] .atelier-banner__brand strong,
+html[data-theme='cyber'] .atelier-banner__brand strong { color: var(--text); }
+html[data-theme='violet'] .atelier-banner__caption,
+html[data-theme='cyber'] .atelier-banner__caption { color: var(--text-faint); }
 html[data-theme='violet'] .stage::after,
 html[data-theme='cyber'] .stage::after { background-image: var(--stage-emb-svg); }
 html[data-theme='violet'] .rail,

@@ -34,7 +34,7 @@ export default {
     const logoGrid = h('div', { class: 'appearance__grid' }, ...LOGOS.map((logo) => {
       const card = h('button', { class: 'appearance__logo', title: logo.name },
         h('span', { class: 'appearance__logo-svg', html: logo.svg }));
-      if (logo.id === config.get('ui.logo', 'neon')) card.classList.add('is-active');
+      if (logo.id === config.get('ui.logo', 'prism-core')) card.classList.add('is-active');
       card.addEventListener('click', async () => {
         applyLogo(logo.id);
         await config.set('ui.logo', logo.id);

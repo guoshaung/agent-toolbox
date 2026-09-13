@@ -24,6 +24,21 @@ test('TranslationManager does not call an LLM when local providers are unavailab
   assert.match(result.error, /本地翻译不可用/);
 });
 
+test('TranslationManager only uses the fast remote fallback when explicitly allowed', async () => {
+  const { TranslationManager } = await import('../src/renderer/tools/research/translation-manager.js');
+  let interactive = false;
+  global.window = { toolbox: { lit: { translate: async (text, options) => {
+    interactive = options.interactive;
+    return { ok: true, translation: `快速：${text}` };
+  } } } };
+  const manager = new TranslationManager({ config: { get: () => ({}), set: () => {} }, paperId: 'paper-fast' });
+  const blocked = await manager.translateParagraph('A paragraph', { paragraphId: 'p_001' });
+  assert.equal(blocked.ok, false);
+  const result = await manager.translateSelection('A word', { paragraphId: 'p_002', allowRemote: true });
+  assert.equal(result.provider, 'remote');
+  assert.equal(interactive, true);
+});
+
 test('TranslationManager protects scientific identifiers and restores them after local translation', async () => {
   const { TranslationManager } = await import('../src/renderer/tools/research/translation-manager.js');
   let received = '';

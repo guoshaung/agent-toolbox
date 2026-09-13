@@ -40,12 +40,13 @@ test('logo：结构完整且 SVG 非空', async () => {
     assert.ok(typeof logo.svg === 'string' && logo.svg.trim().startsWith('<svg'), `logo ${logo.id} 必须是内联 SVG`);
   }
   assert.ok(ids.has('neon'), '必须保留默认 logo neon');
+  assert.ok(ids.has('prism-core'), '必须包含新的星环晶核 logo');
 });
 
 test('logo：id 规范化解析', async () => {
   const { logoById } = await import('../src/renderer/core/logos.js');
   assert.equal(logoById('crystal').id, 'crystal');
-  assert.equal(logoById('bogus').id, 'neon', '未知 id 应回退默认 logo');
+  assert.equal(logoById('bogus').id, 'prism-core', '未知 id 应回退新的默认 logo');
 });
 
 test('logo：svgToCssUrl 生成可被 CSS url() 使用的 data URI', async () => {

@@ -18,7 +18,7 @@ DEFAULT_CONFIG = {
     "asr": {
         "endpoint": "wss://openspeech.bytedance.com/api/v3/sauc/bigmodel_async",
         "api_key": "",
-        "resource_id": "volc.bigasr.sauc.duration",
+        "resource_id": "volc.seedasr.sauc.duration",
     },
     "tts": {
         "api_key": "",

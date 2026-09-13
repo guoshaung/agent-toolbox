@@ -8,5 +8,9 @@ mobile/android/.gradle/
 mobile/android/app/build/
 assets/coach-extension/defaults.local.json
 
+# 本机服务凭证（不要提交到 GitHub）
+container-seed/cc-voice-input/resources/voice_config.json
+container-seed/cc-voice-input/resources/wechat_config.json
+
 # 本地构建环境（Android SDK / Gradle 缓存等，勿提交）
 work/

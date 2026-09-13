@@ -4,8 +4,12 @@ const fs = require('node:fs');
 const os = require('node:os');
 const { execFileSync, execFile } = require('node:child_process');
 const { promisify } = require('node:util');
+const voiceboxApi = require('./voicebox-api');
 
 const execFileAsync = promisify(execFile);
+
+const LOCAL_VIDEO_EXTENSIONS = new Set(['.mp4', '.mov', '.mkv', '.avi', '.webm', '.m4v', '.flv', '.wmv', '.ts', '.mts', '.m2ts']);
+const LOCAL_TRANSCRIPT_EXTENSIONS = ['.srt', '.vtt', '.txt', '.md'];
 
 /**
  * 视频报告：B 站链接 → 抓公开信息 → 拉字幕（官方优先，AI 兜底）→ 本地存 Markdown
@@ -74,22 +78,31 @@ async function fetchBilibiliInfo(url) {
 /** 找 lark-cli 可执行文件：Electron 从 Dock 启动时 PATH 很秃，nvm 的路径得手动猜。
  *  返回 { cli, env } —— lark-cli 是 node 脚本（#!/usr/bin/env node），
  *  必须把它所在 bin 目录（里面有 node）前置进 PATH，否则 env 找不到 node。 */
-function findLarkCli() {
+function findLarkCli({ platform = process.platform, env = process.env, home = os.homedir(), fsModule = fs } = {}) {
   const candidates = [];
-  for (const dir of String(process.env.PATH || '').split(':')) {
-    if (dir) candidates.push(path.join(dir, 'lark-cli'));
+  const pathApi = platform === 'win32' ? path.win32 : path;
+  const delimiter = platform === 'win32' ? ';' : path.delimiter;
+  const executableNames = platform === 'win32' ? ['lark-cli.cmd', 'lark-cli.exe', 'lark-cli'] : ['lark-cli'];
+  for (const dir of String(env.PATH || '').split(delimiter)) {
+    for (const name of executableNames) if (dir) candidates.push(pathApi.join(dir, name));
   }
-  const nvmDir = path.join(os.homedir(), '.nvm', 'versions', 'node');
+  const nvmDir = pathApi.join(home, '.nvm', 'versions', 'node');
   try {
-    for (const ver of fs.readdirSync(nvmDir)) candidates.push(path.join(nvmDir, ver, 'bin', 'lark-cli'));
+    for (const ver of fsModule.readdirSync(nvmDir)) {
+      for (const name of executableNames) candidates.push(pathApi.join(nvmDir, ver, 'bin', name));
+    }
   } catch { /* 没装 nvm */ }
-  candidates.push('/usr/local/bin/lark-cli', '/opt/homebrew/bin/lark-cli');
+  if (platform === 'win32') {
+    candidates.push(pathApi.join(env.APPDATA || '', 'npm', 'lark-cli.cmd'));
+  } else {
+    candidates.push('/usr/local/bin/lark-cli', '/opt/homebrew/bin/lark-cli');
+  }
 
   for (const p of candidates) {
     try {
-      fs.accessSync(p, fs.constants.X_OK);
-      const binDir = path.dirname(p);
-      return { cli: p, env: { ...process.env, PATH: `${binDir}:${process.env.PATH || ''}` } };
+      fsModule.accessSync(p, fs.constants.X_OK);
+      const binDir = pathApi.dirname(p);
+      return { cli: p, env: { ...env, PATH: `${binDir}${delimiter}${env.PATH || ''}` } };
     } catch { /* 下一个 */ }
   }
   return null;
@@ -113,19 +126,22 @@ const SUB_BROWSERS = ['edge', 'chrome', 'firefox', 'safari'];
 const SUB_LANGS = 'zh-CN,zh-Hans,zh-Hant,zh,en,ai-zh';
 
 /** 找 yt-dlp：pipx 装在 ~/.local/bin，Electron 从 Dock 启动时 PATH 里没有 */
-function findYtDlp() {
+function findYtDlp({ platform = process.platform, env = process.env, home = os.homedir(), fsModule = fs } = {}) {
   const candidates = [];
-  for (const dir of String(process.env.PATH || '').split(':')) {
-    if (dir) candidates.push(path.join(dir, 'yt-dlp'));
+  const pathApi = platform === 'win32' ? path.win32 : path;
+  const delimiter = platform === 'win32' ? ';' : path.delimiter;
+  const names = platform === 'win32' ? ['yt-dlp.exe', 'yt-dlp'] : ['yt-dlp'];
+  for (const dir of String(env.PATH || '').split(delimiter)) {
+    for (const name of names) if (dir) candidates.push(pathApi.join(dir, name));
   }
-  candidates.push(
-    path.join(os.homedir(), '.local', 'bin', 'yt-dlp'),
-    '/usr/local/bin/yt-dlp',
-    '/opt/homebrew/bin/yt-dlp',
-  );
+  if (platform === 'win32') {
+    candidates.push(pathApi.join(env.LOCALAPPDATA || '', 'Programs', 'yt-dlp', 'yt-dlp.exe'));
+  } else {
+    candidates.push(pathApi.join(home, '.local', 'bin', 'yt-dlp'), '/usr/local/bin/yt-dlp', '/opt/homebrew/bin/yt-dlp');
+  }
   for (const p of candidates) {
     try {
-      fs.accessSync(p, fs.constants.X_OK);
+      fsModule.accessSync(p, fs.constants.X_OK);
       return p;
     } catch { /* 下一个 */ }
   }
@@ -145,6 +161,232 @@ function subtitleFileToText(file) {
     lines.push(t.replace(/<[^>]+>/g, '')); // 去内联标签
   }
   return lines.join('');
+}
+
+function localTranscriptToText(file) {
+  const ext = path.extname(file).toLowerCase();
+  if (ext === '.srt' || ext === '.vtt') return subtitleFileToText(file);
+  return fs.readFileSync(file, 'utf8')
+    .replace(/^\uFEFF/, '')
+    .replace(/\r\n/g, '\n')
+    .trim();
+}
+
+function localVideoFiles(inputPaths, limit = 30) {
+  const files = [];
+  const seen = new Set();
+  const visit = (input) => {
+    if (files.length >= limit || typeof input !== 'string' || !path.isAbsolute(input)) return;
+    let stat;
+    try { stat = fs.statSync(input); } catch { return; }
+    if (stat.isFile()) {
+      const resolved = path.resolve(input);
+      if (LOCAL_VIDEO_EXTENSIONS.has(path.extname(resolved).toLowerCase()) && !seen.has(resolved)) {
+        seen.add(resolved);
+        files.push(resolved);
+      }
+      return;
+    }
+    if (!stat.isDirectory()) return;
+    let entries = [];
+    try { entries = fs.readdirSync(input, { withFileTypes: true }); } catch { return; }
+    for (const entry of entries.sort((a, b) => a.name.localeCompare(b.name))) {
+      if (files.length >= limit) break;
+      if (entry.name.startsWith('.')) continue;
+      visit(path.join(input, entry.name));
+    }
+  };
+  for (const input of inputPaths || []) visit(input);
+  return files;
+}
+
+function findLocalTranscript(videoFile) {
+  const dir = path.dirname(videoFile);
+  const stem = path.basename(videoFile, path.extname(videoFile));
+  const candidates = [];
+  for (const suffix of ['', '.zh', '.zh-CN', '.zh-Hans', '.en']) {
+    for (const ext of LOCAL_TRANSCRIPT_EXTENSIONS) candidates.push(`${stem}${suffix}${ext}`);
+  }
+  try {
+    const names = fs.readdirSync(dir);
+    const lowerNames = new Map(names.map((name) => [name.toLowerCase(), name]));
+    for (const candidate of candidates) {
+      const actual = lowerNames.get(candidate.toLowerCase());
+      if (!actual) continue;
+      const full = path.join(dir, actual);
+      try {
+        if (fs.statSync(full).isFile()) return full;
+      } catch { /* 继续找下一个字幕文件 */ }
+    }
+  } catch { /* 目录不可读 */ }
+  return '';
+}
+
+function findWhisper() {
+  const candidates = [];
+  for (const dir of String(process.env.PATH || '').split(path.delimiter)) {
+    if (dir) candidates.push(path.join(dir, process.platform === 'win32' ? 'whisper.exe' : 'whisper'));
+  }
+  candidates.push(
+    path.join(os.homedir(), '.local', 'bin', 'whisper'),
+    path.join(os.homedir(), 'Library', 'Python', '3.12', 'bin', 'whisper'),
+    '/usr/local/bin/whisper',
+    '/opt/homebrew/bin/whisper',
+  );
+  for (const candidate of candidates) {
+    try {
+      fs.accessSync(candidate, fs.constants.X_OK);
+      return candidate;
+    } catch { /* 下一个候选 */ }
+  }
+  return null;
+}
+
+async function transcribeWithWhisper(videoFile) {
+  const whisper = findWhisper();
+  if (!whisper) return { ok: false, error: '' };
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'toolbox-whisper-'));
+  try {
+    await execFileAsync(whisper, [videoFile, '--output_dir', dir, '--output_format', 'txt', '--fp16', 'False'], {
+      encoding: 'utf8',
+      maxBuffer: 8 * 1024 * 1024,
+      timeout: 30 * 60 * 1000,
+      env: process.env,
+    });
+    const output = path.join(dir, `${path.basename(videoFile, path.extname(videoFile))}.txt`);
+    if (!fs.existsSync(output)) return { ok: false, error: 'Whisper 没有生成转写文件。' };
+    const text = localTranscriptToText(output);
+    return text ? { ok: true, text, source: 'whisper' } : { ok: false, error: 'Whisper 返回了空转写。' };
+  } catch (err) {
+    const detail = String(err.stderr || err.stdout || err.message || '').replace(/\s+/g, ' ').trim();
+    return { ok: false, error: `Whisper 转写失败：${detail.slice(-400)}` };
+  } finally {
+    try { fs.rmSync(dir, { recursive: true, force: true }); } catch { /* 临时目录清理失败不影响报告 */ }
+  }
+}
+
+function saveGeneratedTranscript(transcriptDir, videoFile, text, source) {
+  if (!transcriptDir || !text) return '';
+  try {
+    fs.mkdirSync(transcriptDir, { recursive: true });
+    const label = path.basename(videoFile, path.extname(videoFile))
+      .replace(/[^\p{L}\p{N}._-]+/gu, '-')
+      .replace(/^-+|-+$/g, '')
+      .slice(0, 80) || 'video';
+    const file = path.join(transcriptDir, `${Date.now()}-${label}.txt`);
+    fs.writeFileSync(file, text, 'utf8');
+    let sourceStat = {};
+    try {
+      const stat = fs.statSync(videoFile);
+      sourceStat = { sourceSize: stat.size, sourceMtimeMs: stat.mtimeMs };
+    } catch { /* B 站临时媒体没有稳定的本地源路径 */ }
+    fs.writeFileSync(`${file}.json`, JSON.stringify({ source: path.resolve(videoFile), transcriptSource: source, ...sourceStat, createdAt: new Date().toISOString() }, null, 2), 'utf8');
+    return file;
+  } catch {
+    return '';
+  }
+}
+
+function findGeneratedTranscript(transcriptDir, videoFile) {
+  if (!transcriptDir || !videoFile) return null;
+  let sourceStat;
+  try { sourceStat = fs.statSync(videoFile); } catch { return null; }
+  let names = [];
+  try { names = fs.readdirSync(transcriptDir).filter((name) => name.endsWith('.txt.json')); } catch { return null; }
+  const source = path.resolve(videoFile);
+  for (const name of names.sort().reverse()) {
+    try {
+      const meta = JSON.parse(fs.readFileSync(path.join(transcriptDir, name), 'utf8'));
+      if (meta.source !== source || meta.sourceSize !== sourceStat.size || Number(meta.sourceMtimeMs) !== Number(sourceStat.mtimeMs)) continue;
+      const transcriptPath = path.join(transcriptDir, name.replace(/\.json$/, ''));
+      if (!fs.statSync(transcriptPath).isFile()) continue;
+      const text = localTranscriptToText(transcriptPath);
+      if (text) return { path: transcriptPath, text, source: meta.transcriptSource || 'whisper' };
+    } catch { /* 损坏的缓存继续找下一条 */ }
+  }
+  return null;
+}
+
+/** 准备拖入的本地视频：展开文件夹，优先读取同名字幕；有 Whisper 时自动本地转写。 */
+async function prepareLocalVideos(inputPaths, options = {}) {
+  const files = localVideoFiles(inputPaths, Math.min(30, Math.max(1, Number(options.limit) || 30)));
+  const items = [];
+  for (let index = 0; index < files.length; index += 1) {
+    const file = files[index];
+    const reportProgress = (status, error = '') => options.onProgress?.({
+      index, total: files.length, path: file, name: path.basename(file), status, error,
+    });
+    reportProgress('preparing');
+    const transcript = findLocalTranscript(file);
+    if (transcript) {
+      try {
+        reportProgress('reading-sidecar');
+        const text = localTranscriptToText(transcript);
+        const error = text ? '' : '同名字幕文件为空。';
+        items.push({ ok: Boolean(text), path: file, name: path.basename(file), transcriptPath: transcript, source: 'sidecar', text, error });
+        reportProgress(text ? 'ready' : 'failed', error);
+      } catch (err) {
+        const error = `读取同名字幕失败：${err.message}`;
+        items.push({ ok: false, path: file, name: path.basename(file), error });
+        reportProgress('failed', error);
+      }
+      continue;
+    }
+    let voiceboxError = '';
+    if (options.useWhisper !== false) {
+      const cached = findGeneratedTranscript(options.transcriptDir, file);
+      if (cached) {
+        reportProgress('cached');
+        items.push({ ok: true, path: file, name: path.basename(file), source: cached.source, transcriptPath: cached.path, text: cached.text, error: '' });
+        reportProgress('ready');
+        continue;
+      }
+      reportProgress('voicebox-transcribing');
+      try {
+        const voicebox = await voiceboxApi.transcribeFile(file, { model: options.voiceboxModel || 'turbo' });
+        if (voicebox.ok) {
+          items.push({ ok: true, path: file, name: path.basename(file), source: 'voicebox-whisper', transcriptPath: saveGeneratedTranscript(options.transcriptDir, file, voicebox.text, 'voicebox-whisper'), text: voicebox.text, error: '' });
+          reportProgress('ready');
+          continue;
+        }
+      } catch (error) {
+        voiceboxError = error.message;
+        if (!['not-running', 'empty-transcript', 'http'].includes(error.code)) {
+          items.push({ ok: false, path: file, name: path.basename(file), error: error.message });
+          reportProgress('failed', error.message);
+          continue;
+        }
+      }
+      reportProgress('system-whisper');
+      const whisper = await transcribeWithWhisper(file);
+      if (whisper.ok) {
+        items.push({ ok: true, path: file, name: path.basename(file), source: 'whisper', transcriptPath: saveGeneratedTranscript(options.transcriptDir, file, whisper.text, 'whisper'), text: whisper.text, error: '' });
+        reportProgress('ready');
+        continue;
+      }
+      if (whisper.error) {
+        items.push({ ok: false, path: file, name: path.basename(file), error: whisper.error });
+        reportProgress('failed', whisper.error);
+        continue;
+      }
+    }
+    const error = voiceboxError
+      ? `${voiceboxError}；也可以放置同名 .srt/.vtt/.txt/.md 后重试。`
+      : '未找到同名字幕。请放置同名 .srt/.vtt/.txt/.md，或启动 Voicebox 的本地 Whisper 后重试。';
+    items.push({
+      ok: false,
+      path: file,
+      name: path.basename(file),
+      error,
+    });
+    reportProgress('failed', error);
+  }
+  return {
+    ok: true,
+    files: files.length,
+    items,
+    error: files.length ? '' : '没有识别到支持的视频文件（MP4、MOV、MKV、WebM 等）。',
+  };
 }
 
 /** 扫输出目录里下到的字幕文件，按分 P 序号归组；文件名带 ai- 前缀的是 B 站 AI 字幕 */
@@ -190,6 +432,42 @@ async function runYtDlp(ytdlp, args, timeout) {
   } catch (err) {
     const detail = String(err.stderr || err.stdout || err.message || '').replace(/\s+/g, ' ').trim();
     return { ok: false, error: detail.slice(-500) };
+  }
+}
+
+async function transcribeBilibiliFallback(ytdlp, videoUrl, bvid, source, options = {}) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'toolbox-video-transcribe-'));
+  const output = path.join(dir, 'source.%(ext)s');
+  try {
+    const run = await runYtDlp(ytdlp, [
+      '--no-warnings', '--no-playlist', '--ignore-errors', '--socket-timeout', '20',
+      '--max-filesize', '500M', '-f', 'best[height<=720]/best', '-o', output,
+      ...source.args, videoUrl,
+    ], 15 * 60 * 1000);
+    if (!run.ok) return { ok: false, error: `视频下载失败：${run.error}` };
+    const media = fs.readdirSync(dir)
+      .filter((name) => /\.(mp4|m4v|mov|mkv|webm|avi|ts)$/i.test(name))
+      .map((name) => path.join(dir, name))[0];
+    if (!media) return { ok: false, error: '视频下载完成但没有找到媒体文件。' };
+    options.onProgress?.({ status: 'transcribing', message: '媒体已下载，正在调用 Voicebox 本地 Whisper 转写…' });
+    let result;
+    try {
+      result = await voiceboxApi.transcribeFile(media, { model: options.voiceboxModel || 'turbo', language: 'zh' });
+    } catch (error) {
+      return { ok: false, error: error.message };
+    }
+    if (!result.ok) return { ok: false, error: 'Voicebox 没有返回转写文本。' };
+    return {
+      ok: true,
+      kind: 'voicebox',
+      browser: source.label,
+      transcriptPath: saveGeneratedTranscript(options.transcriptDir, `${bvid}.mp4`, result.text, 'voicebox-whisper'),
+      episodes: [{ page: 1, text: result.text, chars: result.text.length }],
+    };
+  } catch (error) {
+    return { ok: false, error: `本地转写兜底失败：${error.message}` };
+  } finally {
+    try { fs.rmSync(dir, { recursive: true, force: true }); } catch { /* 临时媒体清理失败不影响报告 */ }
   }
 }
 
@@ -246,6 +524,15 @@ async function fetchSubtitles(url, scope, options = {}) {
         };
       }
     }
+    if (options.transcribeNoSubs !== false && sc.items === '1') {
+      const fallbackSource = sources.find((source) => source.label === '内置 B 站会话') || sources[0];
+      if (fallbackSource) {
+        options.onProgress?.({ status: 'downloading', message: '没有字幕，正在下载 B 站当前第 1 集媒体…' });
+        const fallback = await transcribeBilibiliFallback(ytdlp, videoUrl, bvid, fallbackSource, options);
+        if (fallback.ok) return fallback;
+        if (fallback.error) failures.push(`${fallbackSource.label}/本地 Whisper：${fallback.error}`);
+      }
+    }
     const diagnostic = failures.length ? `最近一次尝试：${failures.at(-1)}` : '';
     return {
       ok: false,
@@ -257,13 +544,14 @@ async function fetchSubtitles(url, scope, options = {}) {
   }
 }
 
-function reportsDir(userDataDir) {
-  const dir = path.join(userDataDir, 'reports');
+function reportsDir(userDataDir, folder = 'reports') {
+  const safeFolder = path.basename(String(folder || 'reports')).replace(/[^\p{L}\p{N}._-]+/gu, '-') || 'reports';
+  const dir = path.join(userDataDir, safeFolder);
   fs.mkdirSync(dir, { recursive: true });
   return dir;
 }
 
-function publishMarkdown(userDataDir, file, { title, markdown, bvid }) {
+function publishMarkdown(userDataDir, file, { title, markdown, bvid, sourceId = '' }) {
   const found = findLarkCli();
   if (!found) {
     return { ok: false, publishError: '没找到 lark-cli。报告已存本地，请先安装或登录 lark-cli。' };
@@ -272,7 +560,7 @@ function publishMarkdown(userDataDir, file, { title, markdown, bvid }) {
     const out = execFileSync(
       found.cli,
       ['docs', '+create', '--doc-format', 'markdown', '--content', '-', '--title', title],
-      { encoding: 'utf8', input: markdown, maxBuffer: 16 * 1024 * 1024, timeout: 120000, env: found.env },
+      { encoding: 'utf8', input: markdown, maxBuffer: 16 * 1024 * 1024, timeout: 120000, env: found.env, shell: /\.cmd$/i.test(found.cli) },
     );
     const parsed = JSON.parse(out);
     const docUrl = parsed?.data?.document?.url || '';
@@ -284,7 +572,7 @@ function publishMarkdown(userDataDir, file, { title, markdown, bvid }) {
     try {
       fs.writeFileSync(
         `${file}.json`,
-        JSON.stringify({ title, docUrl, bvid: bvid || '', publishedAt: new Date().toISOString() }, null, 2),
+        JSON.stringify({ title, docUrl, bvid: bvid || '', sourceId: sourceId || '', publishedAt: new Date().toISOString() }, null, 2),
         'utf8',
       );
     } catch { /* 存不上也不影响报告本身 */ }
@@ -302,16 +590,28 @@ function publishMarkdown(userDataDir, file, { title, markdown, bvid }) {
   }
 }
 
-function saveReport(userDataDir, { title, markdown, bvid, publish }) {
-  const dir = reportsDir(userDataDir);
+function saveMarkdownReport(userDataDir, { title, markdown, bvid, sourceId, publish, folder = 'reports' }) {
+  const dir = reportsDir(userDataDir, folder);
   const stamp = new Date().toISOString().replace(/[-:T]/g, '').slice(0, 12); // 202608310145
-  const safeBvid = bvid || 'video';
-  const file = path.join(dir, `${stamp}-${safeBvid}.md`);
+  const safeLabel = String(bvid || title || 'video')
+    .replace(/[^\p{L}\p{N}._-]+/gu, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 64) || 'video';
+  let file = path.join(dir, `${stamp}-${safeLabel}.md`);
+  let suffix = 1;
+  while (fs.existsSync(file)) {
+    file = path.join(dir, `${stamp}-${safeLabel}-${suffix}.md`);
+    suffix += 1;
+  }
   fs.writeFileSync(file, markdown, 'utf8');
 
   const result = { ok: true, localPath: file, docUrl: '' };
   if (!publish) return result;
-  return { ...result, ...publishMarkdown(userDataDir, file, { title, markdown, bvid }) };
+  return { ...result, ...publishMarkdown(userDataDir, file, { title, markdown, bvid, sourceId }) };
+}
+
+function saveReport(userDataDir, payload) {
+  return saveMarkdownReport(userDataDir, { ...payload, folder: 'reports' });
 }
 
 function publishReport(userDataDir, fileName, force = false) {
@@ -390,6 +690,14 @@ module.exports = {
   collectSubtitleFiles,
   fetchBilibiliInfo,
   fetchSubtitles,
+  findLarkCli,
+  findLocalTranscript,
+  findYtDlp,
+  findGeneratedTranscript,
+  localVideoFiles,
+  prepareLocalVideos,
+  transcribeBilibiliFallback,
+  saveMarkdownReport,
   saveReport,
   publishReport,
   listReports,

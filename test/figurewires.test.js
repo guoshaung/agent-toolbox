@@ -3,7 +3,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 
 test('科研画板曲线：弯度受控且自由端沿连线方向平滑', async () => {
-  const { curveControlPoints, wirePath } = await import('../src/renderer/tools/research/figurewires.js');
+  const { curveControlPoints, wirePath, wireEndpointDelta } = await import('../src/renderer/tools/research/figurewires.js');
   const controls = curveControlPoints({ x: 0, y: 0 }, { x: 200, y: 0 }, 'auto', 'auto', 1000);
   assert.ok(controls.extension <= controls.distance * 0.85);
   assert.ok(controls.c1.x > 0 && controls.c2.x < 200);
@@ -16,6 +16,13 @@ test('科研画板曲线：弯度受控且自由端沿连线方向平滑', async
     ['a', { id: 'a', x: 0, y: 0, width: 80, height: 60 }],
     ['b', { id: 'b', x: 240, y: 100, width: 80, height: 60 }],
   ])), /^M/);
+  const delta = wireEndpointDelta({ from: { id: 'a', port: 'right' }, to: { id: 'b', port: 'left' } }, new Map([
+    ['a', { id: 'a', x: 0, y: 0, width: 80, height: 60 }],
+    ['b', { id: 'b', x: 240, y: 100, width: 80, height: 60 }],
+  ]));
+  assert.equal(delta.x, 160);
+  assert.equal(delta.y, 100);
+  assert.equal(delta.distance, Math.hypot(160, 100));
 });
 
 test('科研画板箭头：单向只输出一个箭头头部，双向才输出两个', async () => {

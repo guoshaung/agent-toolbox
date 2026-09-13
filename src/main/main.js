@@ -20,7 +20,7 @@ const litFetch = require('./lit-fetch');
 const { registerNotebookIpc } = require('./notebook');
 const { registerBiblioIpc } = require('./biblio');
 const { registerDocSearchIpc } = require('./doc-search');
-const { registerShelfIpc, stopAllShelfApps } = require('./app-shelf');
+const { registerShelfIpc, stopAllShelfApps, start: startShelfTool, stop: stopShelfTool, status: shelfStatus, tail: shelfTail, resolveToolCommand } = require('./app-shelf');
 const { registerUpdaterIpc, startAutoCheck, stopAutoCheck } = require('./updater');
 const { registerCertTrust } = require('./certtrust');
 const translator = require('./translate');
@@ -37,6 +37,9 @@ const { DshService } = require('./dsh-service');
 const { TavernService } = require('./tavern-service');
 const { AppControls } = require('./app-controls');
 const { exportPptx } = require('./pptx-export');
+const { VoiceBoxService } = require('./voicebox-service');
+const voiceboxApi = require('./voicebox-api');
+const { sameLibrarySite } = require('./literature-site');
 
 async function remoteStatusWithQr(state) {
   const current = state || remoteControl.status();
@@ -86,6 +89,8 @@ let feishuWindow;
 let literatureDownloadHooked = false;
 let researchDownloadHooked = false;
 let literatureDownloadWaiter;
+let literatureActiveDownload = null;
+let literatureBatchControl = null;
 let windowDock;
 let quittingForDock = false;
 let remoteControl;
@@ -93,6 +98,7 @@ let dshService;
 let tavernService;
 let argosService;
 let appControls;
+let voiceBoxService;
 const siteFloatWindows = new Map();
 const pendingRemoteCommands = new Map();
 const watchAvatarCache = new Map();
@@ -474,7 +480,7 @@ function restoreBounds() {
 function loadRuntimeAppIcon() {
   if (runtimeAppIcon && !runtimeAppIcon.isEmpty()) return runtimeAppIcon;
   const dataUrl = store?.get('ui.appIconDataUrl', '');
-  if (typeof dataUrl !== 'string' || !/^data:image\/(?:png|jpeg);base64,/.test(dataUrl)) return null;
+  if (typeof dataUrl !== 'string' || !/^data:image\/(?:png|jpeg|svg\+xml);base64,/.test(dataUrl)) return null;
   try {
     const image = nativeImage.createFromDataURL(dataUrl);
     if (!image.isEmpty()) runtimeAppIcon = image;
@@ -521,6 +527,15 @@ function createWindow(showOnReady = true) {
   }, 6000);
   mainWindow.loadFile(path.join(__dirname, '..', 'renderer', 'index.html'));
   if (IS_DEV) mainWindow.webContents.openDevTools({ mode: 'detach' });
+
+  let rendererRecoveries = 0;
+  mainWindow.webContents.on('render-process-gone', (_event, details) => {
+    console.error('[window] renderer process ended:', details?.reason || 'unknown', details?.exitCode ?? '');
+    if (rendererRecoveries >= 1 || mainWindow.isDestroyed()) return;
+    rendererRecoveries += 1;
+    setTimeout(() => { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.reload(); }, 500);
+  });
+  mainWindow.webContents.on('did-finish-load', () => { rendererRecoveries = 0; });
 
   let saveTimer;
   const persistBounds = () => {
@@ -831,27 +846,53 @@ function uniqueLiteraturePath(fileName) {
   return candidate;
 }
 
+function hasPdfSignature(filePath) {
+  let handle = null;
+  try {
+    handle = fs.openSync(filePath, 'r');
+    const header = Buffer.alloc(5);
+    fs.readSync(handle, header, 0, 5, 0);
+    return header.equals(Buffer.from('%PDF-'));
+  } catch {
+    return false;
+  } finally {
+    if (handle !== null) {
+      try { fs.closeSync(handle); } catch { /* 已关闭 */ }
+    }
+  }
+}
+
 function hookLiteratureDownloads() {
   if (literatureDownloadHooked) return;
   literatureDownloadHooked = true;
   const ses = session.fromPartition(PARTITIONS.literature);
   ses.on('will-download', (_event, item) => {
+    literatureActiveDownload = item;
     const target = uniqueLiteraturePath(item.getFilename());
     item.setSavePath(target);
     item.once('done', (_doneEvent, state) => {
+      if (literatureActiveDownload === item) literatureActiveDownload = null;
       const completed = state === 'completed';
+      const format = path.extname(target).slice(1).toLowerCase();
+      const valid = completed && (format !== 'pdf' || hasPdfSignature(target));
+      const error = !completed
+        ? `下载状态：${state}`
+        : valid ? '' : '下载内容不是有效 PDF，可能是登录页或验证码页面。';
       literatureDownloadWaiter?.({
-        ok: completed,
-        state,
+        ok: valid,
+        state: valid ? state : 'invalid-file',
         file: path.basename(target),
-        error: completed ? '' : `下载状态：${state}`,
+        error,
       });
       literatureDownloadWaiter = null;
-      if (!completed) return;
+      if (!valid) {
+        try { fs.rmSync(target, { force: true }); } catch { /* 清理失败不影响错误提示 */ }
+        return;
+      }
       mainWindow?.webContents.send('lit:downloaded', {
         file: path.basename(target),
         size: fs.existsSync(target) ? fs.statSync(target).size : 0,
-        format: path.extname(target).slice(1).toLowerCase(),
+        format,
       });
     });
   });
@@ -898,28 +939,19 @@ function hookResearchDownloads() {
     const target = uniqueLiteraturePath(item.getFilename());
     item.setSavePath(target);
     item.once('done', (_doneEvent, state) => {
-      if (state !== 'completed') return;
+      const format = path.extname(target).slice(1).toLowerCase();
+      if (state !== 'completed' || (format === 'pdf' && !hasPdfSignature(target))) {
+        try { fs.rmSync(target, { force: true }); } catch { /* 清理失败不影响下载流程 */ }
+        return;
+      }
       mainWindow?.webContents.send('lit:downloaded', {
         file: path.basename(target),
         size: fs.existsSync(target) ? fs.statSync(target).size : 0,
-        format: path.extname(target).slice(1).toLowerCase(),
+        format,
         source: '学校访问',
       });
     });
   });
-}
-
-function sameLibrarySite(left, right) {
-  try {
-    const a = new URL(String(left || ''));
-    const b = new URL(String(right || ''));
-    if (a.protocol !== 'https:' && a.protocol !== 'http:') return false;
-    if (b.protocol !== 'https:' && b.protocol !== 'http:') return false;
-    if (a.hostname === b.hostname) return true;
-    return a.hostname.endsWith('.cnki.net') && b.hostname.endsWith('.cnki.net');
-  } catch {
-    return false;
-  }
 }
 
 function waitForLiteratureDownload(timeout = 45000) {
@@ -935,6 +967,14 @@ function waitForLiteratureDownload(timeout = 45000) {
     }
     literatureDownloadWaiter = finish;
   });
+}
+
+function cancelLiteratureBatch() {
+  if (!literatureBatchControl) return { ok: false, error: '当前没有运行中的批量下载。' };
+  literatureBatchControl.cancelled = true;
+  try { literatureActiveDownload?.cancel(); } catch { /* 下载已经结束 */ }
+  literatureDownloadWaiter?.({ ok: false, state: 'cancelled', error: '已暂停，未完成项目保留在列表中。' });
+  return { ok: true };
 }
 
 async function scanLiteratureBrowserPage() {
@@ -960,14 +1000,29 @@ async function scanLiteratureBrowserPage() {
         const heading = parent?.querySelector('h1,h2,h3,h4,.title,[class*="title"]');
         return clean(heading?.textContent || own);
       };
-      const links = [...document.querySelectorAll('a[href]')];
+      const links = [...document.querySelectorAll('a[href], [data-href], [data-url], [data-download-url]')];
       for (const anchor of links) {
         if (!visible(anchor)) continue;
-        const href = anchor.href;
-        const text = titleFrom(anchor);
-        if (!/^https?:\\/\\//i.test(href) || !text || text.length < 4 || text.length > 240) continue;
-        if (blocked.test(text) || /^(javascript:|#)/i.test(anchor.getAttribute('href') || '')) continue;
-        if (/下载|download|cite|引用|分享|收藏/i.test(text) && text.length < 20) continue;
+        const rawHref = anchor.getAttribute('data-download-url')
+          || anchor.getAttribute('data-href')
+          || anchor.getAttribute('data-url')
+          || anchor.getAttribute('href')
+          || '';
+        let href = '';
+        try { href = rawHref ? new URL(rawHref, location.href).href : anchor.href || ''; } catch { href = ''; }
+        const direct = /\\.pdf(?:$|[?#])|(?:^|[\\/])download(?:[\\/?#]|$)|[?&](?:download|attachment|format)=pdf(?:&|$)/i.test(href);
+        const linkedText = titleFrom(anchor);
+        let text = linkedText;
+        if ((!text || text.length < 4) && direct) {
+          try {
+            const leaf = decodeURIComponent(new URL(href).pathname.split('/').pop() || '').replace(/\\.[^.]+$/, '').replace(/[-_]+/g, ' ').trim();
+            text = leaf && !/^(download|file|attachment|pdf)$/i.test(leaf) ? leaf : '未命名 PDF';
+          } catch { text = '未命名 PDF'; }
+        }
+        if (!/^https?:\\/\\//i.test(href) || !text || text.length > 240) continue;
+        if ((blocked.test(text) && !direct) || /^(javascript:|#)/i.test(rawHref)) continue;
+        if (!direct && text.length < 4) continue;
+        if (!direct && /下载|download|cite|引用|分享|收藏/i.test(text) && text.length < 20) continue;
         const key = href.split('#')[0];
         if (seen.has(key)) continue;
         seen.add(key);
@@ -1012,12 +1067,17 @@ async function clickPaperDownload() {
 
 async function downloadLiteratureBatch(items) {
   if (!literatureBrowserWindow || literatureBrowserWindow.isDestroyed()) return { ok: false, error: '登录下载浏览器没有打开。' };
+  if (literatureBatchControl) return { ok: false, error: '已有一个批量下载任务在运行，请先等待或暂停它。' };
   const list = Array.isArray(items) ? items.slice(0, 30) : [];
   if (!list.length) return { ok: false, error: '请先扫描并勾选论文。' };
+  const control = { cancelled: false };
+  literatureBatchControl = control;
   const originUrl = literatureBrowserWindow.webContents.getURL();
   const results = [];
-  for (let index = 0; index < list.length; index += 1) {
+  try {
+    for (let index = 0; index < list.length; index += 1) {
     const item = list[index] || {};
+    if (control.cancelled) break;
     if (!sameLibrarySite(originUrl, item.url)) {
       results.push({ ok: false, title: item.title || '未命名论文', error: '论文地址不属于当前登录站点，已跳过。' });
       continue;
@@ -1025,10 +1085,16 @@ async function downloadLiteratureBatch(items) {
     mainWindow?.webContents.send('lit:batch-progress', { index, total: list.length, title: item.title || item.url, state: 'opening' });
     try {
       await literatureBrowserWindow.loadURL(item.url);
+      if (control.cancelled) break;
       await new Promise((resolve) => setTimeout(resolve, 900));
+      if (control.cancelled) break;
       // 下载事件可能在 click() 返回前同步触发，必须先布置等待器，不能点击后再等。
       const downloadPromise = waitForLiteratureDownload();
       const clicked = await clickPaperDownload();
+      if (control.cancelled) {
+        literatureDownloadWaiter?.({ ok: false, state: 'cancelled', error: '已暂停，未完成项目保留在列表中。' });
+        break;
+      }
       if (!clicked.ok) {
         literatureDownloadWaiter?.({ ok: false, error: clicked.error });
         results.push({ ok: false, title: item.title, error: clicked.error });
@@ -1042,16 +1108,31 @@ async function downloadLiteratureBatch(items) {
       const result = { ...download, title: item.title };
       results.push(result);
       mainWindow?.webContents.send('lit:batch-progress', { index, total: list.length, title: item.title, state: download.ok ? 'done' : 'failed', error: download.error || '' });
+      if (control.cancelled || download.state === 'cancelled') {
+        mainWindow?.webContents.send('lit:batch-progress', { index, total: list.length, title: item.title, state: 'paused', error: download.error || '已暂停' });
+        break;
+      }
       if (!download.ok) continue;
       await new Promise((resolve) => setTimeout(resolve, 1200));
     } catch (err) {
+      if (control.cancelled) break;
       const error = `打开或下载失败：${err.message}`;
       results.push({ ok: false, title: item.title, error });
       mainWindow?.webContents.send('lit:batch-progress', { index, total: list.length, title: item.title, state: 'paused', error });
       break;
     }
   }
-  return { ok: results.every((item) => item.ok), completed: results.filter((item) => item.ok).length, total: list.length, results };
+    return {
+      ok: !control.cancelled && results.length === list.length && results.every((item) => item.ok),
+      paused: control.cancelled,
+      completed: results.filter((item) => item.ok).length,
+      total: list.length,
+      remaining: Math.max(0, list.length - results.length),
+      results,
+    };
+  } finally {
+    if (literatureBatchControl === control) literatureBatchControl = null;
+  }
 }
 
 function openLiteratureBrowser(url) {
@@ -1323,6 +1404,35 @@ function registerIpc() {
   const seeded = seedContainer(() => app.getPath('userData'), seedDir);
   if (seeded.copied.length) console.log('[container] 已放入随包工具:', seeded.copied.join(', '));
 
+  ipcMain.handle('voicebox:status', () => voiceBoxService.status());
+  ipcMain.handle('voicebox:start', () => voiceBoxService.start());
+  ipcMain.handle('voicebox:openProject', () => voiceBoxService.openProject());
+  ipcMain.handle('voicebox:openDownload', () => voiceBoxService.openDownload());
+  ipcMain.handle('voicebox:openDocs', () => voiceBoxService.openDocs());
+  ipcMain.handle('voicebox:apiHealth', async () => {
+    try { return { ok: true, data: await voiceboxApi.health() }; }
+    catch (error) { return { ok: false, error: error.message, code: error.code }; }
+  });
+  ipcMain.handle('voicebox:apiProfiles', async () => {
+    try { return { ok: true, profiles: await voiceboxApi.profiles() }; }
+    catch (error) { return { ok: false, error: error.message, code: error.code, profiles: [] }; }
+  });
+  ipcMain.handle('voicebox:apiActiveTasks', async () => {
+    try { return { ok: true, data: await voiceboxApi.activeTasks() }; }
+    catch (error) { return { ok: false, error: error.message, code: error.code }; }
+  });
+  ipcMain.handle('voicebox:apiCancelDownload', async (_e, modelName) => {
+    const allowed = ['turbo', 'base', 'small', 'medium', 'large'].includes(String(modelName || '').replace(/^whisper-/, ''));
+    if (!allowed) return { ok: false, error: '不支持取消这个模型下载。' };
+    try {
+      return { ok: true, data: await voiceboxApi.cancelDownload(`whisper-${String(modelName).replace(/^whisper-/, '')}`) };
+    } catch (error) { return { ok: false, error: error.message, code: error.code }; }
+  });
+  ipcMain.handle('voicebox:apiGenerateAudio', async (_e, payload) => {
+    try { return await voiceboxApi.generateAudio(payload || {}); }
+    catch (error) { return { ok: false, error: error.message, code: error.code }; }
+  });
+
   ipcMain.handle('dsh:status', () => dshService.status());
   ipcMain.handle('dsh:start', () => dshService.start());
   ipcMain.handle('dsh:stop', () => dshService.stop());
@@ -1482,7 +1592,7 @@ function registerIpc() {
     if (mainWindow) mainWindow.webContents.openDevTools({ mode: 'detach' });
   });
   ipcMain.handle('app:setAppIcon', (_e, dataUrl) => {
-    if (typeof dataUrl !== 'string' || !/^data:image\/(?:png|jpeg);base64,/.test(dataUrl)) return { ok: false, error: '图标格式无效' };
+    if (typeof dataUrl !== 'string' || !/^data:image\/(?:png|jpeg|svg\+xml);base64,/.test(dataUrl)) return { ok: false, error: '图标格式无效' };
     try {
       const image = nativeImage.createFromDataURL(dataUrl);
       if (image.isEmpty()) return { ok: false, error: '图标解析失败' };
@@ -1761,15 +1871,37 @@ function registerIpc() {
 
   ipcMain.handle('video:fetchInfo', (_e, url) => videoReport.fetchBilibiliInfo(url));
 
-  ipcMain.handle('video:fetchSubs', async (_e, payload) => {
+  ipcMain.handle('video:fetchSubs', async (event, payload) => {
     const cookieFile = await exportBilibiliCookies();
     try {
-      return await videoReport.fetchSubtitles(payload?.url, payload?.scope, { cookieFile });
+      const requestedModel = String(payload?.voiceboxModel || 'turbo');
+      const voiceboxModel = ['turbo', 'base', 'small', 'medium', 'large'].includes(requestedModel) ? requestedModel : 'turbo';
+      return await videoReport.fetchSubtitles(payload?.url, payload?.scope, {
+        cookieFile,
+        voiceboxModel,
+        transcriptDir: path.join(app.getPath('userData'), 'video-transcripts'),
+        onProgress: (state) => {
+          if (!event.sender.isDestroyed()) event.sender.send('video:subProgress', state);
+        },
+      });
     } finally {
       if (cookieFile) {
         try { fs.rmSync(cookieFile, { force: true }); } catch { /* 临时 cookie 文件清理失败不影响结果 */ }
       }
     }
+  });
+
+  ipcMain.handle('video:prepareLocal', (event, payload) => {
+    const paths = Array.isArray(payload) ? payload : payload?.paths;
+    const requestedModel = String(payload?.options?.voiceboxModel || 'turbo');
+    const voiceboxModel = ['turbo', 'base', 'small', 'medium', 'large'].includes(requestedModel) ? requestedModel : 'turbo';
+    return videoReport.prepareLocalVideos(Array.isArray(paths) ? paths : [], {
+      voiceboxModel,
+      transcriptDir: path.join(app.getPath('userData'), 'video-transcripts'),
+      onProgress: (state) => {
+        if (!event.sender.isDestroyed()) event.sender.send('video:prepareProgress', state);
+      },
+    });
   });
 
   ipcMain.handle('video:saveReport', (_e, payload) =>
@@ -1806,6 +1938,12 @@ function registerIpc() {
 
   ipcMain.handle('video:readReport', (_e, fileName) =>
     videoReport.readReport(app.getPath('userData'), fileName));
+
+  ipcMain.handle('lit:saveAnalysisReport', (_e, payload) =>
+    videoReport.saveMarkdownReport(app.getPath('userData'), {
+      ...(payload || {}),
+      folder: 'research-reports',
+    }));
 
   // ---- 科研门户：站点 favicon 抓取（渲染进程 CSP 只放行 self/data，图片要主进程代取） ----
   ipcMain.handle('site:favicon', async (_e, url) => {
@@ -2060,7 +2198,11 @@ function registerIpc() {
     const visit = (source) => {
       if (result.length >= 300 || typeof source !== 'string') return;
       let stat;
-      try { stat = fs.statSync(source); } catch { return; }
+      try {
+        const link = fs.lstatSync(source);
+        if (link.isSymbolicLink()) return;
+        stat = link;
+      } catch { return; }
       if (stat.isDirectory()) {
         let entries;
         try { entries = fs.readdirSync(source, { withFileTypes: true }); } catch { return; }
@@ -2073,6 +2215,7 @@ function registerIpc() {
       }
       const ext = path.extname(source).slice(1).toLowerCase();
       if (!LIT_EXTENSIONS.includes(ext) || seen.has(source)) return;
+      if (ext === 'pdf' && !hasPdfSignature(source)) return;
       seen.add(source);
       result.push(source);
     };
@@ -2124,16 +2267,9 @@ function registerIpc() {
   ipcMain.handle('container:toLiterature', async (_e, relPaths) => {
     const root = path.join(app.getPath('userData'), 'container');
     const sources = [];
-    const visit = (target) => {
-      let stat;
-      try { stat = fs.statSync(target); } catch { return; }
-      if (stat.isDirectory()) {
-        for (const entry of fs.readdirSync(target)) visit(path.join(target, entry));
-      } else sources.push(target);
-    };
     for (const rel of Array.isArray(relPaths) ? relPaths : []) {
       const target = path.resolve(root, String(rel || ''));
-      if (target === root || target.startsWith(root + path.sep)) visit(target);
+      if (target === root || target.startsWith(root + path.sep)) sources.push(target);
     }
     const imported = await importLiteratureSources(sources);
     return { ok: true, imported, count: imported.length };
@@ -2171,6 +2307,7 @@ function registerIpc() {
   ipcMain.handle('lit:scanBrowserPage', () => scanLiteratureBrowserPage());
   /** 在当前登录站点逐篇点击下载，触发系统下载并自动入库 */
   ipcMain.handle('lit:downloadBatch', (_e, items) => downloadLiteratureBatch(items));
+  ipcMain.handle('lit:cancelBatch', () => cancelLiteratureBatch());
 
   /** 读 PDF 原始字节给渲染进程的 PDF.js 自渲染（Uint8Array） */
   ipcMain.handle('lit:readPdf', (_e, file) => {
@@ -2379,6 +2516,11 @@ app.whenReady().then(async () => {
   dshService = new DshService({ app, getWindow: () => mainWindow });
   tavernService = new TavernService({ app, getWindow: () => mainWindow });
   appControls = new AppControls({ store });
+  voiceBoxService = new VoiceBoxService({
+    app,
+    shell,
+    getWindow: () => mainWindow,
+  });
 
   registerIpc();
   hookLiteratureDownloads();

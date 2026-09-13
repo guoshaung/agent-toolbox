@@ -23,7 +23,7 @@ FLAG_NEG_WITH_SEQUENCE = 0b0011
 SERIALIZATION_JSON = 0b0001
 COMPRESSION_GZIP = 0b0001
 
-DEFAULT_RESOURCE_ID = "volc.bigasr.sauc.duration"
+DEFAULT_RESOURCE_ID = "volc.seedasr.sauc.duration"
 
 
 def _header(message_type: int, flags: int) -> bytes:
@@ -177,6 +177,12 @@ class MicAsrStream(QThread):
                 task.result()
         except asyncio.CancelledError:
             raise
+        except aiohttp.WSServerHandshakeError as exc:
+            if exc.status in (401, 403):
+                resource_id = self.config.get("resource_id") or DEFAULT_RESOURCE_ID
+                self.error.emit(f"ASR 鉴权失败（HTTP {exc.status}）：请确认 Api Key 已开通语音服务，且 Resource Id 为 {resource_id}。")
+            else:
+                self.error.emit(f"ASR 连接失败（HTTP {exc.status}）：{exc.message or '服务端拒绝了连接'}")
         except Exception as exc:
             self.error.emit(f"ASR 失败: {exc}")
 

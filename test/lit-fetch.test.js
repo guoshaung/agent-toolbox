@@ -7,7 +7,7 @@ const os = require('node:os');
 const path = require('node:path');
 const {
   downloadPapersBatch, fetchPaperByTitle, normalizeDoi, extractDoi, classifyLiteratureInput,
-  restoreAbstract, queryTerms, relevanceDetail, rankPaper,
+  restoreAbstract, queryTerms, relevanceDetail, rankPaper, downloadPdfWithFetch, directPdfFromLink,
 } = require('../src/main/lit-fetch');
 
 test('DOI 规范化去掉链接和 doi 前缀', () => {
@@ -22,7 +22,16 @@ test('文献输入路由不会把 DOI 和 arXiv 摘要页误当成 PDF 直链', 
   assert.deepEqual(classifyLiteratureInput('https://arxiv.org/abs/2401.12345v2'), { kind: 'arxiv', id: '2401.12345' });
   assert.deepEqual(classifyLiteratureInput('2401.12345'), { kind: 'arxiv', id: '2401.12345' });
   assert.deepEqual(classifyLiteratureInput('https://example.com/download?id=1'), { kind: 'url', url: 'https://example.com/download?id=1' });
+  assert.deepEqual(classifyLiteratureInput('论文链接：https://example.com/paper.pdf?download=1。'), { kind: 'url', url: 'https://example.com/paper.pdf?download=1' });
+  assert.deepEqual(classifyLiteratureInput('[PDF 下载](https://example.com/paper.pdf)'), { kind: 'url', url: 'https://example.com/paper.pdf' });
+  assert.deepEqual(classifyLiteratureInput('[PDF](https://example.com/paper.pdf?download=1&amp;token=abc)'), { kind: 'url', url: 'https://example.com/paper.pdf?download=1&token=abc' });
   assert.deepEqual(classifyLiteratureInput('attention is all you need'), { kind: 'text', query: 'attention is all you need' });
+});
+
+test('标题检索识别明确的开放 PDF 链接，但不把普通论文页当成 PDF', () => {
+  assert.equal(directPdfFromLink('https://openreview.net/pdf?id=abc'), 'https://openreview.net/pdf?id=abc');
+  assert.equal(directPdfFromLink('https://example.com/paper.pdf?download=1'), 'https://example.com/paper.pdf?download=1');
+  assert.equal(directPdfFromLink('https://example.com/paper'), null);
 });
 
 test('OpenAlex 倒排摘要按位置还原', () => {
@@ -67,7 +76,7 @@ test('粘贴 PDF 直链时直接下载入库，不走标题检索', async () => 
   const port = server.address().port;
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'lit-direct-'));
   try {
-    const result = await fetchPaperByTitle(directory, `http://127.0.0.1:${port}/files/agent-paper.pdf?download=1`);
+    const result = await fetchPaperByTitle(directory, `[PDF](http://127.0.0.1:${port}/files/agent-paper.pdf?download=1)`);
     assert.equal(result.ok, true);
     assert.equal(result.title, 'agent-paper');
     assert.equal(result.format, 'pdf');
@@ -75,6 +84,36 @@ test('粘贴 PDF 直链时直接下载入库，不走标题检索', async () => 
   } finally {
     await new Promise((resolve) => server.close(resolve));
     fs.rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test('原生 fetch 下载 PDF 时同样校验文件头和大小', async () => {
+  const pdf = Buffer.from('%PDF-1.7\n%%EOF');
+  const server = http.createServer((request, response) => {
+    if (request.url === '/html') {
+      response.writeHead(200, { 'content-type': 'text/html' });
+      response.end('<html>login</html>');
+      return;
+    }
+    if (request.url === '/chunked') {
+      response.writeHead(200, { 'content-type': 'application/pdf' });
+      response.write('%PDF-1.7\n');
+      response.end('%%EOF');
+      return;
+    }
+    response.writeHead(200, { 'content-type': 'application/pdf', 'content-length': pdf.length });
+    response.end(pdf);
+  });
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  try {
+    const result = await downloadPdfWithFetch(`http://127.0.0.1:${server.address().port}/paper.pdf`, 5000);
+    assert.equal(result.toString('utf8', 0, 5), '%PDF-');
+    const chunked = await downloadPdfWithFetch(`http://127.0.0.1:${server.address().port}/chunked`, 5000);
+    assert.equal(chunked.toString('utf8', 0, 5), '%PDF-');
+    const invalid = await downloadPdfWithFetch(`http://127.0.0.1:${server.address().port}/html`, 5000);
+    assert.equal(invalid, null);
+  } finally {
+    await new Promise((resolve) => server.close(resolve));
   }
 });
 

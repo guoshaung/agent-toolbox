@@ -71,7 +71,7 @@ export class TranslationManager {
     return this.cache.get(this.key(String(text || '').trim(), sourceLanguage, targetLanguage)) || null;
   }
 
-  async translateParagraph(text, { sourceLanguage = 'en', targetLanguage = 'zh', paragraphId, onProgress } = {}) {
+  async translateParagraph(text, { sourceLanguage = 'en', targetLanguage = 'zh', paragraphId, onProgress, allowRemote = false } = {}) {
     const source = String(text || '').trim();
     if (!source) return { ok: true, translation: '', provider: 'none' };
     const key = this.key(source, sourceLanguage, targetLanguage);
@@ -79,12 +79,16 @@ export class TranslationManager {
     if (cached?.translation) return { ...cached, cached: true };
     const { protectedText, replacements } = protectScientificText(source);
     let result;
+    let localFailure = null;
     if (this.detectProvider() === 'chrome') {
       try {
         onProgress?.({ state: 'initializing', message: '正在初始化本地翻译模型…' });
         const translator = await this.initTranslator(sourceLanguage, targetLanguage, (loaded, total) => onProgress?.({ state: 'downloading', loaded, total }));
         result = { ok: true, translation: restoreScientificText(await translator.translate(protectedText), replacements), provider: 'chrome', paragraphId };
-      } catch (error) { onProgress?.({ state: 'fallback', message: error.message }); }
+      } catch (error) {
+        localFailure = { error: error.message, provider: 'unavailable', paragraphId };
+        onProgress?.({ state: 'fallback', message: error.message });
+      }
     }
     if (!result && globalThis.window?.toolbox?.translation?.argos) {
       try {
@@ -92,7 +96,7 @@ export class TranslationManager {
         if (argos?.ok && argos.translation) {
           result = { ok: true, translation: restoreScientificText(argos.translation, replacements), provider: 'argos', paragraphId };
         } else if (argos) {
-          result = {
+          localFailure = {
             ok: false,
             error: argos.error || '本地翻译不可用。请安装并启动 Argos Translate，或主动点击“AI 精译”。',
             code: argos.code,
@@ -103,7 +107,32 @@ export class TranslationManager {
         }
       } catch { /* explicit unavailable result below */ }
     }
-    if (!result) result = { ok: false, error: '本地翻译不可用。请安装并启动 Argos Translate，或主动点击“AI 精译”。', provider: 'unavailable', paragraphId };
+    if (!result && allowRemote && source.length <= 1800 && globalThis.window?.toolbox?.lit?.translate) {
+      try {
+        onProgress?.({ state: 'remote', message: '正在使用快速翻译服务…' });
+        const remote = await globalThis.window.toolbox.lit.translate(protectedText, { interactive: true });
+        if (remote?.ok && remote.translation) {
+          result = {
+            ok: true,
+            translation: restoreScientificText(remote.translation, replacements),
+            provider: 'remote',
+            paragraphId,
+          };
+        } else if (remote?.error) {
+          localFailure = { ok: false, error: remote.error, provider: 'unavailable', paragraphId };
+        }
+      } catch (error) {
+        localFailure = { ok: false, error: error.message, provider: 'unavailable', paragraphId };
+      }
+    }
+    if (!result) {
+      result = localFailure || {
+        ok: false,
+        error: '本地翻译不可用。请安装并启动 Argos Translate，或主动点击“AI 精译”。',
+        provider: 'unavailable',
+        paragraphId,
+      };
+    }
     if (result.ok) {
       this.cache.set(key, {
         paperId: this.paperId,

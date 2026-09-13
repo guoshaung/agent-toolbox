@@ -4,7 +4,7 @@ import {
   SMART_WIDTH_RATIO, MAX_VIEWPORT_RATIO, MIN_PLAYER_WIDTH, formatPercent,
 } from './zoom-math.js';
 
-const BILIBILI_STUDY_URL = 'https://www.bilibili.com/v/knowledge/learning/';
+const BILIBILI_STUDY_URL = 'https://www.bilibili.com/c/knowledge/';
 const VIDEO_PLUGIN_KEY = 'video.plugins';
 const USERSCRIPT_KEY = 'video.userscript';
 const VIDEO_PLUGINS = [
@@ -53,8 +53,8 @@ const VIDEO_PLUGINS = [
   {
     id: 'study-web-fullscreen',
     name: 'B 站网页全屏',
-    description: '进入具体视频后自动切换 B 站网页全屏；可按 Esc 退出，返回页面时不会重复抢占。',
-    defaultOn: true,
+    description: '可选：进入具体视频后切换 B 站网页全屏。默认关闭，避免遮挡页面滚动。',
+    defaultOn: false,
   },
 ];
 
@@ -84,7 +84,11 @@ export default {
     let info = null; // 抓到的视频信息
     let busy = false;
     let currentView = config.get('video.view', 'study');
-    let pluginPrefs = { ...defaultVideoPlugins(), ...(config.get(VIDEO_PLUGIN_KEY) || {}) };
+    const savedPluginPrefs = config.get(VIDEO_PLUGIN_KEY) || {};
+    let pluginPrefs = { ...defaultVideoPlugins(), ...savedPluginPrefs };
+    if (!Object.prototype.hasOwnProperty.call(savedPluginPrefs, 'study-web-fullscreen')) {
+      pluginPrefs['study-web-fullscreen'] = false;
+    }
     let subtitlePluginTimer = null;
     let subtitlePluginAttempts = 0;
     let webFullscreenTimer = null;
@@ -103,11 +107,9 @@ export default {
 
     const aiToggle = h('input', { type: 'checkbox', class: 'switch__input' });
     aiToggle.checked = config.get('video.useAi', true);
-    aiToggle.addEventListener('change', () => config.set('video.useAi', aiToggle.checked));
 
     const publishToggle = h('input', { type: 'checkbox', class: 'switch__input' });
     publishToggle.checked = config.get('video.publish', true);
-    publishToggle.addEventListener('change', () => config.set('video.publish', publishToggle.checked));
 
     const subsScope = h('select', { class: 'field video__scope' },
       h('option', { value: 'p1' }, '字幕：仅第 1 集'),
@@ -120,12 +122,127 @@ export default {
 
     const body = h('div', { class: 'video__body' });
     const historyEl = h('div', { class: 'video__history' });
+    const localQueueEl = h('div', { class: 'video__local-queue', hidden: true });
+    const localDropStatus = h('span', { class: 'video__local-drop-status faint' }, '支持一次拖入多个视频或整个文件夹');
+    const localFileInput = h('input', {
+      type: 'file',
+      accept: 'video/*,.mp4,.mov,.mkv,.avi,.webm,.m4v,.flv,.wmv,.ts,.mts,.m2ts',
+      multiple: true,
+      hidden: true,
+    });
+    const localAiToggle = h('input', { type: 'checkbox', class: 'switch__input' });
+    localAiToggle.checked = aiToggle.checked;
+    const localPublishToggle = h('input', { type: 'checkbox', class: 'switch__input' });
+    localPublishToggle.checked = publishToggle.checked;
+    const localVoiceboxToggle = h('input', { type: 'checkbox', class: 'switch__input' });
+    localVoiceboxToggle.checked = config.get('video.voiceboxRead', false);
+    const voiceboxProfileSelect = h('select', { class: 'field video__voicebox-profile', disabled: true },
+      h('option', { value: '' }, '读取 Voicebox 音色…'),
+    );
+    const voiceboxSttSelect = h('select', { class: 'field video__voicebox-stt', title: '没有字幕时使用哪个 Voicebox Whisper 模型' },
+      h('option', { value: 'turbo' }, '转写 Turbo · 准确'),
+      h('option', { value: 'base' }, '转写 Base · 较快'),
+      h('option', { value: 'small' }, '转写 Small · 平衡'),
+      h('option', { value: 'medium' }, '转写 Medium · 高质量'),
+    );
+    voiceboxSttSelect.value = config.get('video.voiceboxSttModel', 'turbo');
+    voiceboxSttSelect.addEventListener('change', () => { config.set('video.voiceboxSttModel', voiceboxSttSelect.value); loadVoiceboxProfiles(); });
+    const voiceboxApiStatus = h('span', { class: 'faint video__voicebox-status' }, '检查 Voicebox…');
+    let activeWhisperModel = '';
+    const voiceboxCancelBtn = h('button', {
+      class: 'btn btn--sm video__voicebox-cancel',
+      hidden: true,
+      onclick: async () => {
+        if (!activeWhisperModel) return;
+        voiceboxCancelBtn.disabled = true;
+        voiceboxApiStatus.textContent = `正在取消 ${activeWhisperModel} 下载…`;
+        const result = await window.toolbox.voicebox.apiCancelDownload(activeWhisperModel);
+        voiceboxCancelBtn.disabled = false;
+        if (!result?.ok) return toast(result?.error || '取消 Voicebox 下载失败', 'bad', 5000);
+        toast('已取消卡住的 Whisper 下载，可以切换较小模型', 'good', 5000);
+        loadVoiceboxProfiles();
+      },
+    }, '取消下载');
+    let currentVoiceAudio = null;
+    aiToggle.addEventListener('change', () => {
+      localAiToggle.checked = aiToggle.checked;
+      config.set('video.useAi', aiToggle.checked);
+    });
+    publishToggle.addEventListener('change', () => {
+      localPublishToggle.checked = publishToggle.checked;
+      config.set('video.publish', publishToggle.checked);
+    });
+    localAiToggle.addEventListener('change', () => {
+      aiToggle.checked = localAiToggle.checked;
+      config.set('video.useAi', localAiToggle.checked);
+    });
+    localPublishToggle.addEventListener('change', () => {
+      publishToggle.checked = localPublishToggle.checked;
+      config.set('video.publish', localPublishToggle.checked);
+    });
+    localVoiceboxToggle.addEventListener('change', () => config.set('video.voiceboxRead', localVoiceboxToggle.checked));
+    voiceboxProfileSelect.addEventListener('change', () => config.set('video.voiceboxProfileId', voiceboxProfileSelect.value));
+    const localDropOptions = h('div', { class: 'video__local-options' },
+      h('label', { class: 'switch' }, localAiToggle, h('span', { class: 'switch__track' }), 'AI 写摘要'),
+      h('label', { class: 'switch' }, localPublishToggle, h('span', { class: 'switch__track' }), '同时发到飞书'),
+      h('label', { class: 'switch' }, localVoiceboxToggle, h('span', { class: 'switch__track' }), 'Voicebox 朗读摘要'),
+      voiceboxProfileSelect,
+      voiceboxSttSelect,
+      voiceboxApiStatus,
+      voiceboxCancelBtn,
+    );
+    const localDropZone = h('div', {
+      class: 'video__local-dropzone',
+      role: 'button',
+      tabindex: '0',
+      'aria-label': '拖入多个本地视频生成报告',
+    },
+      h('span', { class: 'video__local-drop-icon', 'aria-hidden': 'true' }, '◈'),
+      h('strong', {}, '拖入本地视频，批量生成飞书报告'),
+      h('span', { class: 'faint' }, '支持 MP4 / MOV / MKV / WebM；优先同名字幕，没有字幕时尝试 Voicebox 本地 Whisper'),
+      localDropStatus,
+      localDropOptions,
+      h('button', { class: 'btn btn--sm', onclick: (event) => { event.stopPropagation(); localFileInput.click(); } }, '选择视频文件'),
+      localFileInput,
+    );
+    let localQueue = [];
     const studyView = h('webview', {
       class: 'video__study-view',
       partition: 'persist:bilibili-study',
       src: BILIBILI_STUDY_URL,
       allowpopups: true,
     });
+    const studyLoadingNote = h('span', { class: 'video__study-loading-note' }, '正在连接 B 站学习区…');
+    const studyLoading = h('div', {
+      class: 'video__study-loading',
+      role: 'status',
+      'aria-live': 'polite',
+    },
+      h('div', {
+        class: 'video__loading-character',
+        'aria-hidden': 'true',
+        html: `<svg viewBox="0 0 160 160" xmlns="http://www.w3.org/2000/svg">
+          <defs>
+            <linearGradient id="study-loading-hair" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#89b9ff"/><stop offset="1" stop-color="#b88cff"/></linearGradient>
+            <linearGradient id="study-loading-dress" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#6c8bea"/><stop offset="1" stop-color="#9867d8"/></linearGradient>
+          </defs>
+          <circle cx="80" cy="80" r="66" fill="#758bdc" fill-opacity=".12"/>
+          <path d="M31 53C42 18 119 12 131 55c-8-7-16-10-25-11 8 13 9 29 4 43-7-20-19-30-35-34-8 17-21 28-38 34-4-11-5-22-6-34Z" fill="url(#study-loading-hair)"/>
+          <path d="M48 57c0-17 14-30 32-30s32 13 32 30v24c0 20-14 32-32 32S48 101 48 81V57Z" fill="#ffe7dc" stroke="#6b568f" stroke-width="3"/>
+          <path d="M52 59c8-20 18-28 29-29 18 0 28 12 30 31-10-9-19-13-30-14-7 9-16 15-29 19Z" fill="url(#study-loading-hair)"/>
+          <path d="M64 76c3-4 8-4 11 0M85 76c3-4 8-4 11 0" fill="none" stroke="#463d65" stroke-width="3" stroke-linecap="round"/>
+          <path d="M75 91c4 3 8 3 12 0" fill="none" stroke="#c46f91" stroke-width="2.5" stroke-linecap="round"/>
+          <path d="M47 122c9-13 20-19 33-19s24 6 33 19l12 25H35l12-25Z" fill="url(#study-loading-dress)" stroke="#5d568f" stroke-width="3"/>
+          <path d="M68 109 80 124 92 109" fill="none" stroke="#efe9ff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M67 124c-7-5-15-12-20-19-3-4-8-3-10 1-2 5 3 11 9 16 6 6 13 10 20 12M93 124c7-5 15-12 20-19 3-4 8-3 10 1 2 5-3 11-9 16-6 6-13 10-20 12" fill="none" stroke="#ffe7dc" stroke-width="8" stroke-linecap="round"/>
+          <path d="M80 119v25" stroke="#f9d8a9" stroke-width="4" stroke-linecap="round"/>
+          <path d="m22 45 4 8 8 4-8 4-4 8-4-8-8-4 8-4 4-8ZM133 72l3 6 6 3-6 3-3 6-3-6-6-3 6-3 3-6Z" fill="#f7d58c"/>
+        </svg>`,
+      }),
+      h('strong', {}, '少女祈祷中'),
+      studyLoadingNote,
+    );
+    let studyLoadingTimer = null;
     const studyStatus = h('span', { class: 'faint video__study-status' }, '固定入口：B 站学习区');
     const subtitleStatus = h('span', { class: 'tag tag--good video__subtitle-status' }, '字幕插件已启用');
     const studyUrl = h('input', {
@@ -138,6 +255,22 @@ export default {
 
     function syncStudyUrl(url) {
       studyUrl.value = String(url || BILIBILI_STUDY_URL);
+    }
+
+    function showStudyLoading(note = '正在连接 B 站学习区…') {
+      studyLoadingNote.textContent = note;
+      studyLoading.removeAttribute('hidden');
+      clearTimeout(studyLoadingTimer);
+      studyLoadingTimer = setTimeout(() => {
+        studyLoadingNote.textContent = '网络较慢，已放行页面浏览…';
+        hideStudyLoading();
+      }, 12000);
+    }
+
+    function hideStudyLoading() {
+      clearTimeout(studyLoadingTimer);
+      studyLoadingTimer = null;
+      studyLoading.setAttribute('hidden', '');
     }
 
     function pluginEnabled(id) {
@@ -335,11 +468,11 @@ export default {
      * 视频智能尺寸与缩放（注入式，与倍速条同一套模式）：
      * - 智能尺寸：把播放器铺满窗口宽度，保持原始宽高比并居中；
      * - 缩放：以「原始宽度 或 智能尺寸宽度」为基准放大/缩小（50%–200%）；
-     * - Ctrl/Cmd + 滚轮（含触控板捏合）连续缩放，普通滚动与横向滑动手势不受影响；
+     * - Ctrl/Cmd + 滚轮（含触控板捏合）连续缩放，普通纵向滚动由学习区接管；
      * - 状态存 localStorage，跨页面保持；重置 / 关闭插件时完整还原播放器样式。
-     * command: 'toggle-smart' | 'zoom-in' | 'zoom-out' | 'reset' | 'refresh' | 'get-state'
+     * command: 'toggle-smart' | 'zoom-in' | 'zoom-out' | 'set-scale' | 'reset' | 'refresh' | 'get-state'
      */
-    async function applyVideoZoomPlugin(command) {
+    async function applyVideoZoomPlugin(command, value) {
       if (!pluginEnabled('smart-zoom')) {
         try {
           await studyView.executeJavaScript(`(() => {
@@ -352,21 +485,21 @@ export default {
       }
       const url = studyView.getURL();
       if (!/bilibili\.com/i.test(url || '')) return null;
-      const cmd = ['toggle-smart', 'zoom-in', 'zoom-out', 'reset', 'get-state'].includes(command) ? command : 'refresh';
+      const cmd = ['toggle-smart', 'zoom-in', 'zoom-out', 'set-scale', 'reset', 'get-state'].includes(command) ? command : 'refresh';
       try {
         const result = await studyView.executeJavaScript(`(() => {
           const key = '__agentToolboxSmartZoom';
           if (window[key]) {
-            return window[key].command(${JSON.stringify(cmd)});
+            return window[key].command(${JSON.stringify(cmd)}, ${JSON.stringify(value)});
           }
           const MIN = ${ZOOM_MIN}, MAX = ${ZOOM_MAX}, STEP = ${ZOOM_STEP};
           const SENSITIVITY = ${WHEEL_SENSITIVITY};
           const SMART_RATIO = ${SMART_WIDTH_RATIO};
           const MAX_VW = ${MAX_VIEWPORT_RATIO};
           const MIN_W = ${MIN_PLAYER_WIDTH};
-          const STORE_KEY = 'agent-toolbox-smart-zoom';
+          const STORE_KEY = 'agent-toolbox-smart-zoom:' + (location.pathname || 'study');
           const clamp = (n) => Math.max(MIN, Math.min(MAX, n));
-          const state = { enabled: true, smart: false, scale: 1, target: null, natural: null, original: null, overflow: null, tipTimer: null };
+          const state = { enabled: true, smart: false, scale: 1, target: null, natural: null, original: null, overflow: null, tipTimer: null, scrollFrame: 0 };
 
           const resolveTarget = () => {
             const el = document.querySelector('.bpx-player-container');
@@ -487,28 +620,90 @@ export default {
           };
           const shouldApply = () => state.smart || Math.abs(state.scale - 1) > 1e-9;
           const getState = () => ({ applied: Boolean(state.target), smart: state.smart, scale: state.scale });
-          const onWheel = (event) => {
-            if (!state.enabled) return;
-            if (!(event.ctrlKey || event.metaKey)) return; // 普通滚动、双指横滑交给页面与 swipe-back
-            const t = event.target;
-            if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
-            const el = state.target || resolveTarget();
-            if (!el) return;
-            event.preventDefault(); // 拦掉页面自身的 Ctrl 缩放，只做视频缩放
-            let delta = event.deltaY;
+          const normalizedDelta = (event) => {
+            let delta = Number(event.deltaY) || 0;
             if (event.deltaMode === 1) delta *= 33;
             else if (event.deltaMode === 2) delta *= 800;
+            return delta;
+          };
+          const isEditable = (node) => Boolean(node && (
+            node.tagName === 'INPUT'
+            || node.tagName === 'TEXTAREA'
+            || node.tagName === 'SELECT'
+            || node.isContentEditable
+            || node.closest?.('input,textarea,select,[contenteditable="true"]')
+          ));
+          const scrollable = (node) => {
+            if (!(node instanceof Element) || node === document.body || node === document.documentElement) return false;
+            const cs = getComputedStyle(node);
+            return node.scrollHeight > node.clientHeight + 2 && /(auto|scroll|overlay)/i.test(cs.overflowY || '');
+          };
+          const scrollCandidates = (start) => {
+            const result = [];
+            let node = start instanceof Element ? start : start?.parentElement;
+            while (node && node !== document.body && node !== document.documentElement) {
+              if (scrollable(node)) result.push(node);
+              node = node.parentElement;
+            }
+            if (document.scrollingElement) result.push(document.scrollingElement);
+            return [...new Set(result)];
+          };
+          const scrollPosition = (node) => node === document.scrollingElement ? window.scrollY : node.scrollTop;
+          const canMove = (node, delta) => {
+            if (node === document.scrollingElement) {
+              const max = Math.max(0, node.scrollHeight - window.innerHeight);
+              return delta < 0 ? window.scrollY > 0 : window.scrollY < max;
+            }
+            return delta < 0 ? node.scrollTop > 0 : node.scrollTop < node.scrollHeight - node.clientHeight - 1;
+          };
+          const fallbackVerticalScroll = (event) => {
+            if (Math.abs(event.deltaY) < Math.abs(event.deltaX) * 0.8 || isEditable(event.target)) return;
+            const delta = normalizedDelta(event);
+            if (!delta) return;
+            const candidates = scrollCandidates(event.target);
+            const player = event.target instanceof Element
+              && event.target.closest?.('.bpx-player-container, .bpx-player-video-wrap, .bilibili-player-video-wrap, .html5-player-video-wrap, video');
+            if (player) {
+              const page = document.scrollingElement;
+              if (page && canMove(page, delta)) {
+                event.preventDefault();
+                page.scrollTop += delta;
+                return;
+              }
+            }
+            const before = candidates.map(scrollPosition);
+            cancelAnimationFrame(state.scrollFrame);
+            state.scrollFrame = requestAnimationFrame(() => {
+              if (!state.enabled || candidates.some((node, index) => scrollPosition(node) !== before[index])) return;
+              const target = candidates.find((node) => canMove(node, delta)) || document.scrollingElement;
+              if (!target) return;
+              if (target === document.scrollingElement) window.scrollBy({ top: delta, behavior: 'auto' });
+              else target.scrollTop += delta;
+            });
+          };
+          const onWheel = (event) => {
+            if (!state.enabled) return;
+            if (!(event.ctrlKey || event.metaKey)) {
+              fallbackVerticalScroll(event);
+              return;
+            }
+            if (isEditable(event.target)) return;
+            const el = state.target?.isConnected ? state.target : resolveTarget();
+            if (!el) return;
+            event.preventDefault(); // 拦掉页面自身的 Ctrl 缩放，只做视频缩放
+            const delta = normalizedDelta(event);
             state.scale = clamp(state.scale * Math.exp(-delta * SENSITIVITY));
             persist();
             apply();
             showTip();
           };
-          const command = (cmd) => {
+          const command = (cmd, value) => {
             state.enabled = true;
             if (cmd === 'refresh' || !state.target) state.refresh();
             if (cmd === 'toggle-smart') state.smart = !state.smart;
             else if (cmd === 'zoom-in') state.scale = clamp(state.scale + STEP);
             else if (cmd === 'zoom-out') state.scale = clamp(state.scale - STEP);
+            else if (cmd === 'set-scale' && Number.isFinite(Number(value))) state.scale = clamp(Number(value) / 100);
             else if (cmd === 'reset') {
               state.smart = false;
               state.scale = 1;
@@ -516,7 +711,7 @@ export default {
               persist();
               return getState();
             }
-            if (cmd === 'toggle-smart' || cmd === 'zoom-in' || cmd === 'zoom-out') persist();
+            if (cmd === 'toggle-smart' || cmd === 'zoom-in' || cmd === 'zoom-out' || cmd === 'set-scale') persist();
             if (shouldApply()) {
               apply();
               if (cmd && cmd !== 'refresh' && cmd !== 'get-state') showTip();
@@ -547,7 +742,7 @@ export default {
           if (state.target) ensureOriginal();
           document.addEventListener('wheel', onWheel, { capture: true, passive: false });
           window[key] = { command, disable, getState };
-          return window[key].command(${JSON.stringify(cmd)});
+          return window[key].command(${JSON.stringify(cmd)}, ${JSON.stringify(value)});
         })()`, true);
         if (result && typeof result.scale === 'number') {
           zoomState.smart = Boolean(result.smart);
@@ -647,6 +842,7 @@ export default {
 
     function showError(message, needLogin, retry) {
       body.textContent = '';
+      body.append(localDropZone, localQueueEl);
       body.appendChild(h('div', { class: 'empty' },
         h('span', { class: 'empty__icon' }, needLogin ? '🔑' : '⚠️'),
         message,
@@ -666,6 +862,291 @@ export default {
         note && h('div', { class: 'faint video__note' }, note),
       ));
     }
+
+    function localPathsFromDataTransfer(dataTransfer) {
+      const paths = [...(dataTransfer?.files || [])]
+        .map((file) => window.toolbox.files.getPathForFile(file) || file.path || '')
+        .filter(Boolean);
+      if (paths.length) return [...new Set(paths)].slice(0, 30);
+      return String(dataTransfer?.getData('text/uri-list') || '')
+        .split(/\r?\n/)
+        .filter((uri) => uri.startsWith('file://'))
+        .map((uri) => {
+          try { return decodeURIComponent(uri.replace(/^file:\/\//, '')); } catch { return ''; }
+        })
+        .filter(Boolean)
+        .slice(0, 30);
+    }
+
+    function localSourceLabel(source) {
+      if (source === 'voicebox-whisper') return 'Voicebox 本地 Whisper 转写';
+      return source === 'whisper' ? '本机 Whisper 转写' : '同名字幕文件';
+    }
+
+    async function playLocalAudio(item) {
+      if (!item.audioDataUrl) return toast('这条报告还没有生成 Voicebox 音频', 'info');
+      if (currentVoiceAudio) currentVoiceAudio.pause();
+      currentVoiceAudio = new Audio(item.audioDataUrl);
+      item.audioPlaying = true;
+      currentVoiceAudio.onended = () => { item.audioPlaying = false; renderLocalQueue(); };
+      try {
+        await currentVoiceAudio.play();
+        renderLocalQueue();
+      } catch (error) {
+        item.audioPlaying = false;
+        renderLocalQueue();
+        toast(`音频播放失败：${error.message}`, 'bad', 5000);
+      }
+    }
+
+    function renderLocalQueue() {
+      localQueueEl.textContent = '';
+      localQueueEl.hidden = !localQueue.length;
+      if (!localQueue.length) return;
+      localQueueEl.appendChild(h('div', { class: 'video__local-queue-head' },
+        h('strong', {}, `本地视频队列（${localQueue.length}）`),
+        h('span', { class: 'faint' }, '按顺序读取、总结、保存并发布'),
+      ));
+      for (const item of localQueue) {
+        const actions = [];
+        if (item.result?.localPath) actions.push(h('button', { class: 'btn btn--sm', onclick: () => window.toolbox.chat.showInFinder(item.result.localPath) }, '显示本地报告'));
+        if (item.transcriptPath) actions.push(h('button', { class: 'btn btn--sm', onclick: () => window.toolbox.chat.showInFinder(item.transcriptPath) }, '显示转写'));
+        if (item.result?.docUrl) actions.push(h('button', { class: 'btn btn--sm btn--primary', onclick: () => openFeishuDoc(item.result.docUrl) }, '打开飞书'));
+        if (item.audioDataUrl) actions.push(h('button', { class: 'btn btn--sm', onclick: () => playLocalAudio(item) }, item.audioPlaying ? '播放中…' : '播放摘要'));
+        localQueueEl.appendChild(h('div', { class: 'video__local-item' },
+          h('div', { class: 'video__local-item-main' },
+            h('strong', { class: 'video__local-name', title: item.path }, item.name),
+            h('span', { class: 'faint' }, item.source ? `${localSourceLabel(item.source)} · ` : '', item.status || ''),
+            item.error && h('span', { class: 'video__local-error' }, item.error),
+          ),
+          h('div', { class: 'video__local-item-actions' }, ...actions),
+        ));
+      }
+    }
+
+    function renderLocalWorkspace(note = '支持一次拖入多个视频或整个文件夹') {
+      body.textContent = '';
+      body.append(localDropZone, localQueueEl);
+      localDropStatus.textContent = note;
+      renderLocalQueue();
+    }
+
+    function splitLocalTranscript(text, maxChars = 12000) {
+      const source = String(text || '').trim();
+      if (!source) return [];
+      const chunks = [];
+      let rest = source;
+      while (rest.length > maxChars) {
+        const boundary = Math.max(
+          rest.lastIndexOf('\n', maxChars),
+          rest.lastIndexOf('。', maxChars),
+          rest.lastIndexOf('！', maxChars),
+          rest.lastIndexOf('？', maxChars),
+        );
+        const cut = boundary > Math.floor(maxChars * 0.55) ? boundary + 1 : maxChars;
+        chunks.push(rest.slice(0, cut).trim());
+        rest = rest.slice(cut).trim();
+      }
+      if (rest) chunks.push(rest);
+      return chunks.slice(0, 12);
+    }
+
+    async function askAiLocal(item, onProgress) {
+      const chunks = splitLocalTranscript(item.text);
+      const analyze = (text, index, total) => ai.json([
+        '你是严谨的科研视频阅读助手。只根据下面的本地视频转写文本回答，不要补写没有出现的事实。',
+        '返回 JSON：{"summary":"150-250字摘要","keyPoints":["关键点1","关键点2"],"outline":["内容结构1","内容结构2"],"terms":["值得解释的术语"],"next":"给学习者的下一步建议"}。',
+        '不要用 markdown 代码块包裹，数组最多 8 项。',
+        '',
+        `文件名：${item.name}`,
+        `这是第 ${index + 1}/${total} 段；只分析这段实际出现的内容。`,
+        `转写来源：${localSourceLabel(item.source)}`,
+        `转写文本：\n${text}`,
+      ].join('\n'), { timeout: 120000 });
+      if (!chunks.length) return null;
+      const parts = [];
+      for (let index = 0; index < chunks.length; index += 1) {
+        onProgress?.(index + 1, chunks.length);
+        parts.push(await analyze(chunks[index], index, chunks.length));
+      }
+      if (parts.length === 1) return parts[0];
+      onProgress?.(chunks.length, chunks.length, true);
+      return ai.json([
+        '你是严谨的科研视频阅读助手。下面是同一个视频分段分析得到的 JSON，请合并为一份完整报告。',
+        '去重但不要丢失关键事实；只保留分段中出现的内容，不要自行补写。返回 JSON：{"summary":"150-250字摘要","keyPoints":["关键点"],"outline":["内容结构"],"terms":["值得解释的术语"],"next":"给学习者的下一步建议"}。',
+        '不要用 markdown 代码块包裹，数组最多 8 项。',
+        '',
+        JSON.stringify(parts),
+      ].join('\n'), { timeout: 120000 });
+    }
+
+    async function loadVoiceboxProfiles() {
+      try {
+        const health = await window.toolbox.voicebox.apiHealth();
+        if (!health?.ok) {
+          activeWhisperModel = '';
+          voiceboxCancelBtn.hidden = true;
+          voiceboxApiStatus.textContent = 'Voicebox 未运行；可在左侧 Voicebox 启动';
+          return;
+        }
+        let whisperNote = '';
+        try {
+          const active = await window.toolbox.voicebox.apiActiveTasks();
+          const download = active?.data?.downloads?.find((task) => /^whisper-/i.test(String(task.model_name || '')) && task.status === 'downloading');
+          activeWhisperModel = download?.model_name || '';
+          voiceboxCancelBtn.hidden = !activeWhisperModel;
+          if (download) whisperNote = ` · ${download.model_name} 下载 ${Number(download.progress || 0).toFixed(1)}%`;
+        } catch {
+          activeWhisperModel = '';
+          voiceboxCancelBtn.hidden = true;
+        }
+        const result = await window.toolbox.voicebox.apiProfiles();
+        const profiles = Array.isArray(result?.profiles) ? result.profiles : [];
+        voiceboxProfileSelect.textContent = '';
+        if (!profiles.length) {
+          voiceboxProfileSelect.appendChild(h('option', { value: '' }, '暂无音色，请先在 Voicebox 克隆'));
+          voiceboxApiStatus.textContent = '服务正常，但还没有音色';
+          return;
+        }
+        for (const profile of profiles) voiceboxProfileSelect.appendChild(h('option', { value: profile.id }, `${profile.name || '未命名'} · ${profile.voice_type === 'cloned' ? '克隆' : '预设'}`));
+        const preferred = config.get('video.voiceboxProfileId', '');
+        voiceboxProfileSelect.value = profiles.some((profile) => profile.id === preferred) ? preferred : profiles[0].id;
+        await config.set('video.voiceboxProfileId', voiceboxProfileSelect.value);
+        voiceboxProfileSelect.disabled = false;
+        voiceboxApiStatus.textContent = `Voicebox 已连接${whisperNote} · ${health.data?.model_size || '模型已加载'}`;
+      } catch (error) {
+        voiceboxApiStatus.textContent = `Voicebox 不可用：${error.message}`;
+      }
+    }
+
+    function buildLocalMarkdown(item, aiParts) {
+      const lines = [`# 本地视频总结报告：${item.name}`, '', '## 一屏摘要', '', aiParts?.summary || '已导入本地转写文本，当前未启用 AI 摘要。', ''];
+      lines.push('## 文件信息', '', `- 文件：${item.name}`, `- 路径：${String(item.path).replace(/`/g, '')}`, `- 转写来源：${localSourceLabel(item.source)}`, item.transcriptPath ? `- 本地转写留底：${String(item.transcriptPath).replace(/`/g, '')}` : '', '');
+      if (Array.isArray(aiParts?.keyPoints) && aiParts.keyPoints.length) lines.push('## 关键知识点', '', ...aiParts.keyPoints.map((point) => `- ${point}`), '');
+      if (Array.isArray(aiParts?.outline) && aiParts.outline.length) lines.push('## 内容结构', '', ...aiParts.outline.map((point, index) => `${index + 1}. ${point}`), '');
+      if (Array.isArray(aiParts?.terms) && aiParts.terms.length) lines.push('## 术语线索', '', aiParts.terms.map((term) => `- ${term}`).join('\n'), '');
+      if (aiParts?.next) lines.push('## 下一步学习建议', '', aiParts.next, '');
+      lines.push('## 原始转写', '', String(item.text || '').slice(0, 60000), String(item.text || '').length > 60000 ? '\n（原始转写超过 60000 字，完整内容请查看本地转写留底。）' : '', '', '---', '', '> 由 Agent 工具箱「视频」从本地视频资源生成。原始视频不会上传；报告只使用同名字幕、Voicebox 本地 Whisper 或本机 Whisper 的转写结果。');
+      return lines.join('\n');
+    }
+
+    async function processLocalVideos(paths) {
+      if (busy) return toast('当前已有视频任务在运行，请稍候', 'info');
+      if (!paths.length) return toast('没有识别到文件，请从 Finder 拖入视频或文件夹', 'bad', 5000);
+      busy = true;
+      localQueue = paths.map((path) => ({ path, name: path.split(/[\\/]/).pop() || path, status: '等待处理' }));
+      renderLocalWorkspace('正在读取视频文件…');
+      try {
+        const prepared = await video.prepareLocal(paths, { voiceboxModel: voiceboxSttSelect.value });
+        if (!prepared?.ok) {
+          localDropStatus.textContent = prepared?.error || '本地视频准备失败';
+          return;
+        }
+        localQueue = (prepared.items || []).map((item) => ({ ...item, status: item.ok ? '等待生成' : '无法生成' }));
+        renderLocalQueue();
+        let success = 0;
+        for (const item of localQueue) {
+          if (!item.ok) continue;
+          item.status = aiToggle.checked ? '正在 AI 分析…' : '正在整理报告…';
+          renderLocalQueue();
+          try {
+            let aiParts = null;
+            if (aiToggle.checked) {
+              try {
+                aiParts = await askAiLocal(item, (current, total, merging) => {
+                  item.status = merging ? 'AI 正在汇总分段…' : `AI 分析中（${current}/${total}）…`;
+                  renderLocalQueue();
+                });
+              } catch (err) {
+                if (err.code === 'need-login') throw err;
+                item.error = `AI 摘要失败：${err.message}；已保留原始转写`;
+              }
+            }
+            const markdown = buildLocalMarkdown(item, aiParts);
+            item.result = await video.saveReport({
+              title: `本地视频总结报告：${item.name}`,
+              markdown,
+              bvid: '',
+              publish: publishToggle.checked,
+            });
+            item.status = item.result.docUrl ? '已生成并发布到飞书' : item.result.publishError ? '已生成，飞书发布失败' : '已生成本地报告';
+            if (localVoiceboxToggle.checked) {
+              item.status = '报告已生成，Voicebox 正在朗读…';
+              renderLocalQueue();
+              const spoken = await window.toolbox.voicebox.apiGenerateAudio({
+                text: String(aiParts?.summary || item.text || '').slice(0, 10000),
+                profileId: voiceboxProfileSelect.value,
+                language: 'zh',
+                maxChunkChars: 1200,
+              });
+              if (spoken?.ok) {
+                item.audioDataUrl = spoken.audioDataUrl;
+                item.status = `${item.result.docUrl ? '已发布到飞书' : '已生成本地报告'} · Voicebox 已就绪`;
+                await playLocalAudio(item);
+              } else {
+                item.error = `Voicebox 朗读失败：${spoken?.error || '未知错误'}`;
+                item.status = item.result.docUrl ? '已生成并发布到飞书' : '已生成本地报告';
+              }
+            }
+            success += 1;
+          } catch (err) {
+            item.status = '处理失败';
+            item.error = err.code === 'need-login' ? 'AI 还没登录，请先登录后重试。' : err.message;
+            if (err.code === 'need-login') break;
+          }
+          renderLocalQueue();
+        }
+        localDropStatus.textContent = `处理完成：${success}/${localQueue.length} 条已生成，可继续拖入下一批`;
+        toast(`本地视频处理完成：${success}/${localQueue.length} 条已生成`, success ? 'good' : 'bad', 5000);
+        await renderHistory();
+      } catch (err) {
+        localDropStatus.textContent = `处理失败：${err.message}`;
+        toast(`本地视频处理失败：${err.message}`, 'bad', 6000);
+      } finally {
+        busy = false;
+        renderLocalQueue();
+      }
+    }
+
+    localDropZone.addEventListener('dragenter', (event) => { event.preventDefault(); localDropZone.classList.add('is-dragover'); });
+    localDropZone.addEventListener('dragover', (event) => { event.preventDefault(); event.dataTransfer.dropEffect = 'copy'; localDropZone.classList.add('is-dragover'); });
+    localDropZone.addEventListener('dragleave', (event) => { if (!localDropZone.contains(event.relatedTarget)) localDropZone.classList.remove('is-dragover'); });
+    localDropZone.addEventListener('drop', (event) => {
+      event.preventDefault();
+      localDropZone.classList.remove('is-dragover');
+      processLocalVideos(localPathsFromDataTransfer(event.dataTransfer));
+    });
+    localDropZone.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); localFileInput.click(); }
+    });
+    localFileInput.addEventListener('change', () => {
+      const paths = [...localFileInput.files].map((file) => window.toolbox.files.getPathForFile(file) || file.path || '').filter(Boolean);
+      localFileInput.value = '';
+      processLocalVideos([...new Set(paths)].slice(0, 30));
+    });
+    window.toolbox.video.onPrepareProgress((state) => {
+      const item = localQueue.find((candidate) => candidate.path === state?.path);
+      if (!item) return;
+      const labels = {
+        preparing: '准备中…',
+        'reading-sidecar': '读取同名字幕…',
+        cached: '读取本地转写缓存…',
+        'voicebox-transcribing': 'Voicebox 转写中…',
+        'system-whisper': '系统 Whisper 转写中…',
+        'model-downloading': 'Voicebox Whisper 模型下载中…',
+        ready: '转写完成，等待 AI 分析',
+        failed: '转写失败',
+      };
+      item.status = labels[state.status] || state.status || '处理中…';
+      if (state.error) item.error = state.error;
+      renderLocalQueue();
+    });
+    window.toolbox.video.onSubsProgress((state) => {
+      const note = body.querySelector('.video__note');
+      if (note && state?.message) note.textContent = state.message;
+    });
+    loadVoiceboxProfiles();
+    let voiceboxRefreshTimer = setInterval(loadVoiceboxProfiles, 10000);
 
     async function fetchInfo() {
       const url = linkInput.value.trim();
@@ -698,6 +1179,7 @@ export default {
     }
 
     function resetStudyArea() {
+      showStudyLoading('正在回到 B 站学习区…');
       studyView.loadURL(BILIBILI_STUDY_URL);
       syncStudyUrl(BILIBILI_STUDY_URL);
       studyStatus.textContent = '正在回到固定的 B 站学习区…';
@@ -728,21 +1210,27 @@ export default {
     }
 
     studyView.addEventListener('did-navigate', (event) => {
+      showStudyLoading('正在打开学习内容…');
       syncStudyUrl(event.url);
       studyStatus.textContent = event.url === BILIBILI_STUDY_URL || /\/c\/knowledge\/?$/i.test(event.url)
         ? '固定入口：B 站学习区'
         : '当前在 B 站学习区内浏览 · 评论已关闭';
       scheduleStudyPlugins();
     });
-    studyView.addEventListener('did-navigate-in-page', (event) => { syncStudyUrl(event.url); scheduleStudyPlugins(); });
-    studyView.addEventListener('did-finish-load', () => { syncStudyUrl(studyView.getURL()); scheduleStudyPlugins(); });
+    studyView.addEventListener('did-start-loading', () => showStudyLoading());
+    studyView.addEventListener('did-navigate-in-page', (event) => { showStudyLoading('正在切换学习内容…'); syncStudyUrl(event.url); scheduleStudyPlugins(); });
+    studyView.addEventListener('did-finish-load', () => { hideStudyLoading(); syncStudyUrl(studyView.getURL()); scheduleStudyPlugins(); });
+    studyView.addEventListener('did-stop-loading', hideStudyLoading);
     studyView.addEventListener('did-fail-load', (event) => {
       if (event.errorCode === -3) return;
+      hideStudyLoading();
       studyStatus.textContent = `B 站学习区加载失败：${event.errorDescription || '网络错误'}`;
     });
 
     function renderInfo() {
       body.textContent = '';
+      body.append(localDropZone, localQueueEl);
+      renderLocalQueue();
       body.appendChild(
         h('div', { class: 'card video__info' },
           h('div', { class: 'video__title' }, info.title),
@@ -765,6 +1253,13 @@ export default {
       return p ? p.part : '';
     }
 
+    function subtitleSourceLabel(kind) {
+      if (kind === 'official') return '官方字幕';
+      if (kind === 'mixed') return '官方 + B 站 AI 字幕';
+      if (kind === 'voicebox') return 'Voicebox 本地 Whisper 转写';
+      return 'B 站 AI 生成字幕';
+    }
+
     function buildMarkdown({ aiParts, notes, subsKind, subsPages }) {
       const lines = [];
       lines.push(`# B站视频总结报告：${info.title}`, '');
@@ -780,7 +1275,7 @@ export default {
       lines.push(`- 播放/弹幕/点赞/投币/收藏：${fmtCount(info.stat.view)} / ${fmtCount(info.stat.danmaku)} / ${fmtCount(info.stat.like)} / ${fmtCount(info.stat.coin)} / ${fmtCount(info.stat.favorite)}`);
       lines.push('');
       if (notes && notes.length) {
-        const kindLabel = subsKind === 'official' ? '官方字幕' : subsKind === 'mixed' ? '官方 + B 站 AI 字幕' : 'B 站 AI 生成字幕';
+        const kindLabel = subtitleSourceLabel(subsKind);
         lines.push(`## 逐集内容笔记（基于${kindLabel}）`, '');
         for (const n of notes) {
           const t = partTitle(n.page);
@@ -801,7 +1296,7 @@ export default {
       if (aiParts?.audience) lines.push('## 适合人群', '', aiParts.audience, '');
       lines.push('---');
       lines.push(notes && notes.length
-        ? `> 由 Agent 工具箱「视频」生成。内容基于${subsKind === 'official' ? '官方字幕' : subsKind === 'mixed' ? '官方 + B 站 AI 字幕' : 'B 站 AI 字幕'}全文总结，AI 字幕可能有个别错别字。`
+        ? `> 由 Agent 工具箱「视频」生成。内容基于${subtitleSourceLabel(subsKind)}全文总结，转写结果可能有个别错别字。`
         : '> 由 Agent 工具箱「视频」生成。未获取到字幕，本报告为内容地图型摘要（标题/简介/分集大纲），非逐句转写。');
       return lines.join('\n');
     }
@@ -867,12 +1362,12 @@ export default {
         let subs = null;
         let subtitleError = '';
         if (useSubs) {
-          showProgress('正在拉取字幕…', '优先官方字幕，没有再拉 B 站 AI 字幕（借浏览器登录态）。');
+          showProgress('正在拉取字幕…', '优先官方字幕和 B 站 AI 字幕；没有字幕时下载当前第 1 集并用 Voicebox 本地 Whisper 转写。');
           try {
-            const result = await video.fetchSubs({ url: info.url, scope: subsScope.value });
+            const result = await video.fetchSubs({ url: info.url, scope: subsScope.value, voiceboxModel: voiceboxSttSelect.value });
             if (result.ok && result.episodes?.length) {
               subs = result;
-              showProgress('字幕已获取，正在准备 AI 分析…', `${result.kind === 'ai' ? 'B 站 AI 字幕' : result.kind === 'mixed' ? '官方 + AI 字幕' : '官方字幕'} · ${result.episodes.length} 集`);
+              showProgress('字幕已获取，正在准备 AI 分析…', `${subtitleSourceLabel(result.kind)} · ${result.episodes.length} 集`);
             } else {
               subtitleError = result.error || '没有拿到字幕。';
               if (aiToggle.checked) {
@@ -1066,6 +1561,8 @@ export default {
       lastResultView = { markdown, result, opts };
       body.textContent = '';
       body.classList.remove('video__body--feishu');
+      body.append(localDropZone, localQueueEl);
+      renderLocalQueue();
       historyEl.removeAttribute('hidden');
       if (fromHistory) {
         body.appendChild(h('div', { class: 'video__reader-bar' },
@@ -1073,6 +1570,8 @@ export default {
             class: 'btn btn--sm',
             onclick: () => {
               body.textContent = '';
+              body.append(localDropZone, localQueueEl);
+              renderLocalQueue();
               body.appendChild(h('div', { class: 'empty' },
                 h('span', { class: 'empty__icon' }, '📺'),
                 '贴一个 B 站视频链接，回车抓取。'));
@@ -1279,6 +1778,21 @@ export default {
       onclick: () => runZoomCommand('zoom-out'),
     }, '−');
     const zoomPercent = h('span', { class: 'video__zoom-percent', title: '当前视频缩放比例（50%–200%）' }, '100%');
+    const zoomSlider = h('input', {
+      type: 'range',
+      class: 'video__zoom-slider',
+      min: String(ZOOM_MIN * 100),
+      max: String(ZOOM_MAX * 100),
+      step: '1',
+      value: '100',
+      'aria-label': '视频缩放比例',
+      title: '拖动调整视频缩放比例（50%–200%）',
+    });
+    let zoomSliderTimer = null;
+    zoomSlider.addEventListener('input', () => {
+      clearTimeout(zoomSliderTimer);
+      zoomSliderTimer = setTimeout(() => runZoomCommand('set-scale', Number(zoomSlider.value)), 45);
+    });
     const zoomInBtn = h('button', {
       class: 'btn btn--sm video__zoom-step',
       title: '放大 15%（也可 Ctrl/Cmd 滚轮或触控板捏合）',
@@ -1289,21 +1803,22 @@ export default {
       title: '恢复视频原始尺寸（智能尺寸关闭、缩放回到 100%）',
       onclick: () => runZoomCommand('reset'),
     }, '重置');
-    const zoomBar = h('div', { class: 'video__zoombar' }, smartZoomBtn, zoomOutBtn, zoomPercent, zoomInBtn, zoomResetBtn);
+    const zoomBar = h('div', { class: 'video__zoombar' }, smartZoomBtn, zoomOutBtn, zoomPercent, zoomSlider, zoomInBtn, zoomResetBtn);
 
     function syncZoomUI(result) {
       if (!result || typeof result.scale !== 'number') return;
       zoomState.smart = Boolean(result.smart);
       zoomState.scale = result.scale;
       zoomPercent.textContent = formatPercent(zoomState.scale);
+      zoomSlider.value = String(Math.round(zoomState.scale * 100));
       smartZoomBtn.classList.toggle('is-active', zoomState.smart);
     }
 
-    async function runZoomCommand(command) {
+    async function runZoomCommand(command, value) {
       if (!pluginEnabled('smart-zoom')) return toast('视频尺寸缩放插件已关闭，去「插件库」打开', 'info', 4200);
       const url = studyView.getURL();
       if (!/bilibili\.com/i.test(url || '')) return toast('请先在 B 站打开视频页面', 'info', 4200);
-      const result = await applyVideoZoomPlugin(command);
+      const result = await applyVideoZoomPlugin(command, value);
       if (!result) return toast('页面还没就绪，稍后再试', 'info');
       syncZoomUI(result);
     }
@@ -1332,7 +1847,7 @@ export default {
       h('button', { class: 'btn btn--sm btn--primary', title: '抓取当前视频并生成报告', onclick: captureCurrentPage }, '抓取当前页'),
       h('button', { class: 'btn btn--sm btn--ghost', title: '用系统浏览器打开当前 B 站页面', onclick: () => studyView.getURL() && window.toolbox.shell.openExternal(studyView.getURL()) }, '↗'),
     );
-    const studyShell = h('div', { class: 'video__study-shell' }, studyBar, studyView);
+    const studyShell = h('div', { class: 'video__study-shell' }, studyBar, studyView, studyLoading);
     const reportBar = h('div', { class: 'bar bar--drag' },
       h('strong', {}, '视频报告'),
       linkInput,
@@ -1350,15 +1865,21 @@ export default {
       reportShell,
     );
 
-    body.appendChild(h('div', { class: 'empty' },
+    body.append(localDropZone, localQueueEl, h('div', { class: 'empty' },
       h('span', { class: 'empty__icon' }, '📺'),
-      '贴一个 B 站视频链接，回车抓取。',
+      '贴一个 B 站视频链接，回车抓取，或把本地视频拖到上面的批处理区。',
       h('br'),
-      h('span', { class: 'faint' }, '有字幕就按字幕写内容级总结（官方字幕优先，没有再拉 AI 字幕）；报告永远存到本地 reports/ 目录，开了「发飞书」就顺手建一篇飞书文档。'),
+      h('span', { class: 'faint' }, 'B 站报告优先官方字幕；本地视频优先同名字幕，没有字幕时尝试 Voicebox 本地 Whisper，再回退系统 Whisper。报告永远存到本地 reports/ 目录，开了「发飞书」就顺手建一篇飞书文档。'),
     ));
     renderHistory();
     setView(currentView);
 
-    return { activate: () => setTimeout(() => { if (currentView === 'report') linkInput.focus(); else scheduleStudyPlugins(); }, 30) };
+        return {
+          activate: () => {
+            if (!voiceboxRefreshTimer) voiceboxRefreshTimer = setInterval(loadVoiceboxProfiles, 10000);
+            return setTimeout(() => { if (currentView === 'report') linkInput.focus(); else scheduleStudyPlugins(); }, 30);
+          },
+          deactivate: () => { clearInterval(voiceboxRefreshTimer); voiceboxRefreshTimer = null; currentVoiceAudio?.pause(); },
+        };
   },
 };

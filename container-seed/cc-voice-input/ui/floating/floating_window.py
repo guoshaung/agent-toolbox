@@ -18,7 +18,8 @@ SIZE = 120
 ICON_SIZE = 68
 SNAP_DIST = 30
 POS_FILE = Path(__file__).resolve().parents[2] / "resources" / "floating_pos.json"
-ICON_FILE = Path(__file__).resolve().parents[2] / "resources" / "xiaozhi.png"
+RESOURCE_DIR = Path(__file__).resolve().parents[2] / "resources"
+ICON_FILES = (RESOURCE_DIR / "xiaozhi.png", RESOURCE_DIR / "icon.png", RESOURCE_DIR / "icon_tray.png")
 
 
 class FloatingWindow(QWidget):
@@ -41,7 +42,13 @@ class FloatingWindow(QWidget):
         self.setCursor(Qt.CursorShape.PointingHandCursor)
 
         self._state = FloatState.IDLE
-        self._pixmap = QPixmap(str(ICON_FILE)) if ICON_FILE.exists() else QPixmap()
+        self._pixmap = QPixmap()
+        for icon_file in ICON_FILES:
+            if icon_file.exists():
+                candidate = QPixmap(str(icon_file))
+                if not candidate.isNull():
+                    self._pixmap = candidate
+                    break
         self._drag_offset: QPoint | None = None
         self._moved = False
 
