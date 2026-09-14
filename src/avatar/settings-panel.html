@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self' file: blob:; script-src 'self' 'nonce-avatar-output'; style-src 'self'; img-src 'self' file: blob: data:; media-src 'self' file: blob:">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self' file: blob:; script-src 'self' 'nonce-avatar-output'; style-src 'self'; img-src 'self' file: blob: data:; media-src 'self' file: blob:; connect-src 'self' file: blob: https://storage.googleapis.com">
   <title>Avatar Output</title>
   <link rel="stylesheet" href="settings-panel.css">
   <script type="importmap" nonce="avatar-output">
@@ -11,7 +11,8 @@
       "imports": {
         "three": "../../node_modules/three/build/three.module.js",
         "three/addons/": "../../node_modules/three/examples/jsm/",
-        "@pixiv/three-vrm": "../../node_modules/@pixiv/three-vrm/lib/three-vrm.module.js"
+        "@pixiv/three-vrm": "../../node_modules/@pixiv/three-vrm/lib/three-vrm.module.js",
+        "@mediapipe/tasks-vision": "../../node_modules/@mediapipe/tasks-vision/vision_bundle.mjs"
       }
     }
   </script>

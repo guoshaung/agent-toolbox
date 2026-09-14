@@ -148,9 +148,9 @@ function createAvatarWindowController({ getMainWindow = () => null } = {}) {
         button.id = 'avatar-output-entry';
         button.className = 'rail__item rail__avatar';
         button.type = 'button';
-        button.title = '打开虚拟形象输出窗口';
-        button.setAttribute('aria-label', '打开虚拟形象输出窗口');
-        button.innerHTML = '<span aria-hidden="true">&#9671;</span>';
+        button.title = '摄像头虚拟形象输出 · 独立窗口';
+        button.setAttribute('aria-label', '打开摄像头虚拟形象输出窗口');
+        button.innerHTML = '<span class="rail__active-mark"></span><span class="rail__icon" aria-hidden="true">&#9671;</span><span class="rail__label">形象输出</span>';
         const rail = document.querySelector('.rail');
         const spacer = rail?.querySelector('.rail__spacer');
         if (rail) rail.insertBefore(button, spacer || null);
