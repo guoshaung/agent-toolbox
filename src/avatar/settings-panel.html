@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self' file: blob:; script-src 'self' 'nonce-avatar-output' 'wasm-unsafe-eval'; style-src 'self'; img-src 'self' file: blob: data:; media-src 'self' file: blob:; connect-src 'self' file: blob: https://storage.googleapis.com">
+  <title>Avatar Output</title>
+  <link rel="stylesheet" href="settings-panel.css">
+  <script type="importmap" nonce="avatar-output">
+    {
+      "imports": {
+        "three": "../../node_modules/three/build/three.module.js",
+        "three/addons/": "../../node_modules/three/examples/jsm/",
+        "@pixiv/three-vrm": "../../node_modules/@pixiv/three-vrm/lib/three-vrm.module.js",
+        "@mediapipe/tasks-vision": "../../node_modules/@mediapipe/tasks-vision/vision_bundle.mjs"
+      }
+    }
+  </script>
+</head>
+<body>
+  <main class="layout">
+    <section class="stage" aria-label="虚拟形象输出预览">
+      <div class="drag-region">
+        <span>AVATAR OUTPUT</span>
+        <div class="window-actions no-drag">
+          <button id="toggle-settings" class="icon-button" type="button" aria-label="隐藏设置" title="显示或隐藏设置">⚙</button>
+          <button id="close-window" class="icon-button" type="button" aria-label="关闭窗口">×</button>
+        </div>
+      </div>
+      <canvas id="avatar-canvas" aria-label="虚拟形象输出"></canvas>
+      <div class="render-status">
+        <span id="render-state">等待选择 VRM 模型</span>
+        <strong><span id="fps">0.0</span> FPS</strong>
+      </div>
+    </section>
+
+    <aside class="settings" aria-label="虚拟形象设置">
+      <header><p class="eyebrow">OUTPUT SETTINGS</p><h1>虚拟形象</h1></header>
+      <label class="field">
+        <span>摄像头</span>
+        <select id="camera"><option value="">正在读取设备…</option></select>
+      </label>
+      <button id="refresh-cameras" class="secondary" type="button">授权并刷新摄像头</button>
+      <div class="field">
+        <span>VRM 模型</span>
+        <button id="pick-model" class="file-picker" type="button">
+          <strong id="model-name">尚未选择</strong><small>选择 .vrm 文件</small>
+        </button>
+      </div>
+      <fieldset>
+        <legend>背景</legend>
+        <label class="radio"><input type="radio" name="background" value="transparent">透明</label>
+        <label class="radio"><input type="radio" name="background" value="solid">纯色</label>
+        <input id="background-color" type="color" value="#18202b" aria-label="背景颜色">
+      </fieldset>
+      <label class="toggle"><input id="always-on-top" type="checkbox"><span>窗口置顶</span></label>
+      <label class="toggle"><input id="frameless" type="checkbox"><span>无边框窗口</span></label>
+      <p id="status" class="status" role="status">设置会自动保存；录制前可点左上角齿轮隐藏面板</p>
+    </aside>
+  </main>
+  <script type="module" src="settings-panel.js"></script>
+</body>
+</html>

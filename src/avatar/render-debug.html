@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self' file: blob:; script-src 'self' 'nonce-avatar-render-debug' 'wasm-unsafe-eval'; style-src 'self'; img-src 'self' file: blob: data:; media-src 'self' file: blob:">
+    <title>Avatar Render Debug</title>
+    <link rel="stylesheet" href="./render-debug.css">
+    <script type="importmap" nonce="avatar-render-debug">
+      {
+        "imports": {
+          "three": "../../node_modules/three/build/three.module.js",
+          "three/addons/": "../../node_modules/three/examples/jsm/",
+          "@pixiv/three-vrm": "../../node_modules/@pixiv/three-vrm/lib/three-vrm.module.js"
+        }
+      }
+    </script>
+  </head>
+  <body>
+    <canvas id="avatar"></canvas>
+    <aside>
+      <span id="state">Loading VRM…</span>
+      <strong><span id="fps">0.0</span> FPS</strong>
+      <small>Mock AvatarFrame</small>
+    </aside>
+    <script type="module" src="./render-debug.mjs"></script>
+  </body>
+</html>

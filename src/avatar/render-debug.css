@@ -1,0 +1,22 @@
+:root { color-scheme: dark; font-family: Inter, system-ui, sans-serif; background: transparent; }
+* { box-sizing: border-box; }
+html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; background: transparent; }
+#avatar { display: block; width: 100%; height: 100%; background: transparent; }
+aside {
+  position: fixed;
+  top: 18px;
+  left: 18px;
+  display: grid;
+  gap: 3px;
+  min-width: 150px;
+  padding: 12px 14px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 12px;
+  background: rgba(8, 12, 20, 0.72);
+  color: #f8fafc;
+  backdrop-filter: blur(10px);
+}
+aside span, aside small { color: #94a3b8; font-size: 12px; }
+aside strong { font-size: 20px; font-variant-numeric: tabular-nums; }
+#state[data-ready="true"] { color: #6ee7b7; }
+#state[data-error="true"] { color: #fda4af; }
