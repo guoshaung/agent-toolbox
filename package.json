@@ -110,8 +110,7 @@
     ],
     "nsis": {
       "oneClick": false,
-      "allowToChangeInstallationDirectory": true,
-      "artifactName": "Agent-Toolbox-${version}-Setup-${arch}.${ext}"
+      "allowToChangeInstallationDirectory": true
     },
     "portable": {
       "artifactName": "Agent-Toolbox-${version}-Portable-${arch}.${ext}"
