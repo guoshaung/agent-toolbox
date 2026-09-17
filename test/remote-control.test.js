@@ -32,6 +32,10 @@ test('手机控制服务要求一次性令牌，并执行受控动作', async ()
     const page = await request(state.port, `/?token=${encodeURIComponent(state.token)}`);
     assert.equal(page.status, 200);
     assert.match(page.body, /Test Toolbox/);
+    assert.match(page.body, /AI 办公室/);
+    assert.match(page.body, /agent\.office/);
+    assert.match(page.body, /AgentToolboxVoice/);
+    assert.match(page.body, /电脑端确认/);
     assert.ok(state.urls.some((url) => url.includes('persisted-test-token')));
     const result = await request(state.port, `/api/command?token=${encodeURIComponent(state.token)}`, {
       method: 'POST',

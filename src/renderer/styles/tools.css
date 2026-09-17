@@ -113,6 +113,48 @@
   grid-template-columns: repeat(12, minmax(0, 1fr));
   align-content: start;
 }
+.focus-office { grid-column: 1 / -1; padding: 0; overflow: hidden; border-color: color-mix(in srgb, var(--accent) 22%, var(--line-soft)); }
+.focus-office__head { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; padding: 17px 19px 14px; border-bottom: 1px solid var(--line-soft); }
+.focus-office__head h2 { margin: 0; font-size: 19px; letter-spacing: 0; }
+.focus-office__head p { margin: 5px 0 0; font-size: 11.5px; }
+.focus-office__actions { display: flex; align-items: center; gap: 10px; }
+.focus-office__count { color: var(--text-faint); font-size: 11px; white-space: nowrap; }
+.focus-office__scene { position: relative; display: grid; grid-template-columns: minmax(0, 1fr) auto; min-height: 278px; background: linear-gradient(180deg, rgba(90,120,130,.09) 0 38%, transparent 38%), repeating-linear-gradient(90deg, rgba(255,255,255,.018) 0 1px, transparent 1px 56px), var(--bg-sunken); }
+.focus-office__floor { min-width: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(min(150px, 100%), 1fr)); align-items: end; gap: 2px; padding: 22px 16px 17px; }
+.focus-office__desk { --agent-accent: #6e88a8; position: relative; min-width: 0; height: 218px; padding-top: 22px; border: 1px solid transparent; border-radius: 6px; transition: border-color .18s, background .18s; }
+.focus-office__desk.is-selected { border-color: color-mix(in srgb, var(--agent-accent) 65%, var(--line)); background: color-mix(in srgb, var(--agent-accent) 8%, transparent); }
+.focus-office__lamp { position: absolute; right: 17px; top: 20px; width: 28px; height: 9px; border-radius: 50% 50% 3px 3px; background: #3b4650; transform: rotate(-18deg); }
+.focus-office__lamp::before { content: ''; position: absolute; right: 4px; top: 7px; width: 3px; height: 42px; background: #3b4650; transform: rotate(18deg); transform-origin: top; }
+.focus-office__desk.is-installed .focus-office__lamp { background: var(--agent-accent); box-shadow: 0 5px 18px color-mix(in srgb, var(--agent-accent) 58%, transparent); }
+.focus-office__worker { position: absolute; left: 18px; bottom: 59px; width: 55px; height: 105px; }
+.focus-office__avatar { position: absolute; left: 10px; top: 0; z-index: 2; width: 38px; height: 38px; display: grid; place-items: center; border: 2px solid color-mix(in srgb, var(--agent-accent) 70%, #fff); border-radius: 50%; background: color-mix(in srgb, var(--agent-accent) 30%, #182027); color: #fff; font-size: 17px; box-shadow: 0 5px 16px rgba(0,0,0,.35); }
+.focus-office__torso { position: absolute; left: 5px; top: 32px; width: 47px; height: 61px; border-radius: 19px 19px 8px 8px; background: color-mix(in srgb, var(--agent-accent) 36%, #202a31); }
+.focus-office__torso::before, .focus-office__torso::after { content: ''; position: absolute; bottom: -22px; width: 8px; height: 29px; border-radius: 5px; background: color-mix(in srgb, var(--agent-accent) 26%, #303940); }
+.focus-office__torso::before { left: 9px; }.focus-office__torso::after { right: 9px; }
+.focus-office__computer { position: absolute; left: 65px; right: 12px; bottom: 73px; height: 83px; padding: 6px; border: 0; background: transparent; color: inherit; cursor: pointer; }
+.focus-office__computer:disabled { cursor: default; }
+.focus-office__screen { height: 57px; display: grid; place-items: center; overflow: hidden; padding: 7px; border: 5px solid #3b4650; border-radius: 5px; background: #10171b; color: #73818a; font: 600 9px/1.35 var(--mono); text-align: center; }
+.focus-office__desk.has-session .focus-office__screen { border-color: color-mix(in srgb, var(--agent-accent) 55%, #35414a); color: #e8f7f4; background: color-mix(in srgb, var(--agent-accent) 11%, #0e161a); box-shadow: inset 0 0 18px color-mix(in srgb, var(--agent-accent) 12%, transparent), 0 0 15px color-mix(in srgb, var(--agent-accent) 20%, transparent); }
+.focus-office__keyboard { width: 72%; height: 8px; display: block; margin: 3px auto 0; border-radius: 2px 2px 5px 5px; background: #46515a; transform: perspective(16px) rotateX(15deg); }
+.focus-office__desk::after { content: ''; position: absolute; left: 9px; right: 9px; bottom: 54px; height: 9px; border-radius: 2px; background: #576067; box-shadow: 9px 10px 0 -3px #3b4247, calc(100% - 9px) 10px 0 -3px #3b4247; }
+.focus-office__desk-info { position: absolute; left: 10px; right: 10px; bottom: 4px; display: flex; align-items: baseline; justify-content: space-between; gap: 7px; }
+.focus-office__desk-info strong { overflow: hidden; color: var(--text); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+.focus-office__desk-info span { color: var(--text-faint); font-size: 9px; white-space: nowrap; }
+.focus-office__detail { position: relative; width: min(390px, 38vw); max-height: 390px; overflow-y: auto; padding: 17px; border-left: 1px solid var(--line); background: color-mix(in srgb, var(--bg-raised) 96%, transparent); }
+.focus-office__detail[hidden] { display: none; }
+.focus-office__close { position: absolute; right: 10px; top: 9px; width: 28px; height: 28px; padding: 0; border: 0; border-radius: 50%; background: transparent; color: var(--text-faint); font-size: 20px; cursor: pointer; }
+.focus-office__detail-head { display: flex; align-items: center; gap: 9px; padding-right: 26px; }
+.focus-office__detail-head > div { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.focus-office__mini-avatar { --agent-accent: #6e88a8; width: 34px; height: 34px; flex: 0 0 34px; display: grid; place-items: center; border-radius: 50%; background: color-mix(in srgb, var(--agent-accent) 35%, #202a31); color: #fff; }
+.focus-office__detail h3 { margin: 15px 0 7px; font-size: 15px; line-height: 1.4; }
+.focus-office__cwd { overflow: hidden; margin-bottom: 11px; color: var(--text-faint); font: 10px/1.45 var(--mono); text-overflow: ellipsis; white-space: nowrap; }
+.focus-office__messages { display: flex; flex-direction: column; gap: 7px; margin: 10px 0 13px; }
+.focus-office__message { padding: 8px 9px; border: 1px solid var(--line-soft); border-radius: 6px; background: var(--bg-sunken); }
+.focus-office__message span { color: var(--text-faint); font-size: 9px; text-transform: uppercase; }
+.focus-office__message p { margin: 3px 0 0; color: var(--text-dim); font-size: 11px; line-height: 1.5; word-break: break-word; }
+.focus-office__message--user { border-left-color: var(--accent); }
+.focus-office__hint { font-size: 10px; }
+.focus-office__detail-loading { display: grid; place-items: center; min-height: 180px; color: var(--text-faint); font-size: 12px; }
 .focus__timer { grid-column: span 8; text-align: center; padding: 30px 18px 26px; }
 .focus__time { font-size: 74px; font-weight: 200; letter-spacing: 2px; font-variant-numeric: tabular-nums; line-height: 1; }
 .focus__phase { margin-top: 10px; font-size: 13px; }
@@ -293,8 +335,13 @@
   .focus__mission, .focus__activity, .focus__body > .focus__decide, .focus__body > .card:not(.focus__timer):not(.focus__mission):not(.focus__activity):not(.focus__decide) { grid-column: span 6; }
 }
 @media (max-width: 680px) {
-  .focus__body { grid-template-columns: 1fr; }
+  .focus__body { grid-template-columns: 1fr; padding: 10px; }
   .focus__timer, .focus__mission, .focus__activity, .focus__body > .focus__decide, .focus__body > .card:not(.focus__timer):not(.focus__mission):not(.focus__activity):not(.focus__decide) { grid-column: 1; }
+  .focus-office__head { align-items: stretch; flex-direction: column; gap: 10px; }
+  .focus-office__actions { justify-content: space-between; }
+  .focus-office__scene { grid-template-columns: 1fr; }
+  .focus-office__floor { grid-template-columns: repeat(auto-fit, minmax(min(135px, 100%), 1fr)); }
+  .focus-office__detail { width: 100%; max-height: 430px; border-top: 1px solid var(--line); border-left: 0; }
   .focus__time { font-size: 58px; }
   .battle__layout { grid-template-columns: 1fr; overflow-y: auto; }
   .battle__canvas { max-height: none; }
