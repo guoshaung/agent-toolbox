@@ -22,6 +22,7 @@ const { registerBiblioIpc } = require('./biblio');
 const { registerDocSearchIpc } = require('./doc-search');
 const { registerShelfIpc, stopAllShelfApps, start: startShelfTool, stop: stopShelfTool, status: shelfStatus, tail: shelfTail, resolveToolCommand } = require('./app-shelf');
 const { registerUpdaterIpc, startAutoCheck, stopAutoCheck } = require('./updater');
+const { createAvatarWindowController } = require('../avatar/window');
 const { registerCertTrust } = require('./certtrust');
 const translator = require('./translate');
 const ocr = require('./ocr');
@@ -1394,7 +1395,6 @@ function registerIpc() {
   registerUpdaterIpc(ipcMain);
   // 渲染层启动时把真实工具表推过来，手机端按这个生成按钮
   ipcMain.handle('remote:setTools', (_e, list) => { remoteControl?.setTools(list); return { ok: true }; });
-  startAutoCheck();
 
   // 代码记事本：读取 Understand-Anything 的知识图谱 + 按行号回读源码
   registerNotebookIpc(ipcMain, { dialog, getWindow: () => mainWindow, getUserDataPath: () => app.getPath('userData') });
@@ -2617,6 +2617,8 @@ app.whenReady().then(async () => {
   hookLiteratureDownloads();
   hookResearchDownloads();
   createWindow();
+  createAvatarWindowController({ getMainWindow: () => mainWindow });
+  startAutoCheck();
   // Voicebox 不自动安装/启动：避免开机即下载几百 MB；页面内手动启动，已有实例时自动复用 17493。
   dshService.start().catch((error) => console.warn('[dsh] background start failed:', error.message));
   createPetWindow();

@@ -12,26 +12,48 @@
 
 ## 跑起来
 
+普通用户：到 [GitHub Releases](https://github.com/guoshaung/agent-toolbox/releases/latest) 下载 Windows x64 的 `Agent-Toolbox-版本号-win-x64.exe`，双击并按向导完成首次安装。之后应用启动约 8 秒检查更新，运行期间每 6 小时再检查；发现新版本会先询问是否下载，不会自动下载。下载完成后可选择“现在重启”安装，也可继续使用，等下次正常退出时自动安装。断网或 GitHub 访问失败只记录日志，不弹错误框。
+
+开发者：克隆仓库后从源码启动；开发模式不检查更新。
+
 ```bash
-npm install
+git clone https://github.com/guoshaung/agent-toolbox.git
+cd agent-toolbox
+npm ci
 npm start
 ```
 
-生成 macOS 安装包（Apple Silicon）：
+本地生成 Windows x64 NSIS 安装包并校验更新产物：
 
 ```bash
-npm run dist
+npm run dist:win -- --publish never
+node scripts/verify-update-artifacts.js
 ```
 
-完成后安装文件会作为 GitHub Release 资产发布（本地构建中间产物在 `dist/`）。把这个 `.dmg` 发给对方即可；对方拖到 Applications 后首次打开可能需要在右键菜单中选择“打开”。每个人的登录态、配置、文献和 API Key 都保存在各自电脑上，不会随安装包带走。
+`dist/` 应包含安装包、同名 `.exe.blockmap` 和 `latest.yml`。校验脚本检查元数据版本、引用文件名、安装包大小与 SHA-512，以及 blockmap 是否存在；任一项失败都会返回非零退出码。GitHub 发布流程只构建 Windows x64，测试、构建或产物校验失败都会中止发布。正式 Release 必须同时提供这三个文件，客户端才能发现并下载更新。
 
-生成 Windows 便携版：
+macOS Apple Silicon 的本地构建仍可使用以下命令，CI 不再发布 macOS 产物；未签名的 macOS 应用不能完成自动安装更新。
 
 ```bash
-npm run dist:win
+npm run dist -- --publish never
 ```
 
-产物名会包含当前版本号，Windows 用户双击即可运行，不需要安装。Windows 版本不包含 macOS 专用的跨应用窗口吸附能力，其它工具照常可用。
+每个人的登录态、配置、文献和 API Key 都保存在各自电脑上，不会随安装包带走。Windows 版本不包含 macOS 专用的跨应用窗口吸附能力，其它工具照常可用。
+
+### 本地验证自动更新
+
+请在独立 Windows 测试账户或虚拟机中验证，避免覆盖正在使用的安装和配置。当前线上版本是 `0.6.1` 时，可以只把测试安装包版本设为 `0.6.0`，不修改仓库版本或创建 tag：
+
+```bash
+npm run dist:win -- --publish never --config.extraMetadata.version=0.6.0 --config.directories.output=dist-update-test
+node scripts/verify-update-artifacts.js dist-update-test 0.6.0
+```
+
+1. 安装 `dist-update-test/Agent-Toolbox-0.6.0-win-x64.exe`。启动已安装的应用，等待约 8 秒，应出现 `0.6.1` 的下载确认；先拒绝一次，确认没有下载或安装。
+2. 退出并重新启动，确认下载后应出现重启安装提示。选择“现在重启”，等待安装和应用重新启动，再核对版本已变成 `0.6.1`。这一步会用线上旧版替换测试版，因此后续失败场景应重新安装本分支生成的 `0.6.0` 测试包。
+3. 验证网络失败时，先退出所有测试应用实例，再给测试应用使用一个不可达的 HTTP 代理，例如在 PowerShell 中运行 `& '测试安装目录\Agent 工具箱.exe' --proxy-server=http://127.0.0.1:9`。这只阻断该进程经代理发出的网络请求，不需要关闭系统网卡。等待启动检查结束，确认应用仍可操作、没有更新错误框，并检查 `[updater]` 日志中的失败记录。退出后去掉代理参数再启动，确认仍能正常检查更新。
+
+仅看到 `latest.yml` 或下载完成不能证明重启安装成功，必须检查重新启动后的应用版本。测试过程中所有打包命令使用 `--publish never`，不上传 Release。线上版本变化后，测试版本必须低于最新正式版本，并相应调整校验命令。
 
 第一次用请先点左上角「⚡ 快问」，在里面登录一次 DeepSeek。登录态会长期保留，
 「打字纠错」和「帮我决定」都复用这个登录态，**不消耗 API 额度，不花钱**。
@@ -143,7 +165,7 @@ DSH Web 会在工具箱启动时后台检测 `dsh web`：已有 `3080` 端口实
 - **科研与文档**：KaTeX 公式排版、PDF.js 文献预览、OpenAlex / Europe PMC 检索
 - **学习运行时**：Python、Bash、SQLite；uv 管理按领域隔离的 Python `.venv` 和依赖
 - **外部能力**：DeepSeek 网页桥接、OpenAI-compatible API、DashScope、飞书 CLI
-- **发布与历史版本**：electron-builder 构建 DMG / Windows portable，GitHub Releases 按版本追加，不覆盖历史资产
+- **发布与历史版本**：electron-builder 构建 Windows x64 NSIS 安装包，GitHub Releases 提供安装包与更新元数据；electron-updater 在用户确认后下载并安装更新
 
 ## 合伙人
 
@@ -213,3 +235,14 @@ src/
 ```
 
 需求与设计取舍见 [docs/SPEC.md](docs/SPEC.md)，加新工具见 [docs/ADD-A-TOOL.md](docs/ADD-A-TOOL.md)。
+
+## 用 OBS 录制虚拟形象
+
+1. 在工具箱主界面点击菱形的“虚拟形象”入口，按需选择摄像头、`.vrm` 文件和背景。模型路径仅保存在本机配置中，不会复制到仓库。
+2. 在 OBS 的“来源”区域点击 `+`，选择“窗口采集”，把窗口设为 `Avatar Output`。
+3. 需要透明背景时，在虚拟形象窗口选择“透明”，并在 OBS 的窗口采集属性中启用支持透明度的捕获方式。若当前系统或捕获方式不保留 Alpha，请改用纯色背景并添加“色度键”滤镜。
+4. 调整画布和窗口尺寸，点击左上角齿轮隐藏设置面板后开始录制。窗口可置顶，也可切换为无边框模式；这些选项会自动保存。
+
+要把 OBS 画面用于会议软件，在 OBS 中点击“启动虚拟摄像机”，然后到 Zoom、腾讯会议、飞书会议等软件的视频设置里选择 `OBS Virtual Camera`。
+
+摄像头被其他软件独占时，请先关闭占用它的软件，再回到虚拟形象窗口点击“授权并刷新摄像头”。OBS 虚拟摄像机只传视频，麦克风仍在会议软件中单独选择。

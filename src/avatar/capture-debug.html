@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Avatar Capture Debug</title>
+    <link rel="stylesheet" href="./capture-debug.css">
+    <script type="importmap">
+      { "imports": { "@mediapipe/tasks-vision": "../../node_modules/@mediapipe/tasks-vision/vision_bundle.mjs" } }
+    </script>
+  </head>
+  <body>
+    <main>
+      <header>
+        <div>
+          <p class="eyebrow">MEDIAPIPE FACE LANDMARKER</p>
+          <h1>Avatar Capture</h1>
+        </div>
+        <div id="status" class="status">正在启动摄像头…</div>
+      </header>
+      <section class="metrics" aria-label="capture metrics">
+        <div><span>帧率</span><strong id="fps">0.0</strong><small>FPS</small></div>
+        <div><span>Pitch</span><strong id="pitch">0.0°</strong></div>
+        <div><span>Yaw</span><strong id="yaw">0.0°</strong></div>
+        <div><span>Roll</span><strong id="roll">0.0°</strong></div>
+      </section>
+      <section class="panel">
+        <h2>Blendshapes</h2>
+        <div id="blendshapes" class="bars"></div>
+      </section>
+      <p class="hint">张嘴、微笑、眨眼或抬眉，观察数值条实时变化。</p>
+    </main>
+    <script type="module" src="./capture-debug.mjs"></script>
+  </body>
+</html>
