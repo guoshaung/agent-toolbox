@@ -563,7 +563,47 @@ function createNotebookTool({ id, title, icon, hint, boundMode }) {
       return h('button', { class: 'btn btn--sm nb__md-tool', title, onclick: action }, label);
     }
 
+    // ---------- 笔记的三档视图 ----------
+    // 源码栏和所见即所得画布原来永远同时占着屏幕，各分一半，两边都不够写。
+    // 大多数时候只需要其中一个，所以给它三档：正文 / 源码 / 分栏。
+    const MD_VIEWS = [
+      ['wysiwyg', '正文', '只看所见即所得的正文，写东西用这个'],
+      ['source', '源码', '只看 Markdown 源码，贴代码或改格式用这个'],
+      ['split', '分栏', '上源码下正文，两边对照'],
+    ];
+    let mdView = config.get(`${NS}.mdView`, 'wysiwyg');
+    if (!MD_VIEWS.some(([id]) => id === mdView)) mdView = 'wysiwyg';
+
+    const mdViewButtons = MD_VIEWS.map(([id, label, title]) => h('button', {
+      class: 'btn btn--sm nb__md-view', title,
+      onclick: () => setMdView(id),
+      dataset: { view: id },
+    }, label));
+
+    function setMdView(next) {
+      mdView = MD_VIEWS.some(([id]) => id === next) ? next : 'wysiwyg';
+      config.set(`${NS}.mdView`, mdView);
+      syncMdView();
+    }
+
+    function syncMdView() {
+      const markdown = editorMode === 'markdown';
+      for (const button of mdViewButtons) {
+        button.classList.toggle('btn--primary', button.dataset.view === mdView);
+      }
+      if (!markdown) return;
+      markdownEditor.hidden = mdView === 'wysiwyg';
+      markdownCanvas.hidden = mdView === 'source';
+      mdSplit.hidden = mdView !== 'split';
+      // 单栏时不要留着上一档拖出来的固定高度，否则只剩一条缝
+      markdownEditor.style.flex = mdView === 'split' ? '' : '1 1 auto';
+      markdownEditor.classList.toggle('is-collapsed', false);
+      if (mdView === 'split') applyMdSplit();
+    }
+
     const markdownToolbar = h('div', { class: 'nb__markdown-toolbar' },
+      ...mdViewButtons,
+      h('span', { class: 'subbar__sep' }),
       markdownToolbarButton('H1', '一级标题（⌘1）', () => markdownCommand('formatBlock', 'h1')),
       markdownToolbarButton('H2', '二级标题（⌘2）', () => markdownCommand('formatBlock', 'h2')),
       markdownToolbarButton('H3', '三级标题（⌘3）', () => markdownCommand('formatBlock', 'h3')),
@@ -608,7 +648,7 @@ function createNotebookTool({ id, title, icon, hint, boundMode }) {
 
     // 窗口大小变了要重新夹一次，否则拉窄后画布可能被源码栏挤没。
     const mdResizeObserver = new ResizeObserver(() => {
-      if (editorMode === 'markdown') applyMdSplit();
+      if (editorMode === 'markdown' && mdView === 'split') applyMdSplit();
     });
 
     const mdSplit = h('div', {
@@ -934,13 +974,16 @@ function createNotebookTool({ id, title, icon, hint, boundMode }) {
       detailEl.hidden = markdown;
       if (markdown) tasksPanel.hidden = true;
       mainEl.classList.toggle('nb__main--markdown', markdown);
+      // 具体哪一栏露出来由 mdView 决定（正文 / 源码 / 分栏），这里只管整体开关
       markdownEditor.hidden = !markdown;
+      markdownCanvas.hidden = !markdown;
       mdSplit.hidden = !markdown;
       completionPanel.hidden = markdown || !editing;
       // 关键：以前这里不调 setMode()，代码模式的 editor / codeView 就留在 markdown 模式里，
       // 于是上面多出一栏「用代码高亮渲染 markdown」的残留面板，看着满是毛病。
       setMode();
-      if (markdown) requestAnimationFrame(applyMdSplit);
+      syncMdView();
+      if (markdown && mdView === 'split') requestAnimationFrame(applyMdSplit);
     }
 
     // ---------- 任务模式：建目标 → 拆步骤 → 做完一步 AI 核验打钩 ----------

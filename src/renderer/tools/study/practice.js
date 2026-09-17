@@ -9,6 +9,8 @@ import { attachEditorKeys } from './editor-keys.js';
 import { highlight, LANG_BY_TRACK } from './highlight.js';
 import { EXTRA_TRACKS } from './data/practice-extra.js';
 import { PRACTICE_PROJECTS } from './data/projects.js';
+import { nextGhost } from './ghost.js';
+import { analyzeBlueprint } from './blueprint.js';
 import {
   buildErrorDiagnosisPrompt,
   diagnoseRunError,
@@ -90,6 +92,7 @@ export function createPracticePanel(ctx) {
   let nextCellId = 1;
   let activeCell = null;
   let cells = [];
+  let ghostEnabled = config.get('practice.ghost', true);
 
   const trackSelect = h('select', { class: 'field practice__track-select' }, ...PRACTICE_TRACKS.map((item) => h('option', { value: item.id }, `${item.icon} ${item.name}`)));
   const levelSelect = h('select', { class: 'field practice__sample-select' });
@@ -106,6 +109,40 @@ export function createPracticePanel(ctx) {
   const notebookList = h('div', { class: 'practice__notebook-list' });
   const setupBtn = h('button', { class: 'btn practice__setup', onclick: setupEnvironment }, '准备 uv 环境');
   const runAllBtn = h('button', { class: 'btn btn--sm btn--primary', onclick: runAllCells }, '▶ 全部运行');
+  const ghostBtn = h('button', {
+    class: 'btn btn--sm',
+    title: '照着标准答案给出虚化的下一笔，Tab 接受。关掉就只剩普通补全。',
+    onclick: () => {
+      ghostEnabled = !ghostEnabled;
+      config.set('practice.ghost', ghostEnabled);
+      syncGhostBtn();
+      repaintAll();
+    },
+  }, '虚化提示');
+  // 把格子清空，照着答案自己敲一遍 —— 项目默认是把答案直接填好的，
+  // 那样只能看不能练，看着就没心思。
+  const practiceBtn = h('button', {
+    class: 'btn btn--sm',
+    title: '清空所有格子，照着虚化提示自己敲一遍（答案还在，随时「恢复示例」）',
+    onclick: () => {
+      for (const cell of cells) {
+        if (!cell.reference) cell.reference = cell.editor.value;
+        cell.editor.value = '';
+        cell.code = '';
+        updateMeta(cell);
+      }
+      ghostEnabled = true;
+      config.set('practice.ghost', true);
+      syncGhostBtn();
+      persistNotebook();
+      if (cells[0]) { selectCell(cells[0]); cells[0].editor.focus(); }
+    },
+  }, '跟着敲');
+
+  function syncGhostBtn() {
+    ghostBtn.classList.toggle('btn--primary', ghostEnabled);
+    ghostBtn.textContent = ghostEnabled ? '虚化提示 · 开' : '虚化提示 · 关';
+  }
 
   function currentSample() { return track.samples[sampleIndex] || track.samples[0]; }
 
@@ -168,6 +205,91 @@ export function createPracticePanel(ctx) {
       h('div', { class: 'practice__project-steps' },
         ...project.steps.map((step, index) => h('span', { class: 'practice__project-step' }, `${index + 1}. ${step}`)),
       ),
+      renderBlueprint(project),
+    );
+  }
+
+  /**
+   * 施工图：动手之前先知道要盖成什么样。
+   *
+   * 对象数、方法数、用哪些库、库里哪些函数，全是从这道题的标准答案里数出来的，
+   * 不是 AI 编的 —— 数字必须对得上，不然还不如不给。数不出来的那部分
+   *（为什么这么拆、该不该上设计模式）才交给 AI，在后台慢慢补。
+   */
+  function renderBlueprint(project) {
+    const lang = LANG_BY_TRACK[project.trackId] || 'python';
+    const answer = (project.cells || []).map((cell) => cell.code).join('\n\n');
+    const bp = analyzeBlueprint(answer, lang);
+    const rows = [];
+
+    if (bp.counts.objects) {
+      rows.push(h('div', { class: 'practice__bp-row' },
+        h('span', { class: 'practice__bp-key' }, `拆成 ${bp.counts.objects} 个对象`),
+        h('span', { class: 'practice__bp-val' },
+          bp.objects.map((o) => `${o.name}${o.base ? `(${o.base})` : ''} · ${o.methods.length} 个方法${o.methods.length ? `：${o.methods.join('、')}` : ''}`).join('　｜　')),
+      ));
+    } else {
+      rows.push(h('div', { class: 'practice__bp-row' },
+        h('span', { class: 'practice__bp-key' }, '不用建类'),
+        h('span', { class: 'practice__bp-val' },
+          bp.counts.functions ? `写成 ${bp.counts.functions} 个函数：${bp.functions.join('、')}` : '顺着写下来就行，这道题不需要拆对象'),
+      ));
+    }
+
+    rows.push(h('div', { class: 'practice__bp-row' },
+      h('span', { class: 'practice__bp-key' }, '设计模式'),
+      h('span', { class: 'practice__bp-val' },
+        bp.patterns.length
+          ? bp.patterns.map((p) => `${p.object}：${p.text}`).join('　｜　')
+          : '这道题用不上，别硬套'),
+    ));
+
+    if (bp.libraries.length) {
+      rows.push(h('div', { class: 'practice__bp-row' },
+        h('span', { class: 'practice__bp-key' }, `要引 ${bp.libraries.length} 个库`),
+        h('span', { class: 'practice__bp-val' },
+          bp.libraries.map((lib) => {
+            const fns = lib.functions.length ? `（${lib.functions.join('、')}）` : '';
+            return `${lib.name}${fns}${lib.note ? ` —— ${lib.note}` : ''}`;
+          }).join('　｜　')),
+      ));
+    }
+
+    rows.push(h('div', { class: 'practice__bp-row' },
+      h('span', { class: 'practice__bp-key' }, '前置知识'),
+      h('span', { class: 'practice__bp-val' }, project.skills.join(' · ')),
+    ));
+
+    const aiLine = h('span', { class: 'practice__bp-val faint' }, '点右边让 AI 说说为什么这么拆');
+    const aiBtn = h('button', {
+      class: 'btn btn--sm', title: '让 AI 解释这个拆法的理由，以及有没有更好的结构',
+      onclick: async () => {
+        aiBtn.disabled = true;
+        aiLine.textContent = 'AI 正在想…';
+        try {
+          const reply = await ai.ask([
+            { role: 'system', content: '你是编程教练。用中文，不超过 4 句，直说结论，不要客套。' },
+            { role: 'user', content: `题目：${project.title}\n目标：${project.objective}\n参考实现：\n${answer.slice(0, 2500)}\n\n为什么这样拆结构？如果要改得更好，改哪里？` },
+          ]);
+          aiLine.textContent = String(reply || '').trim() || 'AI 没给出内容';
+          aiLine.classList.remove('faint');
+        } catch (error) {
+          aiLine.textContent = `AI 失败：${error.message}`;
+        } finally {
+          aiBtn.disabled = false;
+        }
+      },
+    }, '✦ 为什么这么拆');
+    rows.push(h('div', { class: 'practice__bp-row' },
+      h('span', { class: 'practice__bp-key' }, '思路', aiBtn),
+      aiLine,
+    ));
+
+    return h('div', { class: 'practice__blueprint' },
+      h('div', { class: 'practice__bp-head' },
+        h('strong', {}, '施工图'),
+        h('span', { class: 'faint' }, `${bp.counts.lines} 行 · 数字都是从参考实现里数出来的`)),
+      ...rows,
     );
   }
 
@@ -622,12 +744,57 @@ export function createPracticePanel(ctx) {
     cell.editorWrap.style.height = `${Math.min(Math.max(needed, CELL_MIN_H), CELL_MAX_H)}px`;
   }
 
+  const escapeGhost = (text) => String(text)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+  /**
+   * 算出当前该虚化显示什么。
+   *
+   * 本地骨架（照着标准答案对齐）立刻给，AI 那份如果已经回来了、而且本地这边
+   * 没话说，就用 AI 的补上 —— 用户选的是「先出本地骨架，AI 在后台补细节」。
+   */
+  function computeGhost(cell) {
+    if (!cell || !cell.editor) return '';
+    const area = cell.editor;
+    if (area.selectionStart !== area.selectionEnd) return '';
+    const caret = area.selectionStart;
+    // 只在行尾提示：行中间插一段虚字会把人看晕
+    const nextChar = area.value[caret];
+    if (nextChar && nextChar !== '\n') return '';
+    const local = nextGhost(area.value.slice(0, caret), cell.reference).text;
+    if (local) return local;
+    return cell.aiGhost || '';
+  }
+
   /** 把当前代码渲染到高亮层。末尾补一个换行，否则最后一行空行会塌掉、和文本框错位。 */
   function paintHighlight(cell) {
     if (!cell || !cell.highlightLayer) return;
     const lang = LANG_BY_TRACK[track.id] || 'python';
-    cell.highlightLayer.innerHTML = `${highlight(cell.editor.value, lang)}\n`;
+    const value = cell.editor.value;
+    cell.ghost = ghostEnabled ? computeGhost(cell) : '';
+    if (!cell.ghost) {
+      cell.highlightLayer.innerHTML = `${highlight(value, lang)}\n`;
+    } else {
+      const caret = cell.editor.selectionStart;
+      cell.highlightLayer.innerHTML =
+        `${highlight(value.slice(0, caret), lang)}`
+        + `<span class="practice__ghost">${escapeGhost(cell.ghost)}</span>`
+        + `${highlight(value.slice(caret), lang)}\n`;
+    }
     syncHighlightScroll(cell);
+  }
+
+  /** Tab 接受虚化提示。返回 true 表示已经处理，别再走标识符补全。 */
+  function acceptGhost(cell) {
+    if (!ghostEnabled || !cell?.ghost) return false;
+    const area = cell.editor;
+    const caret = area.selectionStart;
+    const text = cell.ghost;
+    area.value = area.value.slice(0, caret) + text + area.value.slice(caret);
+    area.selectionStart = area.selectionEnd = caret + text.length;
+    cell.code = area.value;
+    updateMeta(cell);
+    return true;
   }
 
   function syncHighlightScroll(cell) {
@@ -645,6 +812,10 @@ export function createPracticePanel(ctx) {
       id: nextCellId++, code, runId: 0, executionCount: 0,
       title: metadata.title || '代码单元格',
       purpose: metadata.purpose || '',
+      // 标准答案留着：虚化提示照着它走，「恢复示例」也用它
+      reference: String(metadata.reference ?? metadata.code ?? code ?? ''),
+      ghost: '',
+      aiGhost: '',
     };
     cell.gutter = h('div', { class: 'practice__cell-gutter' }, 'In [ ]');
     cell.editor = h('textarea', { class: 'practice__editor', spellcheck: false, wrap: 'off' }, code);
@@ -723,6 +894,18 @@ export function createPracticePanel(ctx) {
         ),
       ),
     );
+    // Tab 先给虚化提示用 —— 必须是捕获阶段，attachEditorKeys 里也监听了 Tab，
+    // 谁先拿到谁说了算。有提示就接受提示，没提示才轮到标识符补全和缩进。
+    cell.editor.addEventListener('keydown', (event) => {
+      if (event.key !== 'Tab' || event.shiftKey || event.isComposing) return;
+      if (!acceptGhost(cell)) return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+    }, true);
+    // 光标挪了、选区变了，提示也得跟着重算 —— 「敲代码和 tab 不同步时随时更新」
+    for (const type of ['keyup', 'click', 'select']) {
+      cell.editor.addEventListener(type, () => { if (ghostEnabled) paintHighlight(cell); });
+    }
     // Tab 补全 / 自动缩进 / ⌘Enter 开新行 / 括号配对。
     // 轨道用函数取，因为轨道会切，补全词表得跟着换。
     attachEditorKeys(cell.editor, () => track.id);
@@ -1089,6 +1272,9 @@ export function createPracticePanel(ctx) {
       h('button', { class: 'btn btn--sm practice__icon-btn', title: '在末尾添加单元格', onclick: addCell }, '＋'),
       h('button', { class: 'btn btn--sm practice__icon-btn', title: '删除当前单元格', onclick: removeCell }, '−'),
       h('span', { class: 'practice__bar-sep' }),
+      practiceBtn,
+      ghostBtn,
+      h('span', { class: 'practice__bar-sep' }),
       trackSelect,
       levelSelect,
       projectSelect,
@@ -1102,6 +1288,7 @@ export function createPracticePanel(ctx) {
   );
 
   window.toolbox.practice.environment().then((value) => { environment = value || {}; updateMeta(); });
+  syncGhostBtn();
   renderSamples();
   return { el };
 }

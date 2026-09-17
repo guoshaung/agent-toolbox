@@ -3550,3 +3550,25 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 
 /* 右侧「符号详情」栏：没选中符号时不该占着四分之一屏幕讲说明书 */
 .nb__detail-pane:has(.empty) { width: 0 !important; min-width: 0; border-left: 0; overflow: hidden; }
+
+/* 笔记的三档视图：单栏时那一栏要吃满高度，别留着分栏时拖出来的固定高度 */
+.nb__md-view { min-width: 46px; }
+.nb__markdown-shell > .nb__md-source[hidden],
+.nb__markdown-shell > .nb__markdown-canvas[hidden] { display: none; }
+
+/* 虚化预测代码：看得见但明显不是你敲的，Tab 才会变成真的 */
+.practice__ghost {
+  color: color-mix(in srgb, var(--code-fg) 34%, transparent);
+  font-style: italic;
+  background: color-mix(in srgb, var(--accent) 7%, transparent);
+  border-radius: 3px;
+}
+
+/* 施工图：动手之前先看懂要盖成什么样 */
+.practice__blueprint { margin-top: 10px; padding: 10px 12px; border: 1px solid var(--line-soft); border-radius: 10px; background: color-mix(in srgb, var(--accent) 4%, transparent); }
+.practice__bp-head { display: flex; align-items: baseline; gap: 10px; margin-bottom: 8px; }
+.practice__bp-head .faint { font-size: 11px; }
+.practice__bp-row { display: grid; grid-template-columns: 132px minmax(0, 1fr); gap: 10px; padding: 5px 0; border-top: 1px solid var(--line-soft); font-size: 12px; line-height: 1.6; }
+.practice__bp-row:first-of-type { border-top: 0; }
+.practice__bp-key { display: flex; align-items: center; gap: 6px; color: var(--text-dim); font-weight: 600; }
+.practice__bp-val { min-width: 0; color: var(--text); overflow-wrap: anywhere; }
