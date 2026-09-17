@@ -552,8 +552,10 @@
 .practice__result-pane { border-left: 1px solid var(--line-soft); background: #0a0d12; }
 .practice__pane-head { min-height: 39px; display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 8px 12px; border-bottom: 1px solid var(--line-soft); color: var(--text-dim); font-size: 12px; }
 .practice__pane-head .faint { font-size: 10.5px; }
-.practice__editor-wrap { position: relative; flex: 1; min-height: 270px; display: flex; overflow: hidden; background: #0d1118; }
-.practice__editor { flex: 1; min-height: 270px; width: 100%; resize: none; padding: 16px 300px 16px 16px; border: 0; border-radius: 0; outline: none; color: #d6e1ee; background: transparent; font: 12.5px/1.75 var(--mono); tab-size: 4; white-space: pre; overflow: auto; }
+/* 高亮层和 textarea 是叠在一起的两层，字体/字号/行高/缩进必须逐像素一致，
+   差一点点，写到第十行就能看出高亮和字分家了。所以在这里定一次，两边都引用。 */
+.practice__editor-wrap { position: relative; flex: 1; min-height: 270px; display: flex; overflow: hidden; background: var(--code-bg); --pr-font: "SF Mono", "Cascadia Code", ui-monospace, var(--mono); --pr-size: 12.5px; --pr-line: 1.75; }
+.practice__editor { flex: 1; min-height: 270px; width: 100%; resize: none; padding: 16px 300px 16px 16px; border: 0; border-radius: 0; outline: none; color: var(--code-fg); background: transparent; font: var(--pr-size)/var(--pr-line) var(--pr-font); tab-size: 4; white-space: pre; overflow: auto; }
 .practice__editor:focus { box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 55%, transparent); }
 .practice__annotation { position: absolute; z-index: 2; right: 10px; width: 270px; max-height: calc(100% - 16px); overflow-y: auto; padding: 11px 12px; border: 1px solid color-mix(in srgb, var(--accent) 42%, var(--line)); border-radius: 10px; color: var(--text-dim); background: color-mix(in srgb, var(--panel) 96%, transparent); box-shadow: 0 14px 32px rgba(0,0,0,.36), inset 0 1px rgba(255,255,255,.035); backdrop-filter: blur(12px); animation: practice-note-in .2s cubic-bezier(.2,.8,.2,1); }
 .practice__annotation::before { content: ''; position: absolute; left: -7px; top: 20px; width: 12px; height: 12px; border-left: 1px solid color-mix(in srgb, var(--accent) 42%, var(--line)); border-bottom: 1px solid color-mix(in srgb, var(--accent) 42%, var(--line)); background: var(--panel); transform: rotate(45deg); }
@@ -577,7 +579,7 @@
 .practice__result-status.is-running { color: var(--warn); }
 .practice__result-status.is-good { color: var(--good); }
 .practice__result-status.is-bad { color: var(--bad); }
-.practice__output { flex: 1; min-height: 270px; margin: 0; padding: 16px; color: #c7d2df; background: transparent; font: 12.5px/1.75 var(--mono); white-space: pre-wrap; word-break: break-word; overflow: auto; }
+.practice__output { flex: 1; min-height: 270px; margin: 0; padding: 16px; color: var(--code-fg-dim); background: transparent; font: 12.5px/1.75 var(--mono); white-space: pre-wrap; word-break: break-word; overflow: auto; }
 .practice__result-note { padding: 9px 12px; border-top: 1px solid var(--line-soft); color: var(--text-faint); font-size: 10.5px; line-height: 1.55; }
 .practice__setup { flex: 0 0 auto; color: var(--accent); }
 /* 让 .practice 当唯一的滚动容器：这里再套一层 overflow 会变成两根滚动条，
@@ -1827,7 +1829,9 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .nb__file-drop-target .nb__body { box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--accent) 70%, transparent); }
 .nb__file-drop-target .nb__main::before { content: '松开以导入学习文件'; position: absolute; inset: 14px; z-index: 20; display: grid; place-items: center; border: 2px dashed var(--accent); border-radius: 12px; color: var(--accent); background: color-mix(in srgb, var(--panel) 86%, transparent); font-weight: 700; pointer-events: none; }
 .nb__side { width: 210px; flex: 0 0 auto; min-width: 28px; border-right: 1px solid var(--line-soft); background: var(--bg-sunken); overflow: hidden auto; padding: 10px 8px 24px; }
-.nb__main { position: relative; flex: 1; min-width: 0; display: flex; flex-direction: column; --nb-editor-bg: #10151e; --nb-editor-fg: #d9e3f2; --nb-editor-line: #273750; --nb-editor-font: JetBrains Mono, SFMono-Regular, Menlo, monospace; --nb-editor-size: 13px; }
+/* 行高和上内边距在这里定一次：行号槽、编辑器、阅读视图三边都引用它，
+   谁自己写死一个值，切换模式时文字就会跳、行号就会越往下越歪。 */
+.nb__main { position: relative; flex: 1; min-width: 0; display: flex; flex-direction: column; --nb-line-h: 1.7; --nb-pad-top: 12px; --nb-editor-bg: #1b1d22; --nb-editor-fg: #c9cfd8; --nb-editor-line: #2f333b; --nb-editor-font: JetBrains Mono, SFMono-Regular, Menlo, monospace; --nb-editor-size: 13px; }
 .nb__main--markdown { background: var(--bg-sunken); }
 .nb__find-panel { position: absolute; top: 8px; right: 14px; z-index: 12; width: min(560px, calc(100% - 28px)); padding: 8px; border: 1px solid var(--line); border-radius: 9px; background: color-mix(in srgb, var(--panel) 96%, transparent); box-shadow: 0 14px 32px rgba(0,0,0,.4); backdrop-filter: blur(12px); }
 .nb__find-panel[hidden] { display: none; }
@@ -1921,8 +1925,8 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .nb__step-add { flex: 1; min-width: 100px; }
 
 .nb__code {
-  flex: 1; min-height: 0; overflow: auto; padding: 12px 0 40px;
-  background: var(--nb-editor-bg); color: var(--nb-editor-fg); font-family: var(--nb-editor-font); font-size: var(--nb-editor-size); line-height: 1.8;
+  flex: 1; min-height: 0; overflow: auto; padding: var(--nb-pad-top) 0 40px;
+  background: var(--nb-editor-bg); color: var(--nb-editor-fg); font-family: var(--nb-editor-font); font-size: var(--nb-editor-size); line-height: var(--nb-line-h);
 }
 .nb__line { display: flex; white-space: pre; padding: 0 14px; }
 .nb__code.is-wrap .nb__line { white-space: pre-wrap; overflow-wrap: anywhere; }
@@ -2770,8 +2774,11 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .nb__side-tabs { border-bottom-color: rgba(112,145,205,.14); }
 .nb__side-tab { transition: background .16s ease, color .16s ease; }
 .nb__side-tab.is-active { background: rgba(91,140,255,.16); box-shadow: inset 0 -1px var(--accent); }
-.nb__main { background: radial-gradient(circle at 80% 0%, rgba(91,140,255,.07), transparent 34%), #0b111a; }
-.nb__code { background-color: #0b111a; background-image: linear-gradient(rgba(126,159,211,.035) 1px, transparent 1px); background-size: 100% 28px; scroll-behavior: smooth; overscroll-behavior: contain; }
+.nb__main { background: var(--code-bg); }
+/* 阅读视图和编辑视图必须同底色，否则按一下「编辑」整片背景会跳一下。
+   那层 28px 的横向纸纹也去掉：行高根本不是 28px，对不上就是一片噪点，
+   底色抬亮之后尤其明显 —— VSCode 的代码区是干净的。 */
+.nb__code { background-color: var(--nb-editor-bg, var(--code-bg)); scroll-behavior: smooth; overscroll-behavior: contain; }
 .nb__line { transition: background .14s ease; }
 .nb__line:hover { background: rgba(91,140,255,.07); }
 .nb__ln { color: #46556d; }
@@ -2825,9 +2832,9 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
   /* 文字位置只由 padding-left / top 决定；右内边距会被算进 <pre> 的 scrollWidth
      而 textarea 不算，长行时两层横向滚动范围差 300px 就会错开，所以这里必须是 0。 */
   padding: 16px 0 16px 16px;
-  color: #d6e1ee;
+  color: var(--code-fg);
   background: transparent;
-  font: 12.5px/1.75 var(--mono);
+  font: var(--pr-size)/var(--pr-line) var(--pr-font);
   tab-size: 4;
   white-space: pre;
   word-break: normal;
@@ -2836,7 +2843,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
   position: relative;
   z-index: 1;
   color: transparent;
-  caret-color: #d6e1ee;
+  caret-color: var(--code-fg);
   background: transparent;
 }
 /* 字是透明的，选中背景得单独给，否则看不出选了哪段 */
@@ -3118,13 +3125,17 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .practice__terminal-panel > summary, .practice__workspace-panel > summary { padding: 13px 16px; color: #c8c8cd; }
 .practice__notebook { gap: 13px; padding-top: 4px; }
 .practice__notebook-toolbar { padding: 8px 4px 3px; color: #c8c8cd; }
-.practice__cell { border: 1px solid rgba(255, 255, 255, .065); border-radius: 16px; background: #18181a; box-shadow: 0 10px 30px rgba(0, 0, 0, .18); }
+.practice__cell { border: 1px solid rgba(255, 255, 255, .065); border-radius: 16px; background: var(--code-bg); box-shadow: 0 10px 30px rgba(0, 0, 0, .18); }
 .practice__cell:hover { border-color: rgba(10, 132, 255, .32); box-shadow: 0 13px 34px rgba(0, 0, 0, .24); }
 .practice__cell--active { border-color: rgba(10, 132, 255, .56); }
 .practice__cell-gutter { color: #6f7078; background: rgba(255, 255, 255, .018); font: 10px/1.4 "SF Mono", ui-monospace, monospace; }
 .practice__pane-head { min-height: 43px; padding: 9px 14px; border-bottom-color: var(--practice-line); color: #c8c8cd; }
-.practice__editor { color: #e6e6e9; background: #111113; font-family: "SF Mono", "Cascadia Code", ui-monospace, monospace; font-size: 12px; line-height: 1.8; }
-.practice__output { color: #b8d7c0; background: #111113; font-family: "SF Mono", "Cascadia Code", ui-monospace, monospace; }
+/* 这里别再设 color/background：textarea 的字本该是透明的，真正显示的是它
+   下面那层语法高亮（.practice__highlight）。之前这条把 textarea 刷成不透明的
+   #111113 + #e6e6e9，等于拿一块板子把高亮层整个盖住 —— 高亮一直在算，
+   只是从来没被看见过。 */
+.practice__editor { font: var(--pr-size)/var(--pr-line) var(--pr-font); }
+.practice__output { color: var(--code-fg-dim); background: transparent; font-family: "SF Mono", "Cascadia Code", ui-monospace, monospace; }
 .practice__actions .btn, .practice__cell-controls .btn, .practice__terminal-actions .btn { border-color: rgba(255, 255, 255, .1); border-radius: 9px; color: #d1d1d6; background: rgba(255, 255, 255, .055); }
 .practice__actions .btn:hover, .practice__cell-controls .btn:hover, .practice__terminal-actions .btn:hover { border-color: rgba(10, 132, 255, .5); background: rgba(10, 132, 255, .13); }
 .practice__actions .btn--primary, .practice__cell-controls .btn--primary, .practice__terminal-actions .btn--primary { border-color: transparent; color: #fff; background: var(--practice-blue); }
@@ -3434,6 +3445,8 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
   text-align: right;
 }
 .practice__editor-wrap { min-height: 0; border-radius: 4px; }
+/* 高度由 autosizeCell 按内容算给 .practice__editor-wrap，这里不要再写死最小高度 */
+.practice__editor, .practice__highlight { min-height: 0; }
 .practice__editor, .practice__highlight { min-height: 88px; }
 .practice__latest-output .practice__output { min-height: 0; }
 
@@ -3481,10 +3494,6 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 
 /* 编辑区：去掉那圈发光蓝边。编辑器该像编辑器，不是输入框。 */
 .nb__editor-wrap {
-  /* 行号和正文必须共用同一套行高/起点，差 1px 都会越往下越歪。
-     所以这里定一次，下面两边都引用，谁也不许自己写死。 */
-  --nb-line-h: 1.7;
-  --nb-pad-top: 12px;
   flex: 1; min-height: 0;
   display: flex;
   background: var(--nb-editor-bg);
@@ -3516,7 +3525,9 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
   min-width: 44px;
   padding: var(--nb-pad-top) 10px 0 0;
   overflow: hidden;
-  color: var(--text-faint);
+  /* 行号跟着皮肤的 --text-faint 走会被染成强调色（绿皮肤下是绿的）。
+     VSCode 的行号是中性灰，不抢代码的注意力，这里写死一个中性值。 */
+  color: #6b7178;
   font: var(--nb-editor-size, 13px)/var(--nb-line-h) var(--nb-editor-font, ui-monospace, monospace);
   text-align: right;
   user-select: none;

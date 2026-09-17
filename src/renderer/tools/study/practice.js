@@ -209,6 +209,7 @@ export function createPracticePanel(ctx) {
   function updateMeta(cell = activeCell) {
     if (!cell) return;
     paintHighlight(cell);
+    autosizeCell(cell);
     cell.lineCount.textContent = `${cell.editor.value.split(/\r?\n/).length} 行`;
     description.textContent = track.description;
     setupBtn.hidden = !track.runtime.includes('python3');
@@ -597,6 +598,30 @@ export function createPracticePanel(ctx) {
     }
   }
 
+  const CELL_MIN_H = 88;
+  const CELL_MAX_H = 560;
+
+  /**
+   * 格子高度跟着代码长。
+   *
+   * 原来是固定高度、内容超了就在格子里面自己滚 —— 六行代码只露出两行半，
+   * 想看全得在一个小框里滚，这不是 notebook 的用法。超过 CELL_MAX_H 才滚。
+   *
+   * 量高度得先把盒子塌掉：textarea 在 flex 容器里是 flex:1，盒子比内容高的时候
+   * scrollHeight 等于 clientHeight，直接读会一直读到当前高度，永远不缩。
+   */
+  function autosizeCell(cell) {
+    if (!cell || !cell.editor || !cell.editorWrap) return;
+    const area = cell.editor;
+    const keep = { flex: area.style.flex, height: area.style.height };
+    area.style.flex = '0 0 auto';
+    area.style.height = '0px';
+    const needed = area.scrollHeight;
+    area.style.flex = keep.flex;
+    area.style.height = keep.height;
+    cell.editorWrap.style.height = `${Math.min(Math.max(needed, CELL_MIN_H), CELL_MAX_H)}px`;
+  }
+
   /** 把当前代码渲染到高亮层。末尾补一个换行，否则最后一行空行会塌掉、和文本框错位。 */
   function paintHighlight(cell) {
     if (!cell || !cell.highlightLayer) return;
@@ -612,7 +637,7 @@ export function createPracticePanel(ctx) {
   }
 
   function repaintAll() {
-    for (const cell of cells) paintHighlight(cell);
+    for (const cell of cells) { paintHighlight(cell); autosizeCell(cell); }
   }
 
   function createCell(code = '', metadata = {}) {
@@ -734,6 +759,8 @@ export function createPracticePanel(ctx) {
       syncHighlightScroll(cell);
     });
     paintHighlight(cell);
+    // 建格子时先量一次，否则刚恢复的多行代码还是按最小高度显示
+    requestAnimationFrame(() => autosizeCell(cell));
     return cell;
   }
 

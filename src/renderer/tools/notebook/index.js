@@ -9,9 +9,13 @@ import { htmlToMarkdown, markdownToHtml } from './markdown.js';
 import { SLASH_COMMANDS, filterCommands, outlineToTree } from './slash.js';
 
 const MAX_CHARS = 400_000;
+// 深色主题都压在 14:1 对比度、背景亮度不到 1%（约等于纯黑配亮白）。
+// 那是看一眼很精神、看一小时很难受的组合 —— VSCode Dark+ 是 11.25:1，
+// One Dark 才 6.6:1。这里统一往 11:1 靠，背景也从纯黑抬起来一点。
 const NOTEBOOK_THEMES = {
-  midnight: { label: '深海蓝', bg: '#10151e', fg: '#d9e3f2', line: '#273750' },
-  graphite: { label: '石墨灰', bg: '#17191d', fg: '#e4e7ec', line: '#363b45' },
+  ink: { label: '柔和墨黑', bg: '#1b1d22', fg: '#c9cfd8', line: '#2f333b' },
+  midnight: { label: '深海蓝', bg: '#161b25', fg: '#ccd6e6', line: '#2a3750' },
+  graphite: { label: '石墨灰', bg: '#1f2126', fg: '#d3d7de', line: '#363b45' },
   paper: { label: '纸张米色', bg: '#f6f0e4', fg: '#253044', line: '#d8cdb9' },
   sage: { label: '柔和鼠尾草', bg: '#edf3ee', fg: '#20352c', line: '#bfd1c4' },
   lavender: { label: '淡紫雾', bg: '#f1eff8', fg: '#302d49', line: '#cec8e1' },
@@ -49,7 +53,7 @@ export default {
     let hitIndex = 0;         // 在出现列表里的游标
     let editing = false;
     let editorMode = config.get('notebook.editorMode', 'code'); // code | markdown
-    let notebookTheme = config.get('notebook.theme', 'midnight');
+    let notebookTheme = config.get('notebook.theme', 'ink');
     let notebookFont = config.get('notebook.font', 'jetbrains');
     let notebookFontSize = Number(config.get('notebook.fontSize', 13)) || 13;
     let wordWrap = Boolean(config.get('notebook.wordWrap', false));
@@ -677,6 +681,43 @@ export default {
       }
     }
 
+    /**
+     * 拿到一个能写文件的目录，拿不到就自己造一个。
+     *
+     * 以前「新建文件」在没打开项目时直接弹个提示把人挡回去 —— 可学习用的小脚本
+     * 根本不配单独建项目，结果每次都卡在选目录。现在默认落到容器的「代码」里，
+     * 想换地方再去点文件夹按钮。
+     */
+    let workspaceRoot = null;
+
+    /** 落点给人看的说法：容器工作区就直说「容器」，别甩一串 Library/Application Support。 */
+    function whereLabel(root) {
+      if (!root) return '—';
+      if (workspaceRoot && root === workspaceRoot) return '容器 / 代码';
+      return root.split(/[\\/]/).filter(Boolean).slice(-2).join(' / ');
+    }
+
+    /** 侧栏被拖没了就拉回默认宽度 —— 刚挂上一个项目却看不见文件树，等于白挂。 */
+    function revealSide() {
+      if (paneWidths.side > PANE_COLLAPSED.side) return;
+      paneWidths.side = PANE_DEFAULTS.side;
+      applyPaneWidths();
+      persistPaneWidths();
+    }
+
+    async function ensureWorkspace() {
+      if (tree.root) return tree.root;
+      const result = await window.toolbox.container.workspace();
+      if (!result?.ok) { toast(result?.error || '容器工作区打不开', 'bad'); return null; }
+      workspaceRoot = result.path;
+      await tree.open(result.path);
+      await config.set('notebook.folderRoot', result.path);
+      sideTab = 'files';
+      syncSideTab();
+      revealSide();
+      return result.path;
+    }
+
     async function openFolder() {
       const picked = await window.toolbox.notebook.pickFolder();
       if (!picked) return;
@@ -684,6 +725,7 @@ export default {
       await config.set('notebook.folderRoot', picked.root);
       sideTab = 'files';
       syncSideTab();
+      revealSide();
       // 这个项目跑过 /understand 的话，顺手把图谱也挂上 —— 两件事本来就该一起用
       if (picked.hasGraph && (!graph || graph.root !== picked.root)) {
         await mountGraph(picked.root);
@@ -758,8 +800,10 @@ export default {
       reanalyze();
     }
 
-    function openNewFile() {
-      if (!tree.root) return toast('先打开一个项目文件夹，新文件会默认放在项目根目录', 'info');
+    async function openNewFile() {
+      const root = await ensureWorkspace();
+      if (!root) return;
+      newFileWhere.textContent = `落点：${whereLabel(root)}`;
       const originPath = current()?.origin?.relPath || '';
       newFileFolderInput.value = originPath.includes('/') ? originPath.split('/').slice(0, -1).join('/') : '';
       newFileNameInput.value = NOTEBOOK_TEMPLATES[newFileTemplateSelect.value]?.name || 'untitled.txt';
@@ -1727,13 +1771,28 @@ export default {
     const wrapBtn = h('button', { class: 'btn btn--sm', title: '切换代码自动换行', onclick: () => { wordWrap = !wordWrap; config.set('notebook.wordWrap', wordWrap); applyEditorAppearance(); } }, '换行');
     const newFileBtn = h('button', { class: 'btn btn--sm btn--primary', title: '在当前项目目录中新建文件', onclick: openNewFile }, '新建文件');
     const saveFileBtn = h('button', { class: 'btn btn--sm', title: '保存当前项目文件（⌘S）', onclick: saveCurrentFile }, '保存文件');
-    const newFileFolderInput = h('input', { class: 'field field--sm', placeholder: '项目内文件夹（可留空）' });
+    const useContainerBtn = h('button', {
+      class: 'btn btn--sm', title: '把工作区切回容器里的「代码」文件夹',
+      onclick: async () => {
+        const result = await window.toolbox.container.workspace();
+        if (!result?.ok) return toast(result?.error || '容器工作区打不开', 'bad');
+        workspaceRoot = result.path;
+        await tree.open(result.path);
+        await config.set('notebook.folderRoot', result.path);
+        sideTab = 'files';
+        syncSideTab();
+        revealSide();
+        toast('工作区已切回容器 / 代码', 'good');
+      },
+    }, '回容器');
+    const newFileFolderInput = h('input', { class: 'field field--sm', placeholder: '子文件夹（留空就放根目录）' });
+    const newFileWhere = h('p', { class: 'faint nb__hint nb__where' }, '');
     const newFileNameInput = h('input', { class: 'field field--sm', placeholder: '文件名，例如 main.py' });
     const newFileTemplateSelect = h('select', { class: 'field field--sm' }, Object.entries(NOTEBOOK_TEMPLATES).map(([id, template]) => h('option', { value: id }, template.label)));
     const newFileModal = h('div', { class: 'nb__new-file', hidden: true },
       h('div', { class: 'nb__new-file-card' },
         h('h3', {}, '在项目内新建文件'),
-        h('p', { class: 'faint nb__hint' }, '默认写入已打开的项目根目录；需要时填写项目内的相对文件夹。'),
+        newFileWhere,
         newFileFolderInput, newFileNameInput, newFileTemplateSelect,
         h('div', { class: 'nb__new-file-actions' },
           h('button', { class: 'btn btn--sm btn--primary', onclick: createProjectFile }, '创建并打开'),
@@ -1857,7 +1916,7 @@ export default {
       h('div', { class: 'nb__overflow-row' },
         h('span', { class: 'faint' }, '外观'), themeSelect, fontSelect, fontSizeSelect, wrapBtn),
       h('div', { class: 'nb__overflow-row' },
-        h('span', { class: 'faint' }, '文件'), newFileBtn, saveFileBtn, taskToggle),
+        h('span', { class: 'faint' }, '文件'), newFileBtn, saveFileBtn, useContainerBtn, taskToggle),
       h('div', { class: 'nb__overflow-row' },
         h('span', { class: 'faint' }, '项目'), graphLabel, graphButton,
         h('button', { class: 'btn btn--sm', title: '在当前项目中搜索（⌘/Ctrl+Shift+F）', onclick: openProjectSearch }, '项目搜索'),
@@ -1929,7 +1988,7 @@ export default {
     editor.addEventListener('keyup', syncStatus);
     editor.addEventListener('click', syncStatus);
     function applyEditorAppearance() {
-      const theme = NOTEBOOK_THEMES[notebookTheme] || NOTEBOOK_THEMES.midnight;
+      const theme = NOTEBOOK_THEMES[notebookTheme] || NOTEBOOK_THEMES.ink;
       const font = NOTEBOOK_FONTS[notebookFont] || NOTEBOOK_FONTS.jetbrains;
       mainEl.style.setProperty('--nb-editor-bg', theme.bg);
       mainEl.style.setProperty('--nb-editor-fg', theme.fg);
@@ -2066,8 +2125,11 @@ export default {
     const savedGraph = config.get('notebook.graphRoot');
     if (savedGraph) mountGraph(savedGraph).catch(() => {});
 
+    // 没打开过项目（或上次那个目录没了）就默认挂容器工作区，文件树从不空着。
+    window.toolbox.container.workspace().then((r) => { if (r?.ok) workspaceRoot = r.path; }).catch(() => {});
     const savedFolder = config.get('notebook.folderRoot');
-    if (savedFolder) tree.open(savedFolder).then(() => syncSideTab()).catch(() => {});
+    if (savedFolder) tree.open(savedFolder).then(() => syncSideTab()).catch(() => ensureWorkspace().catch(() => {}));
+    else ensureWorkspace().catch(() => {});
 
     async function openDroppedFiles(files) {
       const paths = [...files].map((file) => file.path || window.toolbox.files.getPathForFile(file)).filter(Boolean).slice(0, 30);

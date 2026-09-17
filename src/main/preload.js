@@ -269,6 +269,7 @@ contextBridge.exposeInMainWorld('toolbox', {
     readFile: (relPath) => ipcRenderer.invoke('container:readFile', relPath),
     writeFile: (payload) => ipcRenderer.invoke('container:writeFile', payload),
     filePath: (relPath) => ipcRenderer.invoke('container:filePath', relPath),
+    workspace: () => ipcRenderer.invoke('container:workspace'),
     toLiterature: (relPaths) => ipcRenderer.invoke('container:toLiterature', relPaths),
     open: () => ipcRenderer.invoke('container:open'),
     /** 把二进制内容写进容器的某个子目录（画图工具导出走这条） */

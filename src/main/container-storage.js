@@ -9,11 +9,25 @@ const MAX_ENTRIES = 1000;
 const MAX_FILE_BYTES = 200 * 1024 * 1024;
 const MAX_IMPORT_FILES = 1000;
 const FOLDERS = ['文档', '图片', '视频', '音频', '代码', '数据', '压缩包', '其他'];
+const WORKSPACE_FOLDER = '代码';
 
 function containerRoot(getUserDataPath) {
   const root = path.join(getUserDataPath(), 'container');
   fs.mkdirSync(root, { recursive: true });
   return root;
+}
+
+/**
+ * 记事本的默认工作区：容器里的「代码」。
+ *
+ * 为什么要这个：以前新建文件必须先手动挑一个项目文件夹，不挑就直接被拦住。
+ * 学习用的小脚本根本不值得专门建个项目，于是每次都卡在选目录这一步。
+ * 容器本来就是「东西放这儿就行」的地方，代码也归它管。
+ */
+function containerWorkspace(getUserDataPath) {
+  const dir = path.join(containerRoot(getUserDataPath), WORKSPACE_FOLDER);
+  fs.mkdirSync(dir, { recursive: true });
+  return dir;
 }
 
 /**
@@ -309,6 +323,10 @@ function registerContainerIpc(ipcMain, { shell, getUserDataPath }) {
   ipcMain.handle('container:readFile', (_event, relPath) => readContainerFile(getUserDataPath, relPath));
   ipcMain.handle('container:writeFile', (_event, payload = {}) => writeContainerFile(getUserDataPath, payload.relPath, payload.content));
   ipcMain.handle('container:filePath', (_event, relPath) => containerFilePath(getUserDataPath, relPath));
+  ipcMain.handle('container:workspace', () => {
+    try { return { ok: true, path: containerWorkspace(getUserDataPath), name: WORKSPACE_FOLDER }; }
+    catch (error) { return { ok: false, error: error.message }; }
+  });
 }
 
-module.exports = { categoryFor, containerFilePath, containerRoot, importIntoContainer, listContainer, makeFolder, moveFiles, organize, readContainerFile, registerContainerIpc, seedContainer, syncContainerLiterature, writeContainerFile };
+module.exports = { categoryFor, containerFilePath, containerRoot, containerWorkspace, importIntoContainer, listContainer, makeFolder, moveFiles, organize, readContainerFile, registerContainerIpc, seedContainer, syncContainerLiterature, writeContainerFile };

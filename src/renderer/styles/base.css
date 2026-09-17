@@ -1,15 +1,22 @@
 :root {
   /* 主色板：深蓝底 + 蓝紫粉三色渐变强调 */
-  --bg: #0c0e13;
-  --bg-raised: #141821;
-  --bg-sunken: #080a0d;
-  --panel: #1a1f29;
+  /* 背景从近乎纯黑（亮度 0.3%）抬起来，正文从纯白压下来：
+     原本 #0c0e13 配 #eef1f7 是 17:1，比 VSCode Dark+ 的 11.25:1 硬得多，
+     看一眼很精神、看一小时眼睛发胀。现在落在 12.8:1。 */
+  --bg: #13161d;
+  --bg-raised: #1c212b;
+  --bg-sunken: #0f1216;
+  --panel: #222833;
   --panel-glass: rgba(26, 31, 41, .78);
   --line: #2a3040;
   --line-soft: #1e232f;
   --line-glow: rgba(91, 140, 255, .22);
 
-  --text: #eef1f7;
+  --code-bg: #1b1d22;
+  --code-fg: #c9cfd8;
+  --code-fg-dim: #aeb6c0;
+
+  --text: #d3d9e4;
   --text-dim: #a4adbe;
   --text-faint: #6b7485;
 
@@ -553,17 +560,20 @@ webview { display: flex; flex: 1; min-height: 0; background: #fff; }
 
 /* ---------- 科研工作台视觉覆盖 ---------- */
 :root {
-  --bg: #111416;
-  --bg-raised: #191d20;
-  --bg-sunken: #0c0f11;
-  --panel: #23282c;
+  --bg: #14181a;
+  --bg-raised: #1c2124;
+  --bg-sunken: #101416;
+  --panel: #242a2d;
   --panel-glass: rgba(25,29,32,.97);
   --line: #343b40;
   --line-soft: #252b2f;
   --line-glow: rgba(124,155,255,.18);
-  --text: #e9eceb;
-  --text-dim: #adb6b5;
-  --text-faint: #77817f;
+  --code-bg: #1b1d22;
+  --code-fg: #c9cfd8;
+  --code-fg-dim: #aeb6c0;
+  --text: #d2d8d5;
+  --text-dim: #a2aca9;
+  --text-faint: #6f7a77;
   --accent: #7b9cff;
   --accent-soft: rgba(123,156,255,.13);
   --accent-glow: rgba(123,156,255,.22);
