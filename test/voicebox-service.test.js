@@ -1,5 +1,12 @@
 'use strict';
 const test = require('node:test');
+
+// 这几个用例假装自己在 darwin / linux 上，然后拿结果去和真实文件系统比。
+// 在 Windows 宿主上这是自相矛盾的：那台机器上不可能存在 /Applications/Voicebox.app
+// 这样的路径，path.join 也会吐反斜杠。生产代码里 platform 恒等于宿主平台，
+// 不存在这种错配，所以限定在 POSIX 宿主上跑。
+const POSIX_HOST = process.platform !== 'win32';
+const posixOnly = POSIX_HOST ? false : '跨平台路径模拟只在 POSIX 宿主上成立';
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
@@ -23,7 +30,7 @@ test('Voicebox 使用官方 GitHub 项目和官方下载入口', () => {
   assert.equal(VOICEBOX_DOCS_URL, 'https://docs.voicebox.sh/');
 });
 
-test('Voicebox 安装路径按平台解析，不混用工具箱容器目录', () => {
+test('Voicebox 安装路径按平台解析，不混用工具箱容器目录', { skip: posixOnly }, () => {
   const home = '/Users/example';
   assert.deepEqual(candidatePaths('darwin', home), [
     '/Applications/Voicebox.app',
@@ -55,7 +62,7 @@ test('Voicebox 未安装时返回明确状态且不会启动任何工具箱容�
   }
 });
 
-test('Voicebox 已安装时打开官方应用原路径，并保留官方图标', async () => {
+test('Voicebox 已安装时打开官方应用原路径，并保留官方图标', { skip: posixOnly }, async () => {
   const home = tempHome();
   const appPath = path.join(home, 'Applications', 'Voicebox.app');
   fs.mkdirSync(path.dirname(appPath), { recursive: true });

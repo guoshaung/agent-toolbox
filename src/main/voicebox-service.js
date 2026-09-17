@@ -22,14 +22,12 @@ function uniquePaths(paths, pathApi = path) {
 }
 
 function candidatePaths(platform = process.platform, home = os.homedir(), env = process.env) {
-  // 必须按「目标平台」选路径风格，不能用宿主的 path ——
-  // 在 Windows 上跑时 path 就是 win32 版，candidatePaths('darwin') 会吐出反斜杠。
-  const pathApi = platform === 'win32' ? path.win32 : path.posix;
+  const pathApi = platform === 'win32' ? path.win32 : path;
   if (platform === 'darwin') {
     return uniquePaths([
       '/Applications/Voicebox.app',
-      pathApi.join(home, 'Applications', 'Voicebox.app'),
-      pathApi.join(home, 'Downloads', 'Voicebox.app'),
+      path.join(home, 'Applications', 'Voicebox.app'),
+      path.join(home, 'Downloads', 'Voicebox.app'),
     ], pathApi);
   }
   if (platform === 'win32') {
