@@ -361,13 +361,19 @@ function localNotebookDirectory(getUserDataPath) {
   return path.join(getUserDataPath(), 'notebooks');
 }
 
-async function saveLocalNotebook(getUserDataPath, { snippets = [], currentId = null } = {}) {
+// 代码和笔记拆成两个工具后各存各的，否则后写的那个会把前一个整份覆盖掉。
+const LOCAL_STORES = { notebook: 'notebook.json', notes: 'notes.json' };
+function localStoreFile(getUserDataPath, store) {
+  return path.join(localNotebookDirectory(getUserDataPath), LOCAL_STORES[store] || LOCAL_STORES.notebook);
+}
+
+async function saveLocalNotebook(getUserDataPath, { snippets = [], currentId = null, store = 'notebook' } = {}) {
   const directory = localNotebookDirectory(getUserDataPath);
   const payload = JSON.stringify({ version: 1, currentId, snippets }, null, 2);
   if (Buffer.byteLength(payload, 'utf8') > LOCAL_NOTEBOOK_MAX) return { ok: false, error: '本地记事本内容超过 30MB，暂时没有保存。' };
   try {
     await fsp.mkdir(directory, { recursive: true });
-    const target = path.join(directory, 'notebook.json');
+    const target = localStoreFile(getUserDataPath, store);
     const temporary = `${target}.tmp-${process.pid}`;
     await fsp.writeFile(temporary, payload, 'utf8');
     await fsp.rename(temporary, target);
@@ -377,8 +383,8 @@ async function saveLocalNotebook(getUserDataPath, { snippets = [], currentId = n
   }
 }
 
-async function loadLocalNotebook(getUserDataPath) {
-  const target = path.join(localNotebookDirectory(getUserDataPath), 'notebook.json');
+async function loadLocalNotebook(getUserDataPath, store = 'notebook') {
+  const target = localStoreFile(getUserDataPath, store);
   try {
     const stat = await fsp.stat(target);
     if (stat.size > LOCAL_NOTEBOOK_MAX) return { ok: false, error: '本地记事本文件超过 30MB。' };
@@ -432,7 +438,7 @@ function registerNotebookIpc(ipcMain, { dialog, getWindow, getUserDataPath }) {
   ipcMain.handle('notebook:writeFile', (_e, payload) => writeFile(payload || {}));
   ipcMain.handle('notebook:searchProject', (_e, payload) => searchProject(payload || {}));
   ipcMain.handle('notebook:saveLocal', (_e, payload) => saveLocalNotebook(getUserDataPath, payload || {}));
-  ipcMain.handle('notebook:loadLocal', () => loadLocalNotebook(getUserDataPath));
+  ipcMain.handle('notebook:loadLocal', (_e, store) => loadLocalNotebook(getUserDataPath, store));
   ipcMain.handle('notebook:importFiles', (_e, payload) => importLocalFiles(getUserDataPath, payload));
   ipcMain.handle('notebook:folderInfo', (_e, root) => ({
     root, name: path.basename(root || ''), hasGraph: !!(root && graphPathIn(root)),

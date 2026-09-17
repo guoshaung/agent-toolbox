@@ -254,7 +254,7 @@ contextBridge.exposeInMainWorld('toolbox', {
     searchProject: (payload) => ipcRenderer.invoke('notebook:searchProject', payload),
     /** 把记事本内容镜像保存到工具箱 userData/notebooks */
     saveLocal: (payload) => ipcRenderer.invoke('notebook:saveLocal', payload),
-    loadLocal: () => ipcRenderer.invoke('notebook:loadLocal'),
+    loadLocal: (store) => ipcRenderer.invoke('notebook:loadLocal', store),
     /** 导入从 VSCode / Finder 拖入的学习文件，并复制到工具箱本地归档 */
     importFiles: (paths) => ipcRenderer.invoke('notebook:importFiles', paths),
   },

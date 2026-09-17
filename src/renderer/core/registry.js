@@ -3,7 +3,7 @@ import docs from '../tools/docs/index.js';
 import typing from '../tools/typing/index.js';
 import focus from '../tools/focus/index.js';
 import study from '../tools/study/index.js';
-import notebook from '../tools/notebook/index.js';
+import { codeTool as notebook, notesTool as notes } from '../tools/notebook/index.js';
 import pet from '../tools/pet/index.js';
 import history from '../tools/history/index.js';
 import video from '../tools/video/index.js';
@@ -30,4 +30,4 @@ import gesture from '../tools/gesture/index.js';
  * 加一个工具：写 tools/<id>/index.js，默认导出 { id, title, icon, create(root, ctx) }，
  * 然后在这个数组里加一行。详见 docs/ADD-A-TOOL.md。
  */
-export const TOOLS = [ask, docs, typing, focus, study, notebook, container, dsh, tavern, voicebox, digitalHuman, pet, history, video, research, coach, terms, dock, skills, remote, controls, appearance, voice, gesture, tasks, settings];
+export const TOOLS = [ask, docs, typing, focus, study, notebook, notes, container, dsh, tavern, voicebox, digitalHuman, pet, history, video, research, coach, terms, dock, skills, remote, controls, appearance, voice, gesture, tasks, settings];

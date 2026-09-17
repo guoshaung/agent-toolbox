@@ -165,7 +165,7 @@ export function createRail(store, { fill, toNotebook }) {
           if (!thread) return toast('还没有线索可收', 'info');
           toNotebook(thread.title, toMarkdown(thread));
         },
-      }, '收束到记事本')),
+      }, '收束到笔记')),
   );
 
   store.onChange(render);

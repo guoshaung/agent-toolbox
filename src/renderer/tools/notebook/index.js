@@ -36,35 +36,58 @@ const NOTEBOOK_TEMPLATES = {
 const escapeHtml = (text) => text
   .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
-export default {
-  id: 'notebook',
-  title: '记事本',
-  icon: 'search',
-  hint: '代码分析 + Markdown 记事本，支持标题、加粗、表格和实时预览',
+/**
+ * 老版本里「代码」和「笔记」挤在一个工具里，靠顶上一个 Markdown 按钮来回切，
+ * 两种片段还混在同一个列表中 —— 想找昨天写的笔记，得在一堆 .py 标签里翻。
+ * 现在拆成两个独立工具，各自只管自己那一种，标签栏里不再互相干扰。
+ *
+ * 一次性搬家：老的 notebook.snippets 里 kind === 'markdown' 的挪去 notes.snippets。
+ */
+function splitLegacySnippets(config) {
+  if (config.get('notebook.splitDone')) return;
+  const all = config.get('notebook.snippets') || [];
+  const notes = all.filter((s) => s.kind === 'markdown');
+  if (notes.length) {
+    const existing = config.get('notes.snippets') || [];
+    config.set('notes.snippets', [...notes, ...existing].slice(0, 60));
+    config.set('notebook.snippets', all.filter((s) => s.kind !== 'markdown'));
+  }
+  config.set('notebook.splitDone', true);
+}
+
+function createNotebookTool({ id, title, icon, hint, boundMode }) {
+ return {
+  id,
+  title,
+  icon,
+  hint,
 
   create(root, ctx) {
     const { config, ai } = ctx;
 
-    let snippets = config.get('notebook.snippets') || [];
-    let currentId = config.get('notebook.currentId') || null;
+    splitLegacySnippets(config);
+    const NS = boundMode === 'markdown' ? 'notes' : 'notebook';
+
+    let snippets = config.get(`${NS}.snippets`) || [];
+    let currentId = config.get(`${NS}.currentId`) || null;
     let analysis = null;
     let graph = null;
     let selected = null;      // 当前选中的符号名
     let hitIndex = 0;         // 在出现列表里的游标
     let editing = false;
-    let editorMode = config.get('notebook.editorMode', 'code'); // code | markdown
+    const editorMode = boundMode === 'markdown' ? 'markdown' : 'code';  // 由工具绑定，不再运行时切换
     let notebookTheme = config.get('notebook.theme', 'ink');
     let notebookFont = config.get('notebook.font', 'jetbrains');
     let notebookFontSize = Number(config.get('notebook.fontSize', 13)) || 13;
     let wordWrap = Boolean(config.get('notebook.wordWrap', false));
 
     const current = () => snippets.find((s) => s.id === currentId) || snippets[0] || null;
-    const persistLocalSoon = debounce(() => window.toolbox.notebook.saveLocal({ snippets, currentId }), 450);
+    const persistLocalSoon = debounce(() => window.toolbox.notebook.saveLocal({ snippets, currentId, store: NS }), 450);
 
     // ---------- 顶部栏 ----------
     const snippetSelect = h('select', { class: 'field field--sm nb__snippets', onchange: () => {
       currentId = snippetSelect.value;
-      config.set('notebook.currentId', currentId);
+      config.set(`${NS}.currentId`, currentId);
       selected = null;
       loadCurrent();
       syncFileActions();
@@ -314,7 +337,7 @@ export default {
       contenteditable: true,
       spellcheck: true,
       role: 'textbox',
-      'aria-label': 'Markdown 记事本',
+      'aria-label': 'Markdown 笔记',
       oninput: debounce(() => {
         const snippet = current();
         if (!snippet) return;
@@ -736,7 +759,7 @@ export default {
 
     // ---------- 片段管理 ----------
     function persist() {
-      config.set('notebook.snippets', snippets);
+      config.set(`${NS}.snippets`, snippets);
       persistLocalSoon();
     }
 
@@ -751,7 +774,7 @@ export default {
       };
       snippets = [snippet, ...snippets].slice(0, 60);
       currentId = snippet.id;
-      config.set('notebook.currentId', currentId);
+      config.set(`${NS}.currentId`, currentId);
       persist();
       selected = null;
       loadCurrent();
@@ -770,7 +793,7 @@ export default {
       if (currentId === snippet.id) {
         currentId = snippets[Math.min(index, snippets.length - 1)].id;
         selected = null;
-        config.set('notebook.currentId', currentId);
+        config.set(`${NS}.currentId`, currentId);
         loadCurrent();
       } else {
         persist();
@@ -845,7 +868,7 @@ export default {
         tab.append(
           h('button', { class: 'nb__tab-main', title: snippet.title, onclick: () => {
             currentId = snippet.id;
-            config.set('notebook.currentId', currentId);
+            config.set(`${NS}.currentId`, currentId);
             selected = null;
             loadCurrent();
             syncFileActions();
@@ -901,32 +924,8 @@ export default {
       },
     }, '编辑');
 
-    const noteModeToggle = h('button', {
-      class: 'btn btn--sm nb__mode-toggle',
-      title: '切换到 Markdown 记事本模式',
-      onclick: () => setEditorMode(editorMode === 'markdown' ? 'code' : 'markdown'),
-    }, 'Markdown');
-
-    function setEditorMode(next) {
-      editorMode = next === 'markdown' ? 'markdown' : 'code';
-      config.set('notebook.editorMode', editorMode);
-      const snippet = current();
-      if (snippet) {
-        snippet.kind = editorMode;
-        if (editorMode === 'markdown') markdownEditor.value = snippet.code || '';
-        else editor.value = snippet.code || '';
-        persist();
-      }
-      syncEditorMode();
-      if (editorMode === 'markdown') renderMarkdownPreview();
-      else reanalyze();
-    }
-
     function syncEditorMode() {
       const markdown = editorMode === 'markdown';
-      noteModeToggle.textContent = markdown ? '代码' : 'Markdown';
-      noteModeToggle.title = markdown ? '切换到代码分析模式' : '切换到 Markdown 记事本模式';
-      noteModeToggle.classList.toggle('btn--primary', markdown);
       markdownShell.hidden = !markdown;
       codeControls.hidden = markdown;
       sideEl.hidden = markdown;
@@ -1864,9 +1863,8 @@ export default {
 
     function openCommandPalette() {
       const commands = [
-        ['新建片段', '在记事本里打开一个新的独立标签', () => newSnippet()],
+        ['新建片段', `在${title}里打开一个新的独立标签`, () => newSnippet()],
         ['切换编辑模式', '在代码编辑和只读分析之间切换', () => editToggle.click()],
-        ['切换 Markdown', '打开或关闭 Markdown 所见即所得模式', () => noteModeToggle.click()],
         ['项目搜索', '在当前项目的代码和文档中搜索文本', () => openProjectSearch()],
         ['跳转到行', '输入行号定位代码', () => openGoToLine()],
         ['保存当前文件', '把当前项目文件写回磁盘', () => saveCurrentFile()],
@@ -2074,8 +2072,7 @@ export default {
 
     root.append(
       h('div', { class: 'bar bar--drag nb__bar' },
-        h('strong', {}, '代码记事本'),
-        noteModeToggle,
+        h('strong', {}, title),
         snippetSelect,
         h('button', { class: 'btn btn--icon', title: '打开项目文件夹', onclick: () => openFolder() }, '📂'),
         h('button', { class: 'btn btn--icon', title: '新片段', onclick: () => newSnippet() }, '＋'),
@@ -2103,12 +2100,12 @@ export default {
     window.addEventListener('resize', debounce(applyPaneWidths, 80));
 
     if (!snippets.length) {
-      window.toolbox.notebook.loadLocal().then((local) => {
+      window.toolbox.notebook.loadLocal(NS).then((local) => {
         if (snippets.length) return;
         if (local?.ok && local.snippets?.length) {
           snippets = local.snippets;
           currentId = local.currentId || snippets[0].id;
-          config.set('notebook.currentId', currentId);
+          config.set(`${NS}.currentId`, currentId);
           loadCurrent();
           syncFileActions();
           return;
@@ -2117,7 +2114,7 @@ export default {
       }).catch(() => newSnippet());
     } else {
       loadCurrent();
-      window.toolbox.notebook.saveLocal({ snippets, currentId });
+      window.toolbox.notebook.saveLocal({ snippets, currentId, store: NS });
     }
 
     syncSideTab();
@@ -2208,4 +2205,19 @@ export default {
 
     return { activate: () => setTimeout(() => (editing ? editor : symbolInput).focus(), 30) };
   },
-};
+ };
+}
+
+export const codeTool = createNotebookTool({
+  id: 'notebook', title: '代码', icon: 'search',
+  boundMode: 'code',
+  hint: '写代码、读代码：语法高亮、符号跳转、跨文件调用关系',
+});
+
+export const notesTool = createNotebookTool({
+  id: 'notes', title: '笔记', icon: 'pen',
+  boundMode: 'markdown',
+  hint: 'Markdown 笔记：标题、加粗、表格、实时预览',
+});
+
+export default codeTool;

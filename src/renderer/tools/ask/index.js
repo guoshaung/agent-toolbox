@@ -133,7 +133,8 @@ export default {
     const rail = createRail(store, {
       fill: fillInput,
       toNotebook: (title, markdown) => {
-        const snippets = config.get('notebook.snippets') || [];
+        // 收束出来的是 markdown，拆分之后归「笔记」那个工具管，别再塞进代码那一栏
+        const snippets = config.get('notes.snippets') || [];
         const snippet = {
           id: `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`,
           title: title.slice(0, 40),
@@ -141,9 +142,9 @@ export default {
           kind: 'markdown',
           createdAt: Date.now(),
         };
-        config.set('notebook.snippets', [snippet, ...snippets].slice(0, 60));
-        config.set('notebook.currentId', snippet.id);
-        toast('已收进记事本。想看成结构树就在「问过的路径」上选中，用 \\outline。', 'good');
+        config.set('notes.snippets', [snippet, ...snippets].slice(0, 60));
+        config.set('notes.currentId', snippet.id);
+        toast('已收进笔记。想看成结构树就在「问过的路径」上选中，用 \\outline。', 'good');
       },
     });
 

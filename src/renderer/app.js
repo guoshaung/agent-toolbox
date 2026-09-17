@@ -99,6 +99,12 @@ if (!pinnedIds || !pinnedIds.length) {
     if (pinnedIds.length >= MAX_PINNED) pinnedIds = [...pinnedIds.slice(0, MAX_PINNED - 1), 'voice'];
     else pinnedIds = [...pinnedIds, 'voice'];
   }
+  // 老的「记事本」拆成了「代码」和「笔记」。存量配置里只有 notebook，
+  // 不补一下的话「笔记」会一直躺在「更多」里 —— 拆了等于没拆。挨着放，好找。
+  if (pinnedIds.includes('notebook') && !pinnedIds.includes('notes')) {
+    const at = pinnedIds.indexOf('notebook') + 1;
+    pinnedIds = [...pinnedIds.slice(0, at), 'notes', ...pinnedIds.slice(at)].slice(0, MAX_PINNED);
+  }
 }
 
 rightPinnedIds = rightPinnedIds
