@@ -267,34 +267,70 @@ button, input, textarea, select { font-family: inherit; font-size: inherit; colo
 .bar--drag { -webkit-app-region: drag; }
 .bar--drag > * { -webkit-app-region: no-drag; }
 
+/* 按钮
+ *
+ * 之前的毛病，逐条：
+ * - 主按钮的渐变和光晕把 #5b8cff / #6d99ff / #a78bfa 写死了，换成绿色皮肤
+ *   之后满屏绿、就它一个发蓝，像贴错了。现在全部从 --accent 推出来。
+ * - hover 有 translateY(-1px)，一排按钮扫过去整排都在跳。去掉。
+ * - 三层叠加：渐变 + 内高光 + 投影。底色一暗全糊成一团。改成平的。
+ * - 默认字色是 --text-dim，按钮看着像禁用的。提到 --text。
+ * - .btn 7px / .btn--sm 5px / .btn--icon 固定 34px，混排时高度对不齐。
+ *   统一用 min-height 定三档：32 / 26 / 32。
+ */
 .btn {
   appearance: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 32px;
   border: 1px solid var(--line);
-  background: linear-gradient(180deg, rgba(255,255,255,.04), transparent), var(--panel);
-  color: var(--text-dim);
+  background: var(--bg-raised);
+  color: var(--text);
   border-radius: var(--radius-sm);
-  padding: 7px 13px;
+  padding: 0 12px;
+  font-size: 13px;
+  line-height: 1;
   cursor: pointer;
   white-space: nowrap;
-  transition: background .16s, color .16s, border-color .16s, transform .16s, box-shadow .16s;
-  box-shadow: var(--shadow-sm);
+  transition: background .14s ease, color .14s ease, border-color .14s ease;
+  box-shadow: none;
 }
-.btn:hover:not(:disabled) { background: linear-gradient(180deg, rgba(255,255,255,.07), transparent), #202634; color: var(--text); border-color: #353d4e; transform: translateY(-1px); }
-.btn:active:not(:disabled) { transform: translateY(0); }
-.btn:disabled { opacity: .42; cursor: default; }
+.btn:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--accent) 12%, var(--bg-raised));
+  border-color: color-mix(in srgb, var(--accent) 42%, var(--line));
+  color: var(--text);
+}
+.btn:active:not(:disabled) { background: color-mix(in srgb, var(--accent) 20%, var(--bg-raised)); }
+.btn:focus-visible { outline: 2px solid color-mix(in srgb, var(--accent) 65%, transparent); outline-offset: 1px; }
+.btn:disabled { opacity: .4; cursor: default; }
+
 .btn--primary {
-  background: linear-gradient(180deg, rgba(255,255,255,.12), rgba(255,255,255,.02)), linear-gradient(90deg, var(--accent), color-mix(in srgb, var(--accent) 70%, var(--accent-secondary)));
   border-color: transparent;
-  color: #fff;
-  text-shadow: 0 1px 2px rgba(0,0,0,.2);
-  box-shadow: 0 4px 14px rgba(91,140,255,.28);
+  background: var(--accent);
+  /* 强调色深浅不定：#5b8cff 配白字没问题，但荧光绿 #39ff9a 配白字根本看不清。
+     色号由 applyTheme 按亮度算好写进 --accent-ink（color-contrast() Chromium 不支持，实测 false）。 */
+  color: var(--accent-ink, #ffffff);
+  font-weight: 600;
 }
-.btn--primary:hover:not(:disabled) { background: linear-gradient(180deg, rgba(255,255,255,.18), rgba(255,255,255,.04)), linear-gradient(90deg, #6d99ff, #a78bfa); color: #fff; box-shadow: 0 6px 20px rgba(91,140,255,.38); }
-.btn--ghost { background: transparent; border-color: transparent; box-shadow: none; }
-.btn--ghost:hover:not(:disabled) { background: var(--panel); box-shadow: var(--shadow-sm); }
-.btn--icon { width: 34px; height: 34px; display: inline-grid; place-items: center; padding: 0; }
+.btn--primary:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--accent) 84%, #ffffff);
+  border-color: transparent;
+}
+.btn--primary:active:not(:disabled) { background: color-mix(in srgb, var(--accent) 88%, #000000); }
+
+.btn--ghost { background: transparent; border-color: transparent; color: var(--text-dim); }
+.btn--ghost:hover:not(:disabled) { background: color-mix(in srgb, var(--accent) 10%, transparent); color: var(--text); border-color: transparent; }
+
+.btn--icon { width: 32px; min-height: 32px; padding: 0; }
 .btn--icon .ui-icon { width: 17px; height: 17px; }
-.btn--sm { padding: 5px 9px; font-size: 12px; }
+.btn--sm { min-height: 26px; padding: 0 9px; font-size: 12px; }
+.btn--sm.btn--icon { width: 26px; }
+
+/* 危险动作单独一档，别再靠一句说明文字来区分 */
+.btn--danger { border-color: color-mix(in srgb, var(--bad) 45%, var(--line)); color: var(--bad); }
+.btn--danger:hover:not(:disabled) { background: color-mix(in srgb, var(--bad) 14%, var(--bg-raised)); border-color: var(--bad); color: var(--bad); }
 
 .field {
   flex: 1;
@@ -601,12 +637,11 @@ html, body { background: var(--bg); }
 .rail__item.is-active { background: var(--accent-soft); box-shadow: inset 3px 0 0 var(--accent); }
 .rail__active-mark { display: none; }
 .bar { background: #171b1e; box-shadow: none; }
-.btn { background: #202529; box-shadow: none; border-radius: 6px; transition: background .14s, color .14s, border-color .14s; }
-.btn:hover:not(:disabled) { background: #2a3034; box-shadow: none; transform: none; }
-.btn:active:not(:disabled) { transform: translateY(1px); }
-.btn--primary { background: #6685df; border-color: #6685df; box-shadow: none; text-shadow: none; }
-.btn--primary:hover:not(:disabled) { background: #7695ee; box-shadow: none; }
-.btn--ghost { background: transparent; }
+/* 这一段原本把按钮底色写死成 #202529 / #6685df，排在上面那套主题化规则后面，
+   所以不管选哪套皮肤，主按钮永远是同一个蓝 —— 满屏绿里就它发蓝。
+   保留这里想要的「更方的圆角」，颜色交回给主题。 */
+.btn { border-radius: 6px; }
+.btn:active:not(:disabled) { transform: none; }
 .field { background: #0d1012; border-color: #30373b; box-shadow: none; }
 .field:focus { background: #0d1012; box-shadow: inset 0 0 0 1px var(--accent); }
 .card { background: #191d20; border-color: #30373b; box-shadow: none; }

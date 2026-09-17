@@ -10,6 +10,7 @@ import { highlight, LANG_BY_TRACK } from './highlight.js';
 import { EXTRA_TRACKS } from './data/practice-extra.js';
 import { PRACTICE_PROJECTS } from './data/projects.js';
 import { nextGhost } from './ghost.js';
+import { currentStep, describeTask } from './task.js';
 import { analyzeBlueprint } from './blueprint.js';
 import {
   buildErrorDiagnosisPrompt,
@@ -155,6 +156,9 @@ export function createPracticePanel(ctx) {
       code: cell.editor.value,
       title: cell.title,
       purpose: cell.purpose,
+      // 「跟着敲」会把 code 清空，参考实现只能单独存，否则一重启就没了，
+      // 虚化提示和任务说明会一起变哑。
+      reference: String(cell.reference || ''),
       executionCount: cell.executionCount || 0,
       result: cell.result ? {
         ok: Boolean(cell.result.ok),
@@ -174,7 +178,16 @@ export function createPracticePanel(ctx) {
     levelSelect.replaceChildren(...track.samples.map((item, index) => h('option', { value: String(index) }, `${item.level} · ${item.title}`)));
     levelSelect.value = String(sampleIndex);
     const saved = (config.get('practice.notebooks', {}) || {})[notebookStateKey()];
-    cells = Array.isArray(saved) && saved.length ? saved.map((snapshot) => restoreNotebookCell(snapshot)) : [createCell(currentSample().code)];
+    const sample = currentSample();
+    cells = Array.isArray(saved) && saved.length
+      ? saved.map((snapshot) => restoreNotebookCell(snapshot))
+      : [createCell(sample.code, { title: sample.title, reference: sample.code })];
+    // 老存档里没有 reference（也没有像样的标题），拿当前样例补上，
+    // 否则这些格子永远显示「随便写」。
+    for (const cell of cells) {
+      if (!cell.reference) cell.reference = sample.code;
+      if (!cell.title || cell.title === '代码单元格') cell.title = sample.title;
+    }
     renderNotebook(cells[0], false);
     updateMeta();
   }
@@ -332,6 +345,7 @@ export function createPracticePanel(ctx) {
     if (!cell) return;
     paintHighlight(cell);
     autosizeCell(cell);
+    syncTask(cell);
     cell.lineCount.textContent = `${cell.editor.value.split(/\r?\n/).length} 行`;
     description.textContent = track.description;
     setupBtn.hidden = !track.runtime.includes('python3');
@@ -784,6 +798,32 @@ export function createPracticePanel(ctx) {
     syncHighlightScroll(cell);
   }
 
+  /** 刷新「这一格要做什么」和「写到第几步」。 */
+  function syncTask(cell) {
+    if (!cell || !cell.taskText) return;
+    const sample = currentSample();
+    cell.taskText.textContent = describeTask({
+      title: '',                       // 标题已经在旁边加粗显示了，别说第二遍
+      level: sample?.level || '',
+      reference: cell.reference,
+      purpose: cell.purpose,
+    });
+    if (!cell.reference) { cell.stepTag.textContent = ''; cell.stepTag.className = 'practice__step'; return; }
+    const { step, steps } = currentStep(cell.editor.value, cell.reference);
+    if (steps.length <= 1) { cell.stepTag.textContent = ''; return; }
+    if (step < 0) {
+      cell.stepTag.textContent = '自己写着呢';
+      cell.stepTag.className = 'practice__step is-free';
+    } else if (step >= steps.length) {
+      cell.stepTag.textContent = `${steps.length} 段都写完了`;
+      cell.stepTag.className = 'practice__step is-done';
+    } else {
+      const here = steps[step];
+      cell.stepTag.textContent = `第 ${step + 1} / ${steps.length} 段 · ${here.lineCount} 行`;
+      cell.stepTag.className = 'practice__step';
+    }
+  }
+
   /** Tab 接受虚化提示。返回 true 表示已经处理，别再走标识符补全。 */
   function acceptGhost(cell) {
     if (!ghostEnabled || !cell?.ghost) return false;
@@ -813,11 +853,15 @@ export function createPracticePanel(ctx) {
       title: metadata.title || '代码单元格',
       purpose: metadata.purpose || '',
       // 标准答案留着：虚化提示照着它走，「恢复示例」也用它
-      reference: String(metadata.reference ?? metadata.code ?? code ?? ''),
+      reference: String(metadata.reference || metadata.code || code || ''),
       ghost: '',
       aiGhost: '',
     };
     cell.gutter = h('div', { class: 'practice__cell-gutter' }, 'In [ ]');
+    // 「要写什么」和「写到第几步」必须一直在眼前 —— 清空格子之后
+    // 只剩一个空框，没有这两行就完全不知道该敲什么。
+    cell.taskText = h('span', { class: 'practice__task' }, '');
+    cell.stepTag = h('span', { class: 'practice__step' }, '');
     cell.editor = h('textarea', { class: 'practice__editor', spellcheck: false, wrap: 'off' }, code);
     // 高亮层：垫在文本框底下，文本框自己的字设成透明，只留光标。
     // textarea 没法给部分文字上色，这是唯一能既保留原生输入又有配色的做法。
@@ -875,7 +919,7 @@ export function createPracticePanel(ctx) {
       cell.gutter,
       h('div', { class: 'practice__cell-main' },
         h('div', { class: 'practice__pane-head' },
-          h('div', {}, h('strong', {}, cell.title), h('span', { class: 'faint' }, cell.purpose || (track.runtime.includes('python3') ? ' 可自由修改 · 可复用上方变量' : ' 可自由修改'))),
+          h('div', {}, h('strong', {}, cell.title), cell.taskText, cell.stepTag),
           cell.lineCount,
         ),
         cell.editorWrap,

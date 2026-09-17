@@ -15,11 +15,41 @@ export const THEMES = [
 ];
 
 export function themeById(id) { return THEMES.find((theme) => theme.id === id) || THEMES[0]; }
+/**
+ * 强调色上该压黑字还是白字。
+ *
+ * 主按钮一律白字是不行的：#5b8cff 上白字没问题，但赛博绿的 #39ff9a
+ * 亮度 80%，白字几乎看不见。按相对亮度选，跟 WCAG 的算法一致。
+ */
+export function inkOn(color) {
+  const hex = String(color || '').trim().replace('#', '');
+  if (!/^[0-9a-f]{6}$/i.test(hex)) return '#ffffff';
+  const channel = (value) => {
+    const v = parseInt(value, 16) / 255;
+    return v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4;
+  };
+  const luminance = 0.2126 * channel(hex.slice(0, 2))
+    + 0.7152 * channel(hex.slice(2, 4))
+    + 0.0722 * channel(hex.slice(4, 6));
+  // 黑白各算一遍，谁对比度高用谁。
+  // 别用固定亮度阈值：默认皮肤的 #5b8cff 看着挺深，配白字却只有 3.16:1，
+  // 比 4.5 的及格线还低 —— 主按钮上的字一直是糊的。
+  const dark = '#0b1410';
+  const light = '#ffffff';
+  const darkLum = 0.2126 * channel('0b') + 0.7152 * channel('14') + 0.0722 * channel('10');
+  const against = (other) => {
+    const hi = Math.max(luminance, other); const lo = Math.min(luminance, other);
+    return (hi + 0.05) / (lo + 0.05);
+  };
+  return against(darkLum) >= against(1) ? dark : light;
+}
+
 export function applyTheme(id) {
   const theme = themeById(id);
   const root = document.documentElement;
   root.dataset.theme = theme.id;
   for (const name of COLOR_VARS) root.style.setProperty(name, theme.vars[name]);
+  root.style.setProperty('--accent-ink', inkOn(theme.vars['--accent']));
   return theme;
 }
 export function applyStoredTheme(config) { return applyTheme(config.get('ui.theme', 'default')); }
