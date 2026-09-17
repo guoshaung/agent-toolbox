@@ -12,6 +12,7 @@ let timer = null;
 let startupTimer = null;
 let checking = false;
 let notifiedVersion = null;
+let lastResult = { at: 0, ok: null, error: null, version: null };
 
 function log(...args) { console.log('[updater]', ...args); }
 
@@ -81,10 +82,12 @@ async function check({ silent = true } = {}) {
     } else if (!hasNew && !silent) {
       await dialog.showMessageBox({ type: 'info', title: '已是最新', message: `已经是最新版本 ${app.getVersion()}` });
     }
+    lastResult = { at: Date.now(), ok: true, error: null, version };
     return { ok: true, version, hasNew };
   } catch (err) {
     notifiedVersion = null;
     log('Update check or download failed:', err.message);
+    lastResult = { at: Date.now(), ok: false, error: err.message, version: null };
     return { ok: false, error: err.message };
   } finally {
     checking = false;
@@ -110,7 +113,12 @@ function stopAutoCheck() {
 
 function registerUpdaterIpc(ipcMain) {
   ipcMain.handle('update:check', () => check({ silent: false }));
-  ipcMain.handle('update:current', () => ({ version: app.getVersion(), packaged: app.isPackaged }));
+  ipcMain.handle('update:current', () => ({
+    version: app.getVersion(),
+    packaged: app.isPackaged,
+    // 后台那次静默检查的结果，让设置页能说清「查过了，失败在哪」
+    last: lastResult,
+  }));
   ipcMain.handle('update:openReleases', () => {
     shell.openExternal(RELEASES_PAGE).catch((err) => log('Cannot open releases:', err.message));
     return { ok: true };

@@ -12,6 +12,55 @@ export default {
 
     const probeOut = h('pre', { class: 'settings__probe mono' }, '还没检测');
 
+    // ---------- 更新 ----------
+    // 自动检查是静默的：8 秒后查一次、之后每 6 小时一次，失败只写 console。
+    // 于是网络不通（GitHub 在国内经常连不上）时，界面上什么都不会发生 ——
+    // 看起来就像「这个功能根本没做」。这张卡片把版本号、检查结果和失败原因
+    // 都摆出来，并且留一个手动触发的入口。
+    const updateVersion = h('span', { class: 'faint' }, '读取中…');
+    const updateStatus = h('p', { class: 'faint settings__hint' }, '还没检查');
+
+    const updateBtn = h('button', {
+      class: 'btn btn--primary',
+      onclick: async () => {
+        updateBtn.disabled = true;
+        updateStatus.textContent = '正在检查…';
+        try {
+          const result = await window.toolbox.update.check();
+          if (result?.ok && result.hasNew) updateStatus.textContent = `有新版本 ${result.version}，按弹窗里的「下载」即可。`;
+          else if (result?.ok) updateStatus.textContent = '已经是最新版本。';
+          else updateStatus.textContent = `检查失败：${result?.error || '未知原因'} —— 连不上 GitHub 的话，用下面的按钮去发布页手动下载。`;
+        } catch (error) {
+          updateStatus.textContent = `检查失败：${error.message}`;
+        } finally {
+          updateBtn.disabled = false;
+        }
+      },
+    }, '检查更新');
+
+    const updateCard = h('section', { class: 'card', id: 'settings-update' },
+      h('h3', { class: 'card__title' }, '版本与更新'),
+      h('p', { class: 'faint settings__hint' }, '当前版本：', updateVersion),
+      h('div', { style: { display: 'flex', gap: '8px', marginTop: '8px' } },
+        updateBtn,
+        h('button', { class: 'btn', onclick: () => window.toolbox.update.openReleases() }, '打开发布页'),
+      ),
+      updateStatus,
+    );
+
+    window.toolbox.update.current().then((info) => {
+      updateVersion.textContent = info?.packaged
+        ? info.version
+        : `${info?.version || '?'}（开发模式，不检查更新）`;
+      // 后台那次静默检查如果失败过，这里直接说出来，别让人以为功能没做
+      const last = info?.last;
+      if (!last?.at) return;
+      const when = new Date(last.at).toLocaleString('zh-CN', { hour12: false });
+      updateStatus.textContent = last.ok
+        ? `后台已检查（${when}）：最新版本 ${last.version || '未知'}。`
+        : `后台检查失败（${when}）：${last.error} —— 连不上 GitHub 的话用「打开发布页」手动下载。`;
+    }).catch(() => { updateVersion.textContent = '读不到'; });
+
     /**
      * 桥接自检。DeepSeek 改版是迟早的事，出问题时这里能立刻告诉你
      * 「是没登录，还是页面结构变了」，而不用去猜。
@@ -378,6 +427,8 @@ export default {
           danger('打开开发者工具', '看报错、调样式', () => window.toolbox.app.openDevTools()),
           danger('重载界面', '改了 renderer 里的代码后，不用重启 App', () => window.toolbox.app.reload()),
         ),
+
+        updateCard,
 
         h('section', { class: 'card' },
           h('h3', { class: 'card__title' }, '关于'),
