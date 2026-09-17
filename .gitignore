@@ -30,3 +30,7 @@ captures/
 *.m4a
 *.flac
 *.ogg
+
+# 误放在根目录的文件与编辑器备份，别进仓库
+/index.js
+*.bak-*

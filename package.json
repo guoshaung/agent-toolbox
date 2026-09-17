@@ -41,7 +41,9 @@
       "!assets/coach-extension/defaults.local.json",
       "!test/**",
       "!docs/**",
-      "!work/**"
+      "!work/**",
+      "!**/*.bak-*",
+      "!**/*.bak"
     ],
     "mac": {
       "category": "public.app-category.productivity",

@@ -231,10 +231,22 @@
 .battle__card h3 { margin: 0 0 5px; font-size: 14px; }
 .battle__card p { margin: 0 0 10px; font-size: 11px; line-height: 1.6; }
 .battle__palette, .battle__enemy-palette { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+.battle__palette { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .battle__unit-btn { min-width: 0; display: flex; align-items: center; gap: 6px; padding: 7px 6px; border: 1px solid var(--line-soft); border-radius: 8px; background: var(--bg-sunken); color: var(--text-dim); cursor: pointer; text-align: left; }
 .battle__unit-btn:hover, .battle__unit-btn.is-active { border-color: var(--accent); color: var(--text); background: var(--accent-soft); }
+.battle__unit-btn.is-disabled { opacity: .45; cursor: not-allowed; }
+.battle__unit-btn.is-disabled:hover { border-color: var(--line-soft); color: var(--text-dim); background: var(--bg-sunken); }
+.battle__hero-btn { border-color: rgba(255,213,79,.5); background: rgba(255,213,79,.08); }
+.battle__arch { display: flex; flex-wrap: wrap; gap: 6px; }
+.battle__arch-btn { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; flex: 1 1 40%; min-width: 0; padding: 6px 8px; border: 1px solid var(--line-soft); border-left: 3px solid var(--arch-color, var(--accent)); border-radius: 8px; background: var(--bg-sunken); color: var(--text-dim); cursor: pointer; text-align: left; }
+.battle__arch-btn:hover, .battle__arch-btn.is-active { border-color: var(--arch-color, var(--accent)); color: var(--text); background: var(--accent-soft); }
+.battle__arch-btn b { font-size: 12px; }
+.battle__arch-btn span { font-size: 10px; line-height: 1.3; color: var(--text-faint); }
 .battle__unit-btn--enemy:hover { border-color: #e46a70; background: rgba(228,106,112,.12); }
 .battle__unit-btn > span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; }
+.battle__draw-row { display: flex; align-items: center; gap: 6px; }
+.battle__color { width: 28px; height: 28px; flex: 0 0 28px; padding: 0; border: 1px solid var(--line); border-radius: 8px; background: none; cursor: pointer; }
+.battle__draw-row .btn { flex: 1; white-space: nowrap; }
 .battle__unit-icon { position: relative; width: 25px; height: 29px; flex: 0 0 25px; color: var(--unit-color); }
 .battle__unit-icon::before { content: ''; position: absolute; left: 8px; top: 1px; width: 9px; height: 9px; border: 2px solid currentColor; border-radius: 50%; }
 .battle__unit-icon::after { content: '╱│╲\A ╱ ╲'; white-space: pre; position: absolute; left: 2px; top: 9px; color: currentColor; font: 700 13px/11px Arial, sans-serif; }
@@ -244,6 +256,16 @@
 .battle__draw-actions .field { min-width: 0; flex: 1; }
 .battle__rules { display: flex; flex-direction: column; gap: 6px; padding: 12px; border: 1px solid var(--line-soft); border-radius: 10px; background: var(--bg-raised); color: var(--text-faint); font-size: 11px; line-height: 1.5; }
 .battle__rules strong { color: var(--text); font-size: 13px; }
+.battle__items-legend { display: flex; flex-direction: column; gap: 5px; }
+.battle__item-tag { display: flex; align-items: center; gap: 5px; font-size: 11px; line-height: 1.4; color: var(--text-faint); }
+.battle__item-tag b { font-size: 12px; min-width: 12px; text-align: center; }
+.battle__upgrade { position: absolute; inset: 0; z-index: 30; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 16px; background: rgba(8,12,24,.78); backdrop-filter: blur(3px); }
+.battle__upgrade-title { font-size: 20px; font-weight: 800; color: #ffd54f; text-shadow: 0 2px 8px rgba(0,0,0,.6); }
+.battle__upgrade-choices { display: flex; gap: 14px; flex-wrap: wrap; justify-content: center; max-width: 640px; }
+.battle__upgrade-btn { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; min-width: 150px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 12px; background: rgba(20,28,46,.9); color: var(--text); text-align: left; cursor: pointer; }
+.battle__upgrade-btn:hover { border-color: var(--accent); background: var(--accent-soft); transform: translateY(-2px); }
+.battle__upgrade-btn b { font-size: 15px; color: #ffd54f; }
+.battle__upgrade-btn span { font-size: 12px; color: var(--text-dim); line-height: 1.4; }
 
 .focus__breath { text-align: center; }
 .focus__breath-circle {
