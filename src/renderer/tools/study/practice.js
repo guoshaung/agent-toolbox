@@ -100,6 +100,8 @@ export function createPracticePanel(ctx) {
   const projectLoadBtn = h('button', { class: 'btn btn--sm btn--primary', onclick: loadProject }, '载入项目');
   const description = h('span', { class: 'practice__description' });
   const runtimeStatus = h('span', { class: 'practice__runtime-status' }, '检测中…');
+  // 内核状态点：Jupyter 右上角那个。一眼看出环境准备好没有，不占一整条横栏。
+  const runtimeDot = h('span', { class: 'practice__dot', title: '运行环境状态' });
   const cellCount = h('span', { class: 'faint' }, '0 个单元格');
   const notebookList = h('div', { class: 'practice__notebook-list' });
   const setupBtn = h('button', { class: 'btn practice__setup', onclick: setupEnvironment }, '准备 uv 环境');
@@ -193,6 +195,17 @@ export function createPracticePanel(ctx) {
     toast(`已载入项目：${project.title}`, 'good');
   }
 
+  /** 文本是在这之后才写进去的，延一帧再读。 */
+  function syncRuntimeDotSoon() { setTimeout(syncRuntimeDot, 0); }
+
+  function syncRuntimeDot() {
+    const text = String(runtimeStatus.textContent || '');
+    const ready = /已就绪|可用/.test(text) && !/未安装|不可用|未就绪/.test(text);
+    runtimeDot.classList.toggle('is-ready', ready);
+    runtimeDot.classList.toggle('is-missing', !ready);
+    runtimeDot.title = text || '运行环境状态';
+  }
+
   function updateMeta(cell = activeCell) {
     if (!cell) return;
     paintHighlight(cell);
@@ -200,6 +213,7 @@ export function createPracticePanel(ctx) {
     description.textContent = track.description;
     setupBtn.hidden = !track.runtime.includes('python3');
     if (track.packageKey) {
+      syncRuntimeDotSoon();
       runtimeStatus.textContent = environment[track.packageKey]
         ? `${track.packageLabel} 已就绪`
         : `${track.packageLabel} 未安装 · 点击准备共享环境`;
@@ -670,6 +684,7 @@ export function createPracticePanel(ctx) {
         ),
         cell.editorWrap,
         h('div', { class: 'practice__actions' }, cell.runBtn, cell.commentBtn, explainLocalBtn, explainLineBtn, restoreBtn, moveUpBtn, moveDownBtn),
+        h('div', { class: 'practice__hint faint' }, 'Shift+Enter 运行并到下一格 · ⌘Enter 原地运行'),
         h('div', { class: 'practice__latest-output' },
           h('div', { class: 'practice__pane-head' }, h('strong', {}, '输出'), h('span', { class: 'practice__output-head-actions' }, cell.resultStatus, cell.copyOutputBtn)),
           cell.output,
@@ -686,6 +701,22 @@ export function createPracticePanel(ctx) {
     // Tab 补全 / 自动缩进 / ⌘Enter 开新行 / 括号配对。
     // 轨道用函数取，因为轨道会切，补全词表得跟着换。
     attachEditorKeys(cell.editor, () => track.id);
+    // Jupyter 的核心手感：Shift+Enter 跑完跳下一格，⌘/Ctrl+Enter 原地跑。
+    // 没有这个就只能用鼠标点「运行」，一格一格点下来很废手。
+    cell.editor.addEventListener('keydown', (event) => {
+      if (event.key !== 'Enter' || event.isComposing) return;
+      const meta = event.metaKey || event.ctrlKey;
+      if (!event.shiftKey && !meta) return;
+      event.preventDefault();
+      event.stopPropagation();
+      runCell(cell).then(() => {
+        if (!event.shiftKey) return;              // ⌘Enter 留在原地
+        const index = cells.indexOf(cell);
+        const next = cells[index + 1];
+        if (next) { selectCell(next); next.editor.focus(); }
+        else { addCell(); }                        // 已经是最后一格就新开一格，和 Jupyter 一样
+      });
+    }, true);
     cell.editor.addEventListener('keydown', (event) => {
       if (event.key === 'Enter' && event.shiftKey && !event.metaKey && !event.ctrlKey && !event.isComposing) {
         event.preventDefault();
@@ -999,42 +1030,48 @@ export function createPracticePanel(ctx) {
     refreshFiles();
   }
 
-  const el = h('div', { class: 'practice' },
-    h('div', { class: 'practice__head' },
-      h('div', { class: 'practice__hero-copy' },
-        h('span', { class: 'practice__eyebrow' }, '学习实践'),
-        h('h1', {}, '把知识练成手感'),
-        h('p', {}, '从一个小问题开始，写出来、运行它，再把原因讲清楚。'),
-      ),
-      h('div', { class: 'practice__selectors' },
-        h('label', {}, h('span', { class: 'practice__label' }, '领域'), trackSelect),
-        h('label', {}, h('span', { class: 'practice__label' }, '练习'), levelSelect),
-        h('label', { class: 'practice__selector--project' }, h('span', { class: 'practice__label' }, '项目挑战'), projectSelect),
-      ),
+  // 溢出菜单：不常用的都收这儿，工具栏只留每次都要点的。
+  // 原来顶上堆了 4 条横栏 254px，加上标题一共吃掉 589px ——
+  // 860px 的窗口里，写第一行代码之前 68% 的屏幕已经没了。
+  const overflowPanel = h('div', { class: 'practice__overflow', hidden: true },
+    h('div', { class: 'practice__overflow-row' }, h('span', { class: 'faint' }, '环境'), setupBtn, runtimeStatus),
+    h('div', { class: 'practice__overflow-row' },
+      h('button', { class: 'btn btn--sm', title: '导入 Jupyter Notebook 文件', onclick: importNotebook }, '导入 .ipynb'),
+      h('button', { class: 'btn btn--sm', title: '导出当前单元格和输出为 Jupyter Notebook', onclick: exportNotebook }, '导出 .ipynb'),
+      h('button', { class: 'btn btn--sm', title: '清空所有单元格输出和执行编号', onclick: clearOutputs }, '清空输出'),
     ),
-    h('div', { class: 'practice__info-row' },
-      description,
-      setupBtn,
-      runtimeStatus,
-    ),
-    projectInfo,
+    h('div', { class: 'practice__overflow-desc faint' }, description),
     terminalPanel,
     workspacePanel,
-    h('div', { class: 'practice__notebook' },
-      h('div', { class: 'practice__notebook-toolbar' },
-        h('div', {}, h('strong', {}, 'Notebook 单元格'), h('span', { class: 'faint' }, ' 运行后输出会留在对应单元格，可继续向下添加')),
-        h('div', { class: 'practice__cell-controls' },
-          runAllBtn,
-          h('button', { class: 'btn btn--sm', title: '清空所有单元格输出和执行编号', onclick: clearOutputs }, '清空输出'),
-          h('button', { class: 'btn btn--sm', title: '导入 Jupyter Notebook 文件', onclick: importNotebook }, '导入 .ipynb'),
-          h('button', { class: 'btn btn--sm', title: '导出当前单元格和输出为 Jupyter Notebook', onclick: exportNotebook }, '导出 .ipynb'),
-          h('button', { class: 'btn btn--sm', title: '删除当前单元格', onclick: removeCell }, '−'),
-          h('button', { class: 'btn btn--sm btn--primary', title: '在末尾添加新单元格', onclick: addCell }, '＋ 新增'),
-          cellCount,
-        ),
-      ),
-      notebookList,
+    projectInfo,
+  );
+
+  const overflowBtn = h('button', {
+    class: 'btn btn--sm btn--ghost practice__icon-btn',
+    title: '环境、导入导出、终端、项目文件夹',
+    onclick: () => {
+      const hidden = overflowPanel.toggleAttribute('hidden');
+      overflowBtn.classList.toggle('is-open', !hidden);
+    },
+  }, '⋯');
+
+  const el = h('div', { class: 'practice' },
+    // 一条工具栏搞定：跑 / 加 / 删 + 选练什么 + 内核状态。和 Jupyter 一样。
+    h('div', { class: 'practice__bar' },
+      runAllBtn,
+      h('button', { class: 'btn btn--sm practice__icon-btn', title: '在末尾添加单元格', onclick: addCell }, '＋'),
+      h('button', { class: 'btn btn--sm practice__icon-btn', title: '删除当前单元格', onclick: removeCell }, '−'),
+      h('span', { class: 'practice__bar-sep' }),
+      trackSelect,
+      levelSelect,
+      projectSelect,
+      h('span', { style: { flex: 1 } }),
+      cellCount,
+      runtimeDot,
+      overflowBtn,
     ),
+    overflowPanel,
+    h('div', { class: 'practice__notebook' }, notebookList),
   );
 
   window.toolbox.practice.environment().then((value) => { environment = value || {}; updateMeta(); });

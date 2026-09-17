@@ -80,7 +80,8 @@ export default {
 
     const symbolInput = h('input', {
       class: 'field nb__symbol-input',
-      placeholder: '输入一个字段 / 函数名，高亮它的每一处',
+      placeholder: '查找符号…',
+      title: '输入一个字段 / 函数名，高亮它的每一处',
       list: 'nb-symbols',
       oninput: debounce(() => selectSymbol(symbolInput.value.trim(), { fromInput: true }), 160),
       onkeydown: (e) => {
@@ -834,8 +835,11 @@ export default {
     function setMode() {
       const markdown = editorMode === 'markdown';
       editor.hidden = markdown || !editing;
+      editorWrap.hidden = editor.hidden;      // 行号槽跟着一起收，不然会孤零零留一列数字
+      if (!editor.hidden) { paintGutter(); syncStatus(); }
       codeView.hidden = markdown || editing;
-      editToggle.textContent = editing ? '✓ 完成，去阅读' : '✎ 编辑';
+      editToggle.textContent = editing ? '✓ 阅读' : '✎ 编辑';
+      editToggle.title = editing ? '切回阅读视图（⌘E）' : '切到编辑视图（⌘E）';
       editToggle.classList.toggle('btn--primary', editing);
     }
 
@@ -1847,30 +1851,83 @@ export default {
       query.focus();
     }
 
+    // 外观、图谱、项目搜索这些不是每次都点的，收进「⋯」。
+    // 原来两行工具栏并排 17 个控件，占掉两条横栏，还把编辑区挤下去。
+    const nbOverflow = h('div', { class: 'nb__overflow', hidden: true },
+      h('div', { class: 'nb__overflow-row' },
+        h('span', { class: 'faint' }, '外观'), themeSelect, fontSelect, fontSizeSelect, wrapBtn),
+      h('div', { class: 'nb__overflow-row' },
+        h('span', { class: 'faint' }, '文件'), newFileBtn, saveFileBtn, taskToggle),
+      h('div', { class: 'nb__overflow-row' },
+        h('span', { class: 'faint' }, '项目'), graphLabel, graphButton,
+        h('button', { class: 'btn btn--sm', title: '在当前项目中搜索（⌘/Ctrl+Shift+F）', onclick: openProjectSearch }, '项目搜索'),
+        h('button', { class: 'btn btn--sm', title: '打开命令面板（⌘/Ctrl+Shift+P）', onclick: openCommandPalette }, '⌘ 命令面板')),
+    );
+
+    const nbOverflowBtn = h('button', {
+      class: 'btn btn--sm btn--ghost nb__overflow-btn',
+      title: '外观、文件、项目搜索、命令面板',
+      onclick: () => {
+        const hidden = nbOverflow.toggleAttribute('hidden');
+        nbOverflowBtn.classList.toggle('is-open', !hidden);
+      },
+    }, '⋯');
+
     const codeControls = h('span', { class: 'nb__code-controls' },
       langSelect,
       editToggle,
-      taskToggle,
-      newFileBtn,
-      saveFileBtn,
       h('span', { class: 'subbar__sep' }),
       symbolInput,
       h('button', { class: 'btn btn--icon', title: '上一处 (Shift+Enter)', onclick: () => step(-1) }, '‹'),
       h('button', { class: 'btn btn--icon', title: '下一处 (Enter)', onclick: () => step(1) }, '›'),
       hitCounter,
-      h('span', { class: 'subbar__sep' }),
-      themeSelect,
-      fontSelect,
-      fontSizeSelect,
-      wrapBtn,
-      h('button', { class: 'btn btn--sm', title: '打开命令面板（⌘/Ctrl+Shift+P）', onclick: openCommandPalette }, '⌘ 命令'),
-      h('span', { class: 'subbar__sep' }),
-      graphLabel,
-      graphButton,
-      h('button', { class: 'btn btn--sm', title: '在当前项目中搜索（⌘/Ctrl+Shift+F）', onclick: openProjectSearch }, '项目搜索'),
     );
-    const mainEl = h('div', { class: 'nb__main' }, findPanel, completionPanel, editor, codeView, markdownShell, tasksPanel);
+    // ---------- 底部状态栏 ----------
+    // VSCode 那条。行:列 一直看得见，写代码时找位置全靠它。
+    const statusPos = h('span', { class: 'nb__status-item' }, '行 1，列 1');
+    const statusLang = h('span', { class: 'nb__status-item' }, '');
+    const statusInfo = h('span', { class: 'nb__status-item' }, '');
+    const statusBar = h('div', { class: 'nb__status' },
+      h('span', { class: 'nb__status-left' }, statusInfo),
+      h('span', { style: { flex: 1 } }),
+      statusLang, statusPos,
+      h('span', { class: 'nb__status-item' }, '空格: 4'),
+      h('span', { class: 'nb__status-item' }, 'UTF-8'),
+    );
+
+    /** 行号槽：跟着 textarea 一起滚。textarea 自己没法显示行号，只能在旁边画一列。 */
+    const gutter = h('div', { class: 'nb__gutter', 'aria-hidden': 'true' });
+
+    function paintGutter() {
+      const area = editor;
+      if (!area || area.hidden) return;
+      const lines = area.value.split('\n').length;
+      if (gutter.childElementCount !== lines) {
+        gutter.textContent = '';
+        for (let i = 1; i <= lines; i += 1) gutter.appendChild(h('div', {}, String(i)));
+      }
+      gutter.scrollTop = area.scrollTop;
+    }
+
+    function syncStatus() {
+      const area = editor;
+      if (!area) return;
+      const upto = area.value.slice(0, area.selectionStart);
+      const rows = upto.split('\n');
+      statusPos.textContent = `行 ${rows.length}，列 ${rows[rows.length - 1].length + 1}`;
+      statusLang.textContent = langSelect?.value || '';
+      const snippet = current();
+      statusInfo.textContent = snippet ? `${snippet.title} · ${area.value.split('\n').length} 行` : '';
+    }
+
+    const editorWrap = h('div', { class: 'nb__editor-wrap' }, gutter, editor);
+    const mainEl = h('div', { class: 'nb__main' }, findPanel, completionPanel, editorWrap, codeView, markdownShell, tasksPanel);
     mdResizeObserver.observe(markdownShell);
+    // 行号和状态栏跟着编辑器走
+    editor.addEventListener('input', () => { paintGutter(); syncStatus(); });
+    editor.addEventListener('scroll', () => { gutter.scrollTop = editor.scrollTop; });
+    editor.addEventListener('keyup', syncStatus);
+    editor.addEventListener('click', syncStatus);
     function applyEditorAppearance() {
       const theme = NOTEBOOK_THEMES[notebookTheme] || NOTEBOOK_THEMES.midnight;
       const font = NOTEBOOK_FONTS[notebookFont] || NOTEBOOK_FONTS.jetbrains;
@@ -1887,6 +1944,7 @@ export default {
     }
     const detailEl = h('aside', { class: 'nb__detail-pane' }, detail);
     const nbBody = h('div', { class: 'nb__body' });
+
 
     // 分隔条：拖动调栏宽；双击恢复默认。宽度持久化，窗口拉窄时自动收缩保住代码区。
     function clampPane(which) {
@@ -1960,17 +2018,20 @@ export default {
         h('strong', {}, '代码记事本'),
         noteModeToggle,
         snippetSelect,
-        h('button', { class: 'btn btn--sm', title: '打开项目文件夹', onclick: () => openFolder() }, '📂 文件夹'),
+        h('button', { class: 'btn btn--icon', title: '打开项目文件夹', onclick: () => openFolder() }, '📂'),
         h('button', { class: 'btn btn--icon', title: '新片段', onclick: () => newSnippet() }, '＋'),
         h('button', {
           class: 'btn btn--icon', title: '删除当前片段',
           onclick: () => closeSnippet(current()),
         }, '−'),
         codeControls,
+        nbOverflowBtn,
       ),
+      nbOverflow,
       symbolList,
       tabBar,
       nbBody,
+      statusBar,
       newFileModal,
     );
 

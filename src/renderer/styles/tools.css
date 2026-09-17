@@ -1794,8 +1794,10 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 /* ---------- 代码记事本 ---------- */
 
 .nb__snippets { max-width: 190px; }
-.nb__symbol-input { min-width: 200px; }
-.nb__bar { flex-wrap: wrap; row-gap: 4px; }
+.nb__symbol-input { flex: 1 1 140px; min-width: 80px; }
+.nb__bar { flex-wrap: nowrap; row-gap: 4px; }
+.nb__bar > * { flex-shrink: 0; }
+.nb__bar > strong { flex-shrink: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .nb__tabs { display: flex; align-items: stretch; gap: 3px; min-height: 34px; padding: 5px 8px 0; overflow-x: auto; border-bottom: 1px solid var(--line-soft); background: var(--bg-sunken); }
 .nb__tab { display: flex; align-items: stretch; flex: 0 0 auto; border: 1px solid transparent; border-bottom: 0; border-radius: 7px 7px 0 0; background: transparent; }
 .nb__tab.is-active { border-color: var(--line-soft); background: var(--bg-raised); }
@@ -1806,6 +1808,8 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .nb__tab-close:hover { color: var(--bad); opacity: 1; }
 .nb__mode-toggle { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 35%, var(--line)); }
 .nb__code-controls { display: contents; }
+.nb__code-controls > * { flex-shrink: 0; }
+.nb__bar select { max-width: 150px; }
 .nb__appearance-select { max-width: 116px; }
 .nb__font-size { width: 64px; }
 .nb__counter { font-family: var(--mono); font-size: 12px; min-width: 54px; text-align: center; }
@@ -3351,3 +3355,187 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
   .digitalhuman__avatar.is-speaking .digitalhuman__body,
   .digitalhuman__avatar.is-speaking .digitalhuman__mouth { animation: none; }
 }
+
+/* ================= 实践敲码：改成 Jupyter 那样的密度 =================
+   原来顶上堆了大标题 + 4 条横栏，860px 的窗口里代码区从 y=589 才开始，
+   68% 的屏幕在写第一行代码之前就没了。现在压成一条工具栏。 */
+
+.practice { padding: 0; gap: 0; }
+
+.practice__bar {
+  flex: 0 0 auto;
+  display: flex; align-items: center; gap: 6px;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--line-soft);
+  background: var(--bg-raised);
+}
+.practice__bar select {
+  height: 26px;
+  max-width: 150px;
+  padding: 0 24px 0 8px;
+  font-size: 12px;
+}
+.practice__bar-sep {
+  width: 1px; height: 18px; margin: 0 4px;
+  background: var(--line-soft);
+}
+.practice__icon-btn {
+  min-width: 28px;
+  padding: 3px 8px;
+  font-size: 13px;
+  line-height: 1.4;
+}
+.practice__icon-btn.is-open { border-color: var(--accent); color: var(--accent); }
+
+/* 内核状态点：Jupyter 右上角那个 */
+.practice__dot {
+  flex: 0 0 auto;
+  width: 9px; height: 9px;
+  margin: 0 2px;
+  border-radius: 50%;
+  background: var(--text-faint);
+}
+.practice__dot.is-ready { background: var(--good); box-shadow: 0 0 0 3px color-mix(in srgb, var(--good) 22%, transparent); }
+.practice__dot.is-missing { background: var(--warn); }
+
+/* 不常用的收进这里，默认折叠 */
+.practice__overflow {
+  flex: 0 0 auto;
+  display: flex; flex-direction: column; gap: 8px;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--line-soft);
+  background: var(--bg-sunken);
+}
+.practice__overflow[hidden] { display: none; }
+.practice__overflow-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.practice__overflow-desc { font-size: 11.5px; line-height: 1.6; }
+
+.practice__notebook { flex: 1; min-height: 0; overflow-y: auto; padding: 10px 12px 40px; gap: 10px; }
+
+/* 单元格：去掉大块留白和描边，靠左侧那道竖线表示选中，和 Jupyter 一致 */
+.practice__cell {
+  border: 1px solid transparent;
+  border-left: 3px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+}
+.practice__cell.is-active {
+  border-color: var(--line-soft);
+  border-left-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 5%, transparent);
+}
+.practice__cell .practice__pane-head { min-height: 24px; padding: 2px 10px; font-size: 11px; border-bottom: 0; }
+.practice__cell .practice__actions { padding: 4px 10px; border-top: 0; background: transparent; }
+.practice__cell-gutter {
+  min-width: 62px;
+  padding-top: 6px;
+  color: var(--text-faint);
+  font: 11px var(--mono);
+  text-align: right;
+}
+.practice__editor-wrap { min-height: 0; border-radius: 4px; }
+.practice__editor, .practice__highlight { min-height: 88px; }
+.practice__latest-output .practice__output { min-height: 0; }
+
+/* cell 下那排按钮：只在这一格被选中时露出来。
+   七个按钮一直挂在每格下面，翻页的时候满屏都是按钮，很吵。 */
+.practice__cell .practice__actions {
+  max-height: 0;
+  overflow: hidden;
+  opacity: 0;
+  padding-top: 0; padding-bottom: 0;
+  transition: max-height .16s ease, opacity .16s ease;
+}
+.practice__cell.is-active .practice__actions,
+.practice__cell:hover .practice__actions {
+  max-height: 52px;
+  opacity: 1;
+  padding-top: 4px; padding-bottom: 4px;
+}
+.practice__hint {
+  padding: 0 10px 6px;
+  font-size: 10.5px;
+  opacity: 0;
+  transition: opacity .16s ease;
+}
+.practice__cell.is-active .practice__hint { opacity: .75; }
+
+/* 第三方依赖：只在选中的格子上露，不然每格都挂一条 */
+.practice__dependency-row { display: none; }
+.practice__cell.is-active .practice__dependency-row { display: flex; }
+
+/* ================= 记事本：往 VSCode 的样子靠 ================= */
+
+/* 工具栏收起来的那部分 */
+.nb__overflow {
+  flex: 0 0 auto;
+  display: flex; flex-direction: column; gap: 8px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--line-soft);
+  background: var(--bg-sunken);
+}
+.nb__overflow[hidden] { display: none; }
+.nb__overflow-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.nb__overflow-row > .faint { min-width: 32px; font-size: 11px; }
+.nb__overflow-btn.is-open { border-color: var(--accent); color: var(--accent); }
+
+/* 编辑区：去掉那圈发光蓝边。编辑器该像编辑器，不是输入框。 */
+.nb__editor-wrap {
+  /* 行号和正文必须共用同一套行高/起点，差 1px 都会越往下越歪。
+     所以这里定一次，下面两边都引用，谁也不许自己写死。 */
+  --nb-line-h: 1.7;
+  --nb-pad-top: 12px;
+  flex: 1; min-height: 0;
+  display: flex;
+  background: var(--nb-editor-bg);
+}
+.nb__editor-wrap[hidden] { display: none; }
+.nb__editor-wrap > .nb__editor {
+  flex: 1;
+  margin: 0 !important;
+  border: 0 !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  line-height: var(--nb-line-h);
+  padding: var(--nb-pad-top) 14px 0 12px;
+  /* textarea 也带 .field，base.css 里那条通用 .field 背景同权重但排在后面，
+     一直把主题选出来的底色盖掉；这里靠 .nb__editor-wrap > 提一级权重抢回来，
+     顺带让行号槽（透明，透出 wrap）和正文真正同色。 */
+  background: var(--nb-editor-bg);
+}
+.nb__editor:focus {
+  box-shadow: none !important;
+  /* 编辑器不画焦点框：它几乎一直是焦点，那圈 2px 蓝线就一直亮着，
+     整个编辑区看起来像个输入框而不是编辑器。光标本身就够说明焦点在哪。 */
+  outline: none !important;
+}
+
+/* 行号槽 */
+.nb__gutter {
+  flex: 0 0 auto;
+  min-width: 44px;
+  padding: var(--nb-pad-top) 10px 0 0;
+  overflow: hidden;
+  color: var(--text-faint);
+  font: var(--nb-editor-size, 13px)/var(--nb-line-h) var(--nb-editor-font, ui-monospace, monospace);
+  text-align: right;
+  user-select: none;
+}
+.nb__gutter > div { height: calc(var(--nb-editor-size, 13px) * var(--nb-line-h)); }
+
+/* 底部状态栏 */
+.nb__status {
+  flex: 0 0 auto;
+  display: flex; align-items: center; gap: 14px;
+  height: 24px;
+  padding: 0 12px;
+  border-top: 1px solid var(--line-soft);
+  background: var(--bg-raised);
+  color: var(--text-dim);
+  font-size: 11px;
+}
+.nb__status-item { white-space: nowrap; }
+.nb__status-left { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* 右侧「符号详情」栏：没选中符号时不该占着四分之一屏幕讲说明书 */
+.nb__detail-pane:has(.empty) { width: 0 !important; min-width: 0; border-left: 0; overflow: hidden; }
