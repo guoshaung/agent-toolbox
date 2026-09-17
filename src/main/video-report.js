@@ -102,10 +102,30 @@ function findLarkCli({ platform = process.platform, env = process.env, home = os
     try {
       fsModule.accessSync(p, fs.constants.X_OK);
       const binDir = pathApi.dirname(p);
-      return { cli: p, env: { ...env, PATH: `${binDir}${delimiter}${env.PATH || ''}` } };
+      const nextEnv = { ...env, PATH: `${binDir}${delimiter}${env.PATH || ''}` };
+      if (/\.cmd$/i.test(p)) {
+        // npm 的 .cmd 只是个壳。直接执行它必须开 shell:true，而 shell:true 下
+        // Node 不转义参数 —— 视频标题里一个空格或 & 就能把命令打散
+        //（实测：标题「【官方】测试 & 报告」会变成 `报告: command not found`）。
+        // 壳里写着真正的 JS 路径，抠出来用 node 直接跑，就不用过 shell 了。
+        const script = resolveCmdShimScript(p, fsModule, pathApi);
+        if (script) return { cli: 'node', prefixArgs: [script], env: nextEnv };
+      }
+      return { cli: p, prefixArgs: [], env: nextEnv };
     } catch { /* 下一个 */ }
   }
   return null;
+}
+
+/** 从 npm 生成的 .cmd 壳里取出它要执行的 JS 路径（`"%dp0%\node_modules\x\cli.js"`）。 */
+function resolveCmdShimScript(cmdPath, fsModule = fs, pathApi = path) {
+  let text = '';
+  try { text = fsModule.readFileSync(cmdPath, 'utf8'); } catch { return ''; }
+  const match = text.match(/"%(?:dp0|~dp0)%\\([^"]+\.(?:js|mjs|cjs))"/i);
+  if (!match) return '';
+  const resolved = pathApi.join(pathApi.dirname(cmdPath), match[1].replace(/\//g, '\\'));
+  try { fsModule.accessSync(resolved, fs.constants.F_OK); } catch { return ''; }
+  return resolved;
 }
 
 /**
@@ -559,7 +579,7 @@ function publishMarkdown(userDataDir, file, { title, markdown, bvid, sourceId = 
   try {
     const out = execFileSync(
       found.cli,
-      ['docs', '+create', '--doc-format', 'markdown', '--content', '-', '--title', title],
+      [...(found.prefixArgs || []), 'docs', '+create', '--doc-format', 'markdown', '--content', '-', '--title', title],
       { encoding: 'utf8', input: markdown, maxBuffer: 16 * 1024 * 1024, timeout: 120000, env: found.env, shell: /\.cmd$/i.test(found.cli) },
     );
     const parsed = JSON.parse(out);
@@ -691,6 +711,7 @@ module.exports = {
   fetchBilibiliInfo,
   fetchSubtitles,
   findLarkCli,
+  resolveCmdShimScript,
   findLocalTranscript,
   findYtDlp,
   findGeneratedTranscript,

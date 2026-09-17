@@ -17,6 +17,22 @@ export function isSnapTransition(from, to) {
   return from === 'fist' && to === 'open';
 }
 
+/**
+ * 摄像头那边认为「>=3 指就算张开」，但 classifyGesture 的门槛是 4 指：
+ * 3 指会被判成 unknown（置信度 0.4），低于 minConfidence(0.5)，状态机直接
+ * 当成「没有手」丢掉 —— 三指张开以前是一点反应都没有的。
+ *
+ * 所以改写手势时必须连置信度一起抬上去，这两件事不能分开做。
+ */
+export function rewriteOpenHand(gesture, confidence, fingerCount, options = {}) {
+  const minFingers = options.openMinFingers ?? 3;
+  const floor = options.openConfidenceFloor ?? Math.max(DEFAULT_OPTIONS.minConfidence + 0.1, 0.6);
+  if (fingerCount >= minFingers && gesture !== 'open') {
+    return { gesture: 'open', confidence: Math.max(Number(confidence) || 0, floor) };
+  }
+  return { gesture, confidence: Number(confidence) || 0 };
+}
+
 export function isFistGesture(gesture) { return gesture === 'fist'; }
 export function isOpenGesture(gesture) { return gesture === 'open'; }
 

@@ -188,3 +188,38 @@ test('相同视频重复处理时会复用未过期的本地转写缓存', async
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
+
+// ---- Windows：.cmd 壳必须被解析成 node + js，不能走 shell ----
+// 直接执行 .cmd 必须开 shell:true，而 shell:true 下 Node 不转义参数，
+// 视频标题里一个空格或 & 就会把命令打散（实测「【官方】测试 & 报告」
+// 会变成 `报告: command not found`）。所以要从壳里取出真正的 JS 路径。
+test('resolveCmdShimScript 从 npm 的 .cmd 壳里取出 JS 路径', () => {
+  const { resolveCmdShimScript } = require('../src/main/video-report.js');
+  const pathWin = require('node:path').win32;
+
+  // npm 真实生成的壳（节选自 npm 的 cmd 模板）
+  const shim = [
+    '@ECHO off', 'SETLOCAL', 'CALL :find_dp0',
+    'IF EXIST "%dp0%\\node.exe" (', '  SET "_prog=%dp0%\\node.exe"', ') ELSE (',
+    '  SET "_prog=node"', '  SET PATHEXT=%PATHEXT:;.JS;=;%', ')', '',
+    'endLocal & goto #_undefined_# 2>NUL || title %COMSPEC% & '
+      + '"%_prog%"  "%dp0%\\node_modules\\lark-cli\\bin\\cli.js" %*',
+  ].join('\r\n');
+
+  const cmdPath = 'C:\\Users\\me\\AppData\\Roaming\\npm\\lark-cli.cmd';
+  const expected = 'C:\\Users\\me\\AppData\\Roaming\\npm\\node_modules\\lark-cli\\bin\\cli.js';
+
+  const fakeFs = {
+    readFileSync: (file) => { assert.equal(file, cmdPath); return shim; },
+    accessSync: (file) => { if (file !== expected) throw new Error('ENOENT'); },
+  };
+  assert.equal(resolveCmdShimScript(cmdPath, fakeFs, pathWin), expected);
+
+  // 壳里没有 JS 路径时要返回空串，让调用方退回老路子而不是崩
+  const noMatch = { readFileSync: () => '@ECHO off\r\nlark-cli %*', accessSync: () => {} };
+  assert.equal(resolveCmdShimScript(cmdPath, noMatch, pathWin), '');
+
+  // 抠出来的路径不存在也要返回空串
+  const missing = { readFileSync: () => shim, accessSync: () => { throw new Error('ENOENT'); } };
+  assert.equal(resolveCmdShimScript(cmdPath, missing, pathWin), '');
+});

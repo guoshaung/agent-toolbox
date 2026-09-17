@@ -1069,7 +1069,13 @@ export default {
               bvid: '',
               publish: publishToggle.checked,
             });
-            item.status = item.result.docUrl ? '已生成并发布到飞书' : item.result.publishError ? '已生成，飞书发布失败' : '已生成本地报告';
+            // 只说「发布失败」等于没说：真正的原因（没装 lark-cli、没登录、
+            // 标题被 shell 打散…）全在 publishError 里，得带出来。
+            item.status = item.result.docUrl
+              ? '已生成并发布到飞书'
+              : item.result.publishError
+                ? `已生成本地报告，飞书发布失败：${item.result.publishError}`
+                : '已生成本地报告';
             if (localVoiceboxToggle.checked) {
               item.status = '报告已生成，Voicebox 正在朗读…';
               renderLocalQueue();

@@ -1,6 +1,6 @@
 import { h, toast } from '../../core/ui.js';
 import { analyzeFrame } from './hand-cv.js';
-import { GestureStateMachine } from './gesture-state.js';
+import { GestureStateMachine, rewriteOpenHand } from './gesture-state.js';
 
 const DEFAULT_MUSIC = 'https://search.bilibili.com/all?keyword=%E5%93%88%E5%9F%BA%E7%B1%B3';
 
@@ -78,7 +78,7 @@ export default {
           ? `指尖 ${fingerCount} · ${result.gesture} · ${(result.confidence * 100).toFixed(0)}%`
           : '未检测到手';
         const center = result.region?.centroid;
-        let gesture = fingerCount >= 3 ? 'open' : result.gesture;
+        let { gesture, confidence } = rewriteOpenHand(result.gesture, result.confidence, fingerCount);
         if (center && lastCenter) {
           const dx = center.x - lastCenter.x;
           const dy = center.y - lastCenter.y;
@@ -93,11 +93,12 @@ export default {
           }
         }
         if (center) lastCenter = center;
-        const events = machine.update({ gesture, confidence: result.confidence || 0, x: center?.x, y: center?.y });
+        const events = machine.update({ gesture, confidence, x: center?.x, y: center?.y });
         for (const event of events) {
           if (event.type === 'gesture-change' && event.to === 'open') action('fullscreen');
-          if (event.type === 'gesture-change' && event.to === 'swipeLeft') action('snap', 'left');
-          if (event.type === 'gesture-change' && event.to === 'swipeRight') action('snap', 'right');
+          // 挥手不走状态机：swipeLeft/Right 只在 |dx|>12 的那一帧出现，
+          // 下一帧 lastCenter 就更新了，永远凑不满 stableFrames(2) 帧，
+          // 这两个分支从来没执行过。挥手在上面那段按 1.8 秒冷却直接触发。
         }
       }
       } finally {

@@ -126,3 +126,23 @@ test('纯模块不依赖 DOM 或 Electron', () => {
     assert.doesNotMatch(source, pattern, `不应包含 ${pattern}`);
   }
 });
+// ---- 三指张开必须能被确认 ----
+// 以前 index.js 只把手势改写成 open、置信度原样留在 0.4（unknown 的值），
+// 低于 minConfidence(0.5)，状态机当成「没有手」丢掉，三指完全没反应。
+test('三指改写成 open 时置信度要够得着 minConfidence', () => {
+  const { GestureStateMachine, DEFAULT_OPTIONS, rewriteOpenHand } = require('../src/renderer/tools/gesture/gesture-state.js');
+
+  const three = rewriteOpenHand('unknown', 0.4, 3);
+  assert.equal(three.gesture, 'open');
+  assert.ok(three.confidence >= DEFAULT_OPTIONS.minConfidence,
+    `三指改写后置信度 ${three.confidence} 必须 >= ${DEFAULT_OPTIONS.minConfidence}`);
+
+  const machine = new GestureStateMachine();
+  for (let i = 0; i < 3; i += 1) machine.update({ ...three, x: 5, y: 5 });
+  assert.equal(machine.state.gesture, 'open', '三指张开应该被确认为 open');
+
+  // 少于 3 指不改写，原样透传
+  assert.deepEqual(rewriteOpenHand('scissor', 0.7, 2), { gesture: 'scissor', confidence: 0.7 });
+  // 本来就是 open 的不动它
+  assert.deepEqual(rewriteOpenHand('open', 0.9, 5), { gesture: 'open', confidence: 0.9 });
+});
