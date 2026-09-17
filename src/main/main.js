@@ -578,7 +578,9 @@ function createWindow(showOnReady = true) {
     windowDock?.detach({ restoreMain: false, restoreTarget: true });
     // 桌宠是主应用的一部分：Windows/Linux 仍保持原来“关主窗即退出”的体验；
     // macOS 则沿用关闭窗口但应用常驻的惯例，桌宠可继续使用。
-    if (process.platform !== 'darwin') app.quit();
+    // 桌宠、术语弹窗这些是 hide 不是 destroy，只要被创建过就一直算「还有窗口」，
+    // window-all-closed 永远不触发，进程就留在后台了。quitToolbox 会显式销毁。
+    if (process.platform !== 'darwin') quitToolbox();
   });
 
   // 壳本身永远不该被导航走；工具里的链接一律交给内嵌 webview 或系统浏览器。
@@ -2606,7 +2608,12 @@ app.whenReady().then(async () => {
   dshService = new DshService({ app, getWindow: () => mainWindow });
   tavernService = new TavernService({ app, getWindow: () => mainWindow });
   voiceboxService = new VoiceboxService({ getUserDataPath: () => app.getPath('userData'), getWindow: () => mainWindow });
-  appControls = new AppControls({ store });
+  appControls = new AppControls({
+    store,
+    // ⌘/Ctrl+Shift+Q 一键退出工具箱：走和点叉号同一条路（销毁全部窗口再退），
+    // 这样 Windows 上不会留在后台。
+    onQuitSelf: () => quitToolbox(),
+  });
   voiceBoxService = new VoiceBoxService({
     app,
     shell,
@@ -2654,7 +2661,37 @@ app.on('before-quit', (event) => {
   windowDock.dispose().finally(() => app.quit());
 });
 
+/**
+ * 退出兜底。
+ *
+ * 点了叉号之后进程留在后台，是因为有东西还吊着 Node 的事件循环：
+ * 没关干净的 socket、没杀掉的子进程、悬着的定时器。
+ * 逐个去堵永远堵不完（每加一个外部服务就多一个可能），
+ * 所以这里加一道硬底线：退出流程走完还没真的退，就强制结束。
+ * Windows 上尤其需要 —— 那边没有 macOS「关窗不退应用」的惯例，
+ * 用户点叉号就是要它消失。
+ */
+/** 关窗、快捷键、菜单退出都走这里，保证行为一致。 */
+function quitToolbox() {
+  for (const win of BrowserWindow.getAllWindows()) {
+    try { if (!win.isDestroyed()) win.destroy(); } catch { /* 已经没了 */ }
+  }
+  app.quit();
+}
+
+const FORCE_EXIT_AFTER_MS = 3000;
+let forceExitTimer = null;
+function armForceExit() {
+  if (forceExitTimer) return;
+  forceExitTimer = setTimeout(() => {
+    console.warn('[quit] 退出流程超时，强制结束进程');
+    app.exit(0);
+  }, FORCE_EXIT_AFTER_MS);
+  forceExitTimer.unref?.();     // 它自己不该成为「阻止退出」的那个句柄
+}
+
 app.on('will-quit', () => {
+  armForceExit();
   stopAllShelfApps();      // 别把工具架启动的子进程留成孤儿
   stopAutoCheck();
   globalShortcut.unregisterAll();

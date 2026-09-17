@@ -67,7 +67,13 @@ export default {
 
     async function tryClose() {
       const result = await window.toolbox.appControls.closeForeground();
-      if (result.ok) toast(`已强制关闭 ${result.name || result.pid}`, 'good');
+      if (result.ok) {
+        // 把「顺带扫掉几个同名残留」说出来 —— 不然你按完不知道后台还有没有剩的
+        const swept = Number(result.sweptExtra) || 0;
+        toast(swept > 0
+          ? `已强制关闭 ${result.name || result.pid}，另清掉 ${swept} 个同名后台进程`
+          : `已强制关闭 ${result.name || result.pid}`, 'good');
+      }
       else if (result.skipped) toast(result.error || '当前应用受保护，已跳过。', 'info');
       else toast(result.error || '强关失败。', 'bad');
     }

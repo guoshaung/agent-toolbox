@@ -121,7 +121,19 @@ class RemoteControl {
     this.server = null;
     this.token = '';
     this.port = 0;
-    if (server) await new Promise((resolve) => server.close(() => resolve()));
+    if (server) {
+      // server.close() 只是不再接受新连接，**会一直等现有连接结束**。
+      // 手机端那个页面 15 秒轮询一次收件箱、保持着 keep-alive 连接，
+      // 于是 close 的回调永远不来，这些 socket 还吊着 Node 的事件循环 ——
+      // 表现就是点了叉号、应用却留在后台不退。必须主动把连接掐掉。
+      await new Promise((resolve) => {
+        let done = false;
+        const finish = () => { if (!done) { done = true; resolve(); } };
+        server.close(finish);
+        server.closeAllConnections?.();
+        setTimeout(finish, 1500);      // 老版本 Node 没有 closeAllConnections，兜个底
+      });
+    }
     return this.status();
   }
 

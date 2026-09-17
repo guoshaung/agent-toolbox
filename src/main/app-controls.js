@@ -9,7 +9,10 @@ const { promisify } = require('node:util');
 const execFileAsync = promisify(execFile);
 const CTRL_Q = 'CommandOrControl+Q';
 const CTRL_TILDE = 'CommandOrControl+`';
-const SHORTCUTS = { close: 'Ctrl+Q', cycle: 'Ctrl+~' };
+// 一键退出工具箱本身。和上面两个不一样：那两个作用于「前台的别的应用」，
+// 这个作用于工具箱自己，所以加 Shift 区分开，也避免误触。
+const QUIT_SELF = 'CommandOrControl+Shift+Q';
+const SHORTCUTS = { close: 'Ctrl+Q', cycle: 'Ctrl+~', quitSelf: 'Ctrl+Shift+Q' };
 const SAFE_PROCESS_NAMES = new Set([
   'system', 'idle', 'registry', 'smss', 'csrss', 'wininit', 'services', 'lsass',
   'svchost', 'winlogon', 'dwm', 'fontdrvhost', 'sihost', 'taskhostw', 'explorer',
@@ -60,7 +63,8 @@ function runPowerShell(command, args, { exec = execFileAsync, env = process.env 
 }
 
 class AppControls {
-  constructor({ store, platform = process.platform, ownPid = process.pid, exec = execFileAsync } = {}) {
+  constructor({ store, platform = process.platform, ownPid = process.pid, exec = execFileAsync, onQuitSelf } = {}) {
+    this.onQuitSelf = onQuitSelf;
     this.store = store;
     this.platform = platform;
     this.ownPid = ownPid;
@@ -76,6 +80,7 @@ class AppControls {
       enabled: this.enabled(),
       shortcuts: SHORTCUTS,
       registered: Boolean(this.registeredState?.registered),
+      quitRegistered: Boolean(this.registeredState?.quitRegistered),
       closeRegistered: Boolean(this.registeredState?.closeRegistered),
       cycleRegistered: Boolean(this.registeredState?.cycleRegistered),
     };
@@ -95,10 +100,27 @@ class AppControls {
     try { processInfo = await this.exec('powershell.exe', ['-NoProfile', '-Command', `(Get-Process -Id ${pid} -ErrorAction Stop | Select-Object Id,ProcessName,MainWindowTitle | ConvertTo-Json -Compress)`], { timeout: 5000 }); processInfo = JSON.parse(processInfo.stdout); } catch { return { ok: false, skipped: true, error: '无法识别当前前台应用，已跳过。' }; }
     const name = String(processInfo.ProcessName || '').toLowerCase();
     if (!pid || pid === this.ownPid || SAFE_PROCESS_NAMES.has(name) || !foreground.title) return { ok: false, skipped: true, error: '当前窗口属于受保护应用或没有可关闭窗口，已跳过。' };
+    // 先按 PID 连进程树一起杀（/T 覆盖它拉起的子进程，比如各种渲染进程）。
     try {
       await this.exec('taskkill.exe', ['/PID', String(pid), '/T', '/F'], { timeout: 5000 });
-      return { ok: true, pid, name };
     } catch (error) { return { ok: false, error: error.message }; }
+
+    // 再按映像名扫一遍同名的残留。
+    // 光按 PID 杀不干净：很多应用的更新器、后台服务、托盘进程并不挂在前台窗口
+    // 那棵树下面，杀完主进程它们还在，表现就是「叉掉了但还在后台」。
+    let sweptExtra = 0;
+    if (name) {
+      try {
+        const image = `${name}.exe`;
+        const before = await this.exec('powershell.exe', ['-NoProfile', '-Command',
+          `@(Get-Process -Name '${name}' -ErrorAction SilentlyContinue).Count`], { timeout: 5000 });
+        sweptExtra = Number(String(before.stdout).trim()) || 0;
+        if (sweptExtra > 0) {
+          await this.exec('taskkill.exe', ['/IM', image, '/T', '/F'], { timeout: 5000 });
+        }
+      } catch { /* 没有残留，或者已经被上一步带走了 */ }
+    }
+    return { ok: true, pid, name, sweptExtra };
   }
 
   async cycleWindows() {
@@ -116,16 +138,25 @@ class AppControls {
   }
 
   register(globalShortcut) {
-    globalShortcut.unregister(CTRL_Q); globalShortcut.unregister(CTRL_TILDE);
+    globalShortcut.unregister(CTRL_Q); globalShortcut.unregister(CTRL_TILDE); globalShortcut.unregister(QUIT_SELF);
+
+    // 一键退出工具箱本身：不分平台、也不受「快捷控制」开关影响。
+    // 它只关掉自己，不动别的应用，没有需要用户先确认的风险。
+    const quitRegistered = this.onQuitSelf
+      ? globalShortcut.register(QUIT_SELF, () => this.onQuitSelf())
+      : false;
+
+    // 下面两个会作用到**别的应用**（关掉前台窗口、循环别人的窗口），
+    // 属于要用户明确打开才生效的能力，且只有 Windows 实现。
     if (this.platform !== 'win32' || !this.enabled()) {
-      this.registeredState = { registered: false, closeRegistered: false, cycleRegistered: false };
+      this.registeredState = { registered: false, closeRegistered: false, cycleRegistered: false, quitRegistered };
       return this.status();
     }
     const closeRegistered = globalShortcut.register(CTRL_Q, () => this.closeForeground());
     const cycleRegistered = globalShortcut.register(CTRL_TILDE, () => this.cycleWindows());
-    this.registeredState = { registered: closeRegistered && cycleRegistered, closeRegistered, cycleRegistered };
+    this.registeredState = { registered: closeRegistered && cycleRegistered, closeRegistered, cycleRegistered, quitRegistered };
     return this.status();
   }
 }
 
-module.exports = { AppControls, CTRL_Q, CTRL_TILDE, SAFE_PROCESS_NAMES, WINDOWS_SCRIPT };
+module.exports = { AppControls, CTRL_Q, CTRL_TILDE, QUIT_SELF, SHORTCUTS, SAFE_PROCESS_NAMES, WINDOWS_SCRIPT };

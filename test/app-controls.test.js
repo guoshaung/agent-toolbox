@@ -198,3 +198,53 @@ test('快捷键占用冲突时返回未注册状态', () => {
   assert.equal(result.closeRegistered, false);
   assert.equal(result.cycleRegistered, false);
 });
+
+test('强制关闭会连同名残留进程一起扫掉，不只是杀前台那棵树', async () => {
+  // 光按 PID /T 杀不干净：更新器、托盘、后台服务往往不挂在前台窗口那棵树下，
+  // 主进程没了它们还在，用户看到的就是「关了但还在后台」。
+  const calls = [];
+  const controls = createControls({
+    ownPid: 100,
+    exec: async (file, args) => {
+      calls.push(`${file} ${args.join(' ')}`);
+      if (file === 'powershell.exe' && args.join(' ').includes('Get-Process -Id')) {
+        return { stdout: JSON.stringify({ Id: 777, ProcessName: 'demoapp', MainWindowTitle: '示例' }) };
+      }
+      if (file === 'powershell.exe' && args.join(' ').includes("Get-Process -Name")) {
+        return { stdout: '3\n' };     // 还剩 3 个同名进程
+      }
+      return { stdout: '' };
+    },
+  });
+  controls.run = async () => ({ handle: '1', pid: 777, title: '示例窗口' });
+
+  const result = await controls.closeForeground();
+  assert.equal(result.ok, true);
+  assert.equal(result.name, 'demoapp');
+  assert.equal(result.sweptExtra, 3);
+  assert.ok(calls.some((c) => c.startsWith('taskkill.exe /PID 777 /T /F')), '应先按 PID 杀进程树');
+  assert.ok(calls.some((c) => c.startsWith('taskkill.exe /IM demoapp.exe /T /F')), '再按映像名扫残留');
+});
+
+test('没有同名残留时不会多杀一遍', async () => {
+  const calls = [];
+  const controls = createControls({
+    ownPid: 100,
+    exec: async (file, args) => {
+      calls.push(`${file} ${args.join(' ')}`);
+      if (file === 'powershell.exe' && args.join(' ').includes('Get-Process -Id')) {
+        return { stdout: JSON.stringify({ Id: 888, ProcessName: 'soloapp', MainWindowTitle: '示例' }) };
+      }
+      if (file === 'powershell.exe' && args.join(' ').includes("Get-Process -Name")) {
+        return { stdout: '0\n' };
+      }
+      return { stdout: '' };
+    },
+  });
+  controls.run = async () => ({ handle: '1', pid: 888, title: '示例窗口' });
+
+  const result = await controls.closeForeground();
+  assert.equal(result.ok, true);
+  assert.equal(result.sweptExtra, 0);
+  assert.ok(!calls.some((c) => c.includes('/IM')), '没有残留就不该再按映像名杀一遍');
+});

@@ -105,3 +105,25 @@ test('手机 APK 下载地址受配对令牌保护并返回 APK', async () => {
     fs.rmSync(apkPath, { force: true });
   }
 });
+
+test('停止时会掐断 keep-alive 连接，不会挂在 server.close 上', async () => {
+  // 回归用例：server.close() 只是不再接受新连接，会一直等现有连接结束。
+  // 手机端页面 15 秒轮询一次、保持 keep-alive，于是回调永远不来，
+  // 这些 socket 吊着 Node 的事件循环，应用点了退出却留在后台。
+  const net = require('node:net');
+  const control = new RemoteControl({ deviceName: '测试机', onCommand: async () => ({ ok: true }) });
+  const started = await control.start({ port: 0 });
+
+  const socket = net.connect(started.port, '127.0.0.1');
+  await new Promise((resolve, reject) => { socket.once('connect', resolve); socket.once('error', reject); });
+  socket.write(`GET /api/inbox?token=${started.token} HTTP/1.1\r\nHost: x\r\nConnection: keep-alive\r\n\r\n`);
+  await new Promise((resolve) => setTimeout(resolve, 150));
+
+  const began = Date.now();
+  await control.stop();
+  const elapsed = Date.now() - began;
+  socket.destroy();
+
+  // 没有这个修复的话，close 的回调根本不会来，只能等兜底超时
+  assert.ok(elapsed < 1200, `stop() 用了 ${elapsed}ms，说明还在等连接自己断开`);
+});
