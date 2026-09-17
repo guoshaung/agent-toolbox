@@ -87,9 +87,34 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           TAG="${GITHUB_REF_NAME}"
-          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            gh release upload "$TAG" artifacts/* --repo "$GITHUB_REPOSITORY" --clobber
-          else
-            gh release create "$TAG" artifacts/* --repo "$GITHUB_REPOSITORY" \
+          # 先把 release 本身建出来（不带产物），再一个一个传。
+          # 之前是 create 时带上全部产物，结果 146MB 的 dmg 传到一半 504，
+          # 整个 release 都没留下来，得重跑一整次。分开之后超时只影响那一个文件。
+          if ! gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release create "$TAG" --repo "$GITHUB_REPOSITORY" \
               --title "Agent 工具箱 $TAG" --generate-notes
           fi
+          # GitHub 的上传端点对大文件偶尔 504，重试三次
+          for file in artifacts/*; do
+            for attempt in 1 2 3; do
+              if gh release upload "$TAG" "$file" --repo "$GITHUB_REPOSITORY" --clobber; then
+                break
+              fi
+              if [ "$attempt" = 3 ]; then
+                echo "::error::$file 传了三次都没成功"
+                exit 1
+              fi
+              echo "$file 第 $attempt 次失败，等 15 秒再试"
+              sleep 15
+            done
+          done
+          # 少传一个都可能让自动更新装不上（macOS 认 zip、Windows 认 exe），所以清点一遍
+          missing=0
+          for file in artifacts/*; do
+            name=$(basename "$file")
+            if ! gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json assets -q '.assets[].name' | grep -qx "$name"; then
+              echo "::error::$name 没出现在 release 里"
+              missing=1
+            fi
+          done
+          [ "$missing" = 0 ]
