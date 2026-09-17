@@ -1,4 +1,5 @@
-# Build and validate Windows artifacts before a separate job publishes them.
+# 两个平台各自构建并校验，最后由一个 job 统一发布到同一个 release。
+# （不能让两个平台各自 --publish，它们会并行地各建一个 draft，产物散在两个草稿里。）
 name: Build and release
 
 on:
@@ -39,15 +40,47 @@ jobs:
             dist/Agent-Toolbox-*-win-x64.exe.blockmap
             dist/latest.yml
 
+  # macOS 的包不能少：日常用的就是 Mac。
+  # zip 是 macOS 更新器唯一认的格式（dmg 它找不到），dmg 给人手动装。
+  build-mac:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm run check
+
+      - name: Build macOS arm64
+        run: npx electron-builder --mac dmg zip --arm64 --publish never
+        env:
+          # 不签名。别在这写 CSC_LINK 的 secrets 占位 —— secret 不存在时是空字符串，
+          # electron-builder 会当成「给了证书路径」去读，报 "... not a file" 直接失败。
+          CSC_IDENTITY_AUTO_DISCOVERY: false
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist-mac
+          retention-days: 3
+          if-no-files-found: error
+          path: |
+            dist/Agent-Toolbox-*-mac-arm64.dmg
+            dist/Agent-Toolbox-*-mac-arm64.dmg.blockmap
+            dist/Agent-Toolbox-*-mac-arm64.zip
+            dist/Agent-Toolbox-*-mac-arm64.zip.blockmap
+            dist/latest-mac.yml
+
   publish:
     # The default success condition skips this job if any build step fails.
-    needs: build
+    needs: [build, build-mac]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v4
         with:
-          name: dist-win
           path: artifacts
+          merge-multiple: true      # 两个平台的产物合到同一个目录
 
       - name: Publish release
         env:

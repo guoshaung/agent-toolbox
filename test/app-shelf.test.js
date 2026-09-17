@@ -1,5 +1,6 @@
 const assert = require('node:assert/strict');
 const test = require('node:test');
+const os = require('node:os');
 
 const { start, stop, status } = require('../src/main/app-shelf');
 
@@ -16,14 +17,14 @@ function waitForStopped(id) {
 }
 
 test('工具架允许同一个项目在退出后再次启动', async () => {
-  const id = `/tmp/agent-toolbox-shelf-${process.pid}-${Date.now()}`;
+  const id = `${os.tmpdir()}/agent-toolbox-shelf-${process.pid}-${Date.now()}`;
   const command = `${process.execPath} -e "setTimeout(() => {}, 350)"`;
   try {
-    assert.equal(start({ id, cwd: '/tmp', command }).ok, true);
-    assert.equal(start({ id, cwd: '/tmp', command }).ok, false);
+    assert.equal(start({ id, cwd: os.tmpdir(), command }).ok, true);
+    assert.equal(start({ id, cwd: os.tmpdir(), command }).ok, false);
     assert.equal(stop(id).ok, true);
     await waitForStopped(id);
-    assert.equal(start({ id, cwd: '/tmp', command }).ok, true);
+    assert.equal(start({ id, cwd: os.tmpdir(), command }).ok, true);
     assert.equal(stop(id).ok, true);
     await waitForStopped(id);
   } finally {
