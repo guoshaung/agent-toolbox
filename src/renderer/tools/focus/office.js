@@ -55,6 +55,19 @@ export function createOffice(ctx) {
     history.set(id, list.slice(-12));
   }
 
+  /**
+   * 把最后那条「正在执行…」换成真正的结果。
+   *
+   * 以前只有成功才往历史里写，失败就什么都不写 —— 于是对话面板上只剩你发的那句，
+   * 看着就是「点了接着聊没反应」，而真正的报错跑到下面派发台的结果卡里去了。
+   */
+  function settleHistory(id, role, text) {
+    const list = history.get(id) || [];
+    if (list[list.length - 1]?.role === 'pending') list.pop();
+    list.push({ role, text: String(text || '').slice(0, 4000) });
+    history.set(id, list.slice(-12));
+  }
+
   const promptInput = h('textarea', {
     class: 'office__prompt',
     rows: 3,
@@ -195,6 +208,8 @@ export function createOffice(ctx) {
     const startedAt = Date.now();
     for (const desk of picked) {
       pushHistory(desk.id, 'user', prompt);
+      pushHistory(desk.id, 'pending', '正在执行…');
+      if (chatAgent === desk.id) renderChat();
       desk.busy = true;
       running += 1;
       setDeskState(desk, '执行中…', 'busy');
@@ -206,19 +221,23 @@ export function createOffice(ctx) {
         view.timeEl.textContent = `${spent}s`;
         if (result?.ok) {
           view.body.textContent = result.text || '（没有返回文字）';
-          pushHistory(desk.id, 'agent', result.text || '');
+          settleHistory(desk.id, 'agent', result.text || '（没有返回文字）');
           if (chatAgent === desk.id) renderChat();
           setDeskState(desk, '已完成', 'good');
           scene?.setState(desk.id, 'idle', '');
         } else {
           view.body.textContent = result?.error || '执行失败';
           view.card.classList.add('is-bad');
+          settleHistory(desk.id, 'error', result?.error || '执行失败');
+          if (chatAgent === desk.id) renderChat();
           setDeskState(desk, '失败', 'bad');
           scene?.setState(desk.id, 'idle', '');
         }
       }).catch((error) => {
         view.body.textContent = String(error?.message || error);
         view.card.classList.add('is-bad');
+        settleHistory(desk.id, 'error', String(error?.message || error));
+        if (chatAgent === desk.id) renderChat();
         setDeskState(desk, '失败', 'bad');
         scene?.setState(desk.id, 'idle', '');
       }).finally(() => {
@@ -333,7 +352,8 @@ export function createOffice(ctx) {
     chatLog.replaceChildren(...(turns.length
       ? [h('div', { class: 'office-chat__sep' }, '刚在这里聊的'),
          ...turns.map((turn) => h('div', { class: `office-chat__turn is-${turn.role}` },
-          h('span', { class: 'office-chat__who' }, turn.role === 'user' ? '我' : desks.get(chatAgent)?.label || 'AI'),
+          h('span', { class: 'office-chat__who' },
+            turn.role === 'user' ? '我' : turn.role === 'pending' ? '…' : desks.get(chatAgent)?.label || 'AI'),
           h('pre', { class: 'office-chat__text' }, turn.text),
         ))]
       : []));

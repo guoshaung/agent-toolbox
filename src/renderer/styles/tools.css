@@ -3802,6 +3802,10 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .office-chat__who { color: var(--text-faint); font-size: 11px; }
 .office-chat__text { margin: 0; color: var(--text); font: 12px/1.6 var(--mono); white-space: pre-wrap; word-break: break-word; }
 .office-chat__turn.is-user .office-chat__text { color: var(--text-dim); }
+/* 失败要一眼看见，别再让人以为「点了没反应」 */
+.office-chat__turn.is-error .office-chat__who { color: var(--bad); }
+.office-chat__turn.is-error .office-chat__text { color: var(--bad); }
+.office-chat__turn.is-pending .office-chat__text { color: var(--accent); }
 .office-chat__input { width: 100%; padding: 8px 10px; border: 1px solid var(--line-soft); border-radius: 9px; color: var(--text); background: var(--code-bg); font: 12.5px/1.6 var(--mono); resize: vertical; }
 .office-chat__input:focus { outline: none; border-color: color-mix(in srgb, var(--accent) 55%, var(--line)); }
 .office-chat__actions { display: flex; align-items: center; }
