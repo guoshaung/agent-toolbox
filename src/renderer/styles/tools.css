@@ -3808,7 +3808,8 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .office-chat__turn.is-pending .office-chat__text { color: var(--accent); }
 .office-chat__input { width: 100%; padding: 8px 10px; border: 1px solid var(--line-soft); border-radius: 9px; color: var(--text); background: var(--code-bg); font: 12.5px/1.6 var(--mono); resize: vertical; }
 .office-chat__input:focus { outline: none; border-color: color-mix(in srgb, var(--accent) 55%, var(--line)); }
-.office-chat__actions { display: flex; align-items: center; }
+.office-chat__actions { display: flex; align-items: center; gap: 8px; }
+.office-chat__target { max-width: 190px; }
 
 @media (prefers-reduced-motion: reduce) {
   .office-desk, .office-person, .office-eyes, .office-arm, .office-monitor-glow { transition: none !important; animation: none !important; }

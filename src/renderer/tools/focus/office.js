@@ -264,6 +264,54 @@ export function createOffice(ctx) {
   let chatAgent = null;
 
   const chatSend = h('button', { class: 'btn btn--primary btn--sm', onclick: () => sendFollowUp() }, '接着聊');
+
+  // ---------- 丢进已经开着的那个窗口 ----------
+  //
+  // 「接着聊」是起一个新的 CLI 进程，那是个全新的、没登录的会话。
+  // 而你屏幕上那个 Claude/Codex 窗口本来就登录好、上下文也在 —— 所以这条路是
+  // 把字送进那个窗口并替你按回车，不另起炉灶。
+  const targetSelect = h('select', {
+    class: 'field field--sm office-chat__target',
+    title: '把文字丢进哪个已经开着的窗口',
+    onchange: () => config.set('focus.handoffTarget', targetSelect.value),
+  });
+
+  const handoffBtn = h('button', {
+    class: 'btn btn--sm', title: '把上面写的内容丢进选中的窗口，并替你按回车',
+    onclick: async () => {
+      const text = chatInput.value.trim();
+      if (!text) return toast('先写一句', 'info');
+      const app = targetSelect.value;
+      if (!app) return toast('先选一个窗口', 'info');
+      handoffBtn.disabled = true;
+      try {
+        const result = await window.toolbox.agentRun.handoff({ app, text });
+        if (result?.ok) {
+          chatInput.value = '';
+          pushHistory(chatAgent, 'user', text);
+          settleHistory(chatAgent, 'agent', `（已丢进「${app}」窗口并回车，回答在那边看）`);
+          renderChat();
+          toast(`已丢进 ${app}`, 'good');
+        } else if (result?.needsPermission) {
+          toast('还没授权控制其它应用，正在打开设置…', 'bad', 5000);
+          window.toolbox.agentRun.openAccessibility();
+        } else {
+          toast(result?.error || '投送失败', 'bad', 6000);
+        }
+      } finally {
+        handoffBtn.disabled = false;
+      }
+    },
+  }, '丢进窗口 ⏎');
+
+  async function loadTargets() {
+    let apps = [];
+    try { apps = await window.toolbox.agentRun.apps(); } catch { /* 列不出来就留空 */ }
+    targetSelect.replaceChildren(h('option', { value: '' }, '选窗口…'),
+      ...apps.map((name) => h('option', { value: name }, name)));
+    const remembered = config.get('focus.handoffTarget', '');
+    if (remembered && apps.includes(remembered)) targetSelect.value = remembered;
+  }
   const chatPanel = h('div', { class: 'office-chat', hidden: true },
     h('div', { class: 'office-chat__head' },
       chatTitle,
@@ -275,7 +323,11 @@ export function createOffice(ctx) {
     chatPast,
     chatLog,
     chatInput,
-    h('div', { class: 'office-chat__actions' }, h('span', { style: { flex: 1 } }), chatSend),
+    h('div', { class: 'office-chat__actions' },
+      targetSelect, handoffBtn,
+      h('span', { style: { flex: 1 } }),
+      chatSend,
+    ),
   );
 
   chatInput.addEventListener('keydown', (event) => {
@@ -369,6 +421,7 @@ export function createOffice(ctx) {
     chatPanel.hidden = false;
     renderChat();
     loadSessionList();
+    loadTargets();
     chatInput.focus();
   }
 

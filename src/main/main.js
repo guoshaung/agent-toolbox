@@ -827,6 +827,80 @@ async function pressCopyShortcut() {
   await execFileAsync('/bin/sh', ['-lc', 'command -v xdotool >/dev/null && xdotool key --clearmodifiers ctrl+c'], { timeout: 3000 });
 }
 
+/**
+ * 把一段文字投送到别的应用里，并替你按下回车。
+ *
+ * 为什么不是「起一个 CLI 进程」：那样起来的是一个全新的、没登录的会话。
+ * 而你屏幕上那个 Claude/Codex 窗口本来就登录好、上下文也在，所以正确的做法是
+ * 把字送进那个窗口，而不是另起炉灶。
+ *
+ * 为什么用剪贴板粘贴而不是逐字符敲：osascript 的 keystroke 对中文基本不可用
+ * （会丢字或变成乱码），粘贴是唯一稳的路子。投完把剪贴板还原，不然会把你
+ * 原来复制的东西冲掉。
+ */
+async function handoffToApp(appName, text) {
+  const target = String(appName || '').trim();
+  const body = String(text || '');
+  if (!target) return { ok: false, error: '没有指定要投送到哪个应用。' };
+  if (!body.trim()) return { ok: false, error: '内容是空的。' };
+
+  const previous = clipboard.readText();
+  clipboard.writeText(body);
+  try {
+    if (process.platform === 'darwin') {
+      await execFileAsync('/usr/bin/osascript', [
+        '-e', `tell application "${target.replace(/"/g, '\\"')}" to activate`,
+        '-e', 'delay 0.35',
+        '-e', 'tell application "System Events" to keystroke "v" using command down',
+        '-e', 'delay 0.15',
+        '-e', 'tell application "System Events" to key code 36',
+      ], { timeout: 8000 });
+    } else if (process.platform === 'win32') {
+      // AppActivate 认窗口标题的前缀，SendKeys 里 ^v 是 Ctrl+V
+      const ps = `$w = New-Object -ComObject WScript.Shell; `
+        + `if (-not $w.AppActivate('${target.replace(/'/g, "''")}')) { exit 2 }; `
+        + `Start-Sleep -Milliseconds 350; $w.SendKeys('^v'); Start-Sleep -Milliseconds 150; $w.SendKeys('{ENTER}')`;
+      await execFileAsync('powershell.exe', ['-NoProfile', '-Command', ps], { timeout: 8000 });
+    } else {
+      await execFileAsync('/bin/sh', ['-lc',
+        `command -v xdotool >/dev/null && xdotool search --name ${JSON.stringify(target)} windowactivate --sync key --clearmodifiers ctrl+v Return`],
+      { timeout: 8000 });
+    }
+    return { ok: true };
+  } catch (error) {
+    // macOS 的 1002 就是「没给辅助功能权限」，单独认出来，好让界面给一个直达按钮
+    const needsPermission = process.platform === 'darwin' && /1002|not allowed to send keystrokes|不允许发送按键/i.test(error.message);
+    const hint = needsPermission
+      ? '需要先允许它控制别的应用：系统设置 → 隐私与安全性 → 辅助功能。'
+      : process.platform === 'darwin' ? '' : '确认那个窗口开着、标题对得上。';
+    const detail = String(error.message).split('\n').map((l) => l.trim()).filter(Boolean).pop() || '投送失败';
+    return { ok: false, needsPermission, error: [detail, hint].filter(Boolean).join(' ') };
+  } finally {
+    // 稍等一下再还原，太快的话粘贴还没读到剪贴板
+    setTimeout(() => { try { clipboard.writeText(previous); } catch { /* 还原失败不致命 */ } }, 1200);
+  }
+}
+
+/** 列出当前开着的、能投送的应用（只要有界面的那些）。 */
+async function listForegroundApps() {
+  try {
+    if (process.platform === 'darwin') {
+      const { stdout } = await execFileAsync('/usr/bin/osascript', [
+        '-e', 'tell application "System Events" to get name of every process whose background only is false',
+      ], { timeout: 5000 });
+      return stdout.split(',').map((s) => s.trim()).filter(Boolean).sort();
+    }
+    if (process.platform === 'win32') {
+      const { stdout } = await execFileAsync('powershell.exe', ['-NoProfile', '-Command',
+        "Get-Process | Where-Object { $_.MainWindowTitle } | ForEach-Object { $_.MainWindowTitle }"], { timeout: 5000 });
+      return [...new Set(stdout.split(/\r?\n/).map((s) => s.trim()).filter(Boolean))].sort();
+    }
+    return [];
+  } catch {
+    return [];
+  }
+}
+
 async function captureSelectedText() {
   const previous = clipboard.readText();
   const marker = `__agent_toolbox_term_${Date.now()}__`;
@@ -1929,6 +2003,13 @@ function registerIpc() {
   // 另一台设备。这里不弹：任务就是坐在电脑前的人自己敲进去的，再弹一次
   // 「你确定要执行你刚刚亲手输入的东西吗」纯属噪音。
   ipcMain.handle('agent:list', () => agentRuntime.installedAgents());
+  ipcMain.handle('agent:apps', () => listForegroundApps());
+  ipcMain.handle('agent:openAccessibility', () => {
+    if (process.platform !== 'darwin') return { ok: false };
+    shell.openExternal('x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility');
+    return { ok: true };
+  });
+  ipcMain.handle('agent:handoff', (_e, payload = {}) => handoffToApp(payload.app, payload.text));
   ipcMain.handle('agent:run', async (_e, payload = {}) => {
     const id = String(payload.id || '');
     const prompt = String(payload.prompt || '');
