@@ -13,6 +13,7 @@ const { Store } = require('./store');
 const { buildQuickExplainMessages, parseQuickExplainResponse } = require('./quick-explain');
 const { buildCompatibleEndpoints, validateCompatibleConfig, readStoredCompatibleConfig } = require('./ai-config');
 const chatBridge = require('./chat-bridge');
+const agentRuntime = require('./agent-runtime');
 const videoReport = require('./video-report');
 const pdfTitle = require('./pdf-title');
 const { installCoachExtension } = require('./coach-install');
@@ -341,6 +342,35 @@ async function handleRemoteCommand(type, payload = {}) {
     }
     case 'ai.ask':
       return requestRemoteRenderer(type, { prompt: String(payload.prompt || '').slice(0, 20000) });
+    case 'agent.office':
+      return { agents: chatBridge.listLatestSessions() };
+    case 'agent.session': {
+      const source = String(payload.source || '');
+      const id = String(payload.id || '');
+      if (!/^[a-z0-9-]+$/.test(source) || !id || id.length > 300) throw new Error('会话标识无效。');
+      const sessionData = chatBridge.loadSession(source, id, { previewOnly: true, tail: true });
+      if (!sessionData) throw new Error('会话已被清理或暂时无法读取。');
+      return { session: sessionData };
+    }
+    case 'agent.run': {
+      const source = String(payload.source || '');
+      const prompt = String(payload.prompt || '').trim().slice(0, 20000);
+      const runtime = agentRuntime.AGENTS[source];
+      if (!runtime || !prompt) throw new Error('Agent 或命令内容无效。');
+      ensureMainWindow({ show: true });
+      const confirmation = await dialog.showMessageBox(mainWindow, {
+        type: 'warning',
+        buttons: ['取消', `交给 ${runtime.label}`],
+        defaultId: 0,
+        cancelId: 0,
+        title: '确认手机派发任务',
+        message: `手机请求向 ${runtime.label} 派发任务`,
+        detail: `${prompt.slice(0, 500)}\n\n工具箱不会启用任何绕过权限或无人值守授权参数。`,
+      });
+      if (confirmation.response !== 1) throw new Error('电脑端已取消这次任务。');
+      const latest = chatBridge.listSessions(source)[0];
+      return agentRuntime.runAgent(source, prompt, { cwd: latest?.cwd || os.homedir() });
+    }
     default:
       throw new Error(`不支持的远程动作：${type || '空动作'}`);
   }
@@ -1894,9 +1924,10 @@ function registerIpc() {
   // ---- 聊天记录迁移：读 Codex / Claude 的本地会话，导出或打包 ----
 
   ipcMain.handle('chat:sources', () => chatBridge.SOURCES);
+  ipcMain.handle('chat:latest', () => chatBridge.listLatestSessions());
 
   ipcMain.handle('chat:list', (_e, source) => chatBridge.listSessions(source));
-  ipcMain.handle('chat:load', (_e, { source, id, full }) => chatBridge.loadSession(source, id, { previewOnly: !full }));
+  ipcMain.handle('chat:load', (_e, { source, id, full, tail }) => chatBridge.loadSession(source, id, { previewOnly: !full, tail: Boolean(tail) }));
 
   ipcMain.handle('chat:export', async (_e, { source, id, format }) => {
     const session = chatBridge.loadSession(source, id, { previewOnly: false });
@@ -2608,8 +2639,8 @@ app.whenReady().then(async () => {
   remoteControl = new RemoteControl({
     deviceName: 'Agent 工具箱',
     onCommand: handleRemoteCommand,
-    apkPath: path.join(__dirname, '..', '..', 'assets', 'mobile', 'Agent-Toolbox-Remote-0.1.0-debug.apk'),
-    apkName: 'Agent-Toolbox-Remote-0.1.0-debug.apk',
+    apkPath: path.join(__dirname, '..', '..', 'assets', 'mobile', 'Agent-Toolbox-Remote-0.2.0-debug.apk'),
+    apkName: 'Agent-Toolbox-Remote-0.2.0-debug.apk',
     inbox: store.get('remote.inbox', []),
     onInbox: (item) => {
       const inbox = [item, ...(store.get('remote.inbox', []) || [])].slice(0, 100);

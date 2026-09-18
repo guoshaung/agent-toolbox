@@ -1,5 +1,6 @@
 import { h, toast, mmss } from '../../core/ui.js';
 import { NoisePlayer } from './noise.js';
+import { createOffice } from './office.js';
 
 /** 呼吸引导用 4-7-8：吸 4 秒、屏 7 秒、呼 8 秒，呼气比吸气长才会放松下来。 */
 const BREATH = [
@@ -368,6 +369,7 @@ export function createTimer(root, ctx) {
   }, '帮我决定');
 
   // ---------- 组装 ----------
+  const office = createOffice(ctx);
   root.append(
     h('div', { class: 'bar' },
       statsEl,
@@ -375,6 +377,7 @@ export function createTimer(root, ctx) {
       h('button', { class: 'btn btn--sm btn--ghost', onclick: () => reset() }, '重置'),
     ),
     h('div', { class: 'focus__body' },
+      office.root,
       h('section', { class: 'focus__timer card' },
         timeEl,
         phaseEl,

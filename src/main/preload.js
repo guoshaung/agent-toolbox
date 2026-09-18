@@ -27,10 +27,12 @@ contextBridge.exposeInMainWorld('toolbox', {
   chat: {
     /** 可用的 AI 来源列表：{ codex: 'Codex', ... } */
     sources: () => ipcRenderer.invoke('chat:sources'),
+    /** 每个来源最近一段本地会话的轻量概览。 */
+    latest: () => ipcRenderer.invoke('chat:latest'),
     /** 列出本机某 AI 工具的会话：source 为 'codex' | 'claude' | 'opencode' | ... */
     list: (source) => ipcRenderer.invoke('chat:list', source),
-    /** 加载单个会话（默认预览前 120 条；full=true 拿全部） */
-    load: (source, id, full) => ipcRenderer.invoke('chat:load', { source, id, full }),
+    /** 加载单个会话（默认预览前 120 条；tail=true 取最近 120 条）。 */
+    load: (source, id, full, tail = false) => ipcRenderer.invoke('chat:load', { source, id, full, tail }),
     /** 导出会话到文件（弹保存框），返回 { ok, path, count } */
     export: (source, id, format) => ipcRenderer.invoke('chat:export', { source, id, format }),
     /** 把若干会话打包成迁移包 JSON（弹保存框） */

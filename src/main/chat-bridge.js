@@ -753,7 +753,7 @@ function listSessions(source) {
   }));
 }
 
-function loadSession(source, id, { previewOnly = true } = {}) {
+function loadSession(source, id, { previewOnly = true, tail = false } = {}) {
   const adapter = SOURCES[source];
   if (!adapter) return null;
   const session = adapter.load(id);
@@ -763,7 +763,9 @@ function loadSession(source, id, { previewOnly = true } = {}) {
     ...session,
     totalMessages: total,
     truncated: previewOnly && total > PREVIEW_LIMIT,
-    messages: previewOnly ? session.messages.slice(0, PREVIEW_LIMIT) : session.messages,
+    messages: previewOnly
+      ? tail ? session.messages.slice(-PREVIEW_LIMIT) : session.messages.slice(0, PREVIEW_LIMIT)
+      : session.messages,
   };
 }
 
@@ -774,6 +776,35 @@ function loadFullSessions(source, ids) {
     if (s) out.push(s);
   }
   return out;
+}
+
+/** 每个已支持来源的安装状态和最近本地会话，供桌面与手机办公室展示。 */
+function listLatestSessions() {
+  let installations = {};
+  try {
+    const runtime = require('./agent-runtime');
+    installations = Object.fromEntries(runtime.installedAgents().map((agent) => [agent.id, agent.installed]));
+  } catch { /* 保留纯会话扫描能力 */ }
+  return Object.entries(SOURCES).map(([source, adapter]) => {
+    let latest = null;
+    try {
+      latest = adapter.list()[0] || null;
+    } catch { /* 单个损坏来源不应拖垮整个办公室 */ }
+    return {
+      source,
+      label: adapter.label,
+      installed: Boolean(installations[source]),
+      available: Boolean(latest),
+      session: latest ? {
+        id: latest.id,
+        title: latest.title,
+        updatedAt: latest.updatedAt,
+        cwd: latest.cwd,
+        model: latest.model,
+        count: latest.count,
+      } : null,
+    };
+  });
 }
 
 // ---------- 导出格式 ----------
@@ -902,6 +933,7 @@ module.exports = {
   PREVIEW_LIMIT,
   SOURCES: Object.fromEntries(Object.entries(SOURCES).map(([id, a]) => [id, a.label])),
   listSessions,
+  listLatestSessions,
   loadSession,
   loadFullSessions,
   EXPORTERS,
