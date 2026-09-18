@@ -90,20 +90,25 @@ if (!pinnedIds || !pinnedIds.length) {
   pinnedIds = pinnedIds
     .filter((id, index, list) => pinEligibleTools.some((tool) => tool.id === id) && list.indexOf(id) === index)
     .slice(0, MAX_PINNED);
-  // 老配置里没有快捷控制：自动补到左侧，否则新栏目在存量用户这边永远藏在「更多」里
-  if (!pinnedIds.includes('controls')) {
-    if (pinnedIds.length >= MAX_PINNED) pinnedIds = [...pinnedIds.slice(0, MAX_PINNED - 1), 'controls'];
-    else pinnedIds = [...pinnedIds, 'controls'];
-  }
-  if (!pinnedIds.includes('voice')) {
-    if (pinnedIds.length >= MAX_PINNED) pinnedIds = [...pinnedIds.slice(0, MAX_PINNED - 1), 'voice'];
-    else pinnedIds = [...pinnedIds, 'voice'];
+  // 新栏目补到左侧，否则在存量用户这边永远藏在「更多」里。
+  //
+  // 但栏位满了就不补了。以前这里是 slice(0, MAX_PINNED - 1) 再追加，等于每次
+  // 启动都把栏尾那个静默顶掉 —— 实测用户钉着的 7 个里，「学习」在尾巴上，
+  // 于是它每次启动都被 voice 挤掉，配置里明明还存着却怎么都不出现。
+  // 自己钉上去的东西不该被自动补位挤走；补不进去就让它留在「更多」里。
+  for (const id of ['controls', 'voice']) {
+    if (pinnedIds.includes(id) || pinnedIds.length >= MAX_PINNED) continue;
+    pinnedIds = [...pinnedIds, id];
   }
   // 老的「记事本」拆成了「代码」和「笔记」。存量配置里只有 notebook，
-  // 不补一下的话「笔记」会一直躺在「更多」里 —— 拆了等于没拆。挨着放，好找。
-  if (pinnedIds.includes('notebook') && !pinnedIds.includes('notes')) {
+  // 补一个「笔记」挨着放，好找。
+  //
+  // 但只在还有空位时补：上一版这里直接 slice(0, MAX_PINNED)，等于把栏尾
+  // 那个工具静默顶掉 —— 实测把用户自己钉上去的「学习」挤没了。
+  // 宁可让「笔记」待在「更多」里，也不能动用户已经钉好的东西。
+  if (pinnedIds.includes('notebook') && !pinnedIds.includes('notes') && pinnedIds.length < MAX_PINNED) {
     const at = pinnedIds.indexOf('notebook') + 1;
-    pinnedIds = [...pinnedIds.slice(0, at), 'notes', ...pinnedIds.slice(at)].slice(0, MAX_PINNED);
+    pinnedIds = [...pinnedIds.slice(0, at), 'notes', ...pinnedIds.slice(at)];
   }
 }
 

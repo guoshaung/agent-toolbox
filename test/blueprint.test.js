@@ -98,3 +98,29 @@ test('跑一遍真实题库：不能崩，也不能全是 0', () => {
   assert.ok(withLibraries > 0, '真实题库里至少该有题目用到库');
   console.log(`  题库 ${PRACTICE_PROJECTS.length} 道：${withObjects} 道有类，${withLibraries} 道有库引用`);
 });
+
+// ---- 面向对象题目必须真的能撑起施工图 ----
+// 加这批题的理由就是：原来 10 道题只有 1 道有类，施工图上「拆几个对象 /
+// 设计模式」几乎永远显示「用不上」。这条用例把这个理由钉死。
+test('科研数据处理方向的设计模式题，施工图要有料', () => {
+  const { PRACTICE_PROJECTS } = require('../src/renderer/tools/study/data/projects.js');
+  const wanted = ['exp-scheduler-strategy', 'sample-repository', 'metric-factory', 'training-observer'];
+  for (const id of wanted) {
+    const project = PRACTICE_PROJECTS.find((p) => p.id === id);
+    assert.ok(project, `题库里应该有 ${id}`);
+    const bp = analyzeBlueprint((project.cells || []).map((c) => c.code).join('\n\n'), 'python');
+    assert.ok(bp.counts.objects >= 3, `${id} 应该至少 3 个对象，实际 ${bp.counts.objects}`);
+    assert.ok(bp.counts.methods >= 6, `${id} 应该至少 6 个方法，实际 ${bp.counts.methods}`);
+    assert.ok(bp.counts.libraries >= 2, `${id} 应该至少引 2 个库，实际 ${bp.counts.libraries}`);
+    assert.ok(bp.patterns.length >= 1, `${id} 应该能认出设计模式`);
+  }
+});
+
+test('题库整体：有类的题目不能只剩个位数的零头', () => {
+  const { PRACTICE_PROJECTS } = require('../src/renderer/tools/study/data/projects.js');
+  const withObjects = PRACTICE_PROJECTS.filter((p) => {
+    const bp = analyzeBlueprint((p.cells || []).map((c) => c.code).join('\n\n'), 'python');
+    return bp.counts.objects > 0;
+  }).length;
+  assert.ok(withObjects >= 5, `有类的题目只有 ${withObjects} 道，施工图会大面积显示「用不上」`);
+});
