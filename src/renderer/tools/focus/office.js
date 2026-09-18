@@ -232,6 +232,11 @@ export function createOffice(ctx) {
 
   // ---------- 点屏幕：展开这家的对话，并且能接着聊 ----------
   const chatTitle = h('strong', {}, '');
+  // 下面 chatPanel 组装时要用到这两个，声明必须在它前面。
+  // 放在后面会落进暂时性死区，整个专注页直接白屏（实测报
+  // "Cannot access 'chatSessionSelect' before initialization"）。
+  const chatPast = h('div', { class: 'office-chat__past' });
+  const chatSessionSelect = h('select', { class: 'field field--sm office-chat__sessions', onchange: () => loadPast() });
   const chatLog = h('div', { class: 'office-chat__log' });
   const chatInput = h('textarea', {
     class: 'office-chat__input', rows: 2,
@@ -243,9 +248,12 @@ export function createOffice(ctx) {
   const chatPanel = h('div', { class: 'office-chat', hidden: true },
     h('div', { class: 'office-chat__head' },
       chatTitle,
+      chatSessionSelect,
       h('span', { style: { flex: 1 } }),
+      h('button', { class: 'btn btn--sm btn--ghost', onclick: () => loadSessionList() }, '刷新'),
       h('button', { class: 'btn btn--sm btn--ghost', onclick: () => closeChat() }, '收起'),
     ),
+    chatPast,
     chatLog,
     chatInput,
     h('div', { class: 'office-chat__actions' }, h('span', { style: { flex: 1 } }), chatSend),
@@ -263,14 +271,72 @@ export function createOffice(ctx) {
     chatPanel.hidden = true;
   }
 
+  /**
+   * 读这家 AI 在本机真正的历史会话。
+   *
+   * 之前点屏幕只显示「在这个办公室里聊过的」几轮 —— 那是我这边自己记的，
+   * 跟它平时在终端里的对话完全是两回事。真正要看的是它自己那份记录，
+   * 所以这里走 chat.list / chat.load 把它读出来（tail=true 取最近那几十条）。
+   */
+  async function loadPast() {
+    const id = chatAgent;
+    const sessionId = chatSessionSelect.value;
+    if (!id || !sessionId) { chatPast.replaceChildren(); return; }
+    chatPast.replaceChildren(h('div', { class: 'faint office-chat__empty' }, '正在读它的历史记录…'));
+    let data = null;
+    try {
+      data = await window.toolbox.chat.load(id, sessionId, false, true);
+    } catch (error) {
+      chatPast.replaceChildren(h('div', { class: 'faint office-chat__empty' }, `读不到：${error.message}`));
+      return;
+    }
+    if (chatAgent !== id) return;                       // 期间换人了，丢掉这次结果
+    const msgs = (data?.messages || []).filter((m) => String(m.content || '').trim());
+    if (!msgs.length) {
+      chatPast.replaceChildren(h('div', { class: 'faint office-chat__empty' }, '这段会话里没有可显示的内容。'));
+      return;
+    }
+    chatPast.replaceChildren(
+      h('div', { class: 'office-chat__sep' }, `本机历史 · 共 ${data.totalMessages || msgs.length} 条${data.truncated ? '（只显示最近的）' : ''}`),
+      ...msgs.map((m) => h('div', { class: `office-chat__turn is-${m.role === 'user' ? 'user' : 'agent'}` },
+        h('span', { class: 'office-chat__who' }, m.role === 'user' ? '我' : desks.get(id)?.label || 'AI'),
+        h('pre', { class: 'office-chat__text' }, String(m.content).slice(0, 4000)),
+      )),
+    );
+    chatLog.scrollTop = chatLog.scrollHeight;
+  }
+
+  async function loadSessionList() {
+    const id = chatAgent;
+    chatSessionSelect.replaceChildren();
+    let list = [];
+    try {
+      list = await window.toolbox.chat.list(id);
+    } catch { /* 读不到就只剩办公室里的那几轮 */ }
+    if (chatAgent !== id) return;
+    if (!list.length) {
+      chatSessionSelect.hidden = true;
+      chatPast.replaceChildren(h('div', { class: 'faint office-chat__empty' }, '本机还没有它的会话记录。'));
+      return;
+    }
+    chatSessionSelect.hidden = false;
+    for (const session of list.slice(0, 40)) {
+      const when = String(session.updatedAt || '').slice(5, 16).replace('T', ' ');
+      chatSessionSelect.append(h('option', { value: session.id },
+        `${when} · ${String(session.title || '未命名').slice(0, 30)}（${session.count || 0} 条）`));
+    }
+    await loadPast();
+  }
+
   function renderChat() {
     const turns = history.get(chatAgent) || [];
     chatLog.replaceChildren(...(turns.length
-      ? turns.map((turn) => h('div', { class: `office-chat__turn is-${turn.role}` },
+      ? [h('div', { class: 'office-chat__sep' }, '刚在这里聊的'),
+         ...turns.map((turn) => h('div', { class: `office-chat__turn is-${turn.role}` },
           h('span', { class: 'office-chat__who' }, turn.role === 'user' ? '我' : desks.get(chatAgent)?.label || 'AI'),
           h('pre', { class: 'office-chat__text' }, turn.text),
-        ))
-      : [h('div', { class: 'faint office-chat__empty' }, '还没聊过。下面写一句，它就开始干活了。')]));
+        ))]
+      : []));
     chatLog.scrollTop = chatLog.scrollHeight;
   }
 
@@ -282,6 +348,7 @@ export function createOffice(ctx) {
     chatTitle.textContent = `${lookOf(id).tag} ${desk.label} 的屏幕`;
     chatPanel.hidden = false;
     renderChat();
+    loadSessionList();
     chatInput.focus();
   }
 

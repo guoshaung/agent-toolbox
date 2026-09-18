@@ -24,7 +24,9 @@ export const LOOKS = {
   kimi:     { sprite: 'sprite-kimi.png',   accent: '#b9b6e8', tag: '☾', who: 'Kimi' },
   glm:      { sprite: 'sprite-glm.png',    accent: '#7f8797', tag: 'Z', who: 'GLM',      rig: { hem: 113, mid: 36, h: 142 } },
   grok:     { sprite: 'sprite-grok.png',   accent: '#d7b45e', tag: '✕', who: 'Grok',     rig: { hem: 102, mid: 42, h: 120 } },
-  opencode: { sprite: '',                  accent: '#ba86ed', tag: '◈', who: 'OpenCode' },
+  // OpenCode 没有现成原画，按同样的像素风格画了一个顶上 ——
+  // 之前它用的是那个紫色剪影，看着像图没加载出来。
+  opencode: { sprite: 'sprite-opencode.png', accent: '#ba86ed', tag: '◈', who: 'OpenCode', rig: { hem: 110, mid: 36, h: 120 } },
 };
 
 const FALLBACK = { sprite: '', accent: '#8b94a3', tag: '●', who: '' };

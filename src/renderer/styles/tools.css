@@ -3799,7 +3799,19 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .office-chat { display: flex; flex-direction: column; gap: 8px; padding: 12px; border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--line-soft)); border-radius: 12px; background: var(--bg-sunken); }
 .office-chat[hidden] { display: none; }
 .office-chat__head { display: flex; align-items: center; gap: 10px; }
-.office-chat__log { display: flex; flex-direction: column; gap: 8px; max-height: 280px; overflow: auto; }
+.office-chat__log { display: flex; flex-direction: column; gap: 8px; max-height: 200px; overflow: auto; }
+/* 本机历史单独一栏，和「刚在这里聊的」分开 —— 混在一起分不清哪句是刚发的 */
+.office-chat__past { display: flex; flex-direction: column; gap: 8px; max-height: 320px; overflow: auto; }
+.office-chat__past:empty { display: none; }
+.office-chat__sep {
+  position: sticky; top: 0; z-index: 1;
+  margin: 2px 0; padding: 3px 0;
+  color: var(--text-faint); font-size: 10.5px; letter-spacing: .4px;
+  background: var(--bg-sunken);
+  border-bottom: 1px solid var(--line-soft);
+}
+.office-chat__sessions { max-width: 280px; }
+.office-chat__sessions[hidden] { display: none; }
 .office-chat__empty { padding: 10px 2px; font-size: 12px; }
 .office-chat__turn { display: grid; grid-template-columns: 52px minmax(0, 1fr); gap: 8px; font-size: 12px; }
 .office-chat__who { color: var(--text-faint); font-size: 11px; }
