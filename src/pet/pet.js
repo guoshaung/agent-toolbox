@@ -48,6 +48,9 @@ async function setExpanded(mode) {
   avatar.hidden = Boolean(mode);
   card.hidden = mode !== 'card';
   memoryEl.hidden = mode !== 'memory';
+  // 选会话的面板是盖在记忆栈上面的一层。以前收起记忆栈时不重置它，
+  // 于是下次再打开，这层还盖着 —— 看起来就是「点了从会话里吃就回不去了」。
+  resetSessionPane();
   if (mode === 'card') {
     const state = await window.toolbox.pet.getState();
     applySettings(state.settings);
@@ -67,6 +70,13 @@ function collapseView() {
   avatar.hidden = false;
   card.hidden = true;
   memoryEl.hidden = true;
+  resetSessionPane();
+}
+
+/** 把选会话那层收回去。它是覆盖层，不收就一直盖着记忆栈。 */
+function resetSessionPane() {
+  const pane = document.getElementById('mem-session');
+  if (pane) pane.hidden = true;
 }
 
 function beginDrag(event) {
@@ -342,7 +352,11 @@ async function initMemory() {
   });
 
   document.getElementById('mem-open-session').addEventListener('click', openSessionPicker);
-  document.getElementById('mem-session-close').addEventListener('click', () => { sessionPane.hidden = true; });
+  document.getElementById('mem-session-close').addEventListener('click', resetSessionPane);
+  // Esc 也能退回列表：这层盖住了整个记忆栈，总得有条不用找按钮的退路
+  sessionPane.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') { event.stopPropagation(); resetSessionPane(); }
+  });
   sourceSelect.addEventListener('change', loadSessionList);
   sessionSelect.addEventListener('change', loadTurns);
   onlyAssistant.addEventListener('change', renderTurns);

@@ -1260,16 +1260,23 @@ function applyPetSettings() {
   if (settings.enabled) {
     petWindow.showInactive();
   } else {
-    if (petExpanded) {
-      petExpanded = false;
-      const old = petWindow.getBounds();
-      const size = petAvatarSize(settings.size);
-      const pos = clampToWorkArea({ ...size, x: old.x + old.width - size.width, y: old.y + old.height - size.height });
-      petWindow.setBounds({ ...size, ...pos });
-    }
+    shrinkPetToAvatar(settings.size);
     petWindow.webContents.send('pet:collapse');
     petWindow.hide();
   }
+}
+
+/** 把桌宠窗口收回头像大小。禁用时和点到别处失焦时都走这里。 */
+function shrinkPetToAvatar(sizeSetting) {
+  if (!petWindow || petWindow.isDestroyed() || !petExpanded) return;
+  petExpanded = false;
+  petMode = false;
+  const old = petWindow.getBounds();
+  const size = petAvatarSize(sizeSetting);
+  petWindow.setResizable(false);
+  petWindow.setOpacity(Math.min(1, Math.max(0.35, Number(petSettings().opacity) || PET_DEFAULTS.opacity)));
+  const pos = clampToWorkArea({ ...size, x: old.x + old.width - size.width, y: old.y + old.height - size.height });
+  petWindow.setBounds({ ...size, ...pos });
 }
 
 function createPetWindow() {
@@ -1303,6 +1310,13 @@ function createPetWindow() {
   petWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: false });
   petWindow.loadFile(path.join(__dirname, '..', 'pet', 'index.html'));
   petWindow.on('closed', () => { petWindow = null; });
+  // 展开之后点到别的地方，桌宠自己缩回去 —— 否则那块大面板会一直挡着屏幕，
+  // 每次都得回去点一下「×」。拖动窗口时不算失焦，所以不会误触发。
+  petWindow.on('blur', () => {
+    if (!petExpanded) return;
+    shrinkPetToAvatar();
+    petWindow.webContents.send('pet:collapse');
+  });
   petWindow.webContents.once('did-finish-load', applyPetSettings);
 }
 
