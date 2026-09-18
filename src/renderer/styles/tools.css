@@ -3638,100 +3638,160 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .focus__body > .office { grid-column: 1 / -1; }
 
 /* ---------- 二次元办公室 ----------
- * 全部用代码画，不带任何模型/图片。小人靠 transform 走位，CSS 过渡负责「走过去」
- * 这件事本身 —— 用 JS 逐帧推的话，几个小人一起动就开始掉帧。
+ * 形象是把原画像素化来的（96px 宽，比第一版的 52px 清晰近一倍）；
+ * 房间、家具、电脑全是 CSS/SVG 画的，不带图片。
  */
 .office__room-host { border: 1px solid var(--line-soft); border-radius: 12px; overflow: hidden; }
 .office-room {
   position: relative;
-  height: 400px;
-  background: linear-gradient(180deg, #2b3350 0%, #2b3350 44%, #3a4462 44%, #313a55 100%);
+  height: 470px;
+  background: linear-gradient(180deg, #333c5e 0%, #2f3857 44%, #46507172 44%, #3b445f 100%);
   overflow: hidden;
 }
-.office-room__wall { position: absolute; inset: 0 0 56% 0; background:
-  repeating-linear-gradient(90deg, rgba(255,255,255,.03) 0 1px, transparent 1px 64px); }
-.office-room__floor { position: absolute; inset: 44% 0 0 0; background:
-  repeating-linear-gradient(90deg, rgba(0,0,0,.14) 0 1px, transparent 1px 48px),
-  repeating-linear-gradient(0deg, rgba(0,0,0,.10) 0 1px, transparent 1px 34px); }
-/* 门：逛到这儿就算出门了 */
-.office-room__door {
-  position: absolute; right: 3%; top: 12%; width: 54px; height: 104px;
-  border: 2px solid rgba(255,255,255,.18); border-bottom: 0;
-  border-radius: 6px 6px 0 0; background: rgba(0,0,0,.22);
-}
-.office-room__door::after {
-  content: ''; position: absolute; left: 8px; top: 50%; width: 6px; height: 6px;
-  border-radius: 50%; background: rgba(255,255,255,.4);
-}
-.office-room__plant {
-  position: absolute; left: 2.5%; bottom: 8%; width: 26px; height: 42px;
+/* 墙：淡淡的护墙板线条 + 底部踢脚线 */
+.office-room__wall {
+  position: absolute; inset: 0 0 56% 0;
   background:
-    radial-gradient(circle at 50% 22%, #4f9e6b 0 12px, transparent 12px),
-    linear-gradient(180deg, transparent 58%, #6b5138 58%);
+    repeating-linear-gradient(90deg, rgba(255,255,255,.028) 0 1px, transparent 1px 78px),
+    linear-gradient(180deg, rgba(255,255,255,.03), transparent 60%);
+  border-bottom: 3px solid rgba(0,0,0,.22);
+}
+/* 窗户：外面是夜色，窗框分四格 */
+.office-room__window {
+  position: absolute; left: 5%; top: 8%; width: 168px; height: 96px;
+  border: 3px solid rgba(255,255,255,.16); border-radius: 4px;
+  background: linear-gradient(180deg, #1d2748 0%, #26315a 60%, #2c3765 100%);
+  box-shadow: inset 0 0 22px rgba(120,160,255,.14);
+  overflow: hidden;
+}
+.office-room__window span { position: absolute; background: rgba(255,255,255,.16); }
+.office-room__window span:first-child { left: 50%; top: 0; width: 2px; height: 100%; }
+.office-room__window span:last-child { left: 0; top: 50%; width: 100%; height: 2px; }
+.office-room__window::after {
+  content: ''; position: absolute; right: 16px; top: 12px; width: 16px; height: 16px;
+  border-radius: 50%; background: #f2efd9; box-shadow: 0 0 18px rgba(242,239,217,.5);
+}
+/* 白板：写了几行看不清的字，像真开过会 */
+.office-room__board {
+  position: absolute; left: 32%; top: 9%; width: 150px; height: 84px;
+  padding: 10px 11px; border: 3px solid rgba(255,255,255,.14); border-radius: 4px;
+  background: rgba(236,240,248,.9);
+  display: flex; flex-direction: column; gap: 7px;
+}
+.office-room__board i { height: 3px; border-radius: 2px; background: rgba(60,72,100,.42); }
+.office-room__clock {
+  position: absolute; left: 57%; top: 10%; width: 34px; height: 34px;
+  border: 3px solid rgba(255,255,255,.2); border-radius: 50%; background: rgba(240,244,252,.9);
+}
+.office-room__clock::before, .office-room__clock::after {
+  content: ''; position: absolute; left: 50%; top: 50%; transform-origin: 0 0;
+}
+.office-room__clock::before { width: 10px; height: 2px; background: #3b4459; transform: rotate(-58deg); }
+.office-room__clock::after  { width: 13px; height: 2px; background: #3b4459; transform: rotate(18deg); }
+
+/* 地板：木纹 + 远近透视的横线 */
+.office-room__floor {
+  position: absolute; inset: 44% 0 0 0;
+  background:
+    repeating-linear-gradient(90deg, rgba(0,0,0,.13) 0 2px, transparent 2px 92px),
+    repeating-linear-gradient(0deg, rgba(0,0,0,.09) 0 1px, transparent 1px 44px),
+    linear-gradient(180deg, #414b69, #333c56);
+}
+.office-room__rug {
+  position: absolute; left: 30%; bottom: 4%; width: 300px; height: 74px;
+  border: 3px solid rgba(160,140,200,.25); border-radius: 50%;
+  background: radial-gradient(ellipse at center, rgba(150,130,200,.2), rgba(150,130,200,.06) 70%, transparent);
+}
+/* 门：有门框、门缝和把手 */
+.office-room__door {
+  position: absolute; right: 3%; top: 10%; width: 66px; height: 140px;
+  border: 3px solid rgba(255,255,255,.2); border-bottom: 0; border-radius: 6px 6px 0 0;
+  background: linear-gradient(180deg, rgba(22,28,46,.85), rgba(30,38,60,.7));
+}
+.office-room__door::before {
+  content: ''; position: absolute; inset: 9px 9px 0 9px;
+  border: 2px solid rgba(255,255,255,.09); border-bottom: 0; border-radius: 3px 3px 0 0;
+}
+.office-room__door i {
+  position: absolute; left: 9px; top: 52%; width: 7px; height: 7px;
+  border-radius: 50%; background: rgba(240,220,160,.75);
+}
+/* 绿植和饮水机 */
+.office-room__plant { position: absolute; left: 2%; bottom: 5%; width: 40px; height: 66px; }
+.office-room__plant b {
+  position: absolute; left: 0; top: 0; width: 40px; height: 42px; border-radius: 50% 50% 46% 46%;
+  background: radial-gradient(circle at 42% 34%, #63a97a, #3f7a56);
+}
+.office-room__plant u {
+  position: absolute; left: 11px; bottom: 0; width: 18px; height: 22px; border-radius: 3px 3px 5px 5px;
+  background: linear-gradient(180deg, #8a6647, #6d4f37);
+}
+.office-room__cooler { position: absolute; right: 13%; bottom: 6%; width: 32px; height: 74px; }
+.office-room__cooler b {
+  position: absolute; left: 4px; top: 0; width: 24px; height: 28px; border-radius: 6px 6px 3px 3px;
+  background: linear-gradient(180deg, rgba(150,200,240,.6), rgba(110,170,220,.35));
+}
+.office-room__cooler u {
+  position: absolute; left: 0; bottom: 0; width: 32px; height: 48px; border-radius: 4px;
+  background: linear-gradient(180deg, #59617a, #454d63);
 }
 .office-room__stage { position: absolute; inset: 0; }
 
-/* 桌子和小人是两层：桌子钉在工位上不动，小人自己走。
-   小人层级压在桌子下面 —— 这样坐下时显示器在前、露出头和肩，
-   像真的坐在桌子后面，而不是站在桌子上。 */
+/* 桌子钉在工位上不动，小人自己走；小人压在桌子下面，坐下时显示器在前 */
 .office-desk {
-  position: absolute; z-index: 2; width: 96px; padding: 0;
-  border: 0; background: none; cursor: pointer; opacity: .92;
+  position: absolute; z-index: 2; width: 128px; padding: 0;
+  border: 0; background: none; cursor: pointer; opacity: .95;
   transition: opacity .3s, filter .2s;
 }
-.office-desk:hover { opacity: 1; filter: drop-shadow(0 0 8px var(--seat-accent)); }
-.office-desk.is-missing { opacity: .2; filter: grayscale(1); cursor: default; }
+.office-desk:hover { opacity: 1; filter: drop-shadow(0 0 10px var(--seat-accent)); }
+.office-desk.is-missing { opacity: .22; filter: grayscale(1); cursor: default; }
 .office-desk__name {
-  display: block; margin-top: -2px; text-align: center;
-  color: var(--text-dim); font-size: 10.5px; white-space: nowrap;
+  display: block; margin-top: -4px; text-align: center;
+  color: var(--text-dim); font-size: 11px; white-space: nowrap;
 }
+/* 干活时屏幕亮起来、代码行开始闪 */
+.office-desk.is-working .office-monitor-glow { animation: office-screen 1.8s ease-in-out infinite; }
+.office-desk.is-working .office-screen-lines { animation: office-code .9s steps(3) infinite; }
+@keyframes office-screen { 0%, 100% { opacity: .1; } 50% { opacity: .42; } }
+@keyframes office-code { 0% { opacity: .55; } 50% { opacity: 1; } 100% { opacity: .75; } }
+
 .office-person {
-  position: absolute; z-index: 1; width: 52px;
+  position: absolute; z-index: 1; width: 72px;
   /* 时长由 JS 按距离算好写在 style 上（近的快、远的慢），这里只给曲线。
      linear 是故意的：走路是匀速的，缓入缓出会变成「飘过去」。 */
   transition: left 2.4s linear, top 2.4s linear, opacity .5s;
 }
+.office-person.is-flipped .office-part, .office-person.is-flipped .office-person__img { transform: scaleX(-1); }
+.office-person.is-away { opacity: .22; }
+.office-person.is-missing { opacity: .2; filter: grayscale(1); }
+.office-person__img { display: block; width: 72px; height: auto; image-rendering: pixelated; filter: drop-shadow(0 4px 5px rgba(0,0,0,.45)); }
 
-/* ---- 骨骼：上半身 + 两条切出来的腿 ---- */
-.office-person { position: relative; }
-.office-part {
-  position: absolute; left: 0; top: 0;
-  image-rendering: pixelated;
-  pointer-events: none;
-}
-.office-part--body { position: relative; display: block; width: 52px; height: auto; }
+/* ---- 骨骼：上半身 + 两条按轮廓切出来的腿 ---- */
+.office-part { position: absolute; left: 0; top: 0; image-rendering: pixelated; pointer-events: none; }
+.office-part--body { position: relative; display: block; width: 72px; height: auto; filter: drop-shadow(0 4px 5px rgba(0,0,0,.45)); }
 /* 绕裙摆线转，不绕自己中心 —— 绕中心的话腿会从裙子里飞出去 */
 .office-part--leg { transform-origin: 50% 0; }
-.office-person__img { filter: drop-shadow(0 3px 4px rgba(0,0,0,.45)); }
-.office-part--body { filter: drop-shadow(0 3px 4px rgba(0,0,0,.45)); }
 
-/* 走路：两条腿反相迈，身体一上一下。
-   --step 由 JS 按这趟路的时长给 —— 走得久就多迈几步，不会脚停了人还在滑。 */
+/* 走路：两条腿反相迈，身体一上一下。--step 由 JS 按这趟路的时长给 */
 .office-person.is-walking .office-part--legL { animation: office-step var(--step, 340ms) ease-in-out infinite alternate; }
 .office-person.is-walking .office-part--legR { animation: office-step var(--step, 340ms) ease-in-out infinite alternate-reverse; }
-.office-person.is-walking .office-part--body,
-.office-person.is-walking .office-person__img { animation: office-bob calc(var(--step, 340ms) / 2) ease-in-out infinite alternate; }
+.office-person.is-walking .office-part--body { animation: office-bob calc(var(--step, 340ms) / 2) ease-in-out infinite alternate; }
 /* 裙子及地、没腿可切的那两位，靠整体轻微侧摆表示在走 */
 .office-person.is-walking .office-person__img { animation: office-sway var(--step, 340ms) ease-in-out infinite alternate; }
 
 @keyframes office-step { from { transform: rotate(-15deg); } to { transform: rotate(15deg); } }
-@keyframes office-bob  { from { transform: translateY(0); } to { transform: translateY(-2px); } }
-@keyframes office-sway { from { transform: translateY(0) rotate(-1.6deg); } to { transform: translateY(-2px) rotate(1.6deg); } }
-.office-person.is-flipped svg, .office-person.is-flipped .office-person__img { transform: scaleX(-1); }
-/* 像素图必须关掉平滑，否则浏览器插值成一团糊，白做了 */
-.office-person__img {
-  display: block; width: 52px; height: auto;
-  image-rendering: pixelated;
-  filter: drop-shadow(0 3px 4px rgba(0,0,0,.45));
-}
-.office-person.is-away { opacity: .2; }
-.office-person.is-missing { opacity: .2; filter: grayscale(1); }
+@keyframes office-bob  { from { transform: translateY(0); } to { transform: translateY(-3px); } }
+@keyframes office-sway { from { transform: translateY(0) rotate(-1.6deg); } to { transform: translateY(-3px) rotate(1.6deg); } }
+
+/* 干活：坐下（下移）+ 屏幕在前 */
+.office-person.is-working .office-part--body,
+.office-person.is-working .office-person__img { transform: translateY(16px) scale(.94); }
 
 .office-person__bubble {
-  position: absolute; left: 50%; top: -6px; transform: translateX(-50%);
-  padding: 2px 8px; border-radius: 9px 9px 9px 3px;
-  color: #1a2030; background: rgba(238,246,255,.95);
-  font-size: 10px; white-space: nowrap;
+  position: absolute; left: 50%; top: -8px; transform: translateX(-50%); z-index: 3;
+  padding: 3px 9px; border-radius: 10px 10px 10px 3px;
+  color: #1a2030; background: rgba(240,247,255,.96);
+  font-size: 11px; white-space: nowrap;
 }
 .office-person__bubble[hidden] { display: none; }
 

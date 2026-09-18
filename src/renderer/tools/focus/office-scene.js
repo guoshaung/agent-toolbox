@@ -17,13 +17,13 @@ import { h } from '../../core/ui.js';
  * accent 仍然保留：工位边框、名牌、屏幕光都用它，和小人配色对得上。
  */
 export const LOOKS = {
-  dsh:      { sprite: 'sprite-dsh.png',    accent: '#4e8cff', tag: '◆', who: 'DeepSeek', rig: { hem: 72, mid: 29, h: 93 } },
+  dsh:      { sprite: 'sprite-dsh.png',    accent: '#4e8cff', tag: '◆', who: 'DeepSeek', rig: { hem: 99,  mid: 42, h: 129 } },
   codex:    { sprite: 'sprite-codex.png',  accent: '#c9d2e6', tag: '⌘', who: 'GPT' },
-  claude:   { sprite: 'sprite-claude.png', accent: '#e89b68', tag: '✦', who: 'Claude',   rig: { hem: 80, mid: 28, h: 89 } },
-  gemini:   { sprite: 'sprite-gemini.png', accent: '#8d9cf6', tag: '✧', who: 'Gemini',   rig: { hem: 54, mid: 25, h: 82 } },
+  claude:   { sprite: 'sprite-claude.png', accent: '#e89b68', tag: '✦', who: 'Claude',   rig: { hem: 111, mid: 37, h: 124 } },
+  gemini:   { sprite: 'sprite-gemini.png', accent: '#8d9cf6', tag: '✧', who: 'Gemini',   rig: { hem: 74,  mid: 36, h: 114 } },
   kimi:     { sprite: 'sprite-kimi.png',   accent: '#b9b6e8', tag: '☾', who: 'Kimi' },
-  glm:      { sprite: 'sprite-glm.png',    accent: '#7f8797', tag: 'Z', who: 'GLM',      rig: { hem: 82, mid: 26, h: 103 } },
-  grok:     { sprite: 'sprite-grok.png',   accent: '#d7b45e', tag: '✕', who: 'Grok',     rig: { hem: 73, mid: 30, h: 86 } },
+  glm:      { sprite: 'sprite-glm.png',    accent: '#7f8797', tag: 'Z', who: 'GLM',      rig: { hem: 113, mid: 36, h: 142 } },
+  grok:     { sprite: 'sprite-grok.png',   accent: '#d7b45e', tag: '✕', who: 'Grok',     rig: { hem: 102, mid: 42, h: 120 } },
   opencode: { sprite: '',                  accent: '#ba86ed', tag: '◈', who: 'OpenCode' },
 };
 
@@ -83,15 +83,39 @@ function portrait(look, id) {
   return `<img class="office-person__img" src="${ASSET}/${look.sprite}" alt="" draggable="false">`;
 }
 
-/** 工位：桌子 + 显示器。显示器是可点的，点开看这家 AI 在聊什么。 */
+/**
+ * 工位：桌子 + 显示器 + 键盘 + 鼠标 + 马克杯。
+ *
+ * 上一版的「电脑」就是一个空心方框摆在一块板上，太简陋。现在补了支架、底座、
+ * 键盘键帽、鼠标和杯子；屏幕里画了几行长短不一的「代码」，干活时会亮起来 ——
+ * 一眼就能看出这个位子上有没有人在跑东西。
+ */
 function deskSvg(accent) {
-  return `<svg viewBox="0 0 96 64" width="96" height="64">
-    <rect x="4" y="40" width="88" height="7" rx="2" fill="#3b424e"/>
-    <rect x="10" y="47" width="6" height="15" fill="#2f353f"/>
-    <rect x="80" y="47" width="6" height="15" fill="#2f353f"/>
-    <rect x="26" y="12" width="44" height="28" rx="3" fill="#20252e" stroke="${accent}" stroke-width="1.5"/>
-    <rect x="29" y="15" width="38" height="22" rx="2" fill="${accent}" opacity=".16" class="office-monitor-glow"/>
-    <rect x="44" y="40" width="8" height="4" fill="#2f353f"/>
+  const line = (y, w, o) => `<rect x="34" y="${y}" width="${w}" height="2" rx="1" fill="${accent}" opacity="${o}"/>`;
+  return `<svg viewBox="0 0 128 92" width="128" height="92">
+    <!-- 桌面 + 桌腿 -->
+    <rect x="4" y="62" width="120" height="8" rx="2.5" fill="#454d5c"/>
+    <rect x="4" y="62" width="120" height="3" rx="1.5" fill="#525b6c"/>
+    <rect x="14" y="70" width="7" height="20" rx="2" fill="#343b48"/>
+    <rect x="107" y="70" width="7" height="20" rx="2" fill="#343b48"/>
+    <!-- 显示器：外壳、屏幕、支架、底座 -->
+    <rect x="28" y="10" width="72" height="46" rx="4" fill="#1b202a"/>
+    <rect x="31" y="13" width="66" height="38" rx="2.5" fill="#0e131b"/>
+    <g class="office-screen-lines">
+      ${line(19, 40, .85)}${line(25, 28, .6)}${line(31, 46, .7)}${line(37, 22, .5)}${line(43, 34, .6)}
+    </g>
+    <rect x="31" y="13" width="66" height="38" rx="2.5" fill="${accent}" opacity=".1" class="office-monitor-glow"/>
+    <rect x="59" y="56" width="10" height="6" fill="#2b323e"/>
+    <rect x="49" y="60" width="30" height="3" rx="1.5" fill="#39404e"/>
+    <!-- 键盘：一排键帽，比一块灰板子像样 -->
+    <rect x="40" y="70" width="48" height="8" rx="2" fill="#39404e"/>
+    ${Array.from({ length: 9 }, (_, i) => `<rect x="${43 + i * 5}" y="72" width="3.4" height="2.4" rx="1" fill="#5a6376"/>`).join('')}
+    <rect x="49" y="75.5" width="30" height="1.6" rx=".8" fill="#5a6376"/>
+    <!-- 鼠标 + 马克杯 -->
+    <ellipse cx="97" cy="74" rx="4.5" ry="6" fill="#39404e"/>
+    <rect x="95.6" y="69" width="2.8" height="4" rx="1.4" fill="#5a6376"/>
+    <rect x="14" y="52" width="10" height="10" rx="2" fill="#6d7688"/>
+    <path d="M24 55 q5 0 5 3 q0 3-5 3z" fill="none" stroke="#6d7688" stroke-width="1.6"/>
   </svg>`;
 }
 
@@ -105,11 +129,20 @@ export function createScene(agents, onOpen) {
   const room = h('div', { class: 'office-room' });
 
   // 地板、墙、门、绿植：一次性铺好，之后不动
+  // 墙面挂钟 / 白板 / 窗户 / 地毯 / 绿植 / 饮水机：一次性铺好，之后不动。
+  // 上一版只有一扇门和一盆草，空得像毛坯房。
   room.insertAdjacentHTML('beforeend', `
     <div class="office-room__wall"></div>
+    <div class="office-room__window"><span></span><span></span></div>
+    <div class="office-room__board">
+      <i style="width:62%"></i><i style="width:44%"></i><i style="width:71%"></i><i style="width:38%"></i>
+    </div>
+    <div class="office-room__clock"></div>
     <div class="office-room__floor"></div>
-    <div class="office-room__door" title="出去转转"></div>
-    <div class="office-room__plant"></div>
+    <div class="office-room__rug"></div>
+    <div class="office-room__door" title="出去转转"><i></i></div>
+    <div class="office-room__plant"><b></b><u></u></div>
+    <div class="office-room__cooler"><b></b><u></u></div>
   `);
 
   const stage = h('div', { class: 'office-room__stage' });
@@ -120,10 +153,10 @@ export function createScene(agents, onOpen) {
     // 8 家排 4 列 2 行。原来是 3 列，第 7、8 个会掉到第三排、被房间底边切掉半截。
     const column = index % 4;
     const row = Math.floor(index / 4);
-    const x = 5 + column * 21 + row * 5;
+    const x = 4 + column * 22 + row * 4;
     // 小人站在桌子上方 12%，所以第一排本身不能太靠上 —— 8% 时算出来是 -4%，
     // 整排人头顶被房间上边界切掉。
-    const y = 15 + row * 38;
+    const y = 13 + row * 40;
 
     // 桌子钉死在工位上，人可以走开 —— 这两件事必须分成两层，
     // 放一起的话人走到哪桌子跟到哪，看着像在推着桌子逛。
@@ -139,7 +172,7 @@ export function createScene(agents, onOpen) {
     const bubble = h('div', { class: 'office-person__bubble', hidden: true }, '');
     const person = h('div', {
       class: 'office-person',
-      style: { left: `${x + 2}%`, top: `${y - 12}%` },
+      style: { left: `${x + 3}%`, top: `${y - 7}%` },
     }, bubble);
     if (look.rig) rigged(person, look, agent.id);
     else person.insertAdjacentHTML('afterbegin', portrait(look, agent.id));
@@ -147,7 +180,7 @@ export function createScene(agents, onOpen) {
     stage.append(desk, person);
     seats.set(agent.id, {
       desk, person, bubble, look, state: 'idle',
-      home: { x: x + 2, y: y - 12 },
+      home: { x: x + 3, y: y - 7 },
     });
   });
 
@@ -216,7 +249,7 @@ export function createScene(agents, onOpen) {
     const roll = Math.random();
     if (roll < 0.16) {
       // 出门待一会儿。门口站位错开，不然两个人严丝合缝叠在一起
-      walkTo(id, 84 + Math.random() * 7, 42 + Math.random() * 10);
+      walkTo(id, 82 + Math.random() * 6, 34 + Math.random() * 10);
       entry.person.classList.add('is-away');
       scheduleStroll(id, 7000 + Math.random() * 6000, () => {
         entry.person.classList.remove('is-away');
