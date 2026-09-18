@@ -24,6 +24,12 @@ contextBridge.exposeInMainWorld('toolbox', {
     saveText: (payload) => ipcRenderer.invoke('files:saveText', payload),
   },
 
+  /** 本机 AI 派发台：列出装了哪些 agent、把任务直接交出去 */
+  agentRun: {
+    list: () => ipcRenderer.invoke('agent:list'),
+    run: (payload) => ipcRenderer.invoke('agent:run', payload),
+  },
+
   chat: {
     /** 可用的 AI 来源列表：{ codex: 'Codex', ... } */
     sources: () => ipcRenderer.invoke('chat:sources'),

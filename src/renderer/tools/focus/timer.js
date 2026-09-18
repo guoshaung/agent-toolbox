@@ -369,45 +369,21 @@ export function createTimer(root, ctx) {
   }, '帮我决定');
 
   // ---------- 组装 ----------
+  //
+  // 25 分钟番茄钟和它那一整套统计（今日分钟 / 轮数 / 连续天数 / 最近 7 天）
+  // 一起去掉了：真正在这个页面上花时间的事是「把活派给本机的 AI」，
+  // 计时器和它的图表只是占着最显眼的位置不干活。剩下的几块都是和计时无关、
+  // 单独就成立的东西（写下今天要做的一件事、背景音、呼吸、帮你挑一件事）。
   const office = createOffice(ctx);
   root.append(
-    h('div', { class: 'bar' },
-      statsEl,
-      h('span', { style: { flex: 1 } }),
-      h('button', { class: 'btn btn--sm btn--ghost', onclick: () => reset() }, '重置'),
-    ),
-    h('div', { class: 'focus__body' },
-      office.root,
-      h('section', { class: 'focus__timer card' },
-        timeEl,
-        phaseEl,
-        progressEl,
-        h('div', { class: 'focus__controls' },
-          startBtn,
-          h('label', { class: 'subbar__label' }, '专注', focusMin, '分'),
-          h('label', { class: 'subbar__label' }, '休息', breakMin, '分'),
-        ),
-      ),
+    h('div', { class: 'focus__body focus__body--dispatch' },
+      office.el,
       h('section', { class: 'card focus__mission' },
         h('div', { class: 'focus__card-kicker' }, 'TODAY / ONE THING'),
         h('h3', { class: 'card__title' }, '把注意力放在一件事上'),
         h('label', { class: 'focus__field-label' }, '今日意图', intentInput),
         h('label', { class: 'focus__field-label' }, '本轮任务', missionInput),
-        h('div', { class: 'focus__preset-label faint' }, '快速方案：专注 / 休息（分钟）'),
-        presetWrap,
-        h('div', { class: 'faint focus__mission-note' }, '先写下完成后的可见结果，再开始计时。'),
-      ),
-      h('section', { class: 'card focus__activity' },
-        h('div', { class: 'focus__card-kicker' }, 'RECENT RHYTHM'),
-        h('h3', { class: 'card__title' }, '专注节奏'),
-        h('div', { class: 'focus__metrics' },
-          h('div', { class: 'focus__metric' }, metricMinutes, h('span', {}, '今日分钟')),
-          h('div', { class: 'focus__metric' }, metricSessions, h('span', {}, '今日轮数')),
-          h('div', { class: 'focus__metric' }, metricStreak, h('span', {}, '连续天数')),
-        ),
-        h('div', { class: 'focus__week-title faint' }, '最近 7 天'),
-        weekBars,
-        recentList,
+        h('div', { class: 'faint focus__mission-note' }, '先写下完成后的可见结果，再开工。'),
       ),
       h('section', { class: 'card' },
         h('h3', { class: 'card__title' }, '背景音'),
@@ -435,8 +411,6 @@ export function createTimer(root, ctx) {
   );
 
   renderTasks();
-  renderStats();
-  setPhase('idle', Number(focusMin.value) || 25);
 
   return { deactivate: () => stopBreath() };
 }

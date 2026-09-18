@@ -1923,6 +1923,24 @@ function registerIpc() {
 
   // ---- 聊天记录迁移：读 Codex / Claude 的本地会话，导出或打包 ----
 
+  // ---- AI 派发台：在专注页里直接把任务交给本机的 AI ----
+  //
+  // 手机那条路（handleRemoteCommand 的 agent.run）必须弹确认框，因为请求来自
+  // 另一台设备。这里不弹：任务就是坐在电脑前的人自己敲进去的，再弹一次
+  // 「你确定要执行你刚刚亲手输入的东西吗」纯属噪音。
+  ipcMain.handle('agent:list', () => agentRuntime.installedAgents());
+  ipcMain.handle('agent:run', async (_e, payload = {}) => {
+    const id = String(payload.id || '');
+    const prompt = String(payload.prompt || '');
+    try {
+      const latest = chatBridge.listSessions(id)[0];
+      const result = await agentRuntime.runAgent(id, prompt, { cwd: latest?.cwd || os.homedir() });
+      return { ok: true, ...result };
+    } catch (error) {
+      return { ok: false, error: error.message };
+    }
+  });
+
   ipcMain.handle('chat:sources', () => chatBridge.SOURCES);
   ipcMain.handle('chat:latest', () => chatBridge.listLatestSessions());
 
