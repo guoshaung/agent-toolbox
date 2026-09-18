@@ -3761,31 +3761,16 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
      linear 是故意的：走路是匀速的，缓入缓出会变成「飘过去」。 */
   transition: left 2.4s linear, top 2.4s linear, opacity .5s;
 }
-.office-person.is-flipped .office-part, .office-person.is-flipped .office-person__img { transform: scaleX(-1); }
+.office-person.is-flipped .office-person__img { transform: scaleX(-1); }
 .office-person.is-away { opacity: .22; }
 .office-person.is-missing { opacity: .2; filter: grayscale(1); }
 .office-person__img { display: block; width: 72px; height: auto; image-rendering: pixelated; filter: drop-shadow(0 4px 5px rgba(0,0,0,.45)); }
 
-/* ---- 骨骼：上半身 + 两条按轮廓切出来的腿 ---- */
-.office-part { position: absolute; left: 0; top: 0; image-rendering: pixelated; pointer-events: none; }
-.office-part--body { position: relative; display: block; width: 72px; height: auto; filter: drop-shadow(0 4px 5px rgba(0,0,0,.45)); }
-/* 绕裙摆线转，不绕自己中心 —— 绕中心的话腿会从裙子里飞出去 */
-.office-part--leg { transform-origin: 50% 0; }
-
-/* 走路：两条腿反相迈，身体一上一下。--step 由 JS 按这趟路的时长给 */
-.office-person.is-walking .office-part--legL { animation: office-step var(--step, 340ms) ease-in-out infinite alternate; }
-.office-person.is-walking .office-part--legR { animation: office-step var(--step, 340ms) ease-in-out infinite alternate-reverse; }
-.office-person.is-walking .office-part--body { animation: office-bob calc(var(--step, 340ms) / 2) ease-in-out infinite alternate; }
-/* 裙子及地、没腿可切的那两位，靠整体轻微侧摆表示在走 */
-.office-person.is-walking .office-person__img { animation: office-sway var(--step, 340ms) ease-in-out infinite alternate; }
-
-@keyframes office-step { from { transform: rotate(-15deg); } to { transform: rotate(15deg); } }
-@keyframes office-bob  { from { transform: translateY(0); } to { transform: translateY(-3px); } }
-@keyframes office-sway { from { transform: translateY(0) rotate(-1.6deg); } to { transform: translateY(-3px) rotate(1.6deg); } }
+/* 走路只做左右移动，朝向靠镜像。不做迈腿和起伏 —— 拆开的腿单独摆太鬼畜。 */
 
 /* 干活：坐下（下移）+ 屏幕在前 */
-.office-person.is-working .office-part--body,
 .office-person.is-working .office-person__img { transform: translateY(16px) scale(.94); }
+.office-person.is-working.is-flipped .office-person__img { transform: translateY(16px) scale(-.94, .94); }
 
 .office-person__bubble {
   position: absolute; left: 50%; top: -8px; transform: translateX(-50%); z-index: 3;

@@ -17,16 +17,16 @@ import { h } from '../../core/ui.js';
  * accent 仍然保留：工位边框、名牌、屏幕光都用它，和小人配色对得上。
  */
 export const LOOKS = {
-  dsh:      { sprite: 'sprite-dsh.png',    accent: '#4e8cff', tag: '◆', who: 'DeepSeek', rig: { hem: 99,  mid: 42, h: 129 } },
+  dsh:      { sprite: 'sprite-dsh.png',    accent: '#4e8cff', tag: '◆', who: 'DeepSeek' },
   codex:    { sprite: 'sprite-codex.png',  accent: '#c9d2e6', tag: '⌘', who: 'GPT' },
-  claude:   { sprite: 'sprite-claude.png', accent: '#e89b68', tag: '✦', who: 'Claude',   rig: { hem: 111, mid: 37, h: 124 } },
-  gemini:   { sprite: 'sprite-gemini.png', accent: '#8d9cf6', tag: '✧', who: 'Gemini',   rig: { hem: 74,  mid: 36, h: 114 } },
+  claude:   { sprite: 'sprite-claude.png', accent: '#e89b68', tag: '✦', who: 'Claude' },
+  gemini:   { sprite: 'sprite-gemini.png', accent: '#8d9cf6', tag: '✧', who: 'Gemini' },
   kimi:     { sprite: 'sprite-kimi.png',   accent: '#b9b6e8', tag: '☾', who: 'Kimi' },
-  glm:      { sprite: 'sprite-glm.png',    accent: '#7f8797', tag: 'Z', who: 'GLM',      rig: { hem: 113, mid: 36, h: 142 } },
-  grok:     { sprite: 'sprite-grok.png',   accent: '#d7b45e', tag: '✕', who: 'Grok',     rig: { hem: 102, mid: 42, h: 120 } },
-  // OpenCode 没有现成原画，按同样的像素风格画了一个顶上 ——
-  // 之前它用的是那个紫色剪影，看着像图没加载出来。
-  opencode: { sprite: 'sprite-opencode.png', accent: '#ba86ed', tag: '◈', who: 'OpenCode', rig: { hem: 110, mid: 36, h: 120 } },
+  glm:      { sprite: 'sprite-glm.png',    accent: '#7f8797', tag: 'Z', who: 'GLM' },
+  grok:     { sprite: 'sprite-grok.png',   accent: '#d7b45e', tag: '✕', who: 'Grok' },
+  // OpenCode 没有原画。手画过一个，风格跟 AI 生成的那几张对不齐，撤了。
+  // 没图就只摆桌子不摆人 —— 比放一个明显不搭的小人干净。
+  opencode: { sprite: '', accent: '#ba86ed', tag: '◈', who: 'OpenCode' },
 };
 
 const FALLBACK = { sprite: '', accent: '#8b94a3', tag: '●', who: '' };
@@ -45,43 +45,14 @@ function silhouette(look) {
 const ASSET = '../../assets/office';
 
 /**
- * 按轮廓把精灵图拆成「上半身 + 左腿 + 右腿」，动的是她自己的腿。
+ * 一个小人就是一张整图。
  *
- * 之前是在脚下贴两根统一的小方块当腿 —— 每张原画的裙长、腿的位置都不一样，
- * 方块跟画对不上，一走就露馅。现在 hem（裙摆线）和 mid（左右腿分界）都是
- * 从每张图自己的轮廓量出来的，切口就落在她的裙边上。
- *
- * 手没有拆：这几张图两侧那几列基本都是垂下来的长头发，不是手臂，
- * 照着切会把头发削掉。所以手臂的动作由上半身整体的摆动来带。
+ * 之前按轮廓把图拆成「上半身 + 两条腿」再分别转 —— 两条腿单独摆起来很鬼畜，
+ * 而且裙子及地的那几位本来就没腿可拆，同一个办公室里两种动法更怪。
+ * 现在统一只做左右移动，朝向靠镜像，别的都不动。
  */
-function rigged(person, look, id) {
-  const { hem, mid } = look.rig;
-  const img = (cls, src) => {
-    const el = document.createElement('img');
-    el.className = `office-part ${cls}`;
-    el.src = `${ASSET}/${src}`;
-    el.alt = '';
-    el.draggable = false;
-    return el;
-  };
-  const body = img('office-part--body', `part-${id}-body.png`);
-  const legL = img('office-part--leg office-part--legL', `part-${id}-legL.png`);
-  const legR = img('office-part--leg office-part--legR', `part-${id}-legR.png`);
-  // 这里必须用 JS 设样式，不能写成 style="..." 属性 ——
-  // 页面的 CSP 是 style-src 'self'，内联 style 属性会被直接丢掉，
-  // 实测两条腿会贴在容器顶端（接缝差 -72px），整个人断成两截。
-  legL.style.top = `${hem}px`;
-  legL.style.left = '0';
-  legL.style.width = `${mid}px`;
-  legR.style.top = `${hem}px`;
-  legR.style.left = `${mid}px`;
-  person.append(body, legL, legR);
-}
-
-function portrait(look, id) {
-  if (!look.sprite) return silhouette(look);
-  // 像素图必须 image-rendering: pixelated，否则浏览器会把它插值成一团糊
-  // 裙子及地的（白龙、Kimi）没有露出来的腿可切，整张用，靠身体起伏表现走路
+function portrait(look) {
+  if (!look.sprite) return '';
   return `<img class="office-person__img" src="${ASSET}/${look.sprite}" alt="" draggable="false">`;
 }
 
@@ -176,10 +147,10 @@ export function createScene(agents, onOpen) {
       class: 'office-person',
       style: { left: `${x + 3}%`, top: `${y - 7}%` },
     }, bubble);
-    if (look.rig) rigged(person, look, agent.id);
-    else person.insertAdjacentHTML('afterbegin', portrait(look, agent.id));
+    person.insertAdjacentHTML('afterbegin', portrait(look));
 
-    stage.append(desk, person);
+    stage.append(desk);
+    if (look.sprite) stage.append(person);
     seats.set(agent.id, {
       desk, person, bubble, look, state: 'idle',
       home: { x: x + 3, y: y - 7 },
@@ -206,15 +177,12 @@ export function createScene(agents, onOpen) {
     const ms = Math.min(MAX_MS, Math.max(MIN_MS, (dist / SPEED) * 1000));
     if (dist < 0.6) return;                                    // 原地不动就别触发动画
 
+    // 只做两件事：朝向翻个面、挪过去。没有迈腿、没有起伏 —— 拆开的腿单独摆
+    // 太鬼畜，而且裙子及地的那几位本来就没腿可拆，同一屋两种动法更怪。
     entry.person.classList.toggle('is-flipped', x < fromX - 0.5);
     entry.person.style.transitionDuration = `${ms}ms, ${ms}ms, .4s`;
-    // 步频跟着走 —— 一步约 0.34 秒，走得久就多迈几步
-    entry.person.style.setProperty('--step', `${Math.max(260, Math.min(420, ms / Math.max(2, Math.round(ms / 340))))}ms`);
     entry.person.style.left = `${x}%`;
     entry.person.style.top = `${y}%`;
-    entry.person.classList.add('is-walking');
-    clearTimeout(entry.walkTimer);
-    entry.walkTimer = setTimeout(() => entry.person.classList.remove('is-walking'), ms + 60);
   }
 
   /**
@@ -289,7 +257,6 @@ export function createScene(agents, onOpen) {
     stop: () => {
       for (const entry of seats.values()) {
         clearTimeout(entry.strollTimer);
-        clearTimeout(entry.walkTimer);
       }
     },
     has: (id) => seats.has(id),
