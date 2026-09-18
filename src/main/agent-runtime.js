@@ -13,6 +13,10 @@ const AGENTS = {
   opencode: { label: 'OpenCode', command: 'opencode', args: (prompt, cwd) => ['run', '--dir', cwd, prompt] },
   dsh: { label: 'DSH', command: 'dsh', args: (prompt) => ['--profile', 'headless', prompt] },
   gemini: { label: 'Gemini', command: 'gemini', args: (prompt) => ['--prompt', prompt, '--approval-mode', 'plan', '--output-format', 'text'] },
+  // 下面三家未必装了；installedAgents 会如实报，办公室里显示成灰工位。
+  kimi: { label: 'Kimi', command: 'kimi', args: (prompt) => ['--print', prompt] },
+  glm: { label: 'GLM', command: 'glm', args: (prompt) => ['--print', prompt] },
+  grok: { label: 'Grok', command: 'grok', args: (prompt) => ['--print', prompt] },
 };
 
 function commandNames(command) {

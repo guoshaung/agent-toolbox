@@ -3644,13 +3644,13 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .office__room-host { border: 1px solid var(--line-soft); border-radius: 12px; overflow: hidden; }
 .office-room {
   position: relative;
-  height: 320px;
-  background: linear-gradient(180deg, #2b3350 0%, #2b3350 46%, #3a4462 46%, #313a55 100%);
+  height: 400px;
+  background: linear-gradient(180deg, #2b3350 0%, #2b3350 44%, #3a4462 44%, #313a55 100%);
   overflow: hidden;
 }
-.office-room__wall { position: absolute; inset: 0 0 54% 0; background:
+.office-room__wall { position: absolute; inset: 0 0 56% 0; background:
   repeating-linear-gradient(90deg, rgba(255,255,255,.03) 0 1px, transparent 1px 64px); }
-.office-room__floor { position: absolute; inset: 46% 0 0 0; background:
+.office-room__floor { position: absolute; inset: 44% 0 0 0; background:
   repeating-linear-gradient(90deg, rgba(0,0,0,.14) 0 1px, transparent 1px 48px),
   repeating-linear-gradient(0deg, rgba(0,0,0,.10) 0 1px, transparent 1px 34px); }
 /* 门：逛到这儿就算出门了 */
@@ -3686,10 +3686,44 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
   color: var(--text-dim); font-size: 10.5px; white-space: nowrap;
 }
 .office-person {
-  position: absolute; z-index: 1; width: 48px;
-  transition: left 2.4s cubic-bezier(.4,.05,.4,1), top 2.4s cubic-bezier(.4,.05,.4,1), opacity .5s;
+  position: absolute; z-index: 1; width: 52px;
+  /* 时长由 JS 按距离算好写在 style 上（近的快、远的慢），这里只给曲线。
+     linear 是故意的：走路是匀速的，缓入缓出会变成「飘过去」。 */
+  transition: left 2.4s linear, top 2.4s linear, opacity .5s;
 }
-.office-person.is-flipped svg { transform: scaleX(-1); }
+
+/* ---- 骨骼：上半身 + 两条切出来的腿 ---- */
+.office-person { position: relative; }
+.office-part {
+  position: absolute; left: 0; top: 0;
+  image-rendering: pixelated;
+  pointer-events: none;
+}
+.office-part--body { position: relative; display: block; width: 52px; height: auto; }
+/* 绕裙摆线转，不绕自己中心 —— 绕中心的话腿会从裙子里飞出去 */
+.office-part--leg { transform-origin: 50% 0; }
+.office-person__img { filter: drop-shadow(0 3px 4px rgba(0,0,0,.45)); }
+.office-part--body { filter: drop-shadow(0 3px 4px rgba(0,0,0,.45)); }
+
+/* 走路：两条腿反相迈，身体一上一下。
+   --step 由 JS 按这趟路的时长给 —— 走得久就多迈几步，不会脚停了人还在滑。 */
+.office-person.is-walking .office-part--legL { animation: office-step var(--step, 340ms) ease-in-out infinite alternate; }
+.office-person.is-walking .office-part--legR { animation: office-step var(--step, 340ms) ease-in-out infinite alternate-reverse; }
+.office-person.is-walking .office-part--body,
+.office-person.is-walking .office-person__img { animation: office-bob calc(var(--step, 340ms) / 2) ease-in-out infinite alternate; }
+/* 裙子及地、没腿可切的那两位，靠整体轻微侧摆表示在走 */
+.office-person.is-walking .office-person__img { animation: office-sway var(--step, 340ms) ease-in-out infinite alternate; }
+
+@keyframes office-step { from { transform: rotate(-15deg); } to { transform: rotate(15deg); } }
+@keyframes office-bob  { from { transform: translateY(0); } to { transform: translateY(-2px); } }
+@keyframes office-sway { from { transform: translateY(0) rotate(-1.6deg); } to { transform: translateY(-2px) rotate(1.6deg); } }
+.office-person.is-flipped svg, .office-person.is-flipped .office-person__img { transform: scaleX(-1); }
+/* 像素图必须关掉平滑，否则浏览器插值成一团糊，白做了 */
+.office-person__img {
+  display: block; width: 52px; height: auto;
+  image-rendering: pixelated;
+  filter: drop-shadow(0 3px 4px rgba(0,0,0,.45));
+}
 .office-person.is-away { opacity: .2; }
 .office-person.is-missing { opacity: .2; filter: grayscale(1); }
 

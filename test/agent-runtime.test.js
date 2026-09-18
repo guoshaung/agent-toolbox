@@ -7,7 +7,15 @@ const path = require('node:path');
 const { AGENTS, installedAgents, resolveCommand, validWorkingDirectory } = require('../src/main/agent-runtime');
 
 test('AI office exposes only explicit agent command adapters', () => {
-  assert.deepEqual(Object.keys(AGENTS).sort(), ['claude', 'codex', 'dsh', 'gemini', 'opencode']);
+  assert.deepEqual(Object.keys(AGENTS).sort(),
+    ['claude', 'codex', 'dsh', 'gemini', 'glm', 'grok', 'kimi', 'opencode']);
+  // 新加的三家也不许带绕过审批的参数 —— 这条用例的意义就在这儿，
+  // 名单变长不要紧，变长时每一家都得重新过一遍这个检查。
+  for (const id of ['kimi', 'glm', 'grok']) {
+    const args = AGENTS[id].args('test', '/tmp');
+    assert.equal(args.some((a) => /dangerous|bypass|skip-permission|--yes|--auto/i.test(a)), false,
+      `${id} 不该带绕过审批的参数`);
+  }
   assert.equal(AGENTS.codex.args('test', '/tmp').includes('--dangerously-bypass-approvals-and-sandbox'), false);
   assert.deepEqual(AGENTS.codex.args('test', '/tmp').slice(1, 3), ['--sandbox', 'read-only']);
   assert.equal(AGENTS.claude.args('test').includes('--dangerously-skip-permissions'), false);
