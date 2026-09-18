@@ -3636,3 +3636,85 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 
 /* 上面那几条 :not() 链权重比 .office 高，这里显式压住，保证派发台占满整行 */
 .focus__body > .office { grid-column: 1 / -1; }
+
+/* ---------- 二次元办公室 ----------
+ * 全部用代码画，不带任何模型/图片。小人靠 transform 走位，CSS 过渡负责「走过去」
+ * 这件事本身 —— 用 JS 逐帧推的话，几个小人一起动就开始掉帧。
+ */
+.office__room-host { border: 1px solid var(--line-soft); border-radius: 12px; overflow: hidden; }
+.office-room {
+  position: relative;
+  height: 320px;
+  background: linear-gradient(180deg, #2b3350 0%, #2b3350 46%, #3a4462 46%, #313a55 100%);
+  overflow: hidden;
+}
+.office-room__wall { position: absolute; inset: 0 0 54% 0; background:
+  repeating-linear-gradient(90deg, rgba(255,255,255,.03) 0 1px, transparent 1px 64px); }
+.office-room__floor { position: absolute; inset: 46% 0 0 0; background:
+  repeating-linear-gradient(90deg, rgba(0,0,0,.14) 0 1px, transparent 1px 48px),
+  repeating-linear-gradient(0deg, rgba(0,0,0,.10) 0 1px, transparent 1px 34px); }
+/* 门：逛到这儿就算出门了 */
+.office-room__door {
+  position: absolute; right: 3%; top: 12%; width: 54px; height: 104px;
+  border: 2px solid rgba(255,255,255,.18); border-bottom: 0;
+  border-radius: 6px 6px 0 0; background: rgba(0,0,0,.22);
+}
+.office-room__door::after {
+  content: ''; position: absolute; left: 8px; top: 50%; width: 6px; height: 6px;
+  border-radius: 50%; background: rgba(255,255,255,.4);
+}
+.office-room__plant {
+  position: absolute; left: 2.5%; bottom: 8%; width: 26px; height: 42px;
+  background:
+    radial-gradient(circle at 50% 22%, #4f9e6b 0 12px, transparent 12px),
+    linear-gradient(180deg, transparent 58%, #6b5138 58%);
+}
+.office-room__stage { position: absolute; inset: 0; }
+
+/* 桌子和小人是两层：桌子钉在工位上不动，小人自己走。
+   小人层级压在桌子下面 —— 这样坐下时显示器在前、露出头和肩，
+   像真的坐在桌子后面，而不是站在桌子上。 */
+.office-desk {
+  position: absolute; z-index: 2; width: 96px; padding: 0;
+  border: 0; background: none; cursor: pointer; opacity: .92;
+  transition: opacity .3s, filter .2s;
+}
+.office-desk:hover { opacity: 1; filter: drop-shadow(0 0 8px var(--seat-accent)); }
+.office-desk.is-missing { opacity: .2; filter: grayscale(1); cursor: default; }
+.office-desk__name {
+  display: block; margin-top: -2px; text-align: center;
+  color: var(--text-dim); font-size: 10.5px; white-space: nowrap;
+}
+.office-person {
+  position: absolute; z-index: 1; width: 48px;
+  transition: left 2.4s cubic-bezier(.4,.05,.4,1), top 2.4s cubic-bezier(.4,.05,.4,1), opacity .5s;
+}
+.office-person.is-flipped svg { transform: scaleX(-1); }
+.office-person.is-away { opacity: .2; }
+.office-person.is-missing { opacity: .2; filter: grayscale(1); }
+
+.office-person__bubble {
+  position: absolute; left: 50%; top: -6px; transform: translateX(-50%);
+  padding: 2px 8px; border-radius: 9px 9px 9px 3px;
+  color: #1a2030; background: rgba(238,246,255,.95);
+  font-size: 10px; white-space: nowrap;
+}
+.office-person__bubble[hidden] { display: none; }
+
+/* ---------- 点屏幕展开的对话 ---------- */
+.office-chat { display: flex; flex-direction: column; gap: 8px; padding: 12px; border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--line-soft)); border-radius: 12px; background: var(--bg-sunken); }
+.office-chat[hidden] { display: none; }
+.office-chat__head { display: flex; align-items: center; gap: 10px; }
+.office-chat__log { display: flex; flex-direction: column; gap: 8px; max-height: 280px; overflow: auto; }
+.office-chat__empty { padding: 10px 2px; font-size: 12px; }
+.office-chat__turn { display: grid; grid-template-columns: 52px minmax(0, 1fr); gap: 8px; font-size: 12px; }
+.office-chat__who { color: var(--text-faint); font-size: 11px; }
+.office-chat__text { margin: 0; color: var(--text); font: 12px/1.6 var(--mono); white-space: pre-wrap; word-break: break-word; }
+.office-chat__turn.is-user .office-chat__text { color: var(--text-dim); }
+.office-chat__input { width: 100%; padding: 8px 10px; border: 1px solid var(--line-soft); border-radius: 9px; color: var(--text); background: var(--code-bg); font: 12.5px/1.6 var(--mono); resize: vertical; }
+.office-chat__input:focus { outline: none; border-color: color-mix(in srgb, var(--accent) 55%, var(--line)); }
+.office-chat__actions { display: flex; align-items: center; }
+
+@media (prefers-reduced-motion: reduce) {
+  .office-desk, .office-person, .office-eyes, .office-arm, .office-monitor-glow { transition: none !important; animation: none !important; }
+}

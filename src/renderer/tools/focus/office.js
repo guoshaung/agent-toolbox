@@ -1,4 +1,5 @@
 import { h, toast } from '../../core/ui.js';
+import { createScene, lookOf } from './office-scene.js';
 
 /**
  * AI 派发台。
@@ -43,7 +44,16 @@ export function createOffice(ctx) {
   const { config } = ctx;
   /** @type {Map<string, {id,label,installed,checked,el,statusEl,resultEl,busy}>} */
   const desks = new Map();
+  /** agentId -> [{role:'user'|'agent', text}]，多轮靠它接上下文 */
+  const history = new Map();
+  let scene = null;
   let running = 0;
+
+  function pushHistory(id, role, text) {
+    const list = history.get(id) || [];
+    list.push({ role, text: String(text || '').slice(0, 4000) });
+    history.set(id, list.slice(-12));
+  }
 
   const promptInput = h('textarea', {
     class: 'office__prompt',
@@ -54,6 +64,7 @@ export function createOffice(ctx) {
 
   const summary = h('span', { class: 'office__summary faint' }, '正在看本机装了哪些…');
   const grid = h('div', { class: 'office__grid' });
+  const roomHost = h('div', { class: 'office__room-host' });
   const results = h('div', { class: 'office__results' });
 
   const sendBtn = h('button', {
@@ -156,6 +167,19 @@ export function createOffice(ctx) {
     return { card, body, timeEl: card.querySelector('.office__result-time') };
   }
 
+  /**
+   * 拼出带上下文的提示词。
+   *
+   * 这些 CLI 都是发一次、跑完就退，没有常驻会话可接。所以「接着聊」是把前几轮
+   * 原样带回去 —— 只带最近 6 轮，再多提示词会迅速膨胀，agent 反而抓不住重点。
+   */
+  function composePrompt(id, next) {
+    const past = (history.get(id) || []).slice(-6);
+    if (!past.length) return next;
+    const lines = past.map((turn) => (turn.role === 'user' ? `我：${turn.text}` : `你上次答：${turn.text}`));
+    return `${lines.join('\n\n')}\n\n我：${next}`;
+  }
+
   async function dispatch() {
     const prompt = promptInput.value.trim();
     if (!prompt) return toast('先写一句要做的事', 'info');
@@ -170,26 +194,33 @@ export function createOffice(ctx) {
 
     const startedAt = Date.now();
     for (const desk of picked) {
+      pushHistory(desk.id, 'user', prompt);
       desk.busy = true;
       running += 1;
       setDeskState(desk, '执行中…', 'busy');
+      scene?.setState(desk.id, 'working', '干活中…');
       const view = resultCard(desk);
       // 各家并行跑，谁先回来谁先显示 —— 串行等的话多勾几个就要等到天荒地老
-      window.toolbox.agentRun.run({ id: desk.id, prompt }).then((result) => {
+      window.toolbox.agentRun.run({ id: desk.id, prompt: composePrompt(desk.id, prompt) }).then((result) => {
         const spent = Math.round((Date.now() - startedAt) / 1000);
         view.timeEl.textContent = `${spent}s`;
         if (result?.ok) {
           view.body.textContent = result.text || '（没有返回文字）';
+          pushHistory(desk.id, 'agent', result.text || '');
+          if (chatAgent === desk.id) renderChat();
           setDeskState(desk, '已完成', 'good');
+          scene?.setState(desk.id, 'idle', '');
         } else {
           view.body.textContent = result?.error || '执行失败';
           view.card.classList.add('is-bad');
           setDeskState(desk, '失败', 'bad');
+          scene?.setState(desk.id, 'idle', '');
         }
       }).catch((error) => {
         view.body.textContent = String(error?.message || error);
         view.card.classList.add('is-bad');
         setDeskState(desk, '失败', 'bad');
+        scene?.setState(desk.id, 'idle', '');
       }).finally(() => {
         desk.busy = false;
         running -= 1;
@@ -197,6 +228,75 @@ export function createOffice(ctx) {
       });
     }
     syncSend();
+  }
+
+  // ---------- 点屏幕：展开这家的对话，并且能接着聊 ----------
+  const chatTitle = h('strong', {}, '');
+  const chatLog = h('div', { class: 'office-chat__log' });
+  const chatInput = h('textarea', {
+    class: 'office-chat__input', rows: 2,
+    placeholder: '接着跟它说…（⌘/Ctrl+Enter 发送）', spellcheck: false,
+  });
+  let chatAgent = null;
+
+  const chatSend = h('button', { class: 'btn btn--primary btn--sm', onclick: () => sendFollowUp() }, '接着聊');
+  const chatPanel = h('div', { class: 'office-chat', hidden: true },
+    h('div', { class: 'office-chat__head' },
+      chatTitle,
+      h('span', { style: { flex: 1 } }),
+      h('button', { class: 'btn btn--sm btn--ghost', onclick: () => closeChat() }, '收起'),
+    ),
+    chatLog,
+    chatInput,
+    h('div', { class: 'office-chat__actions' }, h('span', { style: { flex: 1 } }), chatSend),
+  );
+
+  chatInput.addEventListener('keydown', (event) => {
+    if (event.key !== 'Enter' || event.isComposing) return;
+    if (!(event.metaKey || event.ctrlKey)) return;
+    event.preventDefault();
+    sendFollowUp();
+  });
+
+  function closeChat() {
+    chatAgent = null;
+    chatPanel.hidden = true;
+  }
+
+  function renderChat() {
+    const turns = history.get(chatAgent) || [];
+    chatLog.replaceChildren(...(turns.length
+      ? turns.map((turn) => h('div', { class: `office-chat__turn is-${turn.role}` },
+          h('span', { class: 'office-chat__who' }, turn.role === 'user' ? '我' : desks.get(chatAgent)?.label || 'AI'),
+          h('pre', { class: 'office-chat__text' }, turn.text),
+        ))
+      : [h('div', { class: 'faint office-chat__empty' }, '还没聊过。下面写一句，它就开始干活了。')]));
+    chatLog.scrollTop = chatLog.scrollHeight;
+  }
+
+  function openChat(id) {
+    const desk = desks.get(id);
+    if (!desk) return;
+    if (!desk.installed) return toast(`${desk.label} 没装或不在 PATH 里`, 'info');
+    chatAgent = id;
+    chatTitle.textContent = `${lookOf(id).tag} ${desk.label} 的屏幕`;
+    chatPanel.hidden = false;
+    renderChat();
+    chatInput.focus();
+  }
+
+  function sendFollowUp() {
+    if (!chatAgent) return;
+    const text = chatInput.value.trim();
+    if (!text) return toast('先写一句', 'info');
+    const desk = desks.get(chatAgent);
+    if (desk?.busy) return toast(`${desk.label} 还在忙上一轮`, 'info');
+    chatInput.value = '';
+    // 走同一条派发通路：只勾这一家、内容是刚写的这句
+    for (const d of desks.values()) { d.checked = d.id === chatAgent; d.el.classList.toggle('is-on', d.checked); }
+    promptInput.value = text;
+    dispatch().then(() => renderChat());
+    renderChat();
   }
 
   async function refresh() {
@@ -228,6 +328,13 @@ export function createOffice(ctx) {
       desks.set(agent.id, desk);
       grid.append(desk.el);
     }
+    scene?.stop();
+    scene = createScene(list, openChat);
+    roomHost.replaceChildren(scene.el);
+    for (const agent of list) {
+      if (!agent.installed) scene.setState(agent.id, 'missing', '');
+    }
+
     const installed = list.filter((a) => a.installed).length;
     summary.textContent = `本机装了 ${installed} / ${list.length} 家`;
     syncSend();
@@ -242,6 +349,8 @@ export function createOffice(ctx) {
       summary,
       h('button', { class: 'btn btn--sm', onclick: () => refresh() }, '重新扫描'),
     ),
+    roomHost,
+    chatPanel,
     grid,
     promptInput,
     h('div', { class: 'office__actions' }, presetRow, h('span', { style: { flex: 1 } }), sendBtn),
