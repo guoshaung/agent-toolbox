@@ -814,3 +814,34 @@ html[data-effect='neon'] .bar strong { color: var(--text); text-shadow: 0 0 14px
 html[data-effect='neon'] .btn:hover,
 html[data-effect='neon'] .btn--primary { box-shadow: 0 0 18px color-mix(in srgb, var(--accent) 34%, transparent); }
 html[data-effect='neon'] .rail__logo { filter: drop-shadow(0 0 10px var(--accent-glow)); }
+
+/* 工具栏里的按钮一律等高
+ *
+ * 之前一条工具栏上 .btn--icon 是 32、.btn--sm 是 26、.nb__md-tool 是 28，
+ * 三种混着排，一行按钮高高低低像没对齐的牙。实测「代码」的工具栏上
+ * 📂 ＋ − ‹ › 是 32px，紧挨着的「✎ 编辑」和「⋯」是 26px。
+ *
+ * 按钮自己不知道它在哪条栏里，所以只能由容器统一定高。图标按钮同时锁宽，
+ * 否则会被内容撑成长方形。
+ */
+.bar .btn,
+.nb__bar .btn,
+.nb__markdown-toolbar .btn,
+.practice__bar .btn,
+.practice__actions .btn,
+.practice__cell-controls .btn,
+.practice__output-head-actions .btn,
+.practice__terminal-actions .btn {
+  min-height: 28px;
+  height: 28px;
+}
+.bar .btn--icon,
+.nb__bar .btn--icon,
+.nb__markdown-toolbar .btn--icon,
+.practice__bar .btn--icon,
+.practice__actions .btn--icon,
+.practice__cell-controls .btn--icon,
+.practice__output-head-actions .btn--icon,
+.practice__terminal-actions .btn--icon {
+  width: 28px;
+}
