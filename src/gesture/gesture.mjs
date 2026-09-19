@@ -119,9 +119,11 @@ async function start() {
     video.srcObject = stream;
     await video.play();
     hint.textContent = '加载手部模型…';
-    const vision = await FilesetResolver.forVisionTasks(WASM);
+    // 打包后文件在 app.asar.unpacked 里，路径由主进程给；开发时退回相对路径
+    const paths = await api?.paths?.().catch(() => null);
+    const vision = await FilesetResolver.forVisionTasks(paths?.wasm || WASM);
     landmarker = await HandLandmarker.createFromOptions(vision, {
-      baseOptions: { modelAssetPath: MODEL },
+      baseOptions: { modelAssetPath: paths?.model || MODEL },
       runningMode: 'VIDEO',
       numHands: 1,
       minHandDetectionConfidence: 0.6,

@@ -5,6 +5,7 @@ const os = require('node:os');
 const { execFile } = require('node:child_process');
 const { promisify } = require('node:util');
 const QRCode = require('qrcode');
+const { pathToFileURL } = require('node:url');
 const {
   app, BrowserWindow, ipcMain, session, shell, dialog, clipboard, nativeTheme, safeStorage, screen,
   nativeImage, globalShortcut,
@@ -1734,6 +1735,16 @@ function registerIpc() {
   });
   ipcMain.handle('gesture:closeWindow', () => { gestureDesk?.closeGesture(); return { ok: true }; });
   // 小窗报错时把系统层面的摄像头状态一起显示出来，好判断是系统没给还是我们自己拦了
+  // wasm 和模型打包后在 app.asar 里，页面 fetch 不到（Failed to fetch）；它们被 asarUnpack 出来了，
+  // 这里给页面真正的磁盘路径
+  ipcMain.handle('gesture:paths', () => {
+    const unpacked = (p) => p.replace(/app\.asar([\/\\])/, 'app.asar.unpacked$1');
+    const root = path.join(__dirname, '..', '..');
+    return {
+      wasm: pathToFileURL(unpacked(path.join(root, 'node_modules', '@mediapipe', 'tasks-vision', 'wasm'))).href,
+      model: pathToFileURL(unpacked(path.join(root, 'assets', 'models', 'hand_landmarker.task'))).href,
+    };
+  });
   ipcMain.handle('gesture:cameraStatus', () => ({
     system: process.platform === 'darwin' ? systemPreferences.getMediaAccessStatus('camera') : 'n/a',
     platform: process.platform,

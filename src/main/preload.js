@@ -238,6 +238,7 @@ contextBridge.exposeInMainWorld('toolbox', {
     event: (event) => ipcRenderer.invoke('gestureWin:event', event),
     openCameraSettings: () => ipcRenderer.invoke('gesture:openCameraSettings'),
     cameraStatus: () => ipcRenderer.invoke('gesture:cameraStatus'),
+    paths: () => ipcRenderer.invoke('gesture:paths'),
     showMain: () => ipcRenderer.invoke('gesture:showMain'),
     close: () => ipcRenderer.invoke('gesture:closeWindow'),
     onState: (callback) => ipcRenderer.on('gesture:state', (_event, state) => callback(state)),
