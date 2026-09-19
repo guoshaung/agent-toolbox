@@ -296,6 +296,8 @@ contextBridge.exposeInMainWorld('toolbox', {
   },
 
   avatarRig: {
+    setup: (mode) => ipcRenderer.invoke('avatarRig:setup', mode),
+    refresh: () => ipcRenderer.invoke('avatarRig:refresh'),
     status: () => ipcRenderer.invoke('avatarRig:status'),
     sample: () => ipcRenderer.invoke('avatarRig:sample'),
     preview: (jobId) => ipcRenderer.invoke('avatarRig:preview', jobId),

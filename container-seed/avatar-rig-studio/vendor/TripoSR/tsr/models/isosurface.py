@@ -10,7 +10,7 @@ except ImportError:
     from skimage.measure import marching_cubes as skimage_marching_cubes
 
     def marching_cubes(volume, level):
-        vertices, faces, _, _ = skimage_marching_cubes(volume.cpu().numpy(), level)
+        vertices, faces, _, _ = skimage_marching_cubes(volume.cpu().numpy(), level, allow_degenerate=False)
         # torchmcubes returns xyz while skimage returns array-axis order.
         return torch.from_numpy(vertices[:, [2, 1, 0]].copy()), torch.from_numpy(faces.copy().astype(np.int64))
 

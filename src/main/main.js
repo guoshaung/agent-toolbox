@@ -1613,7 +1613,8 @@ function registerIpc() {
   // 代码记事本：读取 Understand-Anything 的知识图谱 + 按行号回读源码
   registerNotebookIpc(ipcMain, { dialog, getWindow: () => mainWindow, getUserDataPath: () => app.getPath('userData') });
   registerContainerIpc(ipcMain, { shell, getUserDataPath: () => app.getPath('userData') });
-  registerAvatarRigIpc(ipcMain, { shell, getUserDataPath: () => app.getPath('userData') });
+  registerAvatarRigIpc(ipcMain, { app, shell, getUserDataPath: () => app.getPath('userData'),
+    getSeedPath: () => path.join(app.isPackaged ? process.resourcesPath : path.join(__dirname, '..', '..'), 'container-seed', 'avatar-rig-studio') });
   // 画图工具导出的图、DSH 里下载的文件，都落进容器
   hookContainerDownloads('persist:drafter', '图表');
   // 页面里 <a download> 存的文件走这条（webview 里 blob 下载会被丢弃，见 drafter-preload）

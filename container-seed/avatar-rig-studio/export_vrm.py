@@ -31,7 +31,10 @@ def glb(document, blob):
             + struct.pack('<II', len(encoded), 0x4e4f534a) + encoded
             + struct.pack('<II', len(blob), 0x004e4942) + blob)
 
-def export(job, name='Image reconstructed avatar', t_pose=False):
+def export(job, name='Image reconstructed avatar', t_pose=False, use_texture=True):
+    reference = json.loads((job/'reference.json').read_text('utf-8')) if (job/'reference.json').is_file() else {}
+    engine = 'Hunyuan3D-2mv' if (job/'multiview-reconstruction.json').is_file() else 'TripoSR'
+    name = reference.get('name', name)
     data = np.load(job / 'mesh.npz')
     vertices = data['vertices'].astype(np.float32)
     colors = data['colors'][:, :3].astype(np.float32) / 255
@@ -52,9 +55,10 @@ def export(job, name='Image reconstructed avatar', t_pose=False):
         t = np.clip((vertices-joints[i]) @ direction / max(direction@direction, 1e-8), 0, 1)
         distances.append(np.linalg.norm(vertices-joints[i]-t[:, None]*direction, axis=1))
     distances = np.stack(distances, axis=1)
-    # Long turquoise hair must follow the head rather than nearby arms/legs.
+    # Optional job-specific hint; do not mistake arbitrary turquoise clothing
+    # for hair in every character.
     raw = data['colors'][:, :3].astype(np.float32)/255
-    hair = (raw[:, 1] > raw[:, 0]*1.3) & (raw[:, 2] > raw[:, 0]*1.2) & (np.abs(vertices[:, 0])>.23)
+    hair = reference.get('turquoiseHair', False) & (raw[:, 1] > raw[:, 0]*1.3) & (raw[:, 2] > raw[:, 0]*1.2) & (np.abs(vertices[:, 0])>.23)
     distances[hair] = 10
     distances[hair, names.index('head')] = 0
     indices = np.argsort(distances, axis=1)[:, :4].astype(np.uint16)
@@ -82,7 +86,7 @@ def export(job, name='Image reconstructed avatar', t_pose=False):
     joints = np.einsum('nij,nj->ni', transforms, np.c_[joints,np.ones(len(joints))])[:, :3]
     import trimesh
     normals = trimesh.Trimesh(vertices=vertices, faces=faces, process=False).vertex_normals.astype(np.float32)
-    document = {'asset': {'version': '2.0', 'generator': 'Avatar Rig Studio / TripoSR'},
+    document = {'asset': {'version': '2.0', 'generator': 'Avatar Rig Studio / '+engine},
                 'scene': 0, 'scenes': [{'nodes': [0, len(names)+1]}], 'nodes': [], 'meshes': [],
                 'bufferViews': [], 'accessors': [], 'buffers': [], 'skins': [],
                 'materials': [{'name': 'Reconstructed colors', 'doubleSided': True,
@@ -122,8 +126,59 @@ def export(job, name='Image reconstructed avatar', t_pose=False):
                   'COLOR_0': accessor(colors.astype(np.float32),5126,'VEC3',34962),
                   'JOINTS_0': accessor(indices,5123,'VEC4',34962),
                   'WEIGHTS_0': accessor(weights.astype(np.float32),5126,'VEC4',34962)}
-    document['meshes'].append({'primitives': [{'attributes': attributes,
-        'indices': accessor(faces.reshape(-1),5125,'SCALAR',34963), 'material': 0}]})
+    textured = use_texture and 'projection_uv' in data and (job/'input-prepared.png').is_file()
+    multiview = use_texture and 'multiview_uv' in data
+    primitives = []
+    texture_faces = np.zeros(len(faces), dtype=bool)
+    if textured:
+        uv = data['projection_uv'].astype(np.float32)
+        # Restrict the reference projection to front-facing triangles inside the
+        # image. Occluded side/back surfaces retain the learned appearance.
+        facing = normals[faces].mean(axis=1)[:,2]
+        uv_valid = ((uv >= 0) & (uv <= 1)).all(axis=1)
+        texture_faces = (facing > .35) & uv_valid[faces].all(axis=1)
+        texture = (job/'input-prepared.png').read_bytes()
+        blob.extend(b'\0'*(-len(blob)%4))
+        image_view = len(document['bufferViews'])
+        document['bufferViews'].append({'buffer':0, 'byteOffset':len(blob), 'byteLength':len(texture)})
+        blob.extend(texture)
+        document['images']=[{'bufferView':image_view,'mimeType':'image/png','name':'Original reference (native pixels)'}]
+        document['samplers']=[{'magFilter':9729,'minFilter':9987,'wrapS':33071,'wrapT':33071}]
+        document['textures']=[{'source':0,'sampler':0}]
+        document['materials'].append({'name':'Reference detail projection','doubleSided':True,
+          'pbrMetallicRoughness':{'baseColorTexture':{'index':0},'metallicFactor':0,'roughnessFactor':.85},
+          'extensions':{'KHR_materials_unlit':{}}})
+        attrs = {k:v for k,v in attributes.items() if k!='COLOR_0'}
+        attrs['TEXCOORD_0'] = accessor(uv,5126,'VEC2',34962)
+        if texture_faces.any():
+            primitives.append({'attributes':attrs,'indices':accessor(faces[texture_faces].reshape(-1),5125,'SCALAR',34963),'material':1})
+    if multiview:
+        face_normals=normals[faces].mean(axis=1)
+        scores=np.stack((face_normals[:,2],face_normals[:,0],-face_normals[:,2]),axis=1)
+        groups=scores.argmax(axis=1)
+        document['images']=[];document['textures']=[]
+        document['samplers']=[{'magFilter':9729,'minFilter':9987,'wrapS':33071,'wrapT':33071}]
+        for j,filename in enumerate(data['texture_files']):
+            image_path=(job/str(filename)).resolve()
+            if image_path.parent != job.resolve():raise ValueError('Texture outside job')
+            texture=image_path.read_bytes()
+            blob.extend(b'\0'*(-len(blob)%4))
+            document['bufferViews'].append({'buffer':0,'byteOffset':len(blob),'byteLength':len(texture)})
+            blob.extend(texture)
+            document['images'].append({'bufferView':len(document['bufferViews'])-1,'mimeType':'image/png','name':str(filename)})
+            document['textures'].append({'source':j,'sampler':0})
+            document['materials'].append({'name':f'Multiview reference {filename}','doubleSided':True,
+                'pbrMetallicRoughness':{'baseColorTexture':{'index':j},'metallicFactor':0,'roughnessFactor':.85},
+                'extensions':{'KHR_materials_unlit':{}}})
+            attrs={k:v for k,v in attributes.items() if k!='COLOR_0'}
+            attrs['TEXCOORD_0']=accessor(data['multiview_uv'][j].astype(np.float32),5126,'VEC2',34962)
+            chosen=groups==j
+            if chosen.any():
+                primitives.append({'attributes':attrs,'indices':accessor(faces[chosen].reshape(-1),5125,'SCALAR',34963),'material':len(document['materials'])-1})
+        texture_faces[:]=True
+    if (~texture_faces).any():
+        primitives.append({'attributes':attributes,'indices':accessor(faces[~texture_faces].reshape(-1),5125,'SCALAR',34963),'material':0})
+    document['meshes'].append({'primitives':primitives})
     times = np.array([0,.5,1,1.5,2],dtype=np.float32)
     angles = np.array([0,.35,0,-.35,0])/2
     rotations = np.stack([np.zeros(5),np.sin(angles),np.zeros(5),np.cos(angles)],axis=1).astype(np.float32)
@@ -134,19 +189,23 @@ def export(job, name='Image reconstructed avatar', t_pose=False):
     (job/'avatar.glb').write_bytes(glb(document,bytes(blob)))
     document['extensionsUsed'].append('VRMC_vrm')
     document['extensions'] = {'VRMC_vrm': {'specVersion':'1.0',
-        'meta': {'name':name, 'version':'0.2.0', 'authors':['Avatar Rig Studio - automatic reconstruction'],
-                 'copyrightInformation':'Reference character: Crypton Future Media; source illustration: KEI. Auto-reconstructed derivative draft.',
+        'meta': {'name':name, 'version':'0.3.0', 'authors':['Avatar Rig Studio - automatic reconstruction'],
+                 'copyrightInformation': reference.get('copyright', 'Auto-reconstructed derivative draft; reference rights remain with the original rights holders.'),
                  'licenseUrl':'https://vrm.dev/licenses/1.0/',
-                 'otherLicenseUrl':'https://piapro.net/intl/en_for_creators.html',
-                 'references':['https://piapro.net/pages/character'],
+                 **({'otherLicenseUrl':reference['licenseUrl']} if reference.get('licenseUrl') else {}),
+                 **({'references':[reference['sourceUrl']]} if reference.get('sourceUrl') else {}),
                  'allowRedistribution':False, 'commercialUsage':'personalNonProfit'},
         'humanoid': {'humanBones': {n:{'node':i} for n,i in node_indices.items()}}}}
     (job/'avatar.vrm').write_bytes(glb(document,bytes(blob)))
     report = {'format':'VRM 1.0', 'model':'avatar.vrm', 'glb':'avatar.glb',
+              'name': name,
               'vertices':len(vertices), 'triangles':len(faces), 'bones':len(names),
               'skin':'4 normalized weights per vertex', 'rigQuality':'estimated draft; manual correction required',
               'restPose':'approximate T pose' if t_pose else 'reference pose (T-pose correction required for retargeting)',
-              'source':'TripoSR neural reconstruction', 'limitations':['Back surface inferred from one image','No facial blendshapes','Hair and clothing have no physics'],
+              'source':engine,
+              'appearance':'three-view reference projection (not diffusion texture)' if multiview else ('native-resolution reference projection + inferred side/back colors' if textured else 'vertex colors'),
+              'texturedTriangles': int(texture_faces.sum()),
+              'limitations':(['AI-generated view inconsistencies and texture seams','Unobserved right-side texture approximated'] if multiview else ['Back surface inferred from one image'])+['No facial blendshapes','Hair and clothing have no physics'],
               'weightSumError':float(abs(weights.sum(1)-1).max())}
     (job/'project.json').write_text(json.dumps(report,ensure_ascii=False,indent=2),'utf-8')
     print(json.dumps(report),flush=True)
@@ -157,5 +216,6 @@ if __name__ == '__main__':
     parser.add_argument('--job', type=Path, required=True)
     parser.add_argument('--name', default='Image reconstructed avatar')
     parser.add_argument('--t-pose', action='store_true', help='Experimental: may deform joined hair/clothing')
+    parser.add_argument('--vertex-colors', action='store_true', help='Disable reference texture for A/B comparison')
     args = parser.parse_args()
-    export(args.job, args.name, args.t_pose)
+    export(args.job, args.name, args.t_pose, not args.vertex_colors)

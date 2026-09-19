@@ -42,6 +42,7 @@
     "zod": "^4.5.4"
   },
   "build": {
+    "beforePack": "scripts/build-prepare.cjs",
     "appId": "cn.macpe.agenttoolbox",
     "productName": "Agent 工具箱",
     "asar": true,
@@ -116,6 +117,10 @@
           "**/*",
           "!**/__pycache__/**",
           "!**/.venv/**",
+          "!**/.venv-mv/**",
+          "!**/_backups/**",
+          "!**/vendor/Hunyuan3D-2/**",
+          "!**/multiview-ready.json",
           "!**/models/**",
           "!**/jobs/**",
           "!**/miku-official.png",
