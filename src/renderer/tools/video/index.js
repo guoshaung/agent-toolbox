@@ -1282,10 +1282,31 @@ export default {
       lines.push('');
       if (notes && notes.length) {
         const kindLabel = subtitleSourceLabel(subsKind);
-        lines.push(`## 逐集内容笔记（基于${kindLabel}）`, '');
+        // 分段详解（长单集）和逐集笔记（多集）两种排法
+        const deep = notes.some((n) => n.seg);
+        lines.push(`## ${deep ? '分段精读' : '逐集内容笔记'}（基于${kindLabel}）`, '');
+        const allTerms = [];
         for (const n of notes) {
-          const t = partTitle(n.page);
-          lines.push(`### P${n.page}${t ? ` ${t}` : ''}`, '', n.note, '');
+          if (n.seg) {
+            lines.push(`### ${n.seg}. ${n.heading || `第 ${n.seg} 段`}`, '', n.note, '');
+            if (Array.isArray(n.terms)) allTerms.push(...n.terms);
+          } else {
+            const t = partTitle(n.page);
+            lines.push(`### P${n.page}${t ? ` ${t}` : ''}`, '', n.note, '');
+          }
+        }
+        if (allTerms.length) {
+          // 术语去重：分段之间难免重复提到同一个词
+          const seen = new Set();
+          const uniq = allTerms.filter((t) => {
+            const key = String(t).split(/[：:]/)[0].trim();
+            if (!key || seen.has(key)) return false;
+            seen.add(key);
+            return true;
+          });
+          lines.push(`## 关键术语（${uniq.length} 个）`, '');
+          for (const t of uniq) lines.push(`* ${t}`);
+          lines.push('');
         }
         if (subsPages && subsPages < info.pages.length) {
           lines.push(`> 仅拉取并总结了前 ${subsPages} 集的字幕，其余分集见下方大纲。`, '');
@@ -1343,13 +1364,68 @@ export default {
       );
     }
 
+    /**
+     * 一集的字幕切成若干段，每段单独让 AI 写详解。
+     *
+     * 原来不管多长都只取前 12000 字、只要 100-250 字笔记 —— 那套是按「几十集
+     * 短视频」设计的。碰上单集 98 分钟的长课（字幕三五万字），等于把后面
+     * 八成内容直接扔了，还只给一段 250 字的泛泛而谈。
+     */
+    const SEG_CHARS = 9000;        // 每段喂给 AI 的字幕量
+    const MAX_SEGS = 12;           // 一集最多切 12 段，再多等不起
+
+    function splitLongText(text) {
+      const body = String(text || '');
+      if (body.length <= SEG_CHARS) return [body];
+      const segs = [];
+      let i = 0;
+      while (i < body.length && segs.length < MAX_SEGS) {
+        let end = Math.min(body.length, i + SEG_CHARS);
+        if (end < body.length) {
+          // 尽量断在句号上，别把一句话劈两半
+          const dot = body.lastIndexOf('。', end);
+          if (dot > i + SEG_CHARS * 0.6) end = dot + 1;
+        }
+        segs.push(body.slice(i, end));
+        i = end;
+      }
+      return segs;
+    }
+
+    /** 长视频：一集切成多段，每段写一节详解 */
+    async function askAiDeepNotes(ep) {
+      const segs = splitLongText(ep.text);
+      const out = [];
+      for (let i = 0; i < segs.length; i += 1) {
+        const result = await ai.json(
+          [
+            `下面是一个 B 站视频的字幕片段（第 ${i + 1}/${segs.length} 段，AI 字幕可能有错别字，按上下文理解）。`,
+            '只根据这一段写详解，不要复述别段内容，也不要写「本段介绍了…」这种套话。',
+            '要求：400-700 字；讲清这一段实际讲了什么、给出的定义/公式/结论/例子；',
+            '把出现的关键术语单独列出来并各用一句话解释；明显是卖课营销的内容标注（营销内容）并一句话带过。',
+            '返回 JSON：{"heading": "这一段的小标题（不超过 20 字）", "note": "正文", "terms": ["术语：一句话解释"]}',
+            '不要用 markdown 代码块包裹。',
+            '',
+            segs[i],
+          ].join('\n'),
+          { timeout: 120000 },
+        );
+        out.push({
+          heading: String(result?.heading || `第 ${i + 1} 段`).slice(0, 40),
+          note: String(result?.note || '').trim(),
+          terms: Array.isArray(result?.terms) ? result.terms.slice(0, 12) : [],
+        });
+      }
+      return out;
+    }
+
     async function askAiBatchNotes(batch) {
       const parts = batch.map((ep) =>
         `【第 ${ep.page} 集：${partTitle(ep.page)}】\n${ep.text.slice(0, 12000)}`);
       const result = await ai.json(
         [
           '下面是 B 站视频若干集的字幕文本（AI 字幕可能有个别错别字，按上下文理解）。',
-          '为每一集写 100-250 字的内容笔记：讲清实际讲了什么、关键技术点/结论，不要泛泛而谈；明显是卖课营销的内容标注（营销内容）并一句话带过。',
+          '为每一集写 200-400 字的内容笔记：讲清实际讲了什么、关键技术点/结论/公式，不要泛泛而谈；明显是卖课营销的内容标注（营销内容）并一句话带过。',
           '返回 JSON：{"notes": [{"page": 集数数字, "note": "笔记"}]}，每集一条。不要用 markdown 代码块包裹。',
           '',
           parts.join('\n\n'),
@@ -1397,13 +1473,30 @@ export default {
         if (aiToggle.checked) {
           try {
             if (subs) {
-              const batches = makeBatches(subs.episodes);
-              for (let i = 0; i < batches.length; i += 1) {
-                showProgress(`AI 正在读字幕写笔记（${i + 1}/${batches.length}）…`, `走 ${ai.describe()}`);
-                const got = await askAiBatchNotes(batches[i]);
-                notes.push(...got);
+              // 单集长视频（比如一堂 98 分钟的课）走分段详解：原来那套是按
+              // 「几十集短视频」设计的，一集只取前 12000 字、只写 250 字笔记，
+              // 三五万字的字幕等于扔掉八成，报告薄得没法用。
+              const longSingle = subs.episodes.length <= 2
+                && subs.episodes.some((ep) => ep.chars > SEG_CHARS * 1.4);
+              if (longSingle) {
+                for (const ep of subs.episodes) {
+                  const segCount = splitLongText(ep.text).length;
+                  showProgress(`AI 正在分段精读（共 ${segCount} 段）…`, `走 ${ai.describe()}`);
+                  const deep = await askAiDeepNotes(ep);
+                  deep.forEach((d, i) => {
+                    showProgress(`AI 正在分段精读（${i + 1}/${segCount}）…`, `走 ${ai.describe()}`);
+                    notes.push({ page: ep.page, heading: d.heading, note: d.note, terms: d.terms, seg: i + 1 });
+                  });
+                }
+              } else {
+                const batches = makeBatches(subs.episodes);
+                for (let i = 0; i < batches.length; i += 1) {
+                  showProgress(`AI 正在读字幕写笔记（${i + 1}/${batches.length}）…`, `走 ${ai.describe()}`);
+                  const got = await askAiBatchNotes(batches[i]);
+                  notes.push(...got);
+                }
               }
-              const digest = notes.slice(0, 12).map((n) => `P${n.page}: ${n.note}`).join('\n');
+              const digest = notes.slice(0, 12).map((n) => `${n.heading ? n.heading : 'P' + n.page}: ${n.note}`).join('\n');
               showProgress('AI 正在汇总整体摘要…');
               aiParts = await askAiOverall(digest);
             } else {
