@@ -1,0 +1,195 @@
+/* ==========================================================================
+   动效 PPT：舞台、组件、进场动画
+   舞台固定 1280×720，外面靠 transform: scale 适配 —— 所以这里所有尺寸都写死 px，
+   不用 rem / vw，才能保证跟导出的 .pptx 长得一样。
+   ========================================================================== */
+
+.deck-player {
+  position: fixed; inset: 0; z-index: 80;
+  display: flex; flex-direction: column;
+  background: #08060f;
+}
+.deck-bar {
+  flex: none; display: flex; align-items: center; gap: 8px;
+  padding: 8px 14px; border-bottom: 1px solid rgba(255,255,255,.08);
+  background: rgba(14,11,26,.9); color: #efeaff; font-size: 13px;
+}
+.deck-bar__title { font-size: 13px; font-weight: 700; max-width: 40%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.deck-bar__counter { font: 600 12px ui-monospace, "SF Mono", Menlo, monospace; color: #9d95bd; margin-right: 6px; }
+.deck-stage-wrap { flex: 1; min-height: 0; display: grid; place-items: center; overflow: hidden; cursor: pointer; }
+.deck-stage { transform-origin: center center; flex: none; }
+.deck-progress { flex: none; height: 3px; background: rgba(255,255,255,.08); }
+.deck-progress::after { content: ''; display: block; height: 100%; width: var(--p, 0%); background: linear-gradient(90deg, #9d7bff, #ff6fd8); transition: width .3s ease; }
+.deck-narration {
+  flex: none; padding: 10px 24px; text-align: center; font-size: 15px; line-height: 1.6;
+  color: #efeaff; background: rgba(14,11,26,.92); border-top: 1px solid rgba(255,255,255,.06);
+}
+.deck-narration[hidden] { display: none; }
+.deck-notes {
+  flex: none; max-height: 26vh; overflow: auto; padding: 12px 24px;
+  font-size: 13px; line-height: 1.7; color: #b9b2d6;
+  background: #120e22; border-top: 1px solid rgba(255,255,255,.08); white-space: pre-wrap;
+}
+.deck-notes[hidden] { display: none; }
+
+/* ---------- 舞台本体 ---------- */
+.deck-slide {
+  position: relative; width: 1280px; height: 720px; overflow: hidden;
+  display: flex; flex-direction: column;
+  font-family: "PingFang SC", -apple-system, "Segoe UI", sans-serif;
+  --ink: #f2eeff; --dim: #b6aee0; --faint: #7d76a8;
+  --brand: #a98bff; --brand2: #ff7bd0; --brand3: #5fc8ff;
+  --panel: rgba(255,255,255,.055); --edge: rgba(255,255,255,.1);
+  background: #14102a; color: var(--ink);
+}
+.deck-slide[data-theme='violet'] {
+  background:
+    radial-gradient(70% 90% at 12% 0%, rgba(157,123,255,.34) 0%, transparent 58%),
+    radial-gradient(60% 80% at 92% 100%, rgba(255,110,210,.24) 0%, transparent 60%),
+    #140f2b;
+}
+.deck-slide[data-theme='ink'] {
+  --brand: #7fd3ff; --brand2: #6ee7b7; --brand3: #fbbf77;
+  background: radial-gradient(80% 90% at 80% 0%, rgba(80,120,190,.2) 0%, transparent 60%), #0e1320;
+}
+.deck-slide[data-theme='dawn'] {
+  --ink: #241d38; --dim: #5b5280; --faint: #918aad;
+  --panel: rgba(120,90,220,.07); --edge: rgba(90,60,180,.16);
+  --brand: #7c4dff; --brand2: #e0568f; --brand3: #2196f3;
+  background: radial-gradient(70% 90% at 10% 0%, rgba(160,130,255,.2) 0%, transparent 60%), #f6f3ff;
+}
+.deck-slide__inner { flex: 1; min-height: 0; display: flex; flex-direction: column; padding: 62px 76px 56px; }
+.deck-slide__head { flex: none; margin-bottom: 34px; }
+.deck-slide__head--center { margin: auto 0; text-align: center; }
+.deck-slide__kicker {
+  display: inline-block; margin-bottom: 14px; padding: 5px 13px; border-radius: 999px;
+  background: color-mix(in srgb, var(--brand) 20%, transparent);
+  border: 1px solid color-mix(in srgb, var(--brand) 45%, transparent);
+  color: var(--brand); font-size: 15px; font-weight: 600; letter-spacing: .06em;
+}
+.deck-slide__title { margin: 0; font-size: 46px; line-height: 1.18; font-weight: 800; letter-spacing: -.01em; }
+.deck-slide--cover .deck-slide__title, .deck-slide--closing .deck-slide__title { font-size: 68px; }
+.deck-slide--cover .deck-slide__title {
+  background: linear-gradient(100deg, var(--ink) 20%, var(--brand) 60%, var(--brand2) 95%);
+  -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
+}
+.deck-slide__subtitle { margin: 16px 0 0; font-size: 21px; line-height: 1.6; color: var(--dim); }
+.deck-slide--cover .deck-slide__subtitle { font-size: 25px; }
+.deck-slide__body { flex: 1; min-height: 0; display: flex; flex-direction: column; justify-content: center; gap: 22px; }
+.deck-slide--cover .deck-slide__body:empty, .deck-slide--closing .deck-slide__body:empty { display: none; }
+.deck-slide__page {
+  position: absolute; right: 42px; bottom: 26px;
+  font: 600 14px ui-monospace, "SF Mono", Menlo, monospace; color: var(--faint); letter-spacing: .08em;
+}
+
+/* ---------- 组件 ---------- */
+.deck-bullets { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 19px; }
+.deck-bullets__item { display: flex; gap: 17px; align-items: flex-start; font-size: 25px; line-height: 1.52; }
+.deck-bullets__dot {
+  flex: none; width: 13px; height: 13px; margin-top: 12px; border-radius: 4px;
+  background: linear-gradient(135deg, var(--brand), var(--brand2));
+  box-shadow: 0 0 16px color-mix(in srgb, var(--brand) 60%, transparent);
+}
+.deck-bullets__text { flex: 1; }
+
+.deck-flow { display: flex; align-items: stretch; gap: 12px; }
+.deck-flow__node {
+  flex: 1; min-width: 0; padding: 24px 22px; border-radius: 18px;
+  background: var(--panel); border: 1px solid var(--edge);
+  display: flex; flex-direction: column; gap: 9px;
+}
+.deck-flow__n {
+  width: 38px; height: 38px; border-radius: 12px; display: grid; place-items: center;
+  background: linear-gradient(135deg, var(--brand), var(--brand2)); color: #14102a;
+  font: 800 20px ui-monospace, Menlo, monospace;
+}
+.deck-flow__label { font-size: 23px; font-weight: 700; line-height: 1.3; }
+.deck-flow__desc { font-size: 17px; line-height: 1.5; color: var(--dim); }
+.deck-flow__arrow { flex: none; align-self: center; font-size: 30px; color: var(--brand); }
+
+.deck-compare { display: flex; gap: 22px; align-items: stretch; }
+.deck-compare__col {
+  flex: 1; min-width: 0; padding: 26px 26px 30px; border-radius: 20px;
+  background: var(--panel); border: 1px solid var(--edge);
+}
+.deck-compare__col.is-good { border-color: color-mix(in srgb, #5fd3a0 52%, transparent); background: color-mix(in srgb, #5fd3a0 10%, var(--panel)); }
+.deck-compare__col.is-bad { border-color: color-mix(in srgb, #ff7d95 52%, transparent); background: color-mix(in srgb, #ff7d95 10%, var(--panel)); }
+.deck-compare__head { font-size: 26px; font-weight: 700; margin-bottom: 17px; }
+.deck-compare__col ul { margin: 0; padding-left: 22px; display: flex; flex-direction: column; gap: 11px; }
+.deck-compare__col li { font-size: 20px; line-height: 1.5; color: var(--dim); }
+
+.deck-stats { display: flex; gap: 20px; }
+.deck-stats__card {
+  flex: 1; padding: 30px 24px; border-radius: 20px; text-align: center;
+  background: var(--panel); border: 1px solid var(--edge);
+  display: flex; flex-direction: column; gap: 9px;
+}
+.deck-stats__value {
+  font-size: 58px; font-weight: 800; line-height: 1;
+  background: linear-gradient(135deg, var(--brand), var(--brand2));
+  -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
+}
+.deck-stats__label { font-size: 20px; color: var(--ink); }
+.deck-stats__hint { font-size: 15px; color: var(--faint); }
+
+.deck-quote { position: relative; margin: 0; padding: 30px 40px 30px 74px; border-radius: 20px; background: var(--panel); border-left: 5px solid var(--brand); }
+.deck-quote__mark { position: absolute; left: 26px; top: 22px; font-size: 40px; color: var(--brand); opacity: .6; }
+.deck-quote p { margin: 0; font-size: 28px; line-height: 1.6; font-weight: 500; }
+.deck-quote cite { display: block; margin-top: 16px; font-size: 17px; font-style: normal; color: var(--faint); }
+
+.deck-code {
+  margin: 0; padding: 22px 26px; border-radius: 16px; overflow: auto; max-height: 420px;
+  background: rgba(0,0,0,.34); border: 1px solid var(--edge);
+  font: 18px/1.65 ui-monospace, "SF Mono", Menlo, monospace; color: var(--ink);
+}
+.deck-image { margin: 0; display: flex; flex-direction: column; align-items: center; gap: 12px; min-height: 0; }
+.deck-image img { max-width: 100%; max-height: 420px; border-radius: 16px; border: 1px solid var(--edge); object-fit: contain; }
+.deck-image__empty { padding: 60px; border: 2px dashed var(--edge); border-radius: 16px; color: var(--faint); font-size: 19px; }
+.deck-image figcaption { font-size: 17px; color: var(--dim); }
+.deck-text { margin: 0; font-size: 24px; line-height: 1.7; color: var(--dim); }
+
+/* ---------- 进场动画 ---------- */
+.deck-anim { opacity: 0; will-change: transform, opacity; transition: opacity .48s ease, transform .55s cubic-bezier(.22,.9,.28,1); }
+.deck-anim[data-anim='none'] { opacity: 1; transition: none; }
+.deck-anim[data-anim='slide-left'] { transform: translateX(-64px); }
+.deck-anim[data-anim='slide-right'] { transform: translateX(64px); }
+.deck-anim[data-anim='slide-up'] { transform: translateY(46px); }
+.deck-anim[data-anim='slide-down'] { transform: translateY(-46px); }
+.deck-anim[data-anim='zoom'] { transform: scale(.82); }
+.deck-anim.is-in { opacity: 1; transform: none; }
+@media (prefers-reduced-motion: reduce) {
+  .deck-anim { transition-duration: .01ms; transform: none; }
+}
+
+/* ---------- 缩略图 ---------- */
+.deck-thumbs { display: flex; flex-direction: column; gap: 10px; overflow-y: auto; padding-right: 6px; }
+.deck-thumb {
+  display: flex; align-items: center; gap: 10px; padding: 8px; border-radius: 12px;
+  background: var(--bg-raised); border: 1px solid var(--line-soft); cursor: pointer; text-align: left;
+}
+.deck-thumb:hover { border-color: var(--accent); }
+.deck-thumb.is-active { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+.deck-thumb__n { flex: none; width: 22px; font: 600 12px ui-monospace, Menlo, monospace; color: var(--text-faint); }
+/* 1280 宽的真页面缩到 176 宽：scale(0.1375)，外框按比例留 99 高 */
+.deck-thumb__frame { flex: none; width: 176px; height: 99px; border-radius: 7px; overflow: hidden; position: relative; }
+.deck-thumb__frame .deck-slide { position: absolute; top: 0; left: 0; transform: scale(.1375); transform-origin: top left; }
+.deck-thumb__name { flex: 1; min-width: 0; font-size: 12px; color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* ---------- 工作台浮层 ---------- */
+.deck-studio { position: fixed; inset: 0; z-index: 70; display: flex; flex-direction: column; background: var(--bg); }
+.deck-studio__bar {
+  flex: none; display: flex; align-items: center; gap: 10px;
+  padding: 10px 16px; border-bottom: 1px solid var(--line-soft); background: var(--bg-raised);
+}
+.deck-studio__bar .field { max-width: 110px; }
+.deck-studio__body { flex: 1; min-height: 0; display: flex; }
+.deck-studio__side { flex: none; width: 240px; padding: 12px; border-right: 1px solid var(--line-soft); overflow: hidden; display: flex; }
+.deck-studio__thumbs { flex: 1; min-height: 0; display: flex; }
+.deck-studio__main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.deck-studio__stage-wrap { flex: 1; min-height: 0; display: grid; place-items: center; overflow: hidden; cursor: pointer; background: var(--bg-sunken); }
+.deck-studio__stage { transform-origin: center center; box-shadow: 0 18px 50px rgba(0,0,0,.45); border-radius: 6px; overflow: hidden; }
+.deck-studio__meta {
+  flex: none; display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+  padding: 9px 16px; border-top: 1px solid var(--line-soft); font-size: 12.5px; color: var(--text-dim);
+}
+.deck-studio__narration { color: var(--accent); }

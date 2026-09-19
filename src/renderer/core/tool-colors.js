@@ -34,6 +34,9 @@ export const TOOL_COLORS = {
 
   // 下面这些平时收在「更多」里，彼此不相邻，按用途给色就行
   eat:            '#ff9b5c',   // 暖橙，吃饭的颜色
+  api:            '#4ecdc4',   // 青绿，收发数据
+  netlog:         '#8ab4f8',   // 淡蓝，像抓包软件的配色
+  git:            '#f0883e',   // git 橙
   docs:           '#4fb3d9',
   terms:          '#43c6c6',
   coach:          '#5ec8a8',

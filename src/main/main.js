@@ -27,6 +27,10 @@ const { registerShelfIpc, stopAllShelfApps, start: startShelfTool, stop: stopShe
 const { registerUpdaterIpc, startAutoCheck, stopAutoCheck } = require('./updater');
 const { createAvatarWindowController } = require('../avatar/window');
 const { GestureDesk } = require('./gesture-desk');
+const deckPptx = require('./deck-pptx');
+const httpClient = require('./http-client');
+const { GitDesk } = require('./git-desk');
+const { NetCapture } = require('./net-capture');
 const { registerCertTrust } = require('./certtrust');
 const translator = require('./translate');
 const ocr = require('./ocr');
@@ -104,6 +108,8 @@ let windowDock;
 let quittingForDock = false;
 let remoteControl;
 let gestureDesk = null;
+let gitDesk = null;
+let netCapture = null;
 let dshService;
 let tavernService;
 let argosService;
@@ -1717,6 +1723,50 @@ function registerIpc() {
 
   // 手势识别 → 窗口动作：作用于当前前台窗口（全屏 / 左半 / 右半）
   // 手势工作台：右下角常驻的手势窗 + 带编号的应用切换栏
+  // ---------- 接口台 / 抓包台 / Git 组合拳 ----------
+  ipcMain.handle('http:send', (_e, request) => httpClient.send(request || {}));
+  ipcMain.handle('http:toCurl', (_e, request, vars) => httpClient.toCurl(request || {}, vars || {}));
+  ipcMain.handle('http:fromCurl', (_e, text) => {
+    try { return { ok: true, request: httpClient.fromCurl(text) }; }
+    catch (error) { return { ok: false, error: error.message }; }
+  });
+
+  ipcMain.handle('net:start', () => netCapture?.start() || { ok: false });
+  ipcMain.handle('net:stop', () => netCapture?.stop() || { ok: false });
+  ipcMain.handle('net:clear', () => netCapture?.clear() || { ok: false });
+  ipcMain.handle('net:list', (_e, options) => netCapture?.list(options || {}) || []);
+  ipcMain.handle('net:detail', (_e, id) => netCapture?.detail(String(id || '')) || null);
+  ipcMain.handle('net:status', () => netCapture?.status() || { capturing: false });
+  ipcMain.handle('net:proxyStart', (_e, port) => netCapture?.startProxy(Number(port) || 8899) || { ok: false });
+  ipcMain.handle('net:proxyStop', () => netCapture?.stopProxy() || { ok: false });
+  ipcMain.handle('net:exportHar', async () => {
+    const result = await dialog.showSaveDialog(mainWindow, {
+      title: '导出 HAR（可拖进 Chrome DevTools 看）',
+      defaultPath: `agent-toolbox-${new Date().toISOString().slice(0, 19).replace(/[:T]/g, '')}.har`,
+      filters: [{ name: 'HAR', extensions: ['har'] }],
+    });
+    if (result.canceled || !result.filePath) return { ok: false, canceled: true };
+    fs.writeFileSync(result.filePath, JSON.stringify(netCapture.toHar(), null, 2), 'utf8');
+    return { ok: true, path: result.filePath };
+  });
+
+  ipcMain.handle('git:combos', () => gitDesk?.combos() || []);
+  ipcMain.handle('git:recents', () => gitDesk?.recents() || []);
+  ipcMain.handle('git:forget', (_e, repo) => gitDesk?.forget(String(repo || '')) || []);
+  ipcMain.handle('git:pick', () => gitDesk?.pickRepo() || null);
+  ipcMain.handle('git:use', async (_e, repo) => {
+    const dir = String(repo || '');
+    const check = await gitDesk.run(dir, ['rev-parse', '--show-toplevel']);
+    if (!check.ok) return { ok: false, error: check.error };
+    const top = check.stdout.trim() || dir;
+    gitDesk.remember(top);
+    return { ok: true, repo: top };
+  });
+  ipcMain.handle('git:status', (_e, repo) => gitDesk?.status(String(repo || '')) || { ok: false });
+  ipcMain.handle('git:run', (_e, repo, args) => gitDesk?.run(String(repo || ''), args) || { ok: false });
+  ipcMain.handle('git:runCombo', (_e, repo, id, params) => gitDesk?.runCombo(String(repo || ''), String(id || ''), params || {}) || { ok: false });
+  ipcMain.handle('git:reveal', (_e, repo) => { if (repo) shell.openPath(String(repo)); return { ok: true }; });
+
   ipcMain.handle('gesture:openWindow', async () => {
     // macOS 上要先向系统正式要摄像头权限（TCC）。不要的话 Chromium 也说 granted，
     // 但轨道一直是 live + muted，一帧画面都不来 —— 之前手势识别「不好用」根子就在这。
@@ -2120,6 +2170,26 @@ function registerIpc() {
     store.set('pet.skin', 'custom');
     applyPetSettings();
     return { name: path.basename(filePath) };
+  });
+
+  // 动效 PPT：deck 模型 → 带 p:timing 动画的 .pptx
+  ipcMain.handle('deck:exportPptx', async (_event, deck = {}, filePath = '') => {
+    // 给了路径就直接写（自动化 / 批量用），没给才弹保存框
+    let target = typeof filePath === 'string' && filePath.trim() ? filePath.trim() : '';
+    if (!target) {
+      const result = await dialog.showSaveDialog(mainWindow, {
+        title: '导出动效 PPTX',
+        defaultPath: `${String(deck.title || '演示文稿').replace(/[\\/:*?"<>|]+/g, '_').slice(0, 80)}.pptx`,
+        filters: [{ name: 'PowerPoint 演示文稿', extensions: ['pptx'] }],
+      });
+      if (result.canceled || !result.filePath) return { ok: false, canceled: true };
+      target = result.filePath;
+    }
+    try {
+      return await deckPptx.exportDeck(target, deck);
+    } catch (error) {
+      return { ok: false, error: `动效 PPTX 导出失败：${error.message}` };
+    }
   });
 
   ipcMain.handle('presentation:exportPptx', async (_event, deck = {}) => {
@@ -2884,6 +2954,13 @@ app.whenReady().then(async () => {
     screen,
     store,
     getMainWindow: () => mainWindow,
+  });
+
+  gitDesk = new GitDesk({ execFile: execFileAsync, store, dialog, getWindow: () => mainWindow });
+  netCapture = new NetCapture({
+    session,
+    partitions: [...Object.values(PARTITIONS), 'persist:eat-meituan', 'persist:eat-eleme', 'persist:eat-jd'],
+    onChange: () => { /* 界面自己轮询，这里不主动推，省得一秒几百条 IPC */ },
   });
 
   gestureDesk = new GestureDesk({

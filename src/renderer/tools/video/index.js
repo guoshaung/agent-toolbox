@@ -1,4 +1,5 @@
 import { h, toast } from '../../core/ui.js';
+import { generateDeck, openDeckStudio, deckKey } from '../../deck/studio.js';
 import {
   ZOOM_MIN, ZOOM_MAX, ZOOM_STEP, WHEEL_SENSITIVITY,
   SMART_WIDTH_RATIO, MAX_VIEWPORT_RATIO, MIN_PLAYER_WIDTH, formatPercent,
@@ -1681,6 +1682,40 @@ export default {
       }
       body.appendChild(
         h('div', { class: 'card video__result' },
+          h('div', { class: 'video__result-head' },
+            h('span', { class: 'tag' }, '动效 PPT'),
+            h('span', { class: 'faint' }, 'AI 把这份报告排成会动的幻灯片，可放映、可导出 .pptx'),
+            h('button', {
+              class: 'btn btn--sm btn--primary',
+              onclick: async (event) => {
+                const btn = event.currentTarget;
+                const title = String(markdown.match(/^#\s+(.+)$/m)?.[1] || result?.title || '演示文稿').trim();
+                const key = deckKey(markdown);
+                // 排一次版要两三分钟，排过的就存着 —— 想重排在工作台里点「重新生成」
+                const make = async () => {
+                  const deck = await generateDeck(ai, markdown, {
+                    title,
+                    onTick: (sec) => { btn.textContent = `AI 正在排版… ${sec}s`; },
+                  });
+                  await config.set(key, deck);
+                  return deck;
+                };
+                btn.disabled = true;
+                const cached = config.get(key, null);
+                btn.textContent = cached ? '打开中…' : 'AI 正在排版…';
+                try {
+                  const deck = cached || await make();
+                  openDeckStudio(deck, { onRegenerate: make });
+                  if (cached) toast('用的是上次排好的版，想重排点工作台里的「重新生成」', 'info', 5000);
+                } catch (err) {
+                  toast(`生成失败：${err.message}`, 'bad', 8000);
+                } finally {
+                  btn.disabled = false;
+                  btn.textContent = '转成动效 PPT';
+                }
+              },
+            }, '转成动效 PPT'),
+          ),
           h('div', { class: 'video__result-head' },
             h('span', { class: 'tag tag--good' }, '已存本地'),
             h('code', { class: 'faint video__path' }, result.localPath),

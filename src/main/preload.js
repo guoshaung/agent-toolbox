@@ -130,6 +130,11 @@ contextBridge.exposeInMainWorld('toolbox', {
     terminal: (payload) => ipcRenderer.invoke('practice:terminal', payload),
   },
 
+  /** 动效 PPT：导出带进场动画的 .pptx */
+  deck: {
+    exportPptx: (deck, filePath = '') => ipcRenderer.invoke('deck:exportPptx', deck, filePath),
+  },
+
   presentation: {
     /** 导出结构化科研演示为可编辑 PPTX */
     exportPptx: (deck) => ipcRenderer.invoke('presentation:exportPptx', deck),
@@ -249,6 +254,39 @@ contextBridge.exposeInMainWorld('toolbox', {
     onHighlight: (callback) => ipcRenderer.on('switcher:highlight', (_event, n) => callback(n)),
     pick: (n) => ipcRenderer.invoke('switcher:pick', n),
     hide: () => ipcRenderer.invoke('switcher:hide'),
+  },
+
+  /** 接口台：在主进程里发请求，没有跨域限制，Header 想怎么写就怎么写 */
+  http: {
+    send: (request) => ipcRenderer.invoke('http:send', request),
+    toCurl: (request, vars) => ipcRenderer.invoke('http:toCurl', request, vars),
+    fromCurl: (text) => ipcRenderer.invoke('http:fromCurl', text),
+  },
+
+  /** 抓包台 */
+  net: {
+    start: () => ipcRenderer.invoke('net:start'),
+    stop: () => ipcRenderer.invoke('net:stop'),
+    clear: () => ipcRenderer.invoke('net:clear'),
+    list: (options) => ipcRenderer.invoke('net:list', options),
+    detail: (id) => ipcRenderer.invoke('net:detail', id),
+    status: () => ipcRenderer.invoke('net:status'),
+    proxyStart: (port) => ipcRenderer.invoke('net:proxyStart', port),
+    proxyStop: () => ipcRenderer.invoke('net:proxyStop'),
+    exportHar: () => ipcRenderer.invoke('net:exportHar'),
+  },
+
+  /** Git 组合拳 */
+  git: {
+    combos: () => ipcRenderer.invoke('git:combos'),
+    recents: () => ipcRenderer.invoke('git:recents'),
+    forget: (repo) => ipcRenderer.invoke('git:forget', repo),
+    pick: () => ipcRenderer.invoke('git:pick'),
+    use: (repo) => ipcRenderer.invoke('git:use', repo),
+    status: (repo) => ipcRenderer.invoke('git:status', repo),
+    run: (repo, args) => ipcRenderer.invoke('git:run', repo, args),
+    runCombo: (repo, id, params) => ipcRenderer.invoke('git:runCombo', repo, id, params),
+    reveal: (repo) => ipcRenderer.invoke('git:reveal', repo),
   },
 
   pet: {
