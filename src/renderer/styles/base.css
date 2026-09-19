@@ -121,23 +121,64 @@ button, input, textarea, select { font-family: inherit; font-size: inherit; colo
   opacity: 0;
   transition: opacity .25s ease;
 }
-.rail__item:hover { background: var(--bg-raised); transform: translateY(-2px); }
+/* 立体感靠三层叠出来，不是靠一个大阴影：
+   顶边一道亮线当受光面、底边一道暗线当背光面、外面一层投影把它托起来。
+   静息时也留一点，整条栏才像一排实体按键而不是贴纸。 */
+.rail__item {
+  background: linear-gradient(180deg, rgba(255,255,255,.035), rgba(0,0,0,.06));
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,.05),
+    inset 0 -1px 0 rgba(0,0,0,.22),
+    0 1px 2px rgba(0,0,0,.28);
+  transition: background .2s ease, color .2s ease, box-shadow .2s ease,
+    transform .2s cubic-bezier(.2,.8,.2,1);
+}
+.rail__item:hover {
+  background: linear-gradient(180deg,
+    color-mix(in srgb, var(--tool-color, var(--accent)) 14%, rgba(255,255,255,.05)),
+    rgba(0,0,0,.04));
+  transform: translateY(-2px);
+  box-shadow:
+    inset 0 1px 0 rgba(255,255,255,.09),
+    inset 0 -1px 0 rgba(0,0,0,.24),
+    0 6px 14px rgba(0,0,0,.34),
+    0 0 16px color-mix(in srgb, var(--tool-color, var(--accent)) 20%, transparent);
+}
 .rail__item:hover::before { opacity: 1; }
+/* 按下去要真的陷进去：位移归零 + 外投影换成内阴影 */
+.rail__item:active {
+  transform: translateY(0);
+  box-shadow:
+    inset 0 2px 5px rgba(0,0,0,.42),
+    inset 0 -1px 0 rgba(255,255,255,.04);
+}
 .rail__item.is-active {
   background: linear-gradient(180deg,
-    color-mix(in srgb, var(--tool-color, var(--accent)) 20%, transparent),
-    color-mix(in srgb, var(--tool-color, var(--accent)) 6%, transparent));
-  box-shadow: inset 0 1px rgba(255,255,255,.04),
-    0 0 18px color-mix(in srgb, var(--tool-color, var(--accent)) 16%, transparent);
+    color-mix(in srgb, var(--tool-color, var(--accent)) 26%, transparent),
+    color-mix(in srgb, var(--tool-color, var(--accent)) 7%, transparent));
+  box-shadow:
+    inset 0 1px 0 color-mix(in srgb, var(--tool-color, var(--accent)) 38%, transparent),
+    inset 0 -1px 0 rgba(0,0,0,.3),
+    0 4px 12px rgba(0,0,0,.3),
+    0 0 20px color-mix(in srgb, var(--tool-color, var(--accent)) 22%, transparent);
 }
 
 /* 每个工具的图标用自己的颜色。
  *
  * 静息时压到 62% —— 27 个图标全开满饱和度，整条栏会变成一条霓虹灯带，
  * 比原来全灰还难看。悬停和选中时给足，被选中的那个一眼就跳出来。 */
-.rail__icon { color: color-mix(in srgb, var(--tool-color, var(--text-faint)) 62%, var(--text-faint)); }
+.rail__icon {
+  color: color-mix(in srgb, var(--tool-color, var(--text-faint)) 62%, var(--text-faint));
+  /* 图标压一道自身颜色的暗投影，从底板上「浮」起来 */
+  filter: drop-shadow(0 1px 1px rgba(0,0,0,.5));
+  transition: transform .25s cubic-bezier(.2,.8,.2,1), color .2s ease, filter .25s ease;
+}
 .rail__item:hover .rail__icon,
 .rail__item.is-active .rail__icon { color: var(--tool-color, var(--accent)); }
+.rail__item:hover .rail__icon {
+  filter: drop-shadow(0 2px 3px rgba(0,0,0,.55))
+          drop-shadow(0 0 8px color-mix(in srgb, var(--tool-color, var(--accent)) 55%, transparent));
+}
 .rail__item.is-active .rail__label { color: color-mix(in srgb, var(--tool-color, var(--text)) 70%, var(--text)); }
 .rail__active-mark {
   position: absolute;
@@ -153,11 +194,15 @@ button, input, textarea, select { font-family: inherit; font-size: inherit; colo
   transition: transform .25s cubic-bezier(.2,.8,.2,1), opacity .25s ease;
 }
 .rail__item.is-active .rail__active-mark { transform: scaleY(1); opacity: 1; }
-.rail__icon { width: 24px; height: 24px; display: grid; place-items: center; font-size: 20px; line-height: 1; transition: transform .25s cubic-bezier(.2,.8,.2,1); filter: none; }
+.rail__icon { width: 24px; height: 24px; display: grid; place-items: center; font-size: 20px; line-height: 1; }
 .ui-icon { width: 1.05em; height: 1.05em; display: block; flex: 0 0 auto; }
 .rail__icon .ui-icon { width: 21px; height: 21px; stroke-width: 1.7; }
 .rail__item:hover .rail__icon { transform: scale(1.12) translateY(-1px); }
-.rail__item.is-active .rail__icon { transform: translateY(-2px) scale(1.12); filter: drop-shadow(0 0 10px color-mix(in srgb, var(--tool-color, var(--accent)) 50%, transparent)); }
+.rail__item.is-active .rail__icon {
+  transform: translateY(-2px) scale(1.12);
+  filter: drop-shadow(0 2px 3px rgba(0,0,0,.55))
+          drop-shadow(0 0 12px color-mix(in srgb, var(--tool-color, var(--accent)) 65%, transparent));
+}
 
 .rail--right {
   order: 3;
@@ -589,7 +634,13 @@ webview { display: flex; flex: 1; min-height: 0; background: #fff; }
 }
 .bar--drag > * { position: relative; z-index: 1; }
 .rail__item.is-active {
-  box-shadow: inset 3px 0 0 var(--accent), inset 0 0 0 1px color-mix(in srgb, var(--accent-secondary) 20%, transparent);
+  /* 左侧那道竖条用工具自己的颜色，不是全局强调色 */
+  box-shadow:
+    inset 3px 0 0 var(--tool-color, var(--accent)),
+    inset 0 1px 0 color-mix(in srgb, var(--tool-color, var(--accent)) 34%, transparent),
+    inset 0 -1px 0 rgba(0,0,0,.3),
+    0 4px 12px rgba(0,0,0,.3),
+    0 0 20px color-mix(in srgb, var(--tool-color, var(--accent)) 20%, transparent);
 }
 .rail__pin .ui-icon { width: 19px; height: 19px; }
 .rail__pin:hover { color: var(--accent-secondary); }
@@ -643,11 +694,10 @@ webview { display: flex; flex: 1; min-height: 0; background: #fff; }
 
 html, body { background: var(--bg); }
 .rail { background: #0d1011; box-shadow: none; }
-.rail__item { border-radius: 7px; transition: background .14s, color .14s; }
-.rail__item::before, .rail__item:hover .rail__icon, .rail__item.is-active .rail__icon { transform: none; filter: none; }
-.rail__item:hover { transform: none; background: #1a1f22; }
-.rail__item.is-active { background: var(--accent-soft); box-shadow: inset 3px 0 0 var(--accent); }
-.rail__active-mark { display: none; }
+/* 这一段原本把侧栏彻底压平：位移、滤镜、阴影全部 none，选中态还写死用
+   --accent，于是每个工具自己的颜色和上面那套立体感全被它盖掉。
+   保留它想要的「更方的圆角」，其余交回给上面的规则。 */
+.rail__item { border-radius: 8px; }
 .bar { background: #171b1e; box-shadow: none; }
 /* 这一段原本把按钮底色写死成 #202529 / #6685df，排在上面那套主题化规则后面，
    所以不管选哪套皮肤，主按钮永远是同一个蓝 —— 满屏绿里就它发蓝。
