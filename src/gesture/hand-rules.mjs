@@ -13,7 +13,9 @@ export function fingers(lm) {
   const ext = (tip, pip) => dist(lm[tip], wrist) > dist(lm[pip], wrist) + 0.12 * palm;
   return {
     palm,
-    thumb: dist(lm[4], lm[9]) > 0.95 * palm && dist(lm[4], lm[5]) > 0.45 * palm,
+    // 真人录的数据：五指张开时拇指尖离中指根只有 0.46–0.61 个手掌、离食指根 0.36–0.46；
+    // 收着（比 1/2/3）时离食指根 ≤ 0.25。原来要 0.95 / 0.45，五指张开永远只算 4。
+    thumb: dist(lm[4], lm[9]) > 0.4 * palm && dist(lm[4], lm[5]) > 0.32 * palm,
     index: ext(8, 6), middle: ext(12, 10), ring: ext(16, 14), pinky: ext(20, 18),
     // 9：食指根节伸着、末节勾回来
     // 握拳时四根手指的第二关节也都翘着，光看食指会把拳头认成 9 —— 得要求食指关节明显高过中指关节
@@ -49,14 +51,17 @@ const snap = { primedAt: 0, primedMid: null, lastAt: -1e9 };
 const sweep = { samples: [] };
 export function detectSnap(lm, f, now) {
   const palm = f.palm;
-  const d = dist(lm[4], lm[12]);
-  if (d < 0.32 * palm) { snap.primedAt = now; snap.primedMid = { ...lm[12] }; }
-  else if (snap.primedAt && now - snap.primedAt < 420 && d > 0.75 * palm && snap.primedMid
-    && dist(lm[12], snap.primedMid) > 0.45 * palm) {
+  // 真人打响指：拇指其实先按在食指/中指尖上（离指尖 0.16–0.3 个手掌，远没到 0.32 以下），
+  // 弹开后拇指离中指尖 ≥ 0.9、离食指尖 ≥ 0.6。摄像头识别只有 5 帧/秒左右，窗口放宽到 700ms。
+  const dMid = dist(lm[4], lm[12]);
+  const dIdx = dist(lm[4], lm[8]);
+  const folded = !f.middle && !f.ring && !f.pinky;
+  if (Math.min(dMid, dIdx) < 0.4 * palm && folded) { snap.primedAt = now; snap.primedMid = { ...lm[12] }; }
+  else if (snap.primedAt && now - snap.primedAt < 700 && dMid > 0.85 * palm && dIdx > 0.6 * palm) {
     snap.primedAt = 0;
     if (now - snap.lastAt > 1200) { snap.lastAt = now; return true; }
   }
-  if (snap.primedAt && now - snap.primedAt > 600) snap.primedAt = 0;
+  if (snap.primedAt && now - snap.primedAt > 900) snap.primedAt = 0;
 
   // 两指横扫：食指中指伸着并拢，250ms 内横向位移超过 1.6 个手掌
   if (f.index && f.middle && !f.ring && !f.pinky && dist(lm[8], lm[12]) < 0.35 * palm) {
