@@ -108,19 +108,43 @@ class GestureDesk {
       apps.push(row);
       if (apps.length >= 9) break;
     }
-    // 图标：系统给的，失败就空着
-    await Promise.all(apps.map(async (item) => {
-      try {
-        if (item.path && this.app?.getFileIcon) {
-          // 不能传 size:'large'：macOS 上 Electron 直接 NOTREACHED 把主进程整个崩掉（实测），
-          // 这就是「打响指工具箱就没了」的根子
-          const icon = await this.app.getFileIcon(item.path);
-          item.icon = icon && !icon.isEmpty() ? icon.toDataURL() : '';
-        }
-      } catch { item.icon = ''; }
-    }));
+    await Promise.all(apps.map(async (item) => { item.icon = await this.iconFor(item.path); }));
     this.apps = apps;
     return apps;
+  }
+
+  /**
+   * 应用图标。macOS 上 app.getFileIcon 对 .app 只给一个通用图标（9 个应用一模一样），
+   * 得自己从包里的 .icns 转：Info.plist → CFBundleIconFile → sips 转 64px PNG。按路径缓存。
+   * （另：getFileIcon 传 size:'large' 会让主进程 NOTREACHED 直接崩，别用。）
+   */
+  async iconFor(appPath) {
+    if (!appPath) return '';
+    this.iconCache = this.iconCache || new Map();
+    if (this.iconCache.has(appPath)) return this.iconCache.get(appPath);
+    let icon = '';
+    try {
+      if (this.platform === 'darwin' && appPath.endsWith('.app')) {
+        const fs = require('node:fs');
+        const os = require('node:os');
+        const plist = path.join(appPath, 'Contents', 'Info.plist');
+        const { stdout } = await this.execFile('/usr/bin/plutil', ['-extract', 'CFBundleIconFile', 'raw', '-o', '-', plist], { timeout: 3000 });
+        let name = stdout.trim();
+        if (name && !name.endsWith('.icns')) name += '.icns';
+        const icns = path.join(appPath, 'Contents', 'Resources', name);
+        if (name && fs.existsSync(icns)) {
+          const out = path.join(os.tmpdir(), `agent-toolbox-icon-${Buffer.from(appPath).toString('base64url').slice(0, 40)}.png`);
+          await this.execFile('/usr/bin/sips', ['-z', '64', '64', '-s', 'format', 'png', icns, '--out', out], { timeout: 6000 });
+          icon = `data:image/png;base64,${fs.readFileSync(out).toString('base64')}`;
+        }
+      }
+      if (!icon && this.app?.getFileIcon) {
+        const img = await this.app.getFileIcon(appPath);
+        icon = img && !img.isEmpty() ? img.toDataURL() : '';
+      }
+    } catch { icon = ''; }
+    this.iconCache.set(appPath, icon);
+    return icon;
   }
 
   async activate(item) {
