@@ -151,6 +151,15 @@ main{flex:1;min-height:0;overflow:auto;padding:0 16px;-webkit-overflow-scrolling
 .log{margin-top:8px;padding:10px 12px;border-radius:12px;background:var(--bg-2);border:1px solid var(--line);font-size:12.5px;line-height:1.55;white-space:pre-wrap;word-break:break-all;color:var(--muted);max-height:180px;overflow:auto}
 .log:empty{display:none}
 
+/* ---- 电脑画面 ---- */
+.screen{position:relative;border-radius:12px;overflow:hidden;background:#0a0814;border:1px solid var(--line);min-height:120px;touch-action:none;user-select:none}
+.screen img{display:block;width:100%;height:auto}
+.screen img[src=""]{display:none}
+.screen-empty{position:absolute;inset:0;display:grid;place-items:center;color:var(--faint);font-size:12px;text-align:center;padding:12px}
+.screen-empty[hidden]{display:none}
+.screen .tapdot{position:absolute;width:22px;height:22px;margin:-11px 0 0 -11px;border-radius:50%;border:2px solid var(--accent);pointer-events:none;animation:tap .45s ease-out forwards}
+@keyframes tap{to{transform:scale(1.8);opacity:0}}
+
 /* ---- 飘字 ---- */
 .tip{position:fixed;left:50%;top:calc(12px + var(--sat));transform:translateX(-50%) translateY(-8px);z-index:99;padding:9px 15px;border-radius:12px;background:#2f2554;border:1px solid var(--accent);color:var(--text);font-size:13px;box-shadow:0 8px 24px #0008;opacity:0;transition:.18s;pointer-events:none;max-width:88vw;text-align:center}
 .tip.on{opacity:1;transform:translateX(-50%) translateY(0)}
@@ -197,7 +206,12 @@ function pageHtml(token, deviceName, tools) {
 
 <section class="panel" id="tab-pc">
   <div class="card">
-    <h2>切换工具 <small>电脑端跟着切</small></h2>
+    <h2>电脑画面 <small id="screenHint">点一下就是点电脑，上下滑就是滚动</small></h2>
+    <div class="screen" id="screenBox"><img id="screenImg" alt="" draggable="false"><div class="screen-empty" id="screenEmpty">正在取画面…</div></div>
+    <div class="row" style="margin-top:8px"><button class="sm" id="screenLive">⏸ 暂停刷新</button><button class="sm ghost" id="screenOnce">刷新一次</button><span class="faint" id="screenAt" style="font-size:11px;margin-left:auto"></span></div>
+  </div>
+  <div class="card">
+    <h2>切换工具 <small>电脑端跟着切，上面画面里能看到</small></h2>
     <div class="tools" id="tools"></div>
   </div>
   <div class="card">
@@ -272,6 +286,22 @@ $('eatRecord').onclick=()=>{const raw=$('eatDish').value.trim();if(!raw)return s
 
 // ---- 电脑 ----
 for(const t of tools){const b=el('button','tool');b.style.setProperty('--c',t.color||'#9aa4b5');b.append(el('i'),el('span',null,t.label));b.onclick=()=>command('tool.open',{id:t.id}).then(()=>say('电脑已切到「'+t.label+'」')).catch(e=>say(e.message,1));$('tools').append(b)}
+// ---- 电脑画面 ----
+let screenLive=true,screenTimer=null,screenBusy=false;
+async function grabScreen(){if(screenBusy)return;screenBusy=true;try{const r=await fetch('/api/screen?token='+encodeURIComponent(token)+'&t='+Date.now());if(r.status!==200){$('screenEmpty').hidden=false;$('screenEmpty').textContent='电脑窗口没打开 —— 点下面「把工具箱叫到前台」';return}const blob=await r.blob();const img=$('screenImg');const old=img.src;img.src=URL.createObjectURL(blob);if(old)URL.revokeObjectURL(old);$('screenEmpty').hidden=true;$('screenAt').textContent=new Date().toLocaleTimeString('zh-CN',{hour12:false})}catch(e){$('screenEmpty').hidden=false;$('screenEmpty').textContent='取不到画面：'+e.message}finally{screenBusy=false}}
+function screenTick(){clearTimeout(screenTimer);const pcOn=$('tab-pc').classList.contains('on');if(pcOn&&screenLive&&!document.hidden)grabScreen();screenTimer=setTimeout(screenTick,1400)}
+$('screenLive').onclick=()=>{screenLive=!screenLive;$('screenLive').textContent=screenLive?'⏸ 暂停刷新':'▶ 继续刷新';if(screenLive)grabScreen()};
+$('screenOnce').onclick=grabScreen;
+// 点=点电脑；竖着划=滚动。手指离开时按位移判断是哪种
+(()=>{const box=$('screenBox');let start=null;const rel=e=>{const r=box.getBoundingClientRect();const p=e.changedTouches?e.changedTouches[0]:e;return {x:(p.clientX-r.left)/r.width,y:(p.clientY-r.top)/r.height,px:p.clientX-r.left,py:p.clientY-r.top}};
+const down=e=>{start=rel(e);start.t=Date.now()};
+const up=async e=>{if(!start)return;const end=rel(e);const dy=(end.py-start.py);const s=start;start=null;if(Math.abs(dy)>18){command('screen.scroll',{x:s.x,y:s.y,dy:Math.round(dy*2.2)}).then(()=>setTimeout(grabScreen,250)).catch(x=>say(x.message,1));return}
+const dot=document.createElement('span');dot.className='tapdot';dot.style.left=s.px+'px';dot.style.top=s.py+'px';box.append(dot);setTimeout(()=>dot.remove(),500);
+command('screen.tap',{x:s.x,y:s.y}).then(()=>setTimeout(grabScreen,350)).catch(x=>say(x.message,1))};
+box.addEventListener('touchstart',down,{passive:true});box.addEventListener('touchend',up);box.addEventListener('mousedown',down);box.addEventListener('mouseup',up)})();
+for(const b of document.querySelectorAll('nav button'))b.addEventListener('click',()=>{if(b.dataset.tab==='pc')grabScreen()});
+screenTick();
+
 $('goUrl').onclick=()=>{let u=$('openUrl').value.trim();if(!u)return;if(!/^https?:\\/\\//i.test(u))u='https://'+u;command('url.open',{url:u}).then(()=>say('已在电脑上打开')).catch(e=>say(e.message,1))};
 $('openUrl').addEventListener('keydown',e=>{if(e.key==='Enter')$('goUrl').click()});
 $('readClipboard').onclick=async()=>{try{const r=await command('clipboard.read');$('clipboard').textContent=r.text||'（剪贴板为空）'}catch(e){$('clipboard').textContent='失败：'+e.message}};

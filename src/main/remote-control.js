@@ -38,7 +38,7 @@ function constantTimeEqual(left, right) {
 const { pageHtml } = require('./remote-page');
 
 class RemoteControl {
-  constructor({ deviceName = 'Agent 工具箱', onCommand, onInbox, preferredPort = 43127, inbox = [], apkPath = '', apkName = 'Agent-Toolbox-Remote.apk', assetsDir = '' }) {
+  constructor({ deviceName = 'Agent 工具箱', onCommand, onInbox, onScreen, preferredPort = 43127, inbox = [], apkPath = '', apkName = 'Agent-Toolbox-Remote.apk', assetsDir = '' }) {
     this.deviceName = deviceName;
     // 工具表由渲染层推过来（setTools）。写死的话每加一个工具手机端就少一个，
     // 之前手机上只能切到 8 个，而工具箱已经有 19 个了。
@@ -46,6 +46,7 @@ class RemoteControl {
     this.assetsDir = assetsDir;
     this.onCommand = onCommand;
     this.onInbox = onInbox;
+    this.onScreen = onScreen;              // 抓一帧主窗口画面（JPEG Buffer），手机上看
     this.preferredPort = preferredPort;
     this.server = null;
     this.token = '';
@@ -160,6 +161,15 @@ class RemoteControl {
       if (!constantTimeEqual(url.searchParams.get('token'), this.token)) return this._json(response, 401, { ok: false, error: '配对地址无效。' });
       response.writeHead(200, { 'Content-Type': 'application/javascript; charset=utf-8', 'Cache-Control': 'no-store' });
       response.end("self.addEventListener('install',()=>self.skipWaiting());self.addEventListener('activate',event=>event.waitUntil(clients.claim()));self.addEventListener('fetch',event=>{if(event.request.method==='GET')event.respondWith(fetch(event.request).catch(()=>caches.match(event.request)))})");
+      return;
+    }
+    if (request.method === 'GET' && url.pathname === '/api/screen') {
+      if (!constantTimeEqual(url.searchParams.get('token'), this.token)) return this._json(response, 401, { ok: false, error: '配对已失效。' });
+      let frame = null;
+      try { frame = await this.onScreen?.(); } catch { frame = null; }
+      if (!frame) return this._json(response, 204, { ok: false });
+      response.writeHead(200, { 'Content-Type': 'image/jpeg', 'Cache-Control': 'no-store', 'Content-Length': frame.length });
+      response.end(frame);
       return;
     }
     if (request.method === 'GET' && url.pathname === '/api/inbox') {

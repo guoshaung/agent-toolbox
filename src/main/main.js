@@ -315,6 +315,26 @@ async function handleRemoteCommand(type, payload = {}) {
     case 'app.show':
       ensureMainWindow({ show: true });
       return { shown: true };
+    // 手机上看电脑画面：抓主窗口一帧，缩到 900 宽的 JPEG。点一下 / 滑一下也原样送回窗口。
+    case 'screen.tap': {
+      if (!mainWindow || mainWindow.isDestroyed()) throw new Error('工具箱主窗口没有打开。');
+      const [w, h] = mainWindow.getContentSize();
+      const x = Math.round(Math.min(1, Math.max(0, Number(payload.x) || 0)) * w);
+      const y = Math.round(Math.min(1, Math.max(0, Number(payload.y) || 0)) * h);
+      mainWindow.webContents.sendInputEvent({ type: 'mouseMove', x, y });
+      mainWindow.webContents.sendInputEvent({ type: 'mouseDown', x, y, button: 'left', clickCount: 1 });
+      mainWindow.webContents.sendInputEvent({ type: 'mouseUp', x, y, button: 'left', clickCount: 1 });
+      return { ok: true, x, y };
+    }
+    case 'screen.scroll': {
+      if (!mainWindow || mainWindow.isDestroyed()) throw new Error('工具箱主窗口没有打开。');
+      const [w, h] = mainWindow.getContentSize();
+      const x = Math.round(Math.min(1, Math.max(0, Number(payload.x) || 0.5)) * w);
+      const y = Math.round(Math.min(1, Math.max(0, Number(payload.y) || 0.5)) * h);
+      const deltaY = Math.max(-1200, Math.min(1200, Math.round(Number(payload.dy) || 0)));
+      mainWindow.webContents.sendInputEvent({ type: 'mouseWheel', x, y, deltaX: 0, deltaY: -deltaY, canScroll: true });
+      return { ok: true };
+    }
     case 'clipboard.read':
       return { text: clipboard.readText() };
     case 'clipboard.write':
@@ -363,23 +383,29 @@ async function handleRemoteCommand(type, payload = {}) {
       const prompt = String(payload.prompt || '').trim().slice(0, 20000);
       const runtime = agentRuntime.AGENTS[source];
       if (!runtime || !prompt) throw new Error('Agent 或命令内容无效。');
-      ensureMainWindow({ show: true });
-      const confirmation = await dialog.showMessageBox(mainWindow, {
-        type: 'warning',
-        buttons: ['取消', `交给 ${runtime.label}`],
-        defaultId: 0,
-        cancelId: 0,
-        title: '确认手机派发任务',
-        message: `手机请求向 ${runtime.label} 派发任务`,
-        detail: `${prompt.slice(0, 500)}\n\n工具箱不会启用任何绕过权限或无人值守授权参数。`,
-      });
-      if (confirmation.response !== 1) throw new Error('电脑端已取消这次任务。');
-      // 办公室里给这家选了「网页版 / 已开着的窗口」的话，字直接送进那个对话框，不另起 CLI
-      const viaOffice = await requestRemoteRenderer('office.send', { id: source, prompt }).catch(() => null);
-      if (viaOffice?.handled) {
-        if (!viaOffice.ok) throw new Error(viaOffice.error || '投送失败');
-        return { text: viaOffice.text, source, channel: 'office' };
+      // 不再让电脑端弹框确认 —— 人在手机上就是因为不在电脑前，每次都要回来点一下等于没这功能。
+      // 手机已经用一次性令牌配过对，就当是本人；CLI 那条路仍然是只读 / 计划模式。
+      // 走哪条路在主进程里定，跟办公室页用同一份设置（store 里的 focus.channel.*）——
+      // 之前靠渲染层的处理器，专注页没打开时它根本不存在，等 10 秒超时后竟然去跑了 CLI。
+      const desktopApps = await listDesktopApps();
+      const saved = String(store.get(`focus.channel.${source}`, '') || '');
+      const channel = ['window', 'web', 'cli'].includes(saved) ? saved : desktopApps[source] ? 'window' : 'cli';
+      if (channel === 'window') {
+        // 桌面客户端：粘贴 + 回车。应用没开的话 activate 会把它拉起来。
+        const target = String(store.get(`focus.handoffTarget.${source}`, '') || desktopApps[source] || '');
+        if (!target) throw new Error(`${runtime.label} 还没选要送进哪个应用，去电脑上「专注 → 派发台」点它的屏幕选一个。`);
+        const handed = await handoffToApp(target, prompt);
+        if (!handed.ok) throw new Error(handed.error || '投送失败');
+        return { text: `已送进电脑上的 ${target}，回答在那边看。`, source, channel: 'window', target };
       }
+      if (channel === 'web') {
+        ensureMainWindow({ show: true });
+        const viaOffice = await requestRemoteRenderer('office.send', { id: source, prompt }).catch(() => null);
+        if (!viaOffice?.handled) throw new Error(`${runtime.label} 走的是网页版，要先在电脑上打开「专注」页。`);
+        if (!viaOffice.ok) throw new Error(viaOffice.error || '投送失败');
+        return { text: viaOffice.text, source, channel: 'web' };
+      }
+      ensureMainWindow({ show: true });
       const latest = chatBridge.listSessions(source)[0];
       return agentRuntime.runAgent(source, prompt, { cwd: latest?.cwd || os.homedir() });
     }
@@ -2809,6 +2835,14 @@ app.whenReady().then(async () => {
     onCommand: handleRemoteCommand,
     apkPath: path.join(__dirname, '..', '..', 'assets', 'mobile', 'Agent-Toolbox-Remote-0.2.1-debug.apk'),
     assetsDir: path.join(__dirname, '..', '..', 'assets'),
+    onScreen: async () => {
+      if (!mainWindow || mainWindow.isDestroyed()) return null;
+      const image = await mainWindow.webContents.capturePage();
+      if (image.isEmpty()) return null;
+      const { width } = image.getSize();
+      const scaled = width > 900 ? image.resize({ width: 900 }) : image;
+      return scaled.toJPEG(62);
+    },
     apkName: 'Agent-Toolbox-Remote-0.2.1-debug.apk',
     inbox: store.get('remote.inbox', []),
     onInbox: (item) => {
