@@ -3868,6 +3868,25 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 }
 .office-chat__actions { display: flex; align-items: center; gap: 8px; }
 .office-chat__target { max-width: 190px; }
+.office-chat__target[hidden] { display: none; }
+.office-chat__channel { max-width: 150px; }
+.office-chat__webbar { display: flex; align-items: center; gap: 8px; font-size: 11.5px; }
+.office-chat__webbar[hidden] { display: none; }
+
+/* 各家网页版的屏幕。不用 display:none 藏 —— 那会让 webview 重载、把正在聊的丢掉；
+   收起时高度归零，切换时只动 visibility。 */
+.office__screen {
+  position: relative; height: 0; overflow: hidden;
+  border-radius: 12px; border: 0 solid var(--line-soft);
+  background: #fff;
+  transition: height .18s ease;
+}
+.office__screen.is-open { height: 560px; border-width: 1px; }
+.office__screen-view {
+  position: absolute; inset: 0; width: 100%; height: 100%;
+  visibility: hidden;
+}
+.office__screen-view.is-front { visibility: visible; }
 
 @media (prefers-reduced-motion: reduce) {
   .office-desk, .office-person, .office-eyes, .office-arm, .office-monitor-glow { transition: none !important; animation: none !important; }

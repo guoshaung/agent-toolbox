@@ -75,3 +75,12 @@ test('isRunnable：只认 shebang 脚本和真可执行文件', (t) => {
 
   fs.rmSync(dir, { recursive: true, force: true });
 });
+
+test('办公室网页版：每家 CLI 都有对应的网页入口（OpenCode 除外，它没有网页版）', async () => {
+  const src = require('node:fs').readFileSync(require('node:path').join(__dirname, '..', 'src', 'renderer', 'tools', 'focus', 'office-web.js'), 'utf8');
+  const { AGENTS } = require('../src/main/agent-runtime');
+  for (const id of Object.keys(AGENTS)) {
+    if (id === 'opencode') continue;
+    assert.match(src, new RegExp(`^\\s*${id}:\\s*\\{\\s*url:\\s*'https://`, 'm'), `${id} 应该有网页版入口`);
+  }
+});

@@ -373,6 +373,12 @@ async function handleRemoteCommand(type, payload = {}) {
         detail: `${prompt.slice(0, 500)}\n\n工具箱不会启用任何绕过权限或无人值守授权参数。`,
       });
       if (confirmation.response !== 1) throw new Error('电脑端已取消这次任务。');
+      // 办公室里给这家选了「网页版 / 已开着的窗口」的话，字直接送进那个对话框，不另起 CLI
+      const viaOffice = await requestRemoteRenderer('office.send', { id: source, prompt }).catch(() => null);
+      if (viaOffice?.handled) {
+        if (!viaOffice.ok) throw new Error(viaOffice.error || '投送失败');
+        return { text: viaOffice.text, source, channel: 'office' };
+      }
       const latest = chatBridge.listSessions(source)[0];
       return agentRuntime.runAgent(source, prompt, { cwd: latest?.cwd || os.homedir() });
     }
@@ -482,6 +488,8 @@ function safeConfig() {
   if (data.remote) delete data.remote.tokenEncrypted;
   return data;
 }
+
+const officePartitions = new Set();
 
 /** Configure browser identity without weakening third-party response policies. */
 function configurePartition(partitionName) {
@@ -631,11 +639,18 @@ function createWindow(showOnReady = true) {
     const isTavern = webPreferences.partition === 'persist:tavern';
     // 示意图编辑器不套站点清理脚本：它是本地单文件应用，不需要拆登录墙。
     const isDrafter = webPreferences.partition === 'persist:drafter' || /figure-drafter\.html$/i.test(source);
+    // 办公室里各家 AI 的网页版：要像一个普通 Chrome 一样过登录和 Cloudflare，
+    // 所以分区第一次出现时把 UA / Client Hints 配齐；也不套站点清理脚本。
+    const isOffice = String(webPreferences.partition || '').startsWith('persist:office-');
+    if (isOffice && !officePartitions.has(webPreferences.partition)) {
+      officePartitions.add(webPreferences.partition);
+      configurePartition(webPreferences.partition);
+    }
     // DSH / 酒馆 / 示意图编辑器都是完整的本地 Web 应用，不要套用站点清理脚本。
     // 该脚本会主动改写 html/body 的滚动和 user-select，且监听整个 DOM，对这些
     // 模块化 SPA 可能造成启动阶段黑屏。保留空 preload 只为明确隔离边界。
     webPreferences.preload = path.join(__dirname,
-      (isDsh || isDrafter || isTavern) ? 'dsh-preload.js' : 'site-bypass-preload.js');
+      (isDsh || isDrafter || isTavern || isOffice) ? 'dsh-preload.js' : 'site-bypass-preload.js');
     console.log('[main] will-attach-webview preload:', webPreferences.preload, source);
     webPreferences.nodeIntegration = false;
     webPreferences.contextIsolation = true;
