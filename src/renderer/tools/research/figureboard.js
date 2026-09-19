@@ -67,13 +67,8 @@ export function createFigureboard(root, ctx) {
   const board = h('div', { class: 'figureboard__canvas', tabindex: '0' });
   const surface = h('div', { class: 'figureboard__canvas-surface' });
   const contextMenu = h('div', { class: 'figureboard__context-menu', hidden: true });
-  const empty = h('div', { class: 'figureboard__empty' },
-    h('span', { class: 'empty__icon' }, '🖼️'),
-    '把科研截图、图表或公式粘贴到这里',
-    h('br'),
-    h('span', { class: 'faint' }, '⌘V 粘贴图片 · 拖动素材调整位置 · Delete 删除选中素材'),
-  );
-  surface.appendChild(empty);
+  // 空画布不放提示语了：白底方格纸本身就说明这是画布，那行字只会杵在中间碍事。
+  const empty = h('div', { class: 'figureboard__empty' });
   board.appendChild(surface);
   let selectedId = null;
   let selectedIds = new Set();
@@ -100,7 +95,9 @@ export function createFigureboard(root, ctx) {
   let saveTimer;
 
   let editingId = null;                                   // 正在画布内编辑文字的对象
-  let background = config.get('research.figureBg', 'white');
+  // 默认白底方格纸。老配置存的是纯白，这次一并换成网格 —— 纯白画布上什么参照都没有
+  let background = config.get('research.figureBg', 'grid');
+  if (background === 'white') { background = 'grid'; config.set('research.figureBg', background); }
 
   function bgSpec() {
     return BACKGROUNDS[background] || BACKGROUNDS.white;
@@ -1252,7 +1249,7 @@ export function createFigureboard(root, ctx) {
     surface.style.height = `${size.height}px`;
     surface.style.zoom = String(canvasZoom);
     surface.replaceChildren();
-    if (!items.length) surface.appendChild(empty);
+    if (!items.length && empty.childElementCount) surface.appendChild(empty);
     surface.appendChild(wireLayer);          // 连线在底层，图形压在上面
     for (const item of items) {
       if (isWire(item)) continue;          // 连线不用定位 div，走 wireLayer

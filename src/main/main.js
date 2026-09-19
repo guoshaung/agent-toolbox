@@ -2833,17 +2833,18 @@ app.whenReady().then(async () => {
   remoteControl = new RemoteControl({
     deviceName: 'Agent 工具箱',
     onCommand: handleRemoteCommand,
-    apkPath: path.join(__dirname, '..', '..', 'assets', 'mobile', 'Agent-Toolbox-Remote-0.2.1-debug.apk'),
+    apkPath: path.join(__dirname, '..', '..', 'assets', 'mobile', 'Agent-Toolbox-Remote-0.2.2-debug.apk'),
     assetsDir: path.join(__dirname, '..', '..', 'assets'),
-    onScreen: async () => {
+    onScreen: async ({ width: wanted = 900 } = {}) => {
       if (!mainWindow || mainWindow.isDestroyed()) return null;
       const image = await mainWindow.webContents.capturePage();
       if (image.isEmpty()) return null;
       const { width } = image.getSize();
-      const scaled = width > 900 ? image.resize({ width: 900 }) : image;
-      return scaled.toJPEG(62);
+      const target = Math.max(400, Math.min(1600, Number(wanted) || 900));   // 全屏时手机要更清楚的一帧
+      const scaled = width > target ? image.resize({ width: target }) : image;
+      return scaled.toJPEG(target > 1000 ? 70 : 62);
     },
-    apkName: 'Agent-Toolbox-Remote-0.2.1-debug.apk',
+    apkName: 'Agent-Toolbox-Remote-0.2.2-debug.apk',
     inbox: store.get('remote.inbox', []),
     onInbox: (item) => {
       const inbox = [item, ...(store.get('remote.inbox', []) || [])].slice(0, 100);

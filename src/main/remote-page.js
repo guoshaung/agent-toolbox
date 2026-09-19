@@ -160,6 +160,15 @@ main{flex:1;min-height:0;overflow:auto;padding:0 16px;-webkit-overflow-scrolling
 .screen .tapdot{position:absolute;width:22px;height:22px;margin:-11px 0 0 -11px;border-radius:50%;border:2px solid var(--accent);pointer-events:none;animation:tap .45s ease-out forwards}
 @keyframes tap{to{transform:scale(1.8);opacity:0}}
 
+/* ---- 全屏操作电脑 ---- */
+.fs{position:fixed;inset:0;z-index:50;background:#000;touch-action:none;user-select:none}
+.fs[hidden]{display:none}
+.fs canvas{position:absolute;inset:0;width:100%;height:100%}
+.fs-bar{position:absolute;left:0;right:0;bottom:0;padding:8px 10px calc(8px + var(--sab));display:flex;gap:6px;align-items:center;flex-wrap:wrap;background:linear-gradient(0deg,#000d,transparent);font-size:12px}
+.fs-bar #fsZoom{min-width:44px;text-align:center;color:var(--accent)}
+.fs-bar #fsHint{flex-basis:100%;font-size:10.5px}
+.fs .tapdot{position:absolute;width:26px;height:26px;margin:-13px 0 0 -13px;border-radius:50%;border:2px solid var(--accent);pointer-events:none;animation:tap .45s ease-out forwards}
+
 /* ---- 飘字 ---- */
 .tip{position:fixed;left:50%;top:calc(12px + var(--sat));transform:translateX(-50%) translateY(-8px);z-index:99;padding:9px 15px;border-radius:12px;background:#2f2554;border:1px solid var(--accent);color:var(--text);font-size:13px;box-shadow:0 8px 24px #0008;opacity:0;transition:.18s;pointer-events:none;max-width:88vw;text-align:center}
 .tip.on{opacity:1;transform:translateX(-50%) translateY(0)}
@@ -208,7 +217,7 @@ function pageHtml(token, deviceName, tools) {
   <div class="card">
     <h2>电脑画面 <small id="screenHint">点一下就是点电脑，上下滑就是滚动</small></h2>
     <div class="screen" id="screenBox"><img id="screenImg" alt="" draggable="false"><div class="screen-empty" id="screenEmpty">正在取画面…</div></div>
-    <div class="row" style="margin-top:8px"><button class="sm" id="screenLive">⏸ 暂停刷新</button><button class="sm ghost" id="screenOnce">刷新一次</button><span class="faint" id="screenAt" style="font-size:11px;margin-left:auto"></span></div>
+    <div class="row" style="margin-top:8px"><button class="sm primary" id="screenFull">⛶ 全屏操作</button><button class="sm" id="screenLive">⏸ 暂停刷新</button><button class="sm ghost" id="screenOnce">刷新一次</button><span class="faint" id="screenAt" style="font-size:11px;margin-left:auto"></span></div>
   </div>
   <div class="card">
     <h2>切换工具 <small>电脑端跟着切，上面画面里能看到</small></h2>
@@ -237,6 +246,10 @@ function pageHtml(token, deviceName, tools) {
 <div class="composer" id="composer">
   <div class="to"><span>发给</span><b id="toName">当前 AI（电脑端设置）</b><button class="sm ghost" id="toReset" hidden>改回当前 AI</button></div>
   <div class="bar"><button class="ic ghost" id="voice" aria-label="语音输入" title="语音输入">🎙</button><textarea id="prompt" rows="1" placeholder="输入任务，或点麦克风说话"></textarea><button class="ic primary" id="send" aria-label="发送">➤</button></div>
+</div>
+<div class="fs" id="fs" hidden>
+  <canvas id="fsCanvas"></canvas>
+  <div class="fs-bar"><button class="sm" id="fsExit">✕ 退出</button><button class="sm ghost" id="fsRotate">⟳ 转向</button><button class="sm ghost" id="fsZoomOut">－</button><span id="fsZoom">100%</span><button class="sm ghost" id="fsZoomIn">＋</button><button class="sm ghost" id="fsFit">适应</button><span class="faint" id="fsHint">点=点电脑 · 一指拖=平移 · 两指=缩放 · 双击=放大/还原</span></div>
 </div>
 <div class="tip" id="tip"></div>
 
@@ -301,6 +314,38 @@ command('screen.tap',{x:s.x,y:s.y}).then(()=>setTimeout(grabScreen,350)).catch(x
 box.addEventListener('touchstart',down,{passive:true});box.addEventListener('touchend',up);box.addEventListener('mousedown',down);box.addEventListener('mouseup',up)})();
 for(const b of document.querySelectorAll('nav button'))b.addEventListener('click',()=>{if(b.dataset.tab==='pc')grabScreen()});
 screenTick();
+
+// ---- 全屏操作：电脑是横的、手机是竖的，把画面转 90° 铺满；能捏合缩放、拖着看；点和滑都按我们自己的变换算回电脑坐标 ----
+(()=>{
+const fs=$('fs'),cv=$('fsCanvas'),ctx=cv.getContext('2d');
+let on=false,frame=null,rot=90,zoom=1,fit=1,ox=0,oy=0,timer=null,busy=false,gest=null,lastTap=0;
+const W=()=>cv.width,H=()=>cv.height;
+function autoRot(){rot=(innerWidth<innerHeight)?90:0}
+function size(){const d=devicePixelRatio||1;cv.width=Math.round(innerWidth*d);cv.height=Math.round(innerHeight*d);computeFit();draw()}
+function computeFit(){if(!frame)return;const fw=rot?frame.height:frame.width,fh=rot?frame.width:frame.height;fit=Math.min(W()/fw,H()/fh)}
+// 画面坐标 -> 屏幕坐标：先按 rot 转，再乘 zoom*fit，再平移到中心 + 偏移
+function toScreen(px,py){const s=fit*zoom;let x,y;if(rot){x=frame.height-py;y=px}else{x=px;y=py}const fw=rot?frame.height:frame.width,fh=rot?frame.width:frame.height;return {x:(x-fw/2)*s+W()/2+ox,y:(y-fh/2)*s+H()/2+oy}}
+function toFrame(sx,sy){const s=fit*zoom;const fw=rot?frame.height:frame.width,fh=rot?frame.width:frame.height;const x=(sx-W()/2-ox)/s+fw/2,y=(sy-H()/2-oy)/s+fh/2;return rot?{x:y,y:frame.height-x}:{x,y}}
+function draw(){ctx.fillStyle='#000';ctx.fillRect(0,0,W(),H());if(!frame)return;const s=fit*zoom;ctx.save();ctx.translate(W()/2+ox,H()/2+oy);ctx.scale(s,s);if(rot)ctx.rotate(Math.PI/2);ctx.drawImage(frame,-frame.width/2,-frame.height/2);ctx.restore();$('fsZoom').textContent=Math.round(zoom*100)+'%'}
+async function pull(){if(busy||!on)return;busy=true;try{const r=await fetch('/api/screen?token='+encodeURIComponent(token)+'&w=1400&t='+Date.now());if(r.status===200){const b=await r.blob();const img=await createImageBitmap(b);frame=img;computeFit();draw()}}catch{}finally{busy=false}}
+function loop(){clearTimeout(timer);if(!on)return;pull();timer=setTimeout(loop,900)}
+function open(){on=true;fs.hidden=false;autoRot();zoom=1;ox=oy=0;size();try{window.AgentToolboxNative?.lockLandscape(true)}catch{}try{document.documentElement.requestFullscreen?.()}catch{}try{screen.orientation?.lock?.('landscape').catch(()=>{})}catch{}loop()}
+function close(){on=false;fs.hidden=true;clearTimeout(timer);try{window.AgentToolboxNative?.lockLandscape(false)}catch{}try{screen.orientation?.unlock?.()}catch{}try{if(document.fullscreenElement)document.exitFullscreen()}catch{}grabScreen()}
+$('screenFull').onclick=open;$('fsExit').onclick=close;
+$('fsRotate').onclick=()=>{rot=rot?0:90;computeFit();ox=oy=0;draw()};
+$('fsZoomIn').onclick=()=>{zoom=Math.min(5,zoom*1.3);draw()};$('fsZoomOut').onclick=()=>{zoom=Math.max(.5,zoom/1.3);draw()};$('fsFit').onclick=()=>{zoom=1;ox=oy=0;draw()};
+addEventListener('resize',()=>{if(!on)return;autoRot();size()});
+const pt=e=>{const d=devicePixelRatio||1;const r=cv.getBoundingClientRect();return [...(e.touches?.length?e.touches:e.changedTouches||[e])].map(t=>({x:(t.clientX-r.left)*d,y:(t.clientY-r.top)*d}))};
+const dist=(a,b)=>Math.hypot(a.x-b.x,a.y-b.y);
+cv.addEventListener('touchstart',e=>{e.preventDefault();const p=pt(e);if(p.length>=2){gest={kind:'pinch',d0:dist(p[0],p[1]),z0:zoom,cx:(p[0].x+p[1].x)/2,cy:(p[0].y+p[1].y)/2,ox0:ox,oy0:oy}}else{gest={kind:'one',x0:p[0].x,y0:p[0].y,ox0:ox,oy0:oy,moved:false,t0:Date.now()}}},{passive:false});
+cv.addEventListener('touchmove',e=>{e.preventDefault();if(!gest)return;const p=pt(e);if(gest.kind==='pinch'&&p.length>=2){const k=dist(p[0],p[1])/gest.d0;const nz=Math.max(.5,Math.min(5,gest.z0*k));// 围绕两指中心缩放
+const cx=gest.cx-W()/2,cy=gest.cy-H()/2;ox=cx-(cx-gest.ox0)*(nz/gest.z0);oy=cy-(cy-gest.oy0)*(nz/gest.z0);zoom=nz;draw()}else if(gest.kind==='one'){const dx=p[0].x-gest.x0,dy=p[0].y-gest.y0;if(Math.hypot(dx,dy)>8*(devicePixelRatio||1))gest.moved=true;if(gest.moved){ox=gest.ox0+dx;oy=gest.oy0+dy;draw()}}},{passive:false});
+cv.addEventListener('touchend',e=>{e.preventDefault();if(!gest)return;const g=gest;gest=null;if(g.kind!=='one'||g.moved||!frame)return;const now=Date.now();const f=toFrame(g.x0,g.y0);const rx=f.x/frame.width,ry=f.y/frame.height;if(rx<0||ry<0||rx>1||ry>1)return;if(now-lastTap<320){lastTap=0;if(zoom>1.05){zoom=1;ox=oy=0}else{zoom=2.2;const cx=g.x0-W()/2,cy=g.y0-H()/2;ox=-cx*1.2;oy=-cy*1.2}draw();return}lastTap=now;const d=devicePixelRatio||1;const dot=document.createElement('span');dot.className='tapdot';dot.style.left=(g.x0/d)+'px';dot.style.top=(g.y0/d)+'px';fs.append(dot);setTimeout(()=>dot.remove(),500);command('screen.tap',{x:rx,y:ry}).then(()=>setTimeout(pull,300)).catch(x=>say(x.message,1))},{passive:false});
+// 滚动电脑：在全屏里用底栏之外的双指竖滑不好区分，改成长按后拖 —— 简单起见：单指按住 350ms 不动再拖 = 滚动
+let holdTimer=null;cv.addEventListener('touchstart',e=>{clearTimeout(holdTimer);if(e.touches.length!==1)return;holdTimer=setTimeout(()=>{if(gest&&gest.kind==='one'&&!gest.moved){gest.kind='scroll';gest.sy=gest.y0;navigator.vibrate?.(15)}},350)},{passive:true});
+cv.addEventListener('touchmove',e=>{if(!gest||gest.kind!=='scroll')return;const p=pt(e)[0];const dy=p.y-gest.sy;if(Math.abs(dy)<24)return;gest.sy=p.y;const f=toFrame(gest.x0,gest.y0);command('screen.scroll',{x:f.x/frame.width,y:f.y/frame.height,dy:Math.round((rot?-dy:dy)*1.5)}).catch(()=>{})},{passive:true});
+cv.addEventListener('touchend',()=>clearTimeout(holdTimer),{passive:true});
+})();
 
 $('goUrl').onclick=()=>{let u=$('openUrl').value.trim();if(!u)return;if(!/^https?:\\/\\//i.test(u))u='https://'+u;command('url.open',{url:u}).then(()=>say('已在电脑上打开')).catch(e=>say(e.message,1))};
 $('openUrl').addEventListener('keydown',e=>{if(e.key==='Enter')$('goUrl').click()});

@@ -469,7 +469,18 @@ window.toolbox.terms.onExplainRequest(async ({ requestId, text }) => {
 window.toolbox.remote.onCommand(async ({ requestId, type, payload }) => {
   // 工具可以把自己的远程处理器挂到 window.__toolRemote[type]（比如「今天吃什么」）。
   // 这样加一个手机端功能不用回来改这里。
-  const handler = window.__toolRemote?.[type];
+  // 处理器是工具挂载时才注册的。手机点「今天吃什么」时电脑停在别的页，处理器就不存在 ——
+  // 之前直接回「渲染层不支持动作」。现在按前缀把那个工具打开，等它把处理器挂上。
+  const TOOL_FOR_REMOTE = { eat: 'eat', office: 'focus' };
+  let handler = window.__toolRemote?.[type];
+  const owner = TOOL_FOR_REMOTE[String(type).split('.')[0]];
+  if (!handler && owner && TOOLS.some((t) => t.id === owner)) {
+    activate(owner);
+    for (let i = 0; i < 40 && !handler; i += 1) {
+      await new Promise((r) => setTimeout(r, 100));
+      handler = window.__toolRemote?.[type];
+    }
+  }
   if (handler) {
     try {
       const result = await handler(payload || {});

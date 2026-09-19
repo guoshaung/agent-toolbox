@@ -166,7 +166,7 @@ class RemoteControl {
     if (request.method === 'GET' && url.pathname === '/api/screen') {
       if (!constantTimeEqual(url.searchParams.get('token'), this.token)) return this._json(response, 401, { ok: false, error: '配对已失效。' });
       let frame = null;
-      try { frame = await this.onScreen?.(); } catch { frame = null; }
+      try { frame = await this.onScreen?.({ width: Number(url.searchParams.get('w')) || 900 }); } catch { frame = null; }
       if (!frame) return this._json(response, 204, { ok: false });
       response.writeHead(200, { 'Content-Type': 'image/jpeg', 'Cache-Control': 'no-store', 'Content-Length': frame.length });
       response.end(frame);
