@@ -223,3 +223,33 @@ test('resolveCmdShimScript 从 npm 的 .cmd 壳里取出 JS 路径', () => {
   const missing = { readFileSync: () => shim, accessSync: () => { throw new Error('ENOENT'); } };
   assert.equal(resolveCmdShimScript(cmdPath, missing, pathWin), '');
 });
+
+// ---- lark-cli 的报错要翻成人话 ----
+// 用户实际遇到的那段：整坨 JSON 原样贴出来，看完不知道该干嘛。
+test('explainLarkError：权限不足时给出可执行的两条路', () => {
+  const { explainLarkError } = require('../src/main/video-report.js');
+  const real = JSON.stringify({
+    ok: false,
+    identity: 'bot',
+    error: {
+      type: 'authorization',
+      subtype: 'app_scope_not_applied',
+      code: 99991672,
+      message: 'access denied: app cli_aa1ee529c338dcb4 has not applied for the required scope(s): docx:document, docx:document:create',
+      hint: 'the app needs the scopes',
+    },
+  });
+  const msg = explainLarkError(real);
+  assert.match(msg, /docx:document/, '要说清楚缺哪个权限');
+  assert.match(msg, /bot/, '要说清楚当前用的哪个身份');
+  assert.match(msg, /auth login/, '要给出登录用户身份这条路');
+  assert.match(msg, /开放平台/, '要给出加权限这条路');
+  assert.doesNotMatch(msg, /\{|\}/, '不该再把 JSON 原样贴出来');
+
+  // 别的授权错误也要有话说，不能空
+  const other = JSON.stringify({ ok: false, identity: 'user', error: { type: 'authorization', subtype: 'token_expired', message: 'token expired' } });
+  assert.match(explainLarkError(other), /token expired/);
+
+  // 不是 JSON 的原样带回，别吞掉
+  assert.match(explainLarkError('boom: something broke'), /boom/);
+});

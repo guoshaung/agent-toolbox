@@ -571,6 +571,33 @@ function reportsDir(userDataDir, folder = 'reports') {
   return dir;
 }
 
+/**
+ * 把 lark-cli 的报错 JSON 翻成人话，并告诉你该怎么弄。
+ *
+ * 之前是把整坨 JSON 原样贴出来（`lark-cli 创建文档返回异常：{"ok":false,...`），
+ * 光看那一串根本不知道该干嘛 —— 而真正要做的事就一句话。
+ */
+function explainLarkError(raw) {
+  let parsed = null;
+  try { parsed = JSON.parse(raw); } catch { /* 不是 JSON，原样回去 */ }
+  const err = parsed?.error;
+  if (!err) return `lark-cli 返回异常：${String(raw).slice(0, 300)}`;
+
+  const identity = parsed.identity ? `（当前用 ${parsed.identity} 身份）` : '';
+  if (err.subtype === 'app_scope_not_applied' || err.code === 99991672) {
+    const scopes = String(err.message || '').match(/scope\(s\):\s*(.+)$/)?.[1] || 'docx:document';
+    return `飞书应用还没申请这些权限：${scopes}${identity}。`
+      + ` 两条路选一条：① 去飞书开放平台给这个应用加上这几个权限并重新发布；`
+      + ` ② 用你自己的身份发（个人身份通常不需要应用权限）：先在终端跑 lark-cli auth login 登录用户身份。`
+      + ` 报告已经存在本地，改好之后可以直接「重新发布」。`;
+  }
+  if (err.type === 'authorization') {
+    return `飞书这边没授权${identity}：${err.message || err.subtype || '未知原因'}。`
+      + `${err.hint ? ` ${err.hint}` : ' 可以先跑 lark-cli auth status 看看是哪个身份没就绪。'}`;
+  }
+  return `lark-cli 报错${identity}：${err.message || err.subtype || err.type || '未知'}`;
+}
+
 function publishMarkdown(userDataDir, file, { title, markdown, bvid, sourceId = '' }) {
   const found = findLarkCli();
   if (!found) {
@@ -585,7 +612,7 @@ function publishMarkdown(userDataDir, file, { title, markdown, bvid, sourceId = 
     const parsed = JSON.parse(out);
     const docUrl = parsed?.data?.document?.url || '';
     if (!parsed?.ok || !docUrl) {
-      return { ok: false, publishError: `lark-cli 创建文档返回异常：${out.slice(0, 300)}` };
+      return { ok: false, publishError: explainLarkError(out) };
     }
     const grant = parsed?.data?.permission_grant;
     const warnings = parsed?.data?.warnings;
@@ -605,8 +632,11 @@ function publishMarkdown(userDataDir, file, { title, markdown, bvid, sourceId = 
       ].filter(Boolean).join(' '),
     };
   } catch (err) {
-    const stderr = String(err.stderr || err.message || '').slice(0, 300);
-    return { ok: false, publishError: `lark-cli 执行失败：${stderr}` };
+    // lark-cli 失败时会把结构化报错打在 stdout 上、退出码非 0，
+    // 只看 stderr 的话拿到的是一句没用的 "Command failed"
+    const payload = String(err.stdout || '').trim();
+    if (payload.startsWith('{')) return { ok: false, publishError: explainLarkError(payload) };
+    return { ok: false, publishError: `lark-cli 执行失败：${String(err.stderr || err.message || '').slice(0, 300)}` };
   }
 }
 
@@ -708,6 +738,7 @@ function readReport(userDataDir, fileName) {
 
 module.exports = {
   collectSubtitleFiles,
+  explainLarkError,
   fetchBilibiliInfo,
   fetchSubtitles,
   findLarkCli,
