@@ -142,7 +142,7 @@ function requestRemoteRenderer(type, payload = {}) {
     const timer = setTimeout(() => {
       pendingRemoteCommands.delete(requestId);
       reject(new Error('电脑端处理超时。'));
-    }, type === 'ai.ask' ? 120000 : 10000);
+    }, type === 'ai.ask' || type === 'eat.recommend' ? 120000 : 10000);   // 这两个要跑 AI，实测 10 秒不够
     pendingRemoteCommands.set(requestId, { resolve, reject, timer });
     mainWindow.webContents.send('remote:command', { requestId, type, payload });
   });
@@ -344,7 +344,7 @@ async function handleRemoteCommand(type, payload = {}) {
       return requestRemoteRenderer(type, { prompt: String(payload.prompt || '').slice(0, 20000) });
     // 今天吃什么：推荐要跑 AI、读的是渲染层里的记录，所以整个交给渲染层
     case 'eat.recommend':
-      return requestRemoteRenderer(type, {});
+      return requestRemoteRenderer(type, { mood: String(payload.mood || '').slice(0, 20) });
     case 'eat.record':
       return requestRemoteRenderer(type, { dish: String(payload.dish || '').slice(0, 80), shop: String(payload.shop || '').slice(0, 80) });
     case 'agent.office':
@@ -2744,6 +2744,7 @@ app.whenReady().then(async () => {
     deviceName: 'Agent 工具箱',
     onCommand: handleRemoteCommand,
     apkPath: path.join(__dirname, '..', '..', 'assets', 'mobile', 'Agent-Toolbox-Remote-0.2.0-debug.apk'),
+    assetsDir: path.join(__dirname, '..', '..', 'assets'),
     apkName: 'Agent-Toolbox-Remote-0.2.0-debug.apk',
     inbox: store.get('remote.inbox', []),
     onInbox: (item) => {

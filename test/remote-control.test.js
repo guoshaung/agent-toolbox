@@ -131,3 +131,26 @@ test('停止时会掐断 keep-alive 连接，不会挂在 server.close 上', asy
   // 没有这个修复的话，close 的回调根本不会来，只能等兜底超时
   assert.ok(elapsed < 1200, `stop() 用了 ${elapsed}ms，说明还在等连接自己断开`);
 });
+
+test('手机页：三个 tab、工具带颜色，头像只放行 assets/office 下的 sprite', async () => {
+  const path = require('node:path');
+  const remote = new RemoteControl({ preferredPort: 0, assetsDir: path.join(__dirname, '..', 'assets'), onCommand: async () => ({}) });
+  remote.setTools([{ id: 'eat', title: '今天吃什么', color: '#ff9b5c' }, { id: 'bad', title: 'x', color: 'javascript:1' }]);
+  const state = await remote.start({ token: 'tok' });
+  try {
+    const page = await request(state.port, '/?token=tok');
+    assert.equal(page.status, 200);
+    for (const tab of ['data-tab="work"', 'data-tab="eat"', 'data-tab="pc"']) assert.ok(page.body.includes(tab), tab);
+    assert.ok(page.body.includes('"color":"#ff9b5c"'));
+    assert.ok(page.body.includes('"color":"#9aa4b5"'), '非法颜色要回退，不能原样进页面');
+    assert.ok(!page.body.includes('javascript:1'));
+
+    const ok = await request(state.port, '/assets/office/sprite-claude.png?token=tok');
+    assert.equal(ok.status, 200);
+    assert.equal((await request(state.port, '/assets/office/sprite-claude.png')).status, 401);
+    assert.equal((await request(state.port, '/assets/office/..%2Ficon.png?token=tok')).status, 404);
+    assert.equal((await request(state.port, '/assets/office/sprite-claude.png.bak?token=tok')).status, 404);
+  } finally {
+    await remote.stop();
+  }
+});

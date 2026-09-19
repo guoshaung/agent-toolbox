@@ -280,7 +280,13 @@ export default {
 
     // 手机端按「今天吃什么」时，app.js 会调这个
     window.__toolRemote = window.__toolRemote || {};
-    window.__toolRemote['eat.recommend'] = async () => {
+    window.__toolRemote['eat.recommend'] = async (payload) => {
+      // 手机上选的心情要同步到桌面端的按钮，两边看到的是同一个状态
+      const wanted = String(payload?.mood || '');
+      if (MOODS.includes(wanted) && wanted !== mood) {
+        mood = wanted;
+        for (const b of moodRow.children) b.classList.toggle('btn--primary', b.textContent === wanted);
+      }
       const advice = await recommend({ fromRemote: true });
       const lines = [advice.headline, '', ...advice.picks.map((p, i) => `${i + 1}. ${p.name}${p.shop ? `（${p.shop}）` : ''}\n   ${p.why}`)];
       if (advice.avoid) lines.push('', `今天先别：${advice.avoid}`);

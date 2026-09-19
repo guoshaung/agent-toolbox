@@ -35,63 +35,15 @@ function constantTimeEqual(left, right) {
   return a.length === b.length && crypto.timingSafeEqual(a, b);
 }
 
-function escapeHtml(value) {
-  return String(value || '').replace(/[&<>"']/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]));
-}
-
-function pageHtml(token, deviceName, tools) {
-  const safeToken = escapeHtml(token);
-  const safeName = escapeHtml(deviceName);
-  return `<!doctype html>
-<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="theme-color" content="#10151b"><link rel="manifest" href="/manifest.webmanifest?token=${encodeURIComponent(token)}"><title>Agent 手机控制</title>
-<style>
-:root{color-scheme:dark;font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","PingFang SC",sans-serif;background:#07120e;color:#f1f8f5}*{box-sizing:border-box}body{margin:0;max-width:760px;margin:auto;padding:18px 16px 50px;background:radial-gradient(circle at 80% -5%,#164537 0,transparent 32%)}header{display:flex;align-items:center;gap:13px;padding:12px 2px 22px}.brandmark{width:52px;height:52px;border-radius:15px;display:grid;place-items:center;background:linear-gradient(145deg,#12382b,#071b14);border:1px solid #286e55;box-shadow:0 10px 30px #0008;color:#26eba9;font-size:27px;font-weight:900}.headcopy{flex:1}h1{margin:4px 0 0;font-size:25px;letter-spacing:-.4px}h2{font-size:15px;margin:0 0 12px}.eyebrow{color:#31eeb0;font:750 10px ui-monospace,monospace;letter-spacing:1.4px}.muted{color:#91a9a0;font-size:12px;line-height:1.55}.card{margin-top:13px;padding:17px;border:1px solid #234036;border-radius:18px;background:linear-gradient(155deg,#10271f,#0c1c17);box-shadow:0 10px 30px #0003}.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}textarea,input{width:100%;border:1px solid #2b4a3f;border-radius:12px;padding:12px;background:#071510;color:#f1f8f5;font:inherit;outline:none}textarea:focus,input:focus{border-color:#31eeb0;box-shadow:0 0 0 3px #31eeb01c}textarea{min-height:100px;resize:vertical}button{border:1px solid #315246;border-radius:11px;padding:11px 13px;background:#19382e;color:#f1f8f5;font-weight:680}button:active{transform:scale(.98)}button.primary{background:linear-gradient(135deg,#31eeb0,#17ba82);border-color:#52f3bd;color:#052016}button.danger{background:#4b282b;border-color:#8c4a51}.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}.grid button{text-align:left;min-height:48px}.log{min-height:36px;max-height:220px;overflow:auto;white-space:pre-wrap;color:#c8d8d2;font-size:12px;line-height:1.65;margin-top:10px}.status{color:#31eeb0;font-size:11px;border:1px solid #2e765c;border-radius:999px;padding:6px 9px;background:#12382a}small{color:#91a9a0;font-weight:400}@media(max-width:460px){.grid{grid-template-columns:1fr}h1{font-size:22px}.card{border-radius:16px}}
-</style></head><body>
-<header><div class="brandmark">✦</div><div class="headcopy"><div class="eyebrow">AGENT TOOLBOX / REMOTE</div><h1>手机控制台</h1></div><div class="status" id="status">已配对</div></header>
-<div class="card"><h2>切换工具</h2><div class="grid" id="tools"></div></div>
-<div class="card"><div class="row"><h2 style="margin-right:auto">AI 办公室</h2><button id="refreshOffice">刷新</button></div><p class="muted">点击工位查看最近会话。每次派发任务都需要在电脑端确认，工具箱不会绕过 Agent 自身权限。</p><div id="office" class="grid"></div><div id="agentDetail" class="log"></div><textarea id="agentPrompt" placeholder="给选中的 Agent 输入任务，或点麦克风说话"></textarea><div class="row" style="margin-top:8px"><button id="voiceAgent" aria-label="语音输入" title="语音输入">🎙</button><button class="primary" id="sendAgent">请求电脑执行</button></div><div class="log" id="agentAnswer"></div></div>
-<div class="card"><div class="row"><h2 style="margin-right:auto">今天吃什么</h2><button class="primary" id="eatGo">🍽 帮我定</button></div><p class="muted">结合电脑上读到的最近订单、附近店铺和你的口味，AI 给三个选择。</p><div class="log" id="eatAnswer"></div><div class="row" style="margin-top:8px"><input id="eatDish" placeholder="吃完记一条：菜名 @店名" style="flex:1;min-width:160px"><button id="eatRecord">记下</button></div></div>
-<div class="card"><h2>问当前 AI <small>使用电脑端当前配置</small></h2><textarea id="prompt" placeholder="输入要交给 AI 的任务"></textarea><div class="row" style="margin-top:8px"><button class="primary" id="ask">发送给 AI</button><button id="copyPrompt">复制到电脑剪贴板</button></div><div class="log" id="answer"></div></div>
-<div class="card"><h2>发送给其他 AI</h2><textarea id="payload" placeholder="输入要发送的文字，先复制到电脑剪贴板"></textarea><div class="row" style="margin-top:8px"><button id="copyPayload">复制到电脑</button><button data-url="https://chat.deepseek.com/">打开 DeepSeek</button><button data-url="https://claude.ai/">打开 Claude</button><button data-url="https://chatgpt.com/">打开 ChatGPT</button></div></div>
-<div class="card"><h2>电脑动作</h2><div class="row"><input id="openUrl" placeholder="输入网址，在电脑上打开" style="flex:1;min-width:180px"><button id="goUrl">打开</button></div><div class="row" style="margin-top:8px"><button id="readClipboard">读取电脑剪贴板</button><button class="danger" id="stop">停止手机控制</button></div><div class="log" id="clipboard"></div></div>
-<div class="card"><div class="row"><h2 style="margin-right:auto">手机分享收件箱</h2><button id="refreshInbox">刷新</button></div><div class="log" id="inbox">正在加载…</div><p class="muted">Android 安装到主屏幕后，可从浏览器、视频、公众号等应用直接分享文字或链接到这里。</p></div>
-<p class="muted">设备：${safeName} · 可通过局域网或已连接的 VPN 访问。手机控制不会自动执行任意命令；需要登录、付款、验证码或系统权限时请在电脑端确认。</p>
-<script>
-const token=${JSON.stringify(token)};const tools=${JSON.stringify(tools)};
-const $=id=>document.getElementById(id); const log=(el,text)=>{$(el).textContent=String(text||'')};
-// 手机上 alert 会打断操作还得多点一次，改成页面顶部飘一条
-const tip=document.createElement('div');tip.style='position:fixed;left:50%;top:14px;transform:translateX(-50%);z-index:99;padding:9px 15px;border-radius:12px;background:#12382a;border:1px solid #2e765c;color:#d8fff1;font-size:13px;box-shadow:0 8px 24px #0006;opacity:0;transition:opacity .18s;pointer-events:none;max-width:88vw;text-align:center';document.body.append(tip);
-let tipTimer=null;
-function say(text,bad){tip.textContent=text;tip.style.background=bad?'#4b282b':'#12382a';tip.style.borderColor=bad?'#8c4a51':'#2e765c';tip.style.opacity='1';clearTimeout(tipTimer);tipTimer=setTimeout(()=>{tip.style.opacity='0'},1900);}
-async function command(type,payload={}){const response=await fetch('/api/command?token='+encodeURIComponent(token),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({type,payload})});const data=await response.json();if(!response.ok||!data.ok)throw new Error(data.error||'请求失败');return data;}
-async function loadInbox(){try{const response=await fetch('/api/inbox?token='+encodeURIComponent(token));const data=await response.json();if(!response.ok||!data.ok)throw new Error(data.error||'读取失败');const items=data.items||[];const box=$('inbox');box.textContent='';if(!items.length){box.textContent='还没有分享内容。';return;}for(const item of items){const row=document.createElement('div');row.style='padding:9px 0;border-bottom:1px solid #29333a';const title=document.createElement('strong');title.textContent=item.title||item.url||'手机分享';const body=document.createElement('div');body.className='muted';body.textContent=[item.text,item.url].filter(Boolean).join('\\n');const copy=document.createElement('button');copy.textContent='复制到电脑';copy.onclick=()=>command('clipboard.write',{text:[item.title,item.text,item.url].filter(Boolean).join('\\n')}).then(()=>say('已复制到电脑剪贴板')).catch(e=>say(e.message,1));row.append(title,body,copy);box.append(row)}}catch(error){log('inbox','读取失败：'+error.message)}}
-for(const [id,label] of tools){const b=document.createElement('button');b.textContent=label;b.onclick=()=>command('tool.open',{id}).then(()=>say('电脑已切到「'+label.replace(/^\S+\s*/,'')+'」')).catch(e=>say(e.message,1));$('tools').append(b)}
-let selectedAgent=null;
-async function loadOffice(){const box=$('office');box.textContent='正在扫描…';try{const r=await command('agent.office');box.textContent='';for(const agent of r.agents||[]){if(!agent.installed&&!agent.available)continue;const b=document.createElement('button');b.textContent=agent.label+'\n'+(agent.session?(agent.session.title||'最近会话'):(agent.installed?'已安装':'有历史记录'));b.style.whiteSpace='pre-line';b.onclick=async()=>{selectedAgent=agent;b.parentElement.querySelectorAll('button').forEach(x=>x.style.borderColor='');b.style.borderColor='#31eeb0';if(!agent.session){log('agentDetail',agent.label+' 已安装，尚未发现本地会话。');return;}log('agentDetail','正在读取 '+agent.label+' 最近会话…');try{const detail=await command('agent.session',{source:agent.source,id:agent.session.id});const s=detail.session;const messages=(s.messages||[]).slice(-4).map(m=>(m.role==='user'?'你':agent.label)+'：'+String(m.content||'').slice(0,180)).join('\n\n');log('agentDetail',(s.title||'未命名会话')+'\n'+(s.cwd||'')+'\n\n'+messages)}catch(e){log('agentDetail','读取失败：'+e.message)}};box.append(b)}if(!box.children.length)box.textContent='电脑上暂未发现支持的 Agent。'}catch(e){box.textContent='扫描失败：'+e.message}}
-$('refreshOffice').onclick=loadOffice;
-$('sendAgent').onclick=async()=>{const text=$('agentPrompt').value.trim();if(!selectedAgent)return say('先选择一个 Agent',1);if(!selectedAgent.installed)return say(selectedAgent.label+' 未安装，不能派发命令',1);if(!text)return;if(!confirm('任务会发送到电脑，并需要电脑端确认。继续吗？'))return;log('agentAnswer','等待电脑端确认…');$('sendAgent').disabled=true;try{const r=await command('agent.run',{source:selectedAgent.source,prompt:text});log('agentAnswer',r.text||'任务已完成')}catch(e){log('agentAnswer','失败：'+e.message)}finally{$('sendAgent').disabled=false}};
-window.agentVoiceResult=text=>{$('agentPrompt').value=String(text||'');say('已转成文字，请确认后发送')};const SpeechRecognition=window.SpeechRecognition||window.webkitSpeechRecognition;if(window.AgentToolboxVoice){$('voiceAgent').onclick=()=>{say('正在听…');window.AgentToolboxVoice.start()}}else if(!SpeechRecognition){$('voiceAgent').disabled=true;$('voiceAgent').title='当前手机浏览器不支持语音识别'}else{$('voiceAgent').onclick=()=>{const recognition=new SpeechRecognition();recognition.lang='zh-CN';recognition.interimResults=false;recognition.onstart=()=>say('正在听…');recognition.onresult=e=>window.agentVoiceResult(e.results[0][0].transcript);recognition.onerror=e=>say('语音识别失败：'+e.error,1);recognition.start()}}
-$('eatGo').onclick=()=>{$('eatAnswer').textContent='AI 在想…';command('eat.recommend',{}).then(r=>{$('eatAnswer').textContent=r.result&&r.result.text||JSON.stringify(r)}).catch(e=>{$('eatAnswer').textContent='失败：'+e.message})};
-$('eatRecord').onclick=()=>{const raw=$('eatDish').value.trim();if(!raw)return say('先写菜名',1);const [dish,shop='']=raw.split('@').map(x=>x.trim());command('eat.record',{dish,shop}).then(()=>{$('eatDish').value='';say('记下了：'+dish)}).catch(e=>say(e.message,1))};
-$('ask').onclick=async()=>{const text=$('prompt').value.trim();if(!text)return;log('answer','正在请求…');try{const r=await command('ai.ask',{prompt:text});log('answer',r.text)}catch(e){log('answer','失败：'+e.message)}};
-$('copyPrompt').onclick=()=>{const text=$('prompt').value.trim();if(text)command('clipboard.write',{text}).then(()=>say('已复制到电脑剪贴板')).catch(e=>say(e.message,1))};
-$('copyPayload').onclick=()=>{const text=$('payload').value.trim();if(text)command('clipboard.write',{text}).then(()=>say('已复制到电脑剪贴板')).catch(e=>say(e.message,1))};
-for(const b of document.querySelectorAll('[data-url]'))b.onclick=()=>command('url.open',{url:b.dataset.url}).then(()=>say('已在电脑上打开')).catch(e=>say(e.message,1));
-$('goUrl').onclick=()=>{let u=$('openUrl').value.trim();if(!u)return;if(!/^https?:\/\//i.test(u))u='https://'+u;command('url.open',{url:u}).then(()=>say('已在电脑上打开')).catch(e=>say(e.message,1))};
-$('openUrl').addEventListener('keydown',e=>{if(e.key==='Enter')$('goUrl').click()});
-$('readClipboard').onclick=async()=>{try{const r=await command('clipboard.read');log('clipboard',r.text||'（剪贴板为空）')}catch(e){log('clipboard','失败：'+e.message)}};
-$('refreshInbox').onclick=loadInbox;
-$('stop').onclick=async()=>{if(confirm('停止后手机将不能再控制工具箱，确定吗？')){await command('remote.stop');location.reload()}};
-loadOffice();loadInbox();setInterval(loadInbox,15000);navigator.serviceWorker?.register('/sw.js?token='+encodeURIComponent(token)).catch(()=>{});
-</script></body></html>`;
-}
+const { pageHtml } = require('./remote-page');
 
 class RemoteControl {
-  constructor({ deviceName = 'Agent 工具箱', onCommand, onInbox, preferredPort = 43127, inbox = [], apkPath = '', apkName = 'Agent-Toolbox-Remote.apk' }) {
+  constructor({ deviceName = 'Agent 工具箱', onCommand, onInbox, preferredPort = 43127, inbox = [], apkPath = '', apkName = 'Agent-Toolbox-Remote.apk', assetsDir = '' }) {
     this.deviceName = deviceName;
     // 工具表由渲染层推过来（setTools）。写死的话每加一个工具手机端就少一个，
     // 之前手机上只能切到 8 个，而工具箱已经有 19 个了。
-    this.tools = [['ask', '⚡ 快问'], ['docs', '📖 文档'], ['research', '🔬 科研'], ['settings', '⚙ 设置']];
+    this.tools = [{ id: 'ask', label: '快问', color: '#f0b93d' }, { id: 'docs', label: '文档', color: '#4fb3d9' }, { id: 'research', label: '科研', color: '#3fbf87' }, { id: 'settings', label: '设置', color: '#98a2b3' }];
+    this.assetsDir = assetsDir;
     this.onCommand = onCommand;
     this.onInbox = onInbox;
     this.preferredPort = preferredPort;
@@ -121,7 +73,7 @@ class RemoteControl {
     if (!Array.isArray(list) || !list.length) return;
     this.tools = list
       .filter((t) => t && t.id && t.title)
-      .map((t) => [String(t.id), `${t.emoji || '•'} ${t.title}`])
+      .map((t) => ({ id: String(t.id), label: String(t.title), color: /^#[0-9a-f]{6}$/i.test(t.color || '') ? t.color : '#9aa4b5' }))
       .slice(0, 24);
   }
 
@@ -187,6 +139,16 @@ class RemoteControl {
       if (!constantTimeEqual(url.searchParams.get('token'), this.token)) return this._json(response, 401, { ok: false, error: '配对地址无效，请在电脑端重新开启。' });
       response.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' });
       response.end(pageHtml(this.token, this.deviceName, this.tools));
+      return;
+    }
+    // 办公室头像。只放行 assets/office 下的 sprite-*.png，路径不参与拼接，拿不到别的文件。
+    if (request.method === 'GET' && url.pathname.startsWith('/assets/office/')) {
+      if (!constantTimeEqual(url.searchParams.get('token'), this.token)) return this._json(response, 401, { ok: false, error: '配对地址无效。' });
+      const name = url.pathname.slice('/assets/office/'.length);
+      const file = this.assetsDir && /^sprite-[a-z]+\.png$/.test(name) ? path.join(this.assetsDir, 'office', name) : '';
+      if (!file || !fs.existsSync(file)) return this._json(response, 404, { ok: false, error: 'Not found' });
+      response.writeHead(200, { 'Content-Type': 'image/png', 'Cache-Control': 'max-age=86400' });
+      fs.createReadStream(file).pipe(response);
       return;
     }
     if (request.method === 'GET' && url.pathname === '/manifest.webmanifest') {
