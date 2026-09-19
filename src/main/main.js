@@ -1762,6 +1762,7 @@ function registerIpc() {
   ipcMain.handle('switcher:pick', (_e, n) => gestureDesk?.pick(n));
   ipcMain.handle('switcher:hide', () => { gestureDesk?.hideSwitcher(); return { ok: true }; });
   ipcMain.handle('switcher:show', () => gestureDesk?.showSwitcher());
+  ipcMain.handle('gesture:listApps', () => gestureDesk?.listApps() || []);
   ipcMain.handle('gesture:control', async (_e, action, side) => {
     const gesture = action === 'fullscreen' ? 'fullscreen' : action === 'snap' ? (side === 'right' ? 'snap-right' : 'snap-left') : null;
     if (!gesture || !windowDock) return { ok: false, error: '不支持的窗口动作' };

@@ -3974,6 +3974,17 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
   text-align: center; color: #efeaff;
 }
 .gesture__hud-title { font-size: 13px; letter-spacing: 3px; color: #c9a7ff; margin-bottom: 14px; }
+.gesture__apps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 16px; }
+.gesture__app {
+  display: flex; align-items: center; gap: 8px; padding: 8px 10px;
+  border: 1px solid rgba(201,167,255,.25); border-radius: 12px;
+  background: rgba(30,24,52,.75); color: #efeaff; font: inherit; font-size: 12.5px; cursor: pointer; text-align: left;
+}
+.gesture__app:hover { border-color: #c9a7ff; background: rgba(48,38,84,.9); }
+.gesture__app-n { flex: none; width: 24px; height: 24px; border-radius: 8px; display: grid; place-items: center; font: 800 14px ui-monospace, monospace; color: #1a0f33; background: linear-gradient(135deg, #c9a7ff, #9d7bff); }
+.gesture__app-icon { width: 22px; height: 22px; border-radius: 6px; flex: none; background: rgba(255,255,255,.08); }
+.gesture__app-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gesture__hud { width: min(640px, 92%); }
 .gesture__hud-steps { display: grid; gap: 10px; margin-bottom: 14px; font-size: 14px; }
 .gesture__hud-steps span { display: flex; align-items: center; justify-content: center; gap: 12px; }
 .gesture__hud-steps b { display: inline-block; min-width: 92px; padding: 6px 10px; border-radius: 999px; background: linear-gradient(135deg, #c9a7ff, #9d7bff); color: #1a0f33; font-size: 13px; }

@@ -27,9 +27,12 @@ test('listApps：去掉工具箱自己、去重、最多 9 个；activate 按包
   assert.deepEqual(calls.at(-1), ['/usr/bin/open', '-a', '/Applications/B.app']);
 });
 
-test('handleEvent：切换栏没开时比数字不动作；开了才选', async () => {
-  const desk = new GestureDesk({ platform: 'linux', app: null, execFile: async () => ({ stdout: '' }) });
-  assert.equal((await desk.handleEvent({ type: 'number', value: 3 })).ignored, true);
+test('handleEvent：切换栏没开时比数字直接切；开了先高亮再选', async () => {
+  const calls = [];
+  const desk = new GestureDesk({ platform: 'darwin', app: null, execFile: async (file, args) => { calls.push([file, ...args]); return { stdout: ' 1) "A" ASN:0x0-0x1:\n    bundle path="/Applications/A.app"\n    pid = 1 type="Foreground"' }; } });
+  const direct = await desk.handleEvent({ type: 'number', value: 1 });
+  assert.equal(direct.ok, true, '没开切换栏也能凭编号切');
+  assert.deepEqual(calls.at(-1), ['/usr/bin/open', '-a', '/Applications/A.app']);
   desk.apps = [{ name: 'X' }, { name: 'Y' }];
   desk.switcherOpen = true;
   desk.highlight = () => {};

@@ -365,6 +365,8 @@ contextBridge.exposeInMainWorld('toolbox', {
     isOpen: () => ipcRenderer.invoke('gesture:isOpen'),
     onWindowClosed: (callback) => ipcRenderer.on('gesture:window-closed', () => callback()),
     showSwitcher: () => ipcRenderer.invoke('switcher:show'),
+    /** 现在开着的应用（带编号顺序和图标），银河页上列出来 */
+    listApps: () => ipcRenderer.invoke('gesture:listApps'),
     playMusic: (url) => ipcRenderer.invoke('music:play', url),
   },
   update: {

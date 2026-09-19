@@ -196,9 +196,11 @@ class GestureDesk {
       case 'snap': return this.toggleSwitcher();
       case 'fist': return this.hideSwitcher();
       case 'number': {
-        if (!this.switcherOpen) return { ok: false, ignored: true };
+        // 切换栏没开也切：银河页上就列着编号，比了就该过去，不用先打响指
         const n = Number(event.value);
+        if (!this.switcherOpen && !this.apps.length) await this.listApps();
         if (!this.apps[n - 1]) return { ok: false, error: `没有第 ${n} 个应用` };
+        if (!this.switcherOpen) return this.activate(this.apps[n - 1]);
         // 先亮一下再切，人眼能看到选中了哪个
         this.highlight(n);
         clearTimeout(this.pickTimer);

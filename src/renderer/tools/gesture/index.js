@@ -35,11 +35,27 @@ export default {
 
     // ---------- 银河 ----------
     const galaxyCanvas = h('canvas', { class: 'gesture__galaxy-canvas' });
+    // 银河页上直接列出现在开着的应用和编号 —— 不然比数字前根本不知道几号是谁
+    const appsRow = h('div', { class: 'gesture__apps' });
+    let appsTimer = 0;
+    async function refreshApps() {
+      let apps = [];
+      try { apps = await window.toolbox.gesture.listApps(); } catch { apps = []; }
+      appsRow.replaceChildren(...(apps.length ? apps.map((a, i) => h('button', {
+        class: 'gesture__app', title: `比 ${i + 1} 或点这里切到 ${a.name}`,
+        onclick: () => window.toolbox.switcher?.pick?.(i + 1) ?? window.toolbox.gesture.showSwitcher(),
+      },
+        h('span', { class: 'gesture__app-n' }, String(i + 1)),
+        a.icon ? h('img', { class: 'gesture__app-icon', src: a.icon, alt: '' }) : h('span', { class: 'gesture__app-icon' }),
+        h('span', { class: 'gesture__app-name' }, a.name),
+      )) : [h('span', { class: 'faint' }, '没扫到开着的应用')]));
+    }
     const hud = h('div', { class: 'gesture__hud' },
-      h('div', { class: 'gesture__hud-title' }, '手势模式'),
+      h('div', { class: 'gesture__hud-title' }, '手势模式 · 比数字切到这些应用'),
+      appsRow,
       h('div', { class: 'gesture__hud-steps' },
-        h('span', {}, h('b', {}, '打响指'), '唤出切换栏'),
-        h('span', {}, h('b', {}, '比 1 – 9'), '切到那个应用'),
+        h('span', {}, h('b', {}, '比 1 – 9'), '直接切到对应编号的应用'),
+        h('span', {}, h('b', {}, '打响指'), '在任何应用上方唤出这张表'),
         h('span', {}, h('b', {}, '握拳'), '收起'),
       ),
       h('div', { class: 'gesture__hud-note faint' }, '识别窗在屏幕右下角，切到别的应用也一直在。'),
@@ -62,6 +78,9 @@ export default {
       galaxy.hidden = false;
       body.classList.add('is-away');
       requestAnimationFrame(() => { galaxy.classList.add('is-in'); sky.start(); });
+      refreshApps();
+      clearInterval(appsTimer);
+      appsTimer = setInterval(refreshApps, 5000);
     }
     function stop() {
       if (!enabled) return;
@@ -74,6 +93,7 @@ export default {
       setStatus('未启动');
       galaxy.classList.remove('is-in');
       body.classList.remove('is-away');
+      clearInterval(appsTimer);
       setTimeout(() => { if (!enabled) { galaxy.hidden = true; sky.stop(); } }, 700);
     }
     // 小窗那边点了 ×，这边也退出银河
