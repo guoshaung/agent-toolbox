@@ -1,4 +1,5 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
@@ -32,5 +33,16 @@
                 <data android:mimeType="application/pdf" />
             </intent-filter>
         </activity>
+        <!-- 扫码页。zxing 的 AAR 本该把它合并进来，但发出去的那版 APK 里没有这一条，
+             点「扫描连接二维码」直接 ActivityNotFoundException 闪退回桌面。这里显式声明，
+             不再指望合并。 -->
+        <activity
+            android:name="com.journeyapps.barcodescanner.CaptureActivity"
+            android:exported="false"
+            android:screenOrientation="fullSensor"
+            android:stateNotNeeded="true"
+            android:theme="@style/zxing_CaptureTheme"
+            android:windowSoftInputMode="stateAlwaysHidden"
+            tools:replace="android:screenOrientation" />
     </application>
 </manifest>

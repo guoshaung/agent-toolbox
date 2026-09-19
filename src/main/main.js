@@ -2807,9 +2807,9 @@ app.whenReady().then(async () => {
   remoteControl = new RemoteControl({
     deviceName: 'Agent 工具箱',
     onCommand: handleRemoteCommand,
-    apkPath: path.join(__dirname, '..', '..', 'assets', 'mobile', 'Agent-Toolbox-Remote-0.2.0-debug.apk'),
+    apkPath: path.join(__dirname, '..', '..', 'assets', 'mobile', 'Agent-Toolbox-Remote-0.2.1-debug.apk'),
     assetsDir: path.join(__dirname, '..', '..', 'assets'),
-    apkName: 'Agent-Toolbox-Remote-0.2.0-debug.apk',
+    apkName: 'Agent-Toolbox-Remote-0.2.1-debug.apk',
     inbox: store.get('remote.inbox', []),
     onInbox: (item) => {
       const inbox = [item, ...(store.get('remote.inbox', []) || [])].slice(0, 100);
