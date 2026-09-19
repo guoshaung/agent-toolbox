@@ -863,6 +863,55 @@ html[data-effect='aurora'] body::after {
   to { transform: translate3d(3%, 2%, 0) rotate(9deg) scale(1.1); }
 }
 
+/* 炫彩紫流光：三条大色带绕着转 + 整体慢慢变色，再叠一层细光斑；卡片沿用磨砂玻璃 */
+/* 底色放 html 上、body 透明：body 自己的背景会盖住负 z-index 的 ::before 光带（root 层叠顺序里
+   负层先画、块背景后画）—— 极光效果就是这么被盖没的，这里不重蹈 */
+html[data-effect='prism'] { background: #0f0a1e; }
+html[data-effect='prism'] body { background: transparent; }
+html[data-effect='prism'] body::before,
+html[data-effect='prism'] body::after {
+  content: '';
+  position: fixed;
+  z-index: -2;
+  pointer-events: none;
+  will-change: transform, filter;
+}
+html[data-effect='prism'] body::before {
+  inset: -40%;
+  background:
+    conic-gradient(from 0deg at 50% 50%,
+      rgba(157,123,255,.55) 0deg, rgba(255,77,196,.42) 90deg, rgba(64,140,255,.5) 180deg,
+      rgba(201,167,255,.5) 270deg, rgba(157,123,255,.55) 360deg);
+  filter: blur(90px) saturate(1.3);
+  animation: prism-spin 38s linear infinite, prism-hue 24s ease-in-out infinite alternate;
+}
+html[data-effect='prism'] body::after {
+  inset: -20%;
+  background:
+    radial-gradient(30% 28% at 22% 30%, rgba(255,255,255,.16) 0%, transparent 70%),
+    radial-gradient(26% 24% at 76% 68%, rgba(255,140,240,.22) 0%, transparent 70%),
+    radial-gradient(34% 30% at 60% 20%, rgba(120,180,255,.2) 0%, transparent 70%);
+  filter: blur(50px);
+  mix-blend-mode: screen;
+  animation: aurora-drift 20s ease-in-out infinite alternate-reverse;
+}
+html[data-effect='prism'] .card,
+html[data-effect='prism'] .bar,
+html[data-effect='prism'] .subbar,
+html[data-effect='prism'] .rail-library__card,
+html[data-effect='prism'] .switcher {
+  background-color: color-mix(in srgb, var(--panel) 62%, transparent);
+  backdrop-filter: blur(22px) saturate(1.2);
+  -webkit-backdrop-filter: blur(22px) saturate(1.2);
+  border-color: color-mix(in srgb, #c9a7ff 22%, var(--line));
+}
+html[data-effect='prism'] .rail { background-color: color-mix(in srgb, var(--bg-sunken) 70%, transparent); backdrop-filter: blur(18px); }
+@keyframes prism-spin { to { transform: rotate(360deg); } }
+@keyframes prism-hue { from { filter: blur(90px) saturate(1.3) hue-rotate(0deg); } to { filter: blur(90px) saturate(1.3) hue-rotate(-40deg); } }
+@media (prefers-reduced-motion: reduce) {
+  html[data-effect='prism'] body::before, html[data-effect='prism'] body::after { animation: none; }
+}
+
 /* 霓虹：强调色发光边框、辉光文字与按钮光晕 */
 html[data-effect='neon'] .card {
   border-color: color-mix(in srgb, var(--accent) 38%, var(--line));

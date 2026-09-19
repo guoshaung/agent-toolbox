@@ -61,6 +61,7 @@ export const EFFECTS = [
   { id: 'glass', name: '磨砂玻璃', desc: '半透明组件 + 背景模糊，通透的玻璃质感（默认）' },
   { id: 'aurora', name: '极光流动', desc: '磨砂玻璃之上叠加缓慢流动的极光背景' },
   { id: 'neon', name: '霓虹辉光', desc: '强调色发光边框与文字辉光，赛博风格' },
+  { id: 'prism', name: '炫彩紫流光', desc: '紫 / 洋红 / 电蓝三色光带在背景里缓慢流转、变色，磨砂卡片浮在上面' },
 ];
 
 export function effectById(id) { return EFFECTS.find((effect) => effect.id === id) || EFFECTS[1]; }

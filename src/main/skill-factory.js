@@ -110,17 +110,40 @@ function readSkill(filePath) {
   return fs.readFileSync(filePath, 'utf8');
 }
 
-function writeSkill({ directory, name, description, content, overwrite = false }) {
+/** 随 Skill 一起落盘的附属文件路径：只许相对路径、不许往上爬、不许太深 */
+function safeExtraPath(rel) {
+  const clean = String(rel || '').replace(/\\/g, '/');
+  if (!clean || clean.startsWith('/') || clean.includes('..') || /^[a-zA-Z]:/.test(clean)) throw new Error(`附属文件路径不合法：${rel}`);
+  const parts = clean.split('/').filter(Boolean);
+  if (parts.length > 3 || parts.some((p) => !/^[\w.-]+$/.test(p))) throw new Error(`附属文件路径不合法：${rel}`);
+  if (parts.join('/') === SKILL_FILE) throw new Error('附属文件不能叫 SKILL.md');
+  return parts.join('/');
+}
+
+/**
+ * @param {object} o
+ * @param {boolean} [o.raw] 原样写入 content（收藏的第三方 Skill 自带 frontmatter，不重排）
+ * @param {Record<string,string>} [o.files] 附属文件，如 teach 的 MISSION-FORMAT.md、agents/openai.yaml
+ */
+function writeSkill({ directory, name, description, content, overwrite = false, raw = false, files = null }) {
   if (typeof directory !== 'string' || !directory.trim()) throw new Error('请先选择 Skill 输出目录。');
   const safeName = sanitizeSkillName(name);
   const targetDir = path.resolve(directory, safeName);
   const targetPath = path.join(targetDir, SKILL_FILE);
   if (fs.existsSync(targetPath) && !overwrite) return { ok: false, code: 'exists', path: targetPath };
-  const markdown = buildSkillMarkdown({ name: safeName, description, body: content });
+  const markdown = raw ? String(content || '') : buildSkillMarkdown({ name: safeName, description, body: content });
+  if (raw && !/^---\r?\n[\s\S]*?\r?\n---/.test(markdown)) throw new Error('原样写入的 Skill 必须自带 frontmatter。');
   if (Buffer.byteLength(markdown, 'utf8') > MAX_SKILL_BYTES) throw new Error('Skill 内容超过 512KB。');
+  const extras = Object.entries(files && typeof files === 'object' ? files : {}).map(([rel, body]) => [safeExtraPath(rel), String(body ?? '')]);
+  for (const [rel, body] of extras) if (Buffer.byteLength(body, 'utf8') > MAX_SKILL_BYTES) throw new Error(`附属文件超过 512KB：${rel}`);
   fs.mkdirSync(targetDir, { recursive: true });
   fs.writeFileSync(targetPath, markdown, 'utf8');
-  return { ok: true, path: targetPath, name: safeName, bytes: Buffer.byteLength(markdown, 'utf8') };
+  for (const [rel, body] of extras) {
+    const abs = path.join(targetDir, rel);
+    fs.mkdirSync(path.dirname(abs), { recursive: true });
+    fs.writeFileSync(abs, body, 'utf8');
+  }
+  return { ok: true, path: targetPath, name: safeName, bytes: Buffer.byteLength(markdown, 'utf8'), extras: extras.map(([rel]) => rel) };
 }
 
 module.exports = {

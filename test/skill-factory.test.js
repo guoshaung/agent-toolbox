@@ -51,3 +51,15 @@ test('写入 Skill 时保护已有文件，并可扫描读取', () => {
     fs.rmSync(tempDir, { recursive: true, force: true });
   }
 });
+
+test('writeSkill：raw 原样写入，附属文件一起落盘，路径不许往上爬', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'skill-fav-'));
+  const md = '---\nname: teach\ndescription: x\n---\n\nbody';
+  const r = writeSkill({ directory: dir, name: 'teach', description: 'x', content: md, raw: true, files: { 'MISSION-FORMAT.md': '# m', 'agents/openai.yaml': 'a: 1' } });
+  assert.equal(r.ok, true);
+  assert.equal(fs.readFileSync(path.join(dir, 'teach', 'SKILL.md'), 'utf8'), md);
+  assert.equal(fs.readFileSync(path.join(dir, 'teach', 'agents', 'openai.yaml'), 'utf8'), 'a: 1');
+  assert.deepEqual(r.extras.sort(), ['MISSION-FORMAT.md', 'agents/openai.yaml']);
+  assert.throws(() => writeSkill({ directory: dir, name: 'evil', description: 'x', content: md, raw: true, overwrite: true, files: { '../escape.md': 'x' } }), /不合法/);
+  assert.throws(() => writeSkill({ directory: dir, name: 'noraw', description: 'x', content: 'no frontmatter', raw: true }), /frontmatter/);
+});

@@ -1,4 +1,5 @@
 import { h, toast } from '../../core/ui.js';
+import { FAVORITES } from './favorites.js';
 
 const AI_SYSTEM = `你是一个严谨的 Agent Skill 架构师。把用户提供的经验整理成可复用、可执行的 SKILL.md。
 输出只允许是 Markdown 文件内容，不要解释，不要包裹代码围栏。
@@ -77,6 +78,7 @@ export default {
     const tabBar = h('div', { class: 'research__subbar skills__tabs' });
     const body = h('div', { class: 'research__subbody' });
     const tabs = [
+      { id: 'favorites', label: '我喜欢的' },
       { id: 'distill', label: '蒸馏 Skill' },
       { id: 'create', label: '创建 Skill' },
       { id: 'library', label: '技能库' },
@@ -394,7 +396,62 @@ export default {
       return panel;
     }
 
-    const factories = { distill: makeDistill, create: makeCreate, library: makeLibrary, mcp: makeMcp };
+    /**
+     * 我喜欢的：从网上收来的几个 Skill，内容原样打包在 favorites.js 里。
+     * 一键装到任意 Skill 目录；teach 这种带附属文件的整个目录一起落盘。
+     */
+    function makeFavorites() {
+      const picker = targetPicker(targetsPromise, targetRegistry);
+      const cards = FAVORITES.map((fav) => {
+        const status = h('span', { class: 'faint skills__fav-status' });
+        const install = h('button', { class: 'btn btn--sm btn--primary', onclick: async () => {
+          const directory = picker.getDirectory();
+          if (!directory) return toast('先选择 Skill 输出目录', 'info');
+          install.disabled = true;
+          try {
+            const { 'SKILL.md': content, ...files } = fav.files;
+            let result = await tool.write({ directory, name: fav.name, description: fav.blurb, content, raw: true, files });
+            if (result.code === 'exists') {
+              if (!window.confirm(`「${fav.name}」已经存在，覆盖它吗？`)) return;
+              result = await tool.write({ directory, name: fav.name, description: fav.blurb, content, raw: true, files, overwrite: true });
+            }
+            if (!result.ok) return toast(result.error || '安装失败', 'bad');
+            status.textContent = `已装到 ${result.path}${result.extras?.length ? `（+${result.extras.length} 个附属文件）` : ''}`;
+            toast(`已安装 ${fav.name}`, 'good');
+            refreshLibrary();
+          } finally { install.disabled = false; }
+        } }, '装到目录');
+        const copy = h('button', { class: 'btn btn--sm btn--ghost', onclick: async () => {
+          await navigator.clipboard.writeText(fav.files['SKILL.md']);
+          toast('SKILL.md 已复制', 'good', 1500);
+        } }, '复制 SKILL.md');
+        const view = h('details', { class: 'skills__fav-view' },
+          h('summary', {}, `看正文${Object.keys(fav.files).length > 1 ? `（含 ${Object.keys(fav.files).length - 1} 个附属文件）` : ''}`),
+          h('pre', { class: 'skills__fav-pre' }, fav.files['SKILL.md']));
+        return h('article', { class: 'card skills__fav' },
+          h('div', { class: 'skills__fav-head' },
+            h('div', {},
+              h('h3', { class: 'skills__fav-title' }, fav.title),
+              h('div', { class: 'skills__fav-meta faint' },
+                fav.author ? h('span', {}, fav.author) : null,
+                fav.license ? h('span', { class: 'skills__fav-lic' }, fav.license) : null,
+                fav.source ? h('a', { href: fav.source, class: 'skills__fav-src', onclick: (e) => { e.preventDefault(); window.toolbox.shell?.openExternal?.(fav.source); } }, '来源 ↗') : null,
+              )),
+            h('code', { class: 'skills__fav-usage' }, fav.usage),
+          ),
+          h('p', { class: 'skills__fav-blurb' }, fav.blurb),
+          view,
+          h('div', { class: 'skills__fav-actions' }, install, copy, status),
+        );
+      });
+      return h('div', { class: 'skills__panel skills__favorites' },
+        sectionHead('FAVORITES', '我喜欢的 Skill', '看视频、刷帖子收来的好东西。选好目录，一键装进去。'),
+        picker.root,
+        h('div', { class: 'skills__fav-grid' }, ...cards),
+      );
+    }
+
+    const factories = { favorites: makeFavorites, distill: makeDistill, create: makeCreate, library: makeLibrary, mcp: makeMcp };
     function select(id) {
       current = id;
       config.set('skills.view', id);
