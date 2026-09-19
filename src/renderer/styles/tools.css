@@ -3070,6 +3070,14 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .avatar-rig__hero p { max-width: 610px; margin: 0; line-height: 1.7; }
 .avatar-rig__preview { display: grid; place-items: center; width: 190px; height: 150px; overflow: hidden; border: 1px dashed var(--line); border-radius: 12px; color: var(--text-faint); background: rgba(0,0,0,.14); text-align: center; font-size: 12px; }
 .avatar-rig__preview img { width: 100%; height: 100%; object-fit: contain; }
+.avatar-rig__views { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); max-width: 920px; gap: 14px; margin-top: 18px; }
+.avatar-rig__views[hidden] { display: none; }
+.avatar-rig__view { display: flex; flex-direction: column; gap: 10px; padding: 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); min-width: 0; }
+.avatar-rig__view .avatar-rig__preview { width: 100%; height: 220px; }
+.avatar-rig__preview img { min-height: 0; max-height: 100%; display: block; }
+.avatar-rig__filename { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
+.avatar-rig__card[hidden] { display: none; }
+@media (max-width: 700px) { .avatar-rig__views { grid-template-columns: 1fr; } }
 .avatar-rig__toolbar, .avatar-rig__actions { display: flex; align-items: center; gap: 10px; max-width: 920px; margin-top: 14px; }
 .avatar-rig__source { font-size: 12px; }
 .avatar-rig__card { max-width: 920px; margin-top: 14px; padding: 18px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); }

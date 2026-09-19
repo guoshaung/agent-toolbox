@@ -6,6 +6,12 @@ import {VRMLoaderPlugin} from '@pixiv/three-vrm';
 const job = new URLSearchParams(location.search).get('job') || 'miku-reconstructed';
 if (!/^[a-zA-Z0-9_-]+$/.test(job)) throw Error('Invalid job');
 const base = `/jobs/${job}/`;
+let engineName='真实重建';
+fetch(base+'project.json').then(r=>r.ok?r.json():{}).then(p=>{
+  if(p.name){document.querySelector('#character-name').textContent='模型验收 / '+p.name;document.title='Avatar Studio · '+p.name;}
+  if(p.source || p.engine){engineName=p.source || p.engine;document.querySelector('#engine').textContent=engineName+' · VRM 1.0';}
+  if((p.source||'').includes('Hunyuan'))document.querySelector('.note').textContent='豆包三视图联合重建草稿。视图差异、贴图接缝和未提供的另一侧细节仍需修正；骨骼为初步绑定，无表情或头发物理。';
+}).catch(()=>{});
 document.querySelector('#reference').src = base+'source.png';
 document.querySelector('#download').href = base+'avatar.vrm';
 document.querySelector('#download-glb').href = base+'avatar.glb';
@@ -40,7 +46,7 @@ async function load(file){
   const bounds=new THREE.Box3().setFromObject(root);window.loadedAvatar={root,vrm,renderer,camera,scene};
   window.modelQA={ready:true,vrm:!!vrm,vertices,triangles,skins,bones,bounds:{min:bounds.min.toArray(),max:bounds.max.toArray()},errors:[]};
   document.querySelector('#stats').textContent=`${vertices.toLocaleString()} 顶点\n${triangles.toLocaleString()} 三角形\n${bones} 骨骼 · ${skins} 蒙皮网格`;
-  document.querySelector('#state').textContent=vrm?'VRM 已载入':'GLB 已载入';document.querySelector('#detail').textContent=vrm?'VRM 1.0 · 真实网格':'TripoSR 原始输出';
+  document.querySelector('#state').textContent=vrm?'VRM 已载入':'GLB 已载入';document.querySelector('#detail').textContent=vrm?'VRM 1.0 · 真实网格':engineName+' 原始输出';
   view('front');
  }catch(e){window.modelQA.errors.push(e.message);document.querySelector('#state').textContent='加载失败：'+e.message;console.error(e);}
 }
