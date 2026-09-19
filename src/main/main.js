@@ -25,6 +25,7 @@ const { registerDocSearchIpc } = require('./doc-search');
 const { registerShelfIpc, stopAllShelfApps, start: startShelfTool, stop: stopShelfTool, status: shelfStatus, tail: shelfTail, resolveToolCommand } = require('./app-shelf');
 const { registerUpdaterIpc, startAutoCheck, stopAutoCheck } = require('./updater');
 const { createAvatarWindowController } = require('../avatar/window');
+const { GestureDesk } = require('./gesture-desk');
 const { registerCertTrust } = require('./certtrust');
 const translator = require('./translate');
 const ocr = require('./ocr');
@@ -101,6 +102,7 @@ let literatureBatchControl = null;
 let windowDock;
 let quittingForDock = false;
 let remoteControl;
+let gestureDesk = null;
 let dshService;
 let tavernService;
 let argosService;
@@ -1713,6 +1715,29 @@ function registerIpc() {
   });
 
   // 手势识别 → 窗口动作：作用于当前前台窗口（全屏 / 左半 / 右半）
+  // 手势工作台：右下角常驻的手势窗 + 带编号的应用切换栏
+  ipcMain.handle('gesture:openWindow', async () => {
+    // macOS 上要先向系统正式要摄像头权限（TCC）。不要的话 Chromium 也说 granted，
+    // 但轨道一直是 live + muted，一帧画面都不来 —— 之前手势识别「不好用」根子就在这。
+    if (process.platform === 'darwin') {
+      const status = systemPreferences.getMediaAccessStatus('camera');
+      if (status !== 'granted') {
+        const ok = await systemPreferences.askForMediaAccess('camera');
+        if (!ok) {
+          shell.openExternal('x-apple.systempreferences:com.apple.preference.security?Privacy_Camera');
+          return { ok: false, error: '没拿到摄像头权限：系统设置 → 隐私与安全性 → 摄像头，把「Agent 工具箱」打开。' };
+        }
+      }
+    }
+    gestureDesk?.openGesture();
+    return { ok: Boolean(gestureDesk) };
+  });
+  ipcMain.handle('gesture:closeWindow', () => { gestureDesk?.closeGesture(); return { ok: true }; });
+  ipcMain.handle('gesture:isOpen', () => Boolean(gestureDesk?.gestureOpen()));
+  ipcMain.handle('gestureWin:event', (_e, event) => gestureDesk?.handleEvent(event || {}));
+  ipcMain.handle('switcher:pick', (_e, n) => gestureDesk?.pick(n));
+  ipcMain.handle('switcher:hide', () => { gestureDesk?.hideSwitcher(); return { ok: true }; });
+  ipcMain.handle('switcher:show', () => gestureDesk?.showSwitcher());
   ipcMain.handle('gesture:control', async (_e, action, side) => {
     const gesture = action === 'fullscreen' ? 'fullscreen' : action === 'snap' ? (side === 'right' ? 'snap-right' : 'snap-left') : null;
     if (!gesture || !windowDock) return { ok: false, error: '不支持的窗口动作' };
@@ -2806,12 +2831,14 @@ app.whenReady().then(async () => {
   // 手势识别需要主窗口渲染进程调用摄像头：只放行主窗口自身的 media 请求
   session.defaultSession.setPermissionRequestHandler((webContents, permission, callback, details) => {
     const isMainWindow = mainWindow && !mainWindow.isDestroyed() && webContents === mainWindow.webContents;
-    if (permission === 'media' && isMainWindow) return callback(true);
+    const isGestureWindow = gestureDesk?.gestureOpen() && webContents === gestureDesk.gestureWindow.webContents;
+    if (permission === 'media' && (isMainWindow || isGestureWindow)) return callback(true);
     callback(false);
   });
   session.defaultSession.setPermissionCheckHandler((webContents, permission) => {
     const isMainWindow = mainWindow && !mainWindow.isDestroyed() && webContents === mainWindow.webContents;
-    return permission === 'media' && isMainWindow;
+    const isGestureWindow = gestureDesk?.gestureOpen() && webContents === gestureDesk.gestureWindow.webContents;
+    return permission === 'media' && (isMainWindow || isGestureWindow);
   });
 
   // 启动时清空专注/情报分区的缓存和 cookie，避免站点记住上次的登录重定向状态
@@ -2828,6 +2855,13 @@ app.whenReady().then(async () => {
     screen,
     store,
     getMainWindow: () => mainWindow,
+  });
+
+  gestureDesk = new GestureDesk({
+    BrowserWindow, screen, app, execFile: execFileAsync,
+    preload: path.join(__dirname, 'preload.js'),
+    rootDir: path.join(__dirname, '..'),
+    onGestureClosed: () => { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('gesture:window-closed'); },
   });
 
   remoteControl = new RemoteControl({

@@ -233,6 +233,20 @@ contextBridge.exposeInMainWorld('toolbox', {
     listModels: (baseUrl, scope) => ipcRenderer.invoke('ai:listModels', { baseUrl, scope }),
   },
 
+  /** 手势窗自己用的：把识别到的动作报给主进程 */
+  gestureWin: {
+    event: (event) => ipcRenderer.invoke('gestureWin:event', event),
+    close: () => ipcRenderer.invoke('gesture:closeWindow'),
+    onState: (callback) => ipcRenderer.on('gesture:state', (_event, state) => callback(state)),
+  },
+  /** 应用切换栏自己用的 */
+  switcher: {
+    onApps: (callback) => ipcRenderer.on('switcher:apps', (_event, apps) => callback(apps)),
+    onHighlight: (callback) => ipcRenderer.on('switcher:highlight', (_event, n) => callback(n)),
+    pick: (n) => ipcRenderer.invoke('switcher:pick', n),
+    hide: () => ipcRenderer.invoke('switcher:hide'),
+  },
+
   pet: {
     getState: () => ipcRenderer.invoke('pet:getState'),
     setEnabled: (enabled) => ipcRenderer.invoke('pet:setEnabled', enabled),
@@ -341,6 +355,12 @@ contextBridge.exposeInMainWorld('toolbox', {
 
   gesture: {
     control: (action, side) => ipcRenderer.invoke('gesture:control', action, side),
+    /** 右下角常驻的手势窗（摄像头 + 关键点在那边跑） */
+    openWindow: () => ipcRenderer.invoke('gesture:openWindow'),
+    closeWindow: () => ipcRenderer.invoke('gesture:closeWindow'),
+    isOpen: () => ipcRenderer.invoke('gesture:isOpen'),
+    onWindowClosed: (callback) => ipcRenderer.on('gesture:window-closed', () => callback()),
+    showSwitcher: () => ipcRenderer.invoke('switcher:show'),
     playMusic: (url) => ipcRenderer.invoke('music:play', url),
   },
   update: {

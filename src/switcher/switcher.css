@@ -1,0 +1,32 @@
+:root { color-scheme: dark; font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Segoe UI", sans-serif; }
+html, body { margin: 0; height: 100%; background: transparent; overflow: hidden; }
+.veil {
+  position: absolute; inset: 0;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px;
+  background: radial-gradient(70% 60% at 50% 50%, rgba(20, 15, 40, .78), rgba(8, 6, 16, .6));
+  animation: in .22s ease-out;
+}
+@keyframes in { from { opacity: 0; transform: scale(1.03); } }
+.title { color: #c9a7ff; font-size: 14px; letter-spacing: .5px; }
+.foot { color: #6d6690; font-size: 12px; }
+.row { display: flex; gap: 16px; flex-wrap: wrap; justify-content: center; max-width: 92vw; }
+.app {
+  position: relative; width: 132px; padding: 18px 10px 12px;
+  border-radius: 20px; border: 1px solid rgba(201,167,255,.25);
+  background: rgba(30, 24, 52, .92);
+  display: flex; flex-direction: column; align-items: center; gap: 10px;
+  box-shadow: 0 14px 40px rgba(0,0,0,.45);
+  cursor: pointer; transition: transform .12s, border-color .12s, box-shadow .12s;
+}
+.app:hover, .app.hot { transform: translateY(-6px) scale(1.04); border-color: #c9a7ff; box-shadow: 0 0 0 4px rgba(201,167,255,.22), 0 18px 46px rgba(0,0,0,.5); }
+.app img { width: 64px; height: 64px; border-radius: 16px; image-rendering: auto; }
+.app .name { color: #efeaff; font-size: 12.5px; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.app .n {
+  position: absolute; top: -14px; left: 50%; transform: translateX(-50%);
+  min-width: 34px; height: 34px; padding: 0 8px; border-radius: 12px;
+  display: grid; place-items: center;
+  font: 800 20px/1 ui-monospace, "SF Mono", Menlo, monospace;
+  color: #1a0f33; background: linear-gradient(135deg, #c9a7ff, #9d7bff);
+  box-shadow: 0 6px 16px rgba(157,123,255,.45);
+}
+.app.hot .n { background: linear-gradient(135deg, #5fd3a0, #3fbf87); }

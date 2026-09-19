@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>手势</title>
+  <link rel="stylesheet" href="gesture.css" />
+  <!-- MediaPipe 的 wasm 要 eval，这一页不挂 CSP；页面只加载本地文件 -->
+  <script type="importmap">
+    { "imports": { "@mediapipe/tasks-vision": "../../node_modules/@mediapipe/tasks-vision/vision_bundle.mjs" } }
+  </script>
+</head>
+<body>
+  <div id="shell" class="shell">
+    <div class="head" id="drag">
+      <span class="dot" id="dot"></span>
+      <strong>手势</strong>
+      <span class="hint" id="hint">启动中…</span>
+      <button id="close" title="关闭摄像头" aria-label="关闭摄像头">×</button>
+    </div>
+    <div class="stage">
+      <video id="video" autoplay muted playsinline></video>
+      <canvas id="overlay"></canvas>
+      <div id="big" class="big"></div>
+    </div>
+    <div class="foot" id="foot">打响指唤出切换栏 · 比 1–9 切应用 · 握拳收起</div>
+  </div>
+  <script type="module" src="gesture.mjs"></script>
+</body>
+</html>

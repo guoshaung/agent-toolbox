@@ -3951,3 +3951,32 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .eat__pick-title { font-weight: 600; margin-bottom: 3px; }
 .eat__pick-why { color: var(--text-dim); font-size: 12px; line-height: 1.55; }
 .eat__advice-avoid { margin: 8px 0 0; font-size: 12px; }
+
+/* ---------- 手势识别：开摄像头后整页滑进银河 ---------- */
+.gesture__stage { position: relative; flex: 1; min-height: 0; overflow: hidden; }
+.gesture__body { transition: opacity .55s ease, transform .55s ease, filter .55s ease; }
+.gesture__body.is-away { opacity: 0; transform: scale(.94) translateY(-18px); filter: blur(6px); pointer-events: none; }
+.gesture__galaxy {
+  position: absolute; inset: 0; z-index: 2;
+  opacity: 0; transform: scale(1.12);
+  transition: opacity .7s ease, transform .9s cubic-bezier(.2,.7,.2,1);
+  border-radius: 14px; overflow: hidden;
+}
+.gesture__galaxy[hidden] { display: none; }
+.gesture__galaxy.is-in { opacity: 1; transform: none; }
+.gesture__galaxy-canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+.gesture__hud {
+  position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
+  width: min(560px, 90%); padding: 26px 28px;
+  border-radius: 20px; border: 1px solid rgba(201,167,255,.35);
+  background: rgba(12, 10, 28, .55); backdrop-filter: blur(8px);
+  box-shadow: 0 20px 60px rgba(0,0,0,.5);
+  text-align: center; color: #efeaff;
+}
+.gesture__hud-title { font-size: 13px; letter-spacing: 3px; color: #c9a7ff; margin-bottom: 14px; }
+.gesture__hud-steps { display: grid; gap: 10px; margin-bottom: 14px; font-size: 14px; }
+.gesture__hud-steps span { display: flex; align-items: center; justify-content: center; gap: 12px; }
+.gesture__hud-steps b { display: inline-block; min-width: 92px; padding: 6px 10px; border-radius: 999px; background: linear-gradient(135deg, #c9a7ff, #9d7bff); color: #1a0f33; font-size: 13px; }
+.gesture__hud-note { font-size: 12px; margin-bottom: 14px; }
+.gesture__hud-actions { display: flex; gap: 8px; justify-content: center; }
+.gesture__actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
