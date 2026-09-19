@@ -866,11 +866,14 @@ async function handoffToApp(appName, text) {
 
   const previous = clipboard.readText();
   clipboard.writeText(body);
+  // 应用还没开的话 activate 会顺手把它拉起来，得多等一会儿再粘贴，否则字丢在半路
+  const wasRunning = (await listForegroundApps()).includes(target);
+  const settle = wasRunning ? 0.35 : 2.2;
   try {
     if (process.platform === 'darwin') {
       await execFileAsync('/usr/bin/osascript', [
         '-e', `tell application "${target.replace(/"/g, '\\"')}" to activate`,
-        '-e', 'delay 0.35',
+        '-e', `delay ${settle}`,
         '-e', 'tell application "System Events" to keystroke "v" using command down',
         '-e', 'delay 0.15',
         '-e', 'tell application "System Events" to key code 36',
@@ -879,7 +882,7 @@ async function handoffToApp(appName, text) {
       // AppActivate 认窗口标题的前缀，SendKeys 里 ^v 是 Ctrl+V
       const ps = `$w = New-Object -ComObject WScript.Shell; `
         + `if (-not $w.AppActivate('${target.replace(/'/g, "''")}')) { exit 2 }; `
-        + `Start-Sleep -Milliseconds 350; $w.SendKeys('^v'); Start-Sleep -Milliseconds 150; $w.SendKeys('{ENTER}')`;
+        + `Start-Sleep -Milliseconds ${Math.round(settle * 1000)}; $w.SendKeys('^v'); Start-Sleep -Milliseconds 150; $w.SendKeys('{ENTER}')`;
       await execFileAsync('powershell.exe', ['-NoProfile', '-Command', ps], { timeout: 8000 });
     } else {
       await execFileAsync('/bin/sh', ['-lc',
@@ -899,6 +902,39 @@ async function handoffToApp(appName, text) {
     // 稍等一下再还原，太快的话粘贴还没读到剪贴板
     setTimeout(() => { try { clipboard.writeText(previous); } catch { /* 还原失败不致命 */ } }, 1200);
   }
+}
+
+/**
+ * 各家 AI 的桌面客户端叫什么。派活默认送进这些应用，而不是浏览器 ——
+ * 你平时聊天的上下文、登录态都在这些 app 里。
+ */
+const DESKTOP_APPS = {
+  codex: ['ChatGPT'],
+  claude: ['Claude'],
+  dsh: ['DeepSeek'],
+  kimi: ['Kimi'],
+  grok: ['Grok'],
+  glm: ['智谱清言', 'ChatGLM'],
+  gemini: ['Gemini'],
+};
+
+/** 本机装了哪些 AI 桌面客户端：{ codex: 'ChatGPT', claude: 'Claude', ... }，没装的不出现。 */
+async function listDesktopApps() {
+  const found = {};
+  const running = new Set(await listForegroundApps());
+  for (const [id, names] of Object.entries(DESKTOP_APPS)) {
+    for (const name of names) {
+      let installed = running.has(name);
+      if (!installed && process.platform === 'darwin') {
+        installed = ['/Applications', path.join(os.homedir(), 'Applications')].some((dir) => fs.existsSync(path.join(dir, `${name}.app`)));
+      } else if (!installed && process.platform === 'win32') {
+        const roots = [process.env.LOCALAPPDATA && path.join(process.env.LOCALAPPDATA, 'Programs'), process.env.ProgramFiles, process.env['ProgramFiles(x86)']].filter(Boolean);
+        installed = roots.some((dir) => fs.existsSync(path.join(dir, name)));
+      }
+      if (installed) { found[id] = name; break; }
+    }
+  }
+  return found;
 }
 
 /** 列出当前开着的、能投送的应用（只要有界面的那些）。 */
@@ -2024,6 +2060,7 @@ function registerIpc() {
   // 「你确定要执行你刚刚亲手输入的东西吗」纯属噪音。
   ipcMain.handle('agent:list', () => agentRuntime.installedAgents());
   ipcMain.handle('agent:apps', () => listForegroundApps());
+  ipcMain.handle('agent:desktopApps', () => listDesktopApps());
   ipcMain.handle('agent:openAccessibility', () => {
     if (process.platform !== 'darwin') return { ok: false };
     shell.openExternal('x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility');

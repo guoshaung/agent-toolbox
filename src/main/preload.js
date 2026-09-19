@@ -30,6 +30,8 @@ contextBridge.exposeInMainWorld('toolbox', {
     run: (payload) => ipcRenderer.invoke('agent:run', payload),
     /** 列出开着的应用窗口，供选择投送目标 */
     apps: () => ipcRenderer.invoke('agent:apps'),
+    /** 本机装了哪些 AI 桌面客户端：{ codex: 'ChatGPT', ... } */
+    desktopApps: () => ipcRenderer.invoke('agent:desktopApps'),
     /** 把文字投进某个已经开着的窗口，并替你按回车 */
     handoff: (payload) => ipcRenderer.invoke('agent:handoff', payload),
     openAccessibility: () => ipcRenderer.invoke('agent:openAccessibility'),

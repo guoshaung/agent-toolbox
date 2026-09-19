@@ -56,12 +56,18 @@ export function createOffice(ctx) {
   // 网页版：内嵌它的官网对话框，登录一次长期有效，字直接塞进输入框（默认）
   // 窗口：你屏幕上已经开着的那个 Claude Code / Codex 终端窗口，粘贴 + 回车
   // 命令行：另起一个 CLI 进程 —— 这就是之前每次都要你登录的那条路，留着但不默认
-  const CHANNELS = [['web', '网页版'], ['window', '已开着的窗口'], ['cli', '命令行']];
+  const CHANNELS = [['window', '桌面应用 / 窗口'], ['web', '网页版'], ['cli', '命令行']];
+  /** 本机装了的 AI 桌面客户端：{ codex: 'ChatGPT', ... }。refresh 时填。 */
+  let desktopApps = {};
+  // 默认送进桌面客户端（ChatGPT.app / Claude.app…）—— 你平时聊天的上下文和登录态都在那里；
+  // 没装客户端的才退到网页版
   const channelOf = (id) => {
     const saved = config.get(`focus.channel.${id}`, '');
     if (CHANNELS.some(([k]) => k === saved)) return saved;
+    if (desktopApps[id]) return 'window';
     return WEB_CHAT[id] ? 'web' : 'window';
   };
+  const targetOf = (id) => config.get(`focus.handoffTarget.${id}`, '') || desktopApps[id] || '';
   const channelLabel = (key) => CHANNELS.find(([k]) => k === key)?.[1] || key;
 
   function pushHistory(id, role, text) {
@@ -134,9 +140,9 @@ export function createOffice(ctx) {
   function makeDesk(agent) {
     const style = AGENT_STYLE[agent.id] || { avatar: '●', accent: 'var(--accent)', role: '' };
     const hasWeb = Boolean(WEB_CHAT[agent.id]);
-    const usable = agent.installed || hasWeb;
+    const usable = agent.installed || hasWeb || Boolean(desktopApps[agent.id]);
     const statusEl = h('span', { class: 'office__desk-status' },
-      agent.installed ? '空闲' : hasWeb ? '网页版' : '未安装');
+      desktopApps[agent.id] ? `→ ${desktopApps[agent.id]}` : agent.installed ? '空闲' : hasWeb ? '网页版' : '未安装');
     const desk = {
       ...agent,
       web: hasWeb,
@@ -283,8 +289,8 @@ export function createOffice(ctx) {
       return { ok: true, text: `已送进 ${WEB_CHAT[desk.id].who} 网页版的对话框（${r.how === 'button' ? '点了发送' : '按了回车'}），回答在它的屏幕里看。` };
     }
     if (channel === 'window') {
-      const app = config.get(`focus.handoffTarget.${desk.id}`, '') || config.get('focus.handoffTarget', '');
-      if (!app) return { ok: false, error: '还没选它在哪个窗口里 —— 点它的屏幕，在「已开着的窗口」里选一个。' };
+      const app = targetOf(desk.id);
+      if (!app) return { ok: false, error: '还没选它在哪个应用里 —— 点它的屏幕，在「桌面应用 / 窗口」里选一个。' };
       const r = await window.toolbox.agentRun.handoff({ app, text: prompt });
       if (r?.needsPermission) {
         window.toolbox.agentRun.openAccessibility();
@@ -326,7 +332,7 @@ export function createOffice(ctx) {
   const targetSelect = h('select', {
     class: 'field field--sm office-chat__target',
     title: '把文字丢进哪个已经开着的窗口',
-    onchange: () => config.set(`focus.handoffTarget.${chatAgent}`, targetSelect.value),
+    onchange: () => { config.set(`focus.handoffTarget.${chatAgent}`, targetSelect.value); chatSend.textContent = `发进 ${targetSelect.value || '应用'} ⏎`; },
   });
   const webBar = h('div', { class: 'office-chat__webbar' },
     h('span', { class: 'faint' }, '第一次用先在下面的屏幕里登录一次，之后就不用了'),
@@ -345,17 +351,21 @@ export function createOffice(ctx) {
     targetSelect.hidden = channel !== 'window';
     webBar.hidden = channel !== 'web';
     if (channel === 'web') web.show(chatAgent); else web.close();
-    chatSend.textContent = channel === 'web' ? '发到网页版 ⏎' : channel === 'window' ? '丢进窗口 ⏎' : '跑命令行';
+    chatSend.textContent = channel === 'web' ? '发到网页版 ⏎' : channel === 'window' ? `发进 ${targetOf(chatAgent) || '应用'} ⏎` : '跑命令行';
     if (channel === 'window') loadTargets();
   }
 
   async function loadTargets() {
     let apps = [];
     try { apps = await window.toolbox.agentRun.apps(); } catch { /* 列不出来就留空 */ }
-    targetSelect.replaceChildren(h('option', { value: '' }, '选窗口…'),
-      ...apps.map((name) => h('option', { value: name }, name)));
-    const remembered = config.get(`focus.handoffTarget.${chatAgent}`, '') || config.get('focus.handoffTarget', '');
+    // 装了但没开的客户端也列进去 —— 投送时 activate 会把它拉起来
+    const preferred = desktopApps[chatAgent];
+    if (preferred && !apps.includes(preferred)) apps.unshift(preferred);
+    targetSelect.replaceChildren(h('option', { value: '' }, '选应用…'),
+      ...apps.map((name) => h('option', { value: name }, name === preferred ? `${name}（它的客户端）` : name)));
+    const remembered = targetOf(chatAgent);
     if (remembered && apps.includes(remembered)) targetSelect.value = remembered;
+    chatSend.textContent = `发进 ${targetSelect.value || '应用'} ⏎`;
   }
   const chatPanel = h('div', { class: 'office-chat', hidden: true },
     h('div', { class: 'office-chat__head' },
@@ -419,7 +429,10 @@ export function createOffice(ctx) {
       h('div', { class: 'office-chat__sep' }, `本机历史 · 共 ${data.totalMessages || msgs.length} 条${data.truncated ? '（只显示最近的）' : ''}`),
       ...msgs.map((m) => bubble(id, m.role === 'user' ? 'user' : 'agent', String(m.content).slice(0, 4000))),
     );
+    // 打开就停在最近那几句，不是从头翻
+    chatPast.scrollTop = chatPast.scrollHeight;
     chatLog.scrollTop = chatLog.scrollHeight;
+    chatInput.scrollIntoView({ block: 'nearest' });
   }
 
   async function loadSessionList() {
@@ -511,6 +524,7 @@ export function createOffice(ctx) {
       summary.textContent = `读不到本机 AI：${error.message}`;
       return;
     }
+    try { desktopApps = (await window.toolbox.agentRun.desktopApps?.()) || {}; } catch { desktopApps = {}; }
     let recent = {};
     try {
       const latest = await window.toolbox.chat.latest();
@@ -535,12 +549,12 @@ export function createOffice(ctx) {
     scene = createScene(list, openChat);
     roomHost.replaceChildren(scene.el);
     for (const agent of list) {
-      if (!agent.installed && !WEB_CHAT[agent.id]) scene.setState(agent.id, 'missing', '');
+      if (!agent.installed && !WEB_CHAT[agent.id] && !desktopApps[agent.id]) scene.setState(agent.id, 'missing', '');
     }
 
     const installed = list.filter((a) => a.installed).length;
-    const webOnly = list.filter((a) => !a.installed && WEB_CHAT[a.id]).length;
-    summary.textContent = `本机装了 ${installed} / ${list.length} 家${webOnly ? `，另 ${webOnly} 家走网页版` : ''}`;
+    const apps = Object.values(desktopApps);
+    summary.textContent = `命令行 ${installed} / ${list.length} 家${apps.length ? ` · 桌面客户端：${apps.join('、')}` : ''}`;
     syncSend();
   }
 
