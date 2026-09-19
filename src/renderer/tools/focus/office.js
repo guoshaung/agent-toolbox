@@ -369,10 +369,7 @@ export function createOffice(ctx) {
     }
     chatPast.replaceChildren(
       h('div', { class: 'office-chat__sep' }, `本机历史 · 共 ${data.totalMessages || msgs.length} 条${data.truncated ? '（只显示最近的）' : ''}`),
-      ...msgs.map((m) => h('div', { class: `office-chat__turn is-${m.role === 'user' ? 'user' : 'agent'}` },
-        h('span', { class: 'office-chat__who' }, m.role === 'user' ? '我' : desks.get(id)?.label || 'AI'),
-        h('pre', { class: 'office-chat__text' }, String(m.content).slice(0, 4000)),
-      )),
+      ...msgs.map((m) => bubble(id, m.role === 'user' ? 'user' : 'agent', String(m.content).slice(0, 4000))),
     );
     chatLog.scrollTop = chatLog.scrollHeight;
   }
@@ -399,15 +396,33 @@ export function createOffice(ctx) {
     await loadPast();
   }
 
+  /**
+   * 一条消息 = 头像 + 气泡。
+   *
+   * 之前是「52px 标签 + 一块 pre」的表格排法，全宽等宽字、没有气泡，读起来像
+   * 日志不像对话。现在我的靠右、对方靠左，头像用它自己的配色和记号，
+   * 气泡宽度跟着内容走（最多 78%），一眼能看出谁说的、说了多长。
+   */
+  function bubble(agentId, role, text) {
+    const mine = role === 'user';
+    const look = lookOf(agentId);
+    const label = mine ? '我' : role === 'pending' ? '…' : desks.get(agentId)?.label || 'AI';
+    const avatar = h('span', { class: 'office-chat__avatar' }, mine ? '我' : look.tag);
+    if (!mine) avatar.style.setProperty('--who-color', look.accent);
+
+    const body = h('div', { class: 'office-chat__bubble' },
+      h('span', { class: 'office-chat__name' }, label),
+      h('div', { class: 'office-chat__text' }, text),
+    );
+    if (!mine) body.style.setProperty('--who-color', look.accent);
+    return h('div', { class: `office-chat__turn is-${role}${mine ? ' is-mine' : ''}` }, avatar, body);
+  }
+
   function renderChat() {
     const turns = history.get(chatAgent) || [];
     chatLog.replaceChildren(...(turns.length
       ? [h('div', { class: 'office-chat__sep' }, '刚在这里聊的'),
-         ...turns.map((turn) => h('div', { class: `office-chat__turn is-${turn.role}` },
-          h('span', { class: 'office-chat__who' },
-            turn.role === 'user' ? '我' : turn.role === 'pending' ? '…' : desks.get(chatAgent)?.label || 'AI'),
-          h('pre', { class: 'office-chat__text' }, turn.text),
-        ))]
+         ...turns.map((turn) => bubble(chatAgent, turn.role, turn.text))]
       : []));
     chatLog.scrollTop = chatLog.scrollHeight;
   }

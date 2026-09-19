@@ -3781,33 +3781,91 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .office-person__bubble[hidden] { display: none; }
 
 /* ---------- 点屏幕展开的对话 ---------- */
-.office-chat { display: flex; flex-direction: column; gap: 8px; padding: 12px; border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--line-soft)); border-radius: 12px; background: var(--bg-sunken); }
+/* ---------- 点屏幕展开的对话 ----------
+ * 之前是「52px 标签 + 一块全宽 pre」的表格排法，读起来像日志不像对话。
+ * 改成头像 + 气泡：我的靠右、对方靠左，气泡宽度跟内容走。
+ */
+.office-chat {
+  display: flex; flex-direction: column; gap: 10px;
+  padding: 14px;
+  border: 1px solid var(--line-soft);
+  border-radius: 14px;
+  background:
+    radial-gradient(120% 90% at 50% 0%, color-mix(in srgb, var(--accent) 7%, transparent), transparent 62%),
+    var(--bg-sunken);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.04), 0 10px 26px rgba(0,0,0,.24);
+}
 .office-chat[hidden] { display: none; }
-.office-chat__head { display: flex; align-items: center; gap: 10px; }
-.office-chat__log { display: flex; flex-direction: column; gap: 8px; max-height: 200px; overflow: auto; }
-/* 本机历史单独一栏，和「刚在这里聊的」分开 —— 混在一起分不清哪句是刚发的 */
-.office-chat__past { display: flex; flex-direction: column; gap: 8px; max-height: 320px; overflow: auto; }
+.office-chat__head { display: flex; align-items: center; gap: 10px; padding-bottom: 10px; border-bottom: 1px solid var(--line-soft); }
+.office-chat__log, .office-chat__past { display: flex; flex-direction: column; gap: 12px; overflow: auto; padding-right: 4px; }
+.office-chat__log { max-height: 240px; }
+.office-chat__past { max-height: 340px; }
 .office-chat__past:empty { display: none; }
 .office-chat__sep {
   position: sticky; top: 0; z-index: 1;
-  margin: 2px 0; padding: 3px 0;
-  color: var(--text-faint); font-size: 10.5px; letter-spacing: .4px;
-  background: var(--bg-sunken);
-  border-bottom: 1px solid var(--line-soft);
+  margin: 0; padding: 4px 0 6px;
+  color: var(--text-faint); font-size: 10.5px; letter-spacing: .5px;
+  background: linear-gradient(180deg, var(--bg-sunken) 70%, transparent);
 }
 .office-chat__sessions { max-width: 280px; }
 .office-chat__sessions[hidden] { display: none; }
-.office-chat__empty { padding: 10px 2px; font-size: 12px; }
-.office-chat__turn { display: grid; grid-template-columns: 52px minmax(0, 1fr); gap: 8px; font-size: 12px; }
-.office-chat__who { color: var(--text-faint); font-size: 11px; }
-.office-chat__text { margin: 0; color: var(--text); font: 12px/1.6 var(--mono); white-space: pre-wrap; word-break: break-word; }
-.office-chat__turn.is-user .office-chat__text { color: var(--text-dim); }
-/* 失败要一眼看见，别再让人以为「点了没反应」 */
-.office-chat__turn.is-error .office-chat__who { color: var(--bad); }
+.office-chat__empty { padding: 14px 2px; font-size: 12px; text-align: center; }
+
+/* 一条消息：头像 + 气泡 */
+.office-chat__turn { display: flex; align-items: flex-start; gap: 9px; }
+.office-chat__turn.is-mine { flex-direction: row-reverse; }
+.office-chat__avatar {
+  display: grid; place-items: center;
+  width: 28px; height: 28px; flex: 0 0 28px; margin-top: 2px;
+  border-radius: 9px;
+  color: var(--who-color, var(--accent));
+  background: color-mix(in srgb, var(--who-color, var(--accent)) 16%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--who-color, var(--accent)) 32%, transparent);
+  font-size: 13px; font-weight: 600;
+}
+.office-chat__turn.is-mine .office-chat__avatar {
+  color: var(--accent); background: color-mix(in srgb, var(--accent) 18%, transparent);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 34%, transparent);
+  font-size: 11px;
+}
+.office-chat__bubble {
+  max-width: 78%; min-width: 0;
+  padding: 8px 12px 9px;
+  border-radius: 12px 12px 12px 4px;
+  background: var(--bg-raised);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.04), 0 2px 6px rgba(0,0,0,.22);
+  border-left: 2px solid color-mix(in srgb, var(--who-color, var(--accent)) 55%, transparent);
+}
+.office-chat__turn.is-mine .office-chat__bubble {
+  border-radius: 12px 12px 4px 12px;
+  border-left: 0;
+  border-right: 2px solid color-mix(in srgb, var(--accent) 55%, transparent);
+  background: color-mix(in srgb, var(--accent) 12%, var(--bg-raised));
+}
+.office-chat__name { display: block; margin-bottom: 3px; color: var(--text-faint); font-size: 10.5px; }
+.office-chat__turn.is-mine .office-chat__name { text-align: right; }
+/* 正文用正常字体，只有代码块才等宽 —— 整段等宽字读长文很累 */
+.office-chat__text { color: var(--text); font-size: 12.5px; line-height: 1.66; white-space: pre-wrap; word-break: break-word; }
+.office-chat__turn.is-error .office-chat__bubble {
+  border-left-color: var(--bad);
+  background: color-mix(in srgb, var(--bad) 10%, var(--bg-raised));
+}
 .office-chat__turn.is-error .office-chat__text { color: var(--bad); }
 .office-chat__turn.is-pending .office-chat__text { color: var(--accent); }
-.office-chat__input { width: 100%; padding: 8px 10px; border: 1px solid var(--line-soft); border-radius: 9px; color: var(--text); background: var(--code-bg); font: 12.5px/1.6 var(--mono); resize: vertical; }
-.office-chat__input:focus { outline: none; border-color: color-mix(in srgb, var(--accent) 55%, var(--line)); }
+.office-chat__turn.is-pending .office-chat__bubble { opacity: .8; }
+
+.office-chat__input {
+  width: 100%; padding: 10px 12px;
+  border: 1px solid var(--line-soft); border-radius: 11px;
+  color: var(--text); background: var(--code-bg);
+  font: 12.5px/1.66 inherit; resize: vertical;
+  box-shadow: inset 0 1px 3px rgba(0,0,0,.26);
+}
+.office-chat__input:focus {
+  outline: none;
+  border-color: color-mix(in srgb, var(--accent) 55%, var(--line));
+  box-shadow: inset 0 1px 3px rgba(0,0,0,.26), 0 0 0 3px color-mix(in srgb, var(--accent) 14%, transparent);
+}
 .office-chat__actions { display: flex; align-items: center; gap: 8px; }
 .office-chat__target { max-width: 190px; }
 
