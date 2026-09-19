@@ -1733,6 +1733,12 @@ function registerIpc() {
     return { ok: Boolean(gestureDesk) };
   });
   ipcMain.handle('gesture:closeWindow', () => { gestureDesk?.closeGesture(); return { ok: true }; });
+  // 小窗报错时把系统层面的摄像头状态一起显示出来，好判断是系统没给还是我们自己拦了
+  ipcMain.handle('gesture:cameraStatus', () => ({
+    system: process.platform === 'darwin' ? systemPreferences.getMediaAccessStatus('camera') : 'n/a',
+    platform: process.platform,
+    version: app.getVersion(),
+  }));
   ipcMain.handle('gesture:openCameraSettings', () => {
     if (process.platform === 'darwin') shell.openExternal('x-apple.systempreferences:com.apple.preference.security?Privacy_Camera');
     else if (process.platform === 'win32') shell.openExternal('ms-settings:privacy-webcam');

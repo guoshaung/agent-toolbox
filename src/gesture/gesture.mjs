@@ -139,10 +139,12 @@ async function start() {
     // 说清楚去哪开，并给一个直达按钮；顺手把主窗口叫回来
     const foot = $('foot');
     foot.textContent = '';
+    const status = await api?.cameraStatus?.().catch(() => null);
     const msg = document.createElement('span');
-    msg.textContent = denied
+    msg.title = `${error.name}: ${error.message}`;
+    msg.textContent = (status ? `[v${status.version} 系统摄像头权限：${status.system}] ` : '') + (denied
       ? (navigator.platform.startsWith('Win') ? 'Windows：设置 → 隐私 → 相机 → 允许桌面应用访问相机' : 'macOS：系统设置 → 隐私与安全性 → 摄像头 → 打开「Agent 工具箱」')
-      : error.message;
+      : error.message);
     const btn = document.createElement('button');
     btn.textContent = '打开设置';
     btn.className = 'foot-btn';
