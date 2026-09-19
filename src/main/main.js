@@ -8,6 +8,7 @@ const QRCode = require('qrcode');
 const {
   app, BrowserWindow, ipcMain, session, shell, dialog, clipboard, nativeTheme, safeStorage, screen,
   nativeImage, globalShortcut,
+  systemPreferences,
 } = require('electron');
 const { Store } = require('./store');
 const { buildQuickExplainMessages, parseQuickExplainResponse } = require('./quick-explain');
@@ -864,6 +865,14 @@ async function handoffToApp(appName, text) {
   if (!target) return { ok: false, error: '没有指定要投送到哪个应用。' };
   if (!body.trim()) return { ok: false, error: '内容是空的。' };
 
+  if (process.platform === 'darwin' && !systemPreferences.isTrustedAccessibilityClient(false)) {
+    // 先申请（带弹窗），让应用进到辅助功能列表；用户点了允许再来一次就通
+    systemPreferences.isTrustedAccessibilityClient(true);
+    return {
+      ok: false, needsPermission: true,
+      error: '需要先允许工具箱控制别的应用：刚弹出的系统提示点「打开系统设置」，在辅助功能里把「Agent 工具箱」打开；列表里没有的话点左下角「+」，选 /Applications/Agent 工具箱.app。',
+    };
+  }
   const previous = clipboard.readText();
   clipboard.writeText(body);
   // 应用还没开的话 activate 会顺手把它拉起来，得多等一会儿再粘贴，否则字丢在半路
@@ -2063,8 +2072,11 @@ function registerIpc() {
   ipcMain.handle('agent:desktopApps', () => listDesktopApps());
   ipcMain.handle('agent:openAccessibility', () => {
     if (process.platform !== 'darwin') return { ok: false };
+    // 正式向系统申请一次：会弹「想要控制这台电脑」的框，应用也会因此出现在辅助功能列表里。
+    // 之前只是让 osascript 去试、失败了，工具箱自己没申请过，所以列表里根本找不到它。
+    const trusted = systemPreferences.isTrustedAccessibilityClient(true);
     shell.openExternal('x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility');
-    return { ok: true };
+    return { ok: true, trusted };
   });
   ipcMain.handle('agent:handoff', (_e, payload = {}) => handoffToApp(payload.app, payload.text));
   ipcMain.handle('agent:run', async (_e, payload = {}) => {
