@@ -112,7 +112,9 @@ class GestureDesk {
     await Promise.all(apps.map(async (item) => {
       try {
         if (item.path && this.app?.getFileIcon) {
-          const icon = await this.app.getFileIcon(item.path, { size: 'large' });
+          // 不能传 size:'large'：macOS 上 Electron 直接 NOTREACHED 把主进程整个崩掉（实测），
+          // 这就是「打响指工具箱就没了」的根子
+          const icon = await this.app.getFileIcon(item.path);
           item.icon = icon && !icon.isEmpty() ? icon.toDataURL() : '';
         }
       } catch { item.icon = ''; }
