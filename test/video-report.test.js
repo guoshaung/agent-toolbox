@@ -253,3 +253,25 @@ test('explainLarkError：权限不足时给出可执行的两条路', () => {
   // 不是 JSON 的原样带回，别吞掉
   assert.match(explainLarkError('boom: something broke'), /boom/);
 });
+
+// ---- 报错在 stderr，不在 stdout ----
+// 第一版按 stdout 找，结果没接住，用户看到的还是原始 JSON。
+// 实测 lark-cli 失败时：退出码 3、stdout 长度 0、stderr 里是那坨 JSON。
+test('explainLarkError：用真实报错里的 missing_scopes 和申请链接', () => {
+  const { explainLarkError } = require('../src/main/video-report.js');
+  const real = JSON.stringify({
+    ok: false,
+    identity: 'bot',
+    error: {
+      type: 'authorization', subtype: 'app_scope_not_applied', code: 99991672,
+      message: 'access denied: app cli_x has not applied for the required scope(s): docx:document, docx:document:create',
+      missing_scopes: ['docx:document', 'docx:document:create'],
+      console_url: 'https://open.feishu.cn/page/scope-apply?clientID=cli_x&scopes=docx%3Adocument',
+    },
+  });
+  const msg = explainLarkError(real);
+  assert.match(msg, /docx:document、docx:document:create/, '权限列表要用 missing_scopes，不是从文案里抠');
+  assert.match(msg, /open\.feishu\.cn\/page\/scope-apply/, '要把一键申请链接给出来');
+  assert.match(msg, /auth login/);
+  assert.doesNotMatch(msg, /\{|\}/, '不该再出现原始 JSON');
+});

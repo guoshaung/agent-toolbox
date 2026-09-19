@@ -585,11 +585,15 @@ function explainLarkError(raw) {
 
   const identity = parsed.identity ? `（当前用 ${parsed.identity} 身份）` : '';
   if (err.subtype === 'app_scope_not_applied' || err.code === 99991672) {
-    const scopes = String(err.message || '').match(/scope\(s\):\s*(.+)$/)?.[1] || 'docx:document';
+    // lark-cli 自己给了 missing_scopes 和一个直接跳到申请页的 console_url，用它的，别自己从文案里抠
+    const scopes = (Array.isArray(err.missing_scopes) && err.missing_scopes.length)
+      ? err.missing_scopes.join('、')
+      : String(err.message || '').match(/scope\(s\):\s*(.+)$/)?.[1] || 'docx:document';
+    const link = err.console_url || '';
     return `飞书应用还没申请这些权限：${scopes}${identity}。`
-      + ` 两条路选一条：① 去飞书开放平台给这个应用加上这几个权限并重新发布；`
-      + ` ② 用你自己的身份发（个人身份通常不需要应用权限）：先在终端跑 lark-cli auth login 登录用户身份。`
-      + ` 报告已经存在本地，改好之后可以直接「重新发布」。`;
+      + ` 两条路选一条：① 打开这个链接一键申请并重新发布应用${link ? `：${link}` : '（飞书开放平台）'}；`
+      + ` ② 用你自己的身份发（个人身份通常不需要应用权限）：先在终端跑 lark-cli auth login。`
+      + ` 报告已经存在本地，弄好之后直接点「重新发布」就行，不用重新生成。`;
   }
   if (err.type === 'authorization') {
     return `飞书这边没授权${identity}：${err.message || err.subtype || '未知原因'}。`
@@ -632,10 +636,13 @@ function publishMarkdown(userDataDir, file, { title, markdown, bvid, sourceId = 
       ].filter(Boolean).join(' '),
     };
   } catch (err) {
-    // lark-cli 失败时会把结构化报错打在 stdout 上、退出码非 0，
-    // 只看 stderr 的话拿到的是一句没用的 "Command failed"
-    const payload = String(err.stdout || '').trim();
-    if (payload.startsWith('{')) return { ok: false, publishError: explainLarkError(payload) };
+    // lark-cli 把结构化报错打在 stderr 上（实测退出码 3、stdout 为空）。
+    // 我上一版按 stdout 找，所以没接住，还是把原始 JSON 甩了出来。
+    // 两个流都看一眼，谁先是 JSON 用谁。
+    for (const stream of [err.stderr, err.stdout]) {
+      const payload = String(stream || '').trim();
+      if (payload.startsWith('{')) return { ok: false, publishError: explainLarkError(payload) };
+    }
     return { ok: false, publishError: `lark-cli 执行失败：${String(err.stderr || err.message || '').slice(0, 300)}` };
   }
 }
