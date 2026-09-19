@@ -236,6 +236,8 @@ contextBridge.exposeInMainWorld('toolbox', {
   /** 手势窗自己用的：把识别到的动作报给主进程 */
   gestureWin: {
     event: (event) => ipcRenderer.invoke('gestureWin:event', event),
+    openCameraSettings: () => ipcRenderer.invoke('gesture:openCameraSettings'),
+    showMain: () => ipcRenderer.invoke('gesture:showMain'),
     close: () => ipcRenderer.invoke('gesture:closeWindow'),
     onState: (callback) => ipcRenderer.on('gesture:state', (_event, state) => callback(state)),
   },

@@ -51,7 +51,7 @@ class GestureDesk {
 
   openGesture() {
     if (this.gestureWindow && !this.gestureWindow.isDestroyed()) { this.gestureWindow.show(); return this.gestureWindow; }
-    const size = { width: 300, height: 250 };
+    const size = { width: 300, height: 268 };
     const work = this.screen.getDisplayNearestPoint(this.screen.getCursorScreenPoint()).workArea;
     const win = new this.BrowserWindow({
       ...size,

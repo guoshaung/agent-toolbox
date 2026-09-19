@@ -134,7 +134,24 @@ async function start() {
     requestAnimationFrame(loop);
   } catch (error) {
     dot.className = 'dot bad';
-    hint.textContent = `启动失败：${error.message}`;
+    const denied = /NotAllowed|Permission|denied|拒绝/i.test(`${error.name} ${error.message}`);
+    hint.textContent = denied ? '摄像头没权限' : `启动失败：${error.message}`;
+    // 说清楚去哪开，并给一个直达按钮；顺手把主窗口叫回来
+    const foot = $('foot');
+    foot.textContent = '';
+    const msg = document.createElement('span');
+    msg.textContent = denied
+      ? (navigator.platform.startsWith('Win') ? 'Windows：设置 → 隐私 → 相机 → 允许桌面应用访问相机' : 'macOS：系统设置 → 隐私与安全性 → 摄像头 → 打开「Agent 工具箱」')
+      : error.message;
+    const btn = document.createElement('button');
+    btn.textContent = '打开设置';
+    btn.className = 'foot-btn';
+    btn.onclick = () => api?.openCameraSettings();
+    const back = document.createElement('button');
+    back.textContent = '回到工具箱';
+    back.className = 'foot-btn';
+    back.onclick = () => api?.showMain();
+    foot.append(msg, btn, back);
     api?.event({ type: 'error', value: error.message });
   }
 }

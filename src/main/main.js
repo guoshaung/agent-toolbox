@@ -1733,6 +1733,13 @@ function registerIpc() {
     return { ok: Boolean(gestureDesk) };
   });
   ipcMain.handle('gesture:closeWindow', () => { gestureDesk?.closeGesture(); return { ok: true }; });
+  ipcMain.handle('gesture:openCameraSettings', () => {
+    if (process.platform === 'darwin') shell.openExternal('x-apple.systempreferences:com.apple.preference.security?Privacy_Camera');
+    else if (process.platform === 'win32') shell.openExternal('ms-settings:privacy-webcam');
+    return { ok: true };
+  });
+  // 小窗被摄像头权限卡住时，把工具箱主窗口叫回来，别让人以为工具箱没了
+  ipcMain.handle('gesture:showMain', () => { ensureMainWindow({ show: true }); return { ok: true }; });
   ipcMain.handle('gesture:isOpen', () => Boolean(gestureDesk?.gestureOpen()));
   ipcMain.handle('gestureWin:event', (_e, event) => gestureDesk?.handleEvent(event || {}));
   ipcMain.handle('switcher:pick', (_e, n) => gestureDesk?.pick(n));
@@ -2832,13 +2839,17 @@ app.whenReady().then(async () => {
   session.defaultSession.setPermissionRequestHandler((webContents, permission, callback, details) => {
     const isMainWindow = mainWindow && !mainWindow.isDestroyed() && webContents === mainWindow.webContents;
     const isGestureWindow = gestureDesk?.gestureOpen() && webContents === gestureDesk.gestureWindow.webContents;
-    if (permission === 'media' && (isMainWindow || isGestureWindow)) return callback(true);
+    // 手势小窗也是我们自己的本地页面；认身份认不出来时按「是不是工具箱自己的 file:// 页」兜底
+    const isOwnPage = /^file:\/\//.test(webContents.getURL() || '') && webContents.getURL().includes('/gesture/');
+    if (permission === 'media' && (isMainWindow || isGestureWindow || isOwnPage)) return callback(true);
+    if (permission === 'media') console.warn('[media] 拒绝了摄像头请求:', webContents.getURL());
     callback(false);
   });
   session.defaultSession.setPermissionCheckHandler((webContents, permission) => {
     const isMainWindow = mainWindow && !mainWindow.isDestroyed() && webContents === mainWindow.webContents;
     const isGestureWindow = gestureDesk?.gestureOpen() && webContents === gestureDesk.gestureWindow.webContents;
-    return permission === 'media' && (isMainWindow || isGestureWindow);
+    const isOwnPage = /^file:\/\//.test(webContents?.getURL?.() || '') && webContents.getURL().includes('/gesture/');
+    return permission === 'media' && (isMainWindow || isGestureWindow || isOwnPage);
   });
 
   // 启动时清空专注/情报分区的缓存和 cookie，避免站点记住上次的登录重定向状态
