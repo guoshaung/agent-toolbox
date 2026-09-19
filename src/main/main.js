@@ -342,6 +342,11 @@ async function handleRemoteCommand(type, payload = {}) {
     }
     case 'ai.ask':
       return requestRemoteRenderer(type, { prompt: String(payload.prompt || '').slice(0, 20000) });
+    // 今天吃什么：推荐要跑 AI、读的是渲染层里的记录，所以整个交给渲染层
+    case 'eat.recommend':
+      return requestRemoteRenderer(type, {});
+    case 'eat.record':
+      return requestRemoteRenderer(type, { dish: String(payload.dish || '').slice(0, 80), shop: String(payload.shop || '').slice(0, 80) });
     case 'agent.office':
       return { agents: chatBridge.listLatestSessions() };
     case 'agent.session': {

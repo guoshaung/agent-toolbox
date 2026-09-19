@@ -33,6 +33,7 @@ export const TOOL_COLORS = {
   dsh:            '#7ed36b',   // 草绿
 
   // 下面这些平时收在「更多」里，彼此不相邻，按用途给色就行
+  eat:            '#ff9b5c',   // 暖橙，吃饭的颜色
   docs:           '#4fb3d9',
   terms:          '#43c6c6',
   coach:          '#5ec8a8',

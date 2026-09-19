@@ -467,6 +467,17 @@ window.toolbox.terms.onExplainRequest(async ({ requestId, text }) => {
 });
 
 window.toolbox.remote.onCommand(async ({ requestId, type, payload }) => {
+  // 工具可以把自己的远程处理器挂到 window.__toolRemote[type]（比如「今天吃什么」）。
+  // 这样加一个手机端功能不用回来改这里。
+  const handler = window.__toolRemote?.[type];
+  if (handler) {
+    try {
+      const result = await handler(payload || {});
+      return window.toolbox.remote.resolve({ requestId, ok: true, result });
+    } catch (err) {
+      return window.toolbox.remote.resolve({ requestId, ok: false, error: err.message });
+    }
+  }
   if (type !== 'ai.ask') return window.toolbox.remote.resolve({ requestId, ok: false, error: `渲染层不支持动作：${type}` });
   try {
     const text = String(payload?.prompt || '').trim();
