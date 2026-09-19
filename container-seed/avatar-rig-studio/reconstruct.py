@@ -12,7 +12,7 @@ def main():
     p = argparse.ArgumentParser()
     p.add_argument('--input', required=True)
     p.add_argument('--output', required=True)
-    p.add_argument('--resolution', type=int, default=256)
+    p.add_argument('--resolution', type=int, default=384)
     args = p.parse_args()
     import numpy as np
     import torch
@@ -44,6 +44,14 @@ def main():
         scene = model([image], device=device)
         print('Extracting colored surface', flush=True)
         mesh = model.extract_mesh(scene, True, resolution=args.resolution)[0]
+    # Marching cubes can produce inward winding near degenerate cells. Fix this
+    # before normal-based texture selection (unlit vertex colors had hidden it).
+    mesh.merge_vertices(digits_vertex=6)
+    mesh.update_faces(mesh.nondegenerate_faces())
+    mesh.remove_unreferenced_vertices()
+    mesh.fix_normals(multibody=True)
+    if mesh.volume < 0:
+        mesh.invert()
     # TripoSR uses Z-up; glTF and VRM use Y-up. Positive X is the front camera.
     vertices = np.asarray(mesh.vertices)
     # Preserve visible illustration detail on the front surface. Side/back colors
@@ -71,11 +79,14 @@ def main():
     mesh.export(output / 'reconstructed.glb')
     mesh.export(output / 'reconstructed.ply')
     np.savez_compressed(output / 'mesh.npz', vertices=mesh.vertices, faces=mesh.faces,
-                        normals=mesh.vertex_normals, colors=mesh.visual.vertex_colors)
+                        normals=mesh.vertex_normals, colors=mesh.visual.vertex_colors,
+                        projection_uv=uv.astype(np.float32))
     report = {'engine': 'TripoSR', 'source': str(Path(args.input).resolve()),
               'vertices': len(mesh.vertices), 'triangles': len(mesh.faces),
               'bounds': mesh.bounds.tolist(), 'watertight': bool(mesh.is_watertight),
-              'seconds': round(time.monotonic() - started, 2), 'device': device}
+              'seconds': round(time.monotonic() - started, 2), 'device': device,
+              'surfaceResolution': args.resolution, 'sourcePixels': list(Image.open(args.input).size),
+              'texturePixels': list(image.size), 'networkInputPixels': [512,512]}
     (output / 'reconstruction.json').write_text(json.dumps(report, indent=2), encoding='utf-8')
     print(json.dumps(report), flush=True)
 
