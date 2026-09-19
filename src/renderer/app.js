@@ -1,4 +1,5 @@
 import { TOOLS } from './core/registry.js';
+import { colorOf } from './core/tool-colors.js';
 import { DeepSeekBridge } from './core/deepseek-bridge.js';
 import { Config } from './core/config.js';
 import { AI } from './core/ai.js';
@@ -209,7 +210,7 @@ function activate(id) {
 }
 
 function railButton(tool, extraClass = '') {
-  return h('button', {
+  const button = h('button', {
     class: `rail__item ${extraClass}`.trim(),
     dataset: { id: tool.id },
     title: tool.hint || tool.title,
@@ -219,6 +220,10 @@ function railButton(tool, extraClass = '') {
     h('span', { class: 'rail__icon' }, iconFor(tool.icon)),
     h('span', { class: 'rail__label' }, tool.title),
   );
+  // 用 JS 设而不是写成 style="..." —— 页面 CSP 是 style-src 'self'，
+  // 内联 style 属性会被直接丢掉（办公室那边已经栽过一次）。
+  button.style.setProperty('--tool-color', colorOf(tool.id));
+  return button;
 }
 
 async function togglePinned(id) {

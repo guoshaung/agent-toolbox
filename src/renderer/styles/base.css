@@ -116,17 +116,29 @@ button, input, textarea, select { font-family: inherit; font-size: inherit; colo
   content: '';
   position: absolute;
   inset: 0;
-  background: radial-gradient(circle at 50% 0%, rgba(91,140,255,.18), transparent 70%);
+  /* 光晕跟着这个工具自己的颜色走，不再是写死的蓝 */
+  background: radial-gradient(circle at 50% 0%, color-mix(in srgb, var(--tool-color, var(--accent)) 22%, transparent), transparent 70%);
   opacity: 0;
   transition: opacity .25s ease;
 }
-.rail__item:hover { background: var(--bg-raised); color: var(--text-dim); transform: translateY(-2px); }
+.rail__item:hover { background: var(--bg-raised); transform: translateY(-2px); }
 .rail__item:hover::before { opacity: 1; }
 .rail__item.is-active {
-  background: linear-gradient(180deg, rgba(91,140,255,.16), rgba(91,140,255,.05));
-  color: var(--accent);
-  box-shadow: inset 0 1px rgba(255,255,255,.04), 0 0 18px rgba(91,140,255,.12);
+  background: linear-gradient(180deg,
+    color-mix(in srgb, var(--tool-color, var(--accent)) 20%, transparent),
+    color-mix(in srgb, var(--tool-color, var(--accent)) 6%, transparent));
+  box-shadow: inset 0 1px rgba(255,255,255,.04),
+    0 0 18px color-mix(in srgb, var(--tool-color, var(--accent)) 16%, transparent);
 }
+
+/* 每个工具的图标用自己的颜色。
+ *
+ * 静息时压到 62% —— 27 个图标全开满饱和度，整条栏会变成一条霓虹灯带，
+ * 比原来全灰还难看。悬停和选中时给足，被选中的那个一眼就跳出来。 */
+.rail__icon { color: color-mix(in srgb, var(--tool-color, var(--text-faint)) 62%, var(--text-faint)); }
+.rail__item:hover .rail__icon,
+.rail__item.is-active .rail__icon { color: var(--tool-color, var(--accent)); }
+.rail__item.is-active .rail__label { color: color-mix(in srgb, var(--tool-color, var(--text)) 70%, var(--text)); }
 .rail__active-mark {
   position: absolute;
   left: 0;
@@ -134,8 +146,8 @@ button, input, textarea, select { font-family: inherit; font-size: inherit; colo
   bottom: 10px;
   width: 3px;
   border-radius: 0 4px 4px 0;
-  background: linear-gradient(180deg, var(--accent), var(--accent-secondary));
-  box-shadow: 0 0 14px rgba(91,140,255,.8);
+  background: linear-gradient(180deg, var(--tool-color, var(--accent)), color-mix(in srgb, var(--tool-color, var(--accent)) 55%, var(--accent-secondary)));
+  box-shadow: 0 0 14px color-mix(in srgb, var(--tool-color, var(--accent)) 75%, transparent);
   transform: scaleY(0);
   opacity: 0;
   transition: transform .25s cubic-bezier(.2,.8,.2,1), opacity .25s ease;
@@ -145,7 +157,7 @@ button, input, textarea, select { font-family: inherit; font-size: inherit; colo
 .ui-icon { width: 1.05em; height: 1.05em; display: block; flex: 0 0 auto; }
 .rail__icon .ui-icon { width: 21px; height: 21px; stroke-width: 1.7; }
 .rail__item:hover .rail__icon { transform: scale(1.12) translateY(-1px); }
-.rail__item.is-active .rail__icon { transform: translateY(-2px) scale(1.12); filter: drop-shadow(0 0 10px rgba(91,140,255,.45)); }
+.rail__item.is-active .rail__icon { transform: translateY(-2px) scale(1.12); filter: drop-shadow(0 0 10px color-mix(in srgb, var(--tool-color, var(--accent)) 50%, transparent)); }
 
 .rail--right {
   order: 3;
