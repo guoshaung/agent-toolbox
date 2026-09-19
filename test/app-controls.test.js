@@ -69,17 +69,34 @@ test('关闭前台窗口跳过受保护系统进程', async () => {
   assert.ok(SAFE_PROCESS_NAMES.has('system'));
 });
 
-test('关闭前台窗口跳过没有可关闭标题的窗口', async () => {
-  let execCalled = false;
+test('无标题浮窗仍按已识别的进程关闭', async () => {
+  let killed = false;
   const controls = createControls({
     ownPid: 4242,
-    exec: async () => { execCalled = true; throw new Error('不应执行'); },
+    exec: async (file, args) => {
+      if(file==='taskkill.exe'){killed=true;return {stdout:''};}
+      return {stdout: args.join(' ').includes('Get-Process -Id') ? '{"ProcessName":"QQ"}' : '0'};
+    },
   });
   controls.run = async () => ({ handle: '3', pid: 5555, title: '' });
   const result = await controls.closeForeground();
-  assert.equal(result.ok, false);
-  assert.equal(result.skipped, true);
-  assert.equal(execCalled, false);
+  assert.equal(result.ok, true);
+  assert.equal(killed, true);
+});
+
+test('Windows 探测返回实际 JSON，且并发调用不删除彼此脚本', {skip:process.platform !== 'win32'}, async () => {
+  const controls=createControls();
+  const [a,b]=await Promise.all([controls.run('windows'),controls.run('windows')]);
+  assert.ok(Array.isArray(a.windows));assert.ok(Array.isArray(b.windows));
+});
+
+test('快捷键异常会反馈，并释放长按期间的重复调用锁', async () => {
+  const results=[]; const callbacks={};
+  const controls=new AppControls({platform:'win32',store:createStore({'appControls.enabled':true}),onResult:r=>results.push(r)});
+  controls.closeForeground=async()=>{throw Error('probe failed');};
+  controls.register({unregister(){},register(key,fn){callbacks[key]=fn;return true;}});
+  await callbacks[CTRL_Q]();await callbacks[CTRL_Q]();
+  assert.equal(results.length,2);assert.equal(results[0].ok,false);assert.equal(results[0].error,'probe failed');
 });
 
 test('关闭前台窗口对普通应用执行 taskkill 并返回结果', async () => {

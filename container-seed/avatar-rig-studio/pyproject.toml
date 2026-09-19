@@ -1,0 +1,18 @@
+[project]
+name = "avatar-rig-studio"
+version = "0.2.0"
+description = "TripoSR reconstruction and skinned VRM/GLB export"
+requires-python = ">=3.12,<3.13"
+dependencies = ["torch==2.6.0", "torchvision==0.21.0", "numpy<2", "omegaconf==2.3.0", "einops==0.7.0", "transformers==4.38.2", "huggingface-hub==0.25.2", "trimesh==4.5.3", "rembg==2.0.61", "onnxruntime==1.20.1", "imageio[ffmpeg]", "scikit-image", "Pillow>=10"]
+
+[tool.uv]
+package = false
+
+[tool.uv.sources]
+torch = { index = "pytorch-cu124" }
+torchvision = { index = "pytorch-cu124" }
+
+[[tool.uv.index]]
+name = "pytorch-cu124"
+url = "https://download.pytorch.org/whl/cu124"
+explicit = true

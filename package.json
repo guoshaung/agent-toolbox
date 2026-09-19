@@ -5,6 +5,13 @@
   "private": true,
   "main": "src/main/main.js",
   "scripts": {
+    "avatar:prepare": "node scripts/prepare-avatar-rig.cjs",
+    "prestart": "npm run avatar:prepare",
+    "predev": "npm run avatar:prepare",
+    "predist": "npm run avatar:prepare",
+    "predist:dir": "npm run avatar:prepare",
+    "predist:win": "npm run avatar:prepare",
+    "prerelease": "npm run avatar:prepare",
     "start": "electron .",
     "dev": "electron . --dev",
     "dist": "electron-builder --mac dmg zip",
@@ -108,6 +115,10 @@
         "filter": [
           "**/*",
           "!**/__pycache__/**",
+          "!**/.venv/**",
+          "!**/models/**",
+          "!**/jobs/**",
+          "!**/miku-official.png",
           "!**/.DS_Store"
         ]
       }

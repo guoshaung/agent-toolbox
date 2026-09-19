@@ -34,3 +34,13 @@ captures/
 # 误放在根目录的文件与编辑器备份，别进仓库
 /index.js
 *.bak-*
+__pycache__/
+*.pyc
+container-seed/avatar-rig-studio/.venv/
+container-seed/avatar-rig-studio/jobs/
+container-seed/avatar-rig-studio/web/vendor/
+container-seed/avatar-rig-studio/miku-official.png
+!container-seed/avatar-rig-studio/vendor/TripoSR/tsr/models/
+!container-seed/avatar-rig-studio/vendor/TripoSR/tsr/models/**
+container-seed/avatar-rig-studio/**/__pycache__/
+container-seed/avatar-rig-studio/**/*.pyc
