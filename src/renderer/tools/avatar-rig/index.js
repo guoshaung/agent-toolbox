@@ -162,7 +162,7 @@ export default {
         h('div', { class: 'avatar-rig__actions' }, generate, previewLast, open),
         h('div', { class: 'avatar-rig__actions' }, setup, refresh),
         state, results,
-        h('p', { class: 'avatar-rig__status faint' }, '当前仍为自动重建草稿。贴图是参考图投影，可能有接缝；骨骼需精修，没有表情、头发或衣服物理。')));
+        h('p', { class: 'avatar-rig__status faint' }, '当前仍为自动重建草稿。贴图是参考图投影，可能有接缝；骨骼需精修。表情需要人工核对面部区域后导出 Morph，头发和衣服没有物理。')));
     update(); void checkEnvironment();
     return { activate() { if (!busy) void checkEnvironment(); }, dispose() { sequence++; clearInterval(timer); } };
   },

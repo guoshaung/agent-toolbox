@@ -41,6 +41,7 @@ class ImagePreparationTest(unittest.TestCase):
                 image.save(job / f'input-{view}.png')
             prepare(job)
             images = [Image.open(job/f'{v}.png') for v in ['front','left','back']]
+            self.assertTrue(all((job/f'texture-source-{v}.png').is_file() for v in ['front','left','back']))
             boxes = [i.getbbox() for i in images]
             self.assertEqual({i.size for i in images}, {(1024, 1024)})
             self.assertLess(max(b[3]-b[1] for b in boxes)-min(b[3]-b[1] for b in boxes), 3)
@@ -48,6 +49,25 @@ class ImagePreparationTest(unittest.TestCase):
 
 
 class ExportTest(unittest.TestCase):
+    def test_reviewed_face_regions_export_vrm_expression_morphs(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            job=Path(tmp)
+            mesh=trimesh.creation.icosphere(subdivisions=2)
+            mesh.vertices[:,1]+=1.35
+            np.savez(job/'mesh.npz',vertices=mesh.vertices,faces=mesh.faces,
+                     colors=np.tile([240,220,210,255],(len(mesh.vertices),1)))
+            (job/'face-expressions.json').write_text(json.dumps({'regions':{
+                'leftEye':{'center':[.08,1.45,.1],'radius':[.12,.12,.12]},
+                'rightEye':{'center':[-.08,1.45,.1],'radius':[.12,.12,.12]},
+                'mouth':{'center':[0,1.35,.1],'radius':[.12,.12,.12]}}}))
+            result=export(job)
+            self.assertEqual(result['expressions'],['blinkLeft','blinkRight','happy','aa'])
+            raw=(job/'avatar.vrm').read_bytes();size=struct.unpack_from('<I',raw,12)[0]
+            doc=json.loads(raw[20:20+size]);mesh_doc=doc['meshes'][0]
+            self.assertEqual(len(mesh_doc['primitives'][0]['targets']),4)
+            self.assertEqual(set(doc['extensions']['VRMC_vrm']['expressions']['preset']),
+                             {'blinkLeft','blinkRight','happy','aa'})
+
     def test_missing_side_is_mirrored_and_negative_x_faces_use_it(self):
         with tempfile.TemporaryDirectory() as tmp:
             job = Path(tmp)
@@ -79,7 +99,7 @@ class ExportTest(unittest.TestCase):
             for primitive in primitives:
                 faces=read(primitive['indices'],'<u4',1).reshape(-1,3)
                 n=normals[faces].mean(1)
-                negative=(n[:,0]<0)&(-n[:,0]>np.abs(n[:,2]))
+                negative=(n[:,0]<0)&(-n[:,0]>np.abs(n[:,2]))&(normals[faces][:,:,1].mean(1)<.25)
                 if negative.any():
                     negative_x_count+=int(negative.sum())
                     self.assertIn('right-texture.png',doc['materials'][primitive['material']]['name'])

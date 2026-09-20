@@ -31,6 +31,32 @@ def glb(document, blob):
             + struct.pack('<II', len(encoded), 0x4e4f534a) + encoded
             + struct.pack('<II', len(blob), 0x004e4942) + blob)
 
+
+def _build_expression_targets(vertices, config):
+    """Build conservative, explicitly configured face deltas.
+
+    These are only a bridge for a reviewed face landmark file. They are not a
+    substitute for a retopologized face or expression capture.
+    """
+    regions=config.get('regions', {}) if isinstance(config, dict) else {}
+    required=('leftEye','rightEye','mouth')
+    if any(name not in regions for name in required):
+        raise ValueError('face-expressions.json requires leftEye, rightEye and mouth regions')
+    def mask(spec):
+        center=np.asarray(spec.get('center'),dtype=float)
+        radius=np.asarray(spec.get('radius'),dtype=float)
+        if center.shape!=(3,) or radius.shape!=(3,) or not np.isfinite(center).all() or not np.isfinite(radius).all() or np.any(radius<=0):
+            raise ValueError('face expression regions require finite XYZ center/radius')
+        d=(vertices-center)/radius
+        return np.clip(1-(d*d).sum(axis=1),0,1).astype(np.float32)
+    left=mask(regions['leftEye']); right=mask(regions['rightEye']); mouth=mask(regions['mouth'])
+    blink_left=np.zeros_like(vertices,dtype=np.float32); blink_left[:,1]=-0.018*left
+    blink_right=np.zeros_like(vertices,dtype=np.float32); blink_right[:,1]=-0.018*right
+    happy=np.zeros_like(vertices,dtype=np.float32); happy[:,1]=0.014*mouth
+    happy[:,0]+=np.sign(vertices[:,0])*0.006*mouth
+    aa=np.zeros_like(vertices,dtype=np.float32); aa[:,1]=-0.018*mouth; aa[:,2]+=0.008*mouth
+    return [blink_left,blink_right,happy,aa]
+
 def export(job, name='Image reconstructed avatar', t_pose=False, use_texture=True):
     reference = json.loads((job/'reference.json').read_text('utf-8')) if (job/'reference.json').is_file() else {}
     engine = 'Hunyuan3D-2mv' if (job/'multiview-reconstruction.json').is_file() else 'TripoSR'
@@ -185,6 +211,14 @@ def export(job, name='Image reconstructed avatar', t_pose=False, use_texture=Tru
         if len(data['texture_files'])==4:directions.append(-face_normals[:,0])
         scores=np.stack(directions,axis=1)
         groups=scores.argmax(axis=1)
+        # Eyes and mouth are drawn in the front reference. Side projections of
+        # the same face often contain a second AI-invented eye; keep the whole
+        # visible face on the front texture to prevent a four-eye seam.
+        centers=vertices[faces].mean(axis=1)
+        face_region=((centers[:,1] > 1.22) & (centers[:,1] < 1.57) &
+                     (np.abs(centers[:,0]) < .23) & (centers[:,2] > -.015) &
+                     (face_normals[:,2] > -.15))
+        groups[face_region]=0
         if repair:groups[repair['hand_faces']]=-1
         document['images']=[];document['textures']=[]
         document['samplers']=[{'magFilter':9729,'minFilter':9987,'wrapS':33071,'wrapT':33071}]
@@ -219,7 +253,21 @@ def export(job, name='Image reconstructed avatar', t_pose=False, use_texture=Tru
             material=len(document['materials'])-1
         primitives.append({'attributes':attributes,'indices':accessor(faces[~texture_faces].reshape(-1),5125,'SCALAR',34963),'material':0})
         primitives[-1]['material']=material
-    document['meshes'].append({'primitives':primitives})
+    face_expressions = None
+    expression_targets = []
+    expression_config = job / 'face-expressions.json'
+    if expression_config.is_file():
+        face_expressions = json.loads(expression_config.read_text('utf-8'))
+        expression_targets = _build_expression_targets(vertices, face_expressions)
+        if expression_targets:
+            for primitive in primitives:
+                primitive['targets']=[{'POSITION': accessor(delta,5126,'VEC3',34962,True)} for delta in expression_targets]
+            document['meshes'].append({'primitives':primitives,
+                                       'weights':[0.0]*len(expression_targets)})
+        else:
+            document['meshes'].append({'primitives':primitives})
+    else:
+        document['meshes'].append({'primitives':primitives})
     times = np.array([0,.5,1,1.5,2],dtype=np.float32)
     angles = np.array([0,.35,0,-.35,0])/2
     rotations = np.stack([np.zeros(5),np.sin(angles),np.zeros(5),np.cos(angles)],axis=1).astype(np.float32)
@@ -237,6 +285,12 @@ def export(job, name='Image reconstructed avatar', t_pose=False, use_texture=Tru
                  **({'references':[reference['sourceUrl']]} if reference.get('sourceUrl') else {}),
                  'allowRedistribution':False, 'commercialUsage':'personalNonProfit'},
         'humanoid': {'humanBones': {n:{'node':i} for n,i in node_indices.items() if not n.endswith('Tip')}}}}
+    if expression_targets:
+        surface_node=len(names)+1
+        preset_names=['blinkLeft','blinkRight','happy','aa'][:len(expression_targets)]
+        document['extensions']['VRMC_vrm']['expressions']={'preset':{
+            name:{'morphTargetBinds':[{'node':surface_node,'index':i,'weight':1.0}]}
+            for i,name in enumerate(preset_names)}}
     (job/'avatar.vrm').write_bytes(glb(document,bytes(blob)))
     report = {'format':'VRM 1.0', 'model':'avatar.vrm', 'glb':'avatar.glb',
               'name': name,
@@ -246,8 +300,13 @@ def export(job, name='Image reconstructed avatar', t_pose=False, use_texture=Tru
               'source':engine,
               'appearance':'multiview reference projection (missing right view may be mirrored)' if multiview else ('native-resolution reference projection + inferred side/back colors' if textured else 'vertex colors'),
               'texturedTriangles': int(texture_faces.sum()),
-              'limitations':(['AI-generated view inconsistencies and texture seams','Unobserved right-side texture approximated'] if multiview else ['Back surface inferred from one image'])+['No facial blendshapes','Hair and clothing have no physics'],
+              'limitations':(['AI-generated view inconsistencies and texture seams','Unobserved right-side texture approximated'] if multiview else ['Back surface inferred from one image'])+([] if expression_targets else ['No facial blendshapes'])+['Hair and clothing have no physics'],
               'weightSumError':float(abs(weights.sum(1)-1).max())}
+    if expression_targets:
+        report['expressions']=preset_names
+        report['expressionQuality']='reviewed landmark-driven generic morphs; not captured facial anatomy'
+    if multiview:
+        report['faceProjection']='front reference locked for visible face region to avoid duplicate side eyes'
     if (job/'texture-provenance.json').is_file():
         report['textureProvenance']=json.loads((job/'texture-provenance.json').read_text('utf-8'))
     if repair:

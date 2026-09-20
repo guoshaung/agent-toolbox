@@ -30,7 +30,8 @@ for name,horizontal in [('front',v[:,0]),('left',-v[:,2]),('back',-v[:,0]),('rig
         image=ImageOps.mirror(Image.open(root/'left.png').convert('RGBA'))
         provenance[name]='mirrored left reference; not observed right-side detail'
     else:
-        image=Image.open(root/(name+'.png')).convert('RGBA')
+        source = root / f'texture-source-{name}.png'
+        image=Image.open(source if source.is_file() else root/(name+'.png')).convert('RGBA')
         provenance[name]='supplied reference'
     bbox=image.getbbox()
     if bbox is None:raise ValueError(f'{name} image is empty')

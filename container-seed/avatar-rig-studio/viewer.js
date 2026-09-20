@@ -14,6 +14,7 @@ fetch(base+'project.json').then(r=>r.ok?r.json():{}).then(p=>{
   if(p.source || p.engine){engineName=p.source || p.engine;document.querySelector('#engine').textContent=engineName+' · VRM 1.0';}
   if((p.source||'').includes('Hunyuan'))document.querySelector('.note').textContent='豆包三视图联合重建草稿。视图差异、贴图接缝和未提供的另一侧细节仍需修正；骨骼为初步绑定，无表情或头发物理。';
   if(p.handRepair)document.querySelector('.note').textContent='原手指粘连，现为显式拟合的通用五指替换手；缺失一侧贴图为镜像近似。不是精确还原或动画成品。';
+  if(Array.isArray(p.expressions) && p.expressions.length) { document.querySelector('#expression-controls').hidden=false; document.querySelector('#expression-status').textContent='VRM 表情 Morph · '+p.expressions.join(' / '); }
 }).catch(()=>{});
 document.querySelector('#reference').src = base+'source.png';
 document.querySelector('#download').href = base+'avatar.vrm';
@@ -69,6 +70,7 @@ async function load(file){
 }
 document.querySelector('#model').onchange=e=>load(e.target.value);
 document.querySelector('#finger-reset').onclick=()=>{document.querySelector('#finger-angle').value=0;};
+document.querySelector('#expression-reset').onclick=()=>{document.querySelector('#expression-weight').value=0;};
 function applyFingerTest(){
  if(!rigMetadata || !vrm)return;
  const selected=document.querySelector('#finger').value;
@@ -80,7 +82,13 @@ function applyFingerTest(){
   if(selected==='All'||name.includes(selected))bone.quaternion.multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(...axis),angle));
  }
 }
+function applyExpressionTest(){
+ if(!vrm?.expressionManager || document.querySelector('#expression-controls').hidden)return;
+ const selected=document.querySelector('#expression').value;
+ const weight=Number(document.querySelector('#expression-weight').value)/100;
+ for(const expression of ['blinkLeft','blinkRight','happy','aa'])vrm.expressionManager.setValue(expression,expression===selected?weight:0);
+}
 let resizeFrame;
 new ResizeObserver(()=>{cancelAnimationFrame(resizeFrame);resizeFrame=requestAnimationFrame(()=>{const w=viewport.clientWidth,h=viewport.clientHeight;if(!w||!h)return;renderer.setSize(w,h,false);camera.aspect=w/h;camera.updateProjectionMatrix();});}).observe(viewport);
-renderer.setAnimationLoop(()=>{const now=performance.now();const dt=(now-previousTime)/1000;previousTime=now;if(document.querySelector('#motion').checked){if(vrm){const head=vrm.humanoid.getNormalizedBoneNode('head');if(head)head.rotation.y=Math.sin(now/600)*.20;}else if(mixer)mixer.update(dt);}else if(vrm){const head=vrm.humanoid.getNormalizedBoneNode('head');if(head)head.rotation.y=0;}if(vrm)vrm.update(dt);applyFingerTest();controls.update();renderer.render(scene,camera);});
+renderer.setAnimationLoop(()=>{const now=performance.now();const dt=(now-previousTime)/1000;previousTime=now;if(document.querySelector('#motion').checked){if(vrm){const head=vrm.humanoid.getNormalizedBoneNode('head');if(head)head.rotation.y=Math.sin(now/600)*.20;}else if(mixer)mixer.update(dt);}else if(vrm){const head=vrm.humanoid.getNormalizedBoneNode('head');if(head)head.rotation.y=0;}applyExpressionTest();if(vrm)vrm.update(dt);applyFingerTest();controls.update();renderer.render(scene,camera);});
 load(document.querySelector('#model').value);
