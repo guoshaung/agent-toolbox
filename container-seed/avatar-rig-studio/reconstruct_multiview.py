@@ -19,6 +19,7 @@ def main():
         raise RuntimeError('多视图模式需要 NVIDIA CUDA 显卡，请检查驱动和 .venv-mv 安装。')
     torch.set_num_threads(8)
     images={key:Image.open(job/(key+'.png')).convert('RGBA') for key in ['front','left','back']}
+    if (job/'right.png').is_file():images['right']=Image.open(job/'right.png').convert('RGBA')
     images['front'].save(job/'source.png')
     started=time.monotonic()
     print('Loading Hunyuan3D-2mv (fp16, CPU offload)',flush=True)

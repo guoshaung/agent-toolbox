@@ -3079,6 +3079,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .avatar-rig__card[hidden] { display: none; }
 @media (max-width: 700px) { .avatar-rig__views { grid-template-columns: 1fr; } }
 .avatar-rig__toolbar, .avatar-rig__actions { display: flex; align-items: center; gap: 10px; max-width: 920px; margin-top: 14px; }
+.avatar-rig__option { display: flex; align-items: center; gap: 7px; max-width: 920px; margin-top: 12px; color: var(--text-muted); font-size: 12px; }
 .avatar-rig__source { font-size: 12px; }
 .avatar-rig__card { max-width: 920px; margin-top: 14px; padding: 18px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); }
 .avatar-rig__card-head, .avatar-rig__result-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }

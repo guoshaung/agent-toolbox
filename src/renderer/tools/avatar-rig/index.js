@@ -1,6 +1,6 @@
 import { h, toast } from '../../core/ui.js';
 
-const VIEW_LABELS = { front: '正面', left: '左侧（鼻尖朝左）', back: '背面' };
+const VIEW_LABELS = { front: '正面', left: '左侧（鼻尖朝左）', back: '背面', right:'右侧（可选，鼻尖朝右）' };
 
 export default {
   id: 'avatar-rig',
@@ -37,6 +37,7 @@ export default {
       multiviewPanel.append(h('section', { class: 'avatar-rig__view' }, h('strong', {}, label), preview, filename, button));
     }
     const generate = h('button', { class: 'btn btn--primary', onclick: generateProject, disabled: true }, '重建并导出 VRM');
+    const torsoCloth = h('label', { class: 'avatar-rig__option' }, h('input', { type: 'checkbox', checked: true }), '上躯干布料层（走路轻微软动效）');
     const setup = h('button', { class: 'btn', onclick: install }, '安装所选环境');
     const refresh = h('button', { class: 'btn', onclick: refreshProject }, '更新项目脚本（自动备份）');
     const open = h('button', { class: 'btn', onclick: async () => {
@@ -48,10 +49,11 @@ export default {
       const mv = mode.value === 'multiview';
       singlePanel.hidden = mv;
       multiviewPanel.hidden = !mv;
-      const complete = mv ? Object.keys(VIEW_LABELS).every(k => views[k]) : Boolean(single);
+      torsoCloth.hidden = !mv;
+      const complete = mv ? ['front','left','back'].every(k => views[k]) : Boolean(single);
       generate.disabled = busy || !complete || !environments[mode.value];
       generate.textContent = busy ? '执行中…' : '重建并导出 VRM';
-      [mode, name, setup, refresh, pickSingle, sample, ...Object.values(cards).map(c => c.button)]
+      [mode, name, setup, refresh, pickSingle, sample, torsoCloth.querySelector('input'), ...Object.values(cards).map(c => c.button)]
         .forEach(el => { el.disabled = busy; });
       environmentLabel.textContent = environments[mode.value] ? '环境就绪' : '需要安装环境';
       environmentLabel.className = environments[mode.value] ? 'tag tag--good' : 'tag tag--warn';
@@ -65,7 +67,7 @@ export default {
       if (key === 'single') { single = file; singlePreview.replaceChildren(image); singleLabel.textContent = file.name; }
       else { views[key] = file; cards[key].preview.replaceChildren(image); cards[key].filename.textContent = file.name; }
       state.textContent = mode.value === 'multiview'
-        ? '已选择 ' + Object.keys(views).length + '/3 张。请确认同一姿势、比例、服装和正确左右方向。'
+        ? '必需三图已选择 ' + ['front','left','back'].filter(k=>views[k]).length + '/3。可另加右侧图；缺少时右侧贴图只能镜像近似。'
         : '参考图就绪。背面和遮挡部分由模型推断。';
       update();
     }
@@ -127,7 +129,7 @@ export default {
     async function generateProject() {
       if (generate.disabled) return;
       const payload = mode.value === 'multiview'
-        ? { mode: 'multiview', name: name.value, views }
+        ? { mode: 'multiview', name: name.value, views, options: { torsoCloth: torsoCloth.querySelector('input').checked } }
         : { mode: 'single', name: name.value, base64: single.base64 };
       await operation(async () => {
         results.hidden = true;
@@ -138,7 +140,7 @@ export default {
         results.replaceChildren(
           h('div', { class: 'avatar-rig__result-head' }, h('strong', {}, 'VRM / GLB 已导出'), h('span', { class: 'tag tag--good' }, m.source)),
           h('p', {}, m.vertices.toLocaleString() + ' 顶点 · ' + m.triangles.toLocaleString() + ' 三角面 · ' + m.bones + ' 骨骼'),
-          h('p', { class: 'faint' }, '初步绑定草稿，仍需检查视图接缝、T 姿势和运动权重。'),
+          h('p', { class: 'faint' }, '初步绑定草稿，仍需检查视图接缝、T 姿势和运动权重。' + (m.clothPhysics ? ' 已导出上躯干布料层。' : '')),
           h('button', { class: 'btn btn--primary', onclick: () => showModel(output.jobId) }, '旋转查看 / 下载模型'));
         results.hidden = false;
         state.textContent = '完成。可切换正面、侧面、背面和无贴图网格检查。';
@@ -154,15 +156,16 @@ export default {
             h('p', { class: 'faint' }, '用正面、左侧和背面共同约束形状，再生成贴图与初步骨骼。单图模式保留为快速草模入口。')), environmentLabel),
         h('div', { class: 'avatar-rig__toolbar' }, mode, name),
         singlePanel, multiviewPanel,
+        torsoCloth,
         h('details', { class: 'avatar-rig__card' }, h('summary', {}, '参考图要求与首次安装'),
-          h('p', {}, '三张图片需同一姿势、等高全身、透明或纯白背景。左侧图的鼻尖朝画面左边。三视图拼图请先裁成三个独立文件；角色四肢分开的 A 姿势更适合绑定。'),
+          h('p', {}, '必需正面、左侧、背面；可加右侧。图片需同一姿势、等高全身、透明或纯白背景。左侧图鼻尖朝画面左边，右侧图鼻尖朝画面右边。缺少右侧时使用镜像近似，不保证服装左右不对称细节准确。拼图请先裁成独立文件。'),
           h('p', {}, '可以在豆包等工具生成一致三视图后导入。这里不会自动登录网页，也不承诺 AI 视图完全一致。'),
           h('p', {}, '三视图模式实测 RTX 4070 Laptop 8GB；需要 NVIDIA CUDA、Python 3.12、uv 和 Git。首次下载约 4.9GB 权重及依赖，遵循 Hunyuan 项目的模型许可。旧环境不被替换。'),
           h('p', {}, '升级后请点击“更新项目脚本”；覆盖前自动备份。用户图片、任务、权重与虚拟环境保留。')),
         h('div', { class: 'avatar-rig__actions' }, generate, previewLast, open),
         h('div', { class: 'avatar-rig__actions' }, setup, refresh),
         state, results,
-        h('p', { class: 'avatar-rig__status faint' }, '当前仍为自动重建草稿。贴图是参考图投影，可能有接缝；骨骼需精修，没有表情、头发或衣服物理。')));
+        h('p', { class: 'avatar-rig__status faint' }, '当前仍为自动重建草稿。贴图是参考图投影，可能有接缝；骨骼需精修。表情需要人工核对面部区域后导出 Morph，头发和衣服没有物理。')));
     update(); void checkEnvironment();
     return { activate() { if (!busy) void checkEnvironment(); }, dispose() { sequence++; clearInterval(timer); } };
   },
