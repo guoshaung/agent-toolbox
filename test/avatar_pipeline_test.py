@@ -81,6 +81,24 @@ class ExportTest(unittest.TestCase):
             result=export(job)
             self.assertEqual(result['noseShapeVerticesAdjusted'],1)
 
+    def test_separated_torso_cloth_exports_custom_bounce_morph(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            job=Path(tmp)
+            mesh=trimesh.creation.icosphere(subdivisions=2)
+            mesh.apply_scale([.20,.25,.20])
+            mesh.vertices[:,1]+=1.1
+            np.savez(job/'mesh.npz',vertices=mesh.vertices,faces=mesh.faces,
+                     colors=np.tile([230,220,210,255],(len(mesh.vertices),1)))
+            (job/'torso-cloth.json').write_text(json.dumps({'outer':{
+                'center':[0,1.1,0],'radius':[.35,.35,.35]},'bounce':{
+                'center':[0,1.15,.1],'radius':[.25,.25,.25],'amplitude':.01},'restOffset':.0025}))
+            result=export(job)
+            self.assertGreater(result['clothPhysics']['copiedFrontFaces'],12)
+            raw=(job/'avatar.vrm').read_bytes();size=struct.unpack_from('<I',raw,12)[0]
+            doc=json.loads(raw[20:20+size])
+            self.assertIn('chestBounce',doc['extensions']['VRMC_vrm']['expressions']['custom'])
+            self.assertEqual(len(doc['meshes'][0]['primitives'][0]['targets']),1)
+
     def test_missing_side_is_mirrored_and_negative_x_faces_use_it(self):
         with tempfile.TemporaryDirectory() as tmp:
             job = Path(tmp)

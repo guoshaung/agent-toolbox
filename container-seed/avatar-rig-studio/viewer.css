@@ -2,3 +2,4 @@
 :root #viewport canvas{position:absolute;inset:0}
 :root #hand-controls:not([hidden]){display:flex;gap:14px;align-items:center;flex-wrap:wrap;padding:8px 20px;border-bottom:1px solid #24313d;font-size:12px;color:#8bbcaf}
 :root #expression-controls:not([hidden]){display:flex;gap:14px;align-items:center;flex-wrap:wrap;padding:8px 20px;border-bottom:1px solid #24313d;font-size:12px;color:#c7b8e8}
+:root #cloth-status:not([hidden]){padding:7px 20px;border-bottom:1px solid #24313d;font-size:12px;color:#84c5d0}

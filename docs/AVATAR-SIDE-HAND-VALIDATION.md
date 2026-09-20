@@ -25,6 +25,9 @@ not a claim that the reconstructed character is now production quality.
   with those Morph Targets. A reviewed nose clamp limits a long front spike; the
   generic fingers are thicker. Viewer walk/wave controls are deliberately tested
   at conservative amplitudes.
+- Add an opt-in separated front-torso cloth layer and a `chestBounce` custom VRM
+  Morph. Walking varies this by a small amount; it is not a collision or soft-body
+  solver.
 
 ## Verified
 
@@ -46,6 +49,9 @@ not a claim that the reconstructed character is now production quality.
   The initial arm wave detached a sleeve, so the final wave is limited to the
   explicitly weighted hand, whose quaternion changes continuously without visible
   clothing separation.
+- Current torso-cloth verification copies 15,535 front-layer triangles in the
+  Fubuki job. three-vrm recognizes `chestBounce`; sampled full-weight displacement
+  is 0.0061 m and walking changes its weight over successive frames.
 - Each finger bone influences 48–61 replacement vertices; no original-body
   primitive vertex has finger weights. Browser deformation tests at 30 degrees
   moved sampled distal vertices by 0.024–0.042 m on both hands, with zero movement
@@ -62,3 +68,7 @@ landmark-driven deltas, not captured facial anatomy; they do not repair a bad ey
 topology or make a rough mesh production-ready. Do not reuse sample landmarks on
 arbitrary characters. A cleaner character base mesh and dedicated topology/rigging
 workflow should be evaluated before further detail work on this reconstruction.
+
+The separated cloth layer has no body collision, self-collision, gravity, or
+secondary hair physics. Its narrow amplitude is intentional: larger movements on
+this automatically weighted model visibly separate sleeves and clothing panels.

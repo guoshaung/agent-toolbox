@@ -14,6 +14,7 @@ fetch(base+'project.json').then(r=>r.ok?r.json():{}).then(p=>{
   if(p.source || p.engine){engineName=p.source || p.engine;document.querySelector('#engine').textContent=engineName+' · VRM 1.0';}
   if((p.source||'').includes('Hunyuan'))document.querySelector('.note').textContent='豆包三视图联合重建草稿。视图差异、贴图接缝和未提供的另一侧细节仍需修正；骨骼为初步绑定，无表情或头发物理。';
   if(p.handRepair)document.querySelector('.note').textContent='原手指粘连，现为显式拟合的通用五指替换手；缺失一侧贴图为镜像近似。不是精确还原或动画成品。';
+  if(p.clothPhysics)document.querySelector('#cloth-status').hidden=false;
   if(Array.isArray(p.expressions) && p.expressions.length) { document.querySelector('#expression-controls').hidden=false; document.querySelector('#expression-status').textContent='VRM 表情 Morph · '+p.expressions.join(' / '); document.querySelector('.note').textContent='当前样例使用经核对的眼睑和口腔 Morph；走路和挥手仅用于蒙皮验收。头发、衣服及全身拓扑仍是自动重建草稿。'; }
 }).catch(()=>{});
 document.querySelector('#reference').src = base+'source.png';
@@ -88,6 +89,12 @@ function applyExpressionTest(){
  const weight=Number(document.querySelector('#expression-weight').value)/100;
  for(const expression of ['blinkLeft','blinkRight','happy','aa'])vrm.expressionManager.setValue(expression,(selected==='blink' ? expression.startsWith('blink') : expression===selected)?weight:0);
 }
+function applyClothPhysics(now){
+ if(!vrm?.expressionManager)return;
+ const walk=document.querySelector('#action').value==='walk';
+ const bounce=walk ? .18+Math.abs(Math.sin(now/260))*.56 : 0;
+ vrm.expressionManager.setValue('chestBounce',bounce);
+}
 function applyAction(now){
  if(!vrm)return;
  const action=document.querySelector('#action').value;
@@ -110,5 +117,5 @@ function applyAction(now){
 }
 let resizeFrame;
 new ResizeObserver(()=>{cancelAnimationFrame(resizeFrame);resizeFrame=requestAnimationFrame(()=>{const w=viewport.clientWidth,h=viewport.clientHeight;if(!w||!h)return;renderer.setSize(w,h,false);camera.aspect=w/h;camera.updateProjectionMatrix();});}).observe(viewport);
-renderer.setAnimationLoop(()=>{const now=performance.now();const dt=(now-previousTime)/1000;previousTime=now;if(document.querySelector('#motion').checked){if(vrm){const head=vrm.humanoid.getNormalizedBoneNode('head');if(head)head.rotation.y=Math.sin(now/600)*.20;}else if(mixer)mixer.update(dt);}else if(vrm){const head=vrm.humanoid.getNormalizedBoneNode('head');if(head)head.rotation.y=0;}applyExpressionTest();if(vrm)vrm.update(dt);applyAction(now);applyFingerTest();controls.update();renderer.render(scene,camera);});
+renderer.setAnimationLoop(()=>{const now=performance.now();const dt=(now-previousTime)/1000;previousTime=now;if(document.querySelector('#motion').checked){if(vrm){const head=vrm.humanoid.getNormalizedBoneNode('head');if(head)head.rotation.y=Math.sin(now/600)*.20;}else if(mixer)mixer.update(dt);}else if(vrm){const head=vrm.humanoid.getNormalizedBoneNode('head');if(head)head.rotation.y=0;}applyExpressionTest();applyClothPhysics(now);if(vrm)vrm.update(dt);applyAction(now);applyFingerTest();controls.update();renderer.render(scene,camera);});
 load(document.querySelector('#model').value);

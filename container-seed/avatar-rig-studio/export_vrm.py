@@ -116,6 +116,15 @@ def export(job, name='Image reconstructed avatar', t_pose=False, use_texture=Tru
         source_indices=repair['source_indices']
         colors=rgba[:,:3].astype(np.float32)/255
         colors=np.where(colors<=.04045,colors/12.92,((colors+.055)/1.055)**2.4)
+    torso_cloth=None
+    torso_config=job/'torso-cloth.json'
+    if torso_config.is_file():
+        from torso_cloth import add_torso_cloth
+        torso_cloth=add_torso_cloth(vertices,faces,rgba,source_indices,json.loads(torso_config.read_text('utf-8')))
+        vertices=torso_cloth['vertices'];faces=torso_cloth['faces'];rgba=torso_cloth['colors']
+        source_indices=torso_cloth['source_indices']
+        colors=rgba[:,:3].astype(np.float32)/255
+        colors=np.where(colors<=.04045,colors/12.92,((colors+.055)/1.055)**2.4)
     face_features=None
     expression_config = job / 'face-expressions.json'
     if expression_config.is_file():
@@ -126,6 +135,9 @@ def export(job, name='Image reconstructed avatar', t_pose=False, use_texture=Tru
         source_indices=face_features['source_indices']
         colors=rgba[:,:3].astype(np.float32)/255
         colors=np.where(colors<=.04045,colors/12.92,((colors+.055)/1.055)**2.4)
+    cloth_face_mask=np.zeros(len(faces),dtype=bool)
+    if torso_cloth:
+        cloth_face_mask[:len(torso_cloth['cloth_faces'])]=torso_cloth['cloth_faces']
     names = list(parents)
     joints = np.array([positions[n] for n in names], dtype=np.float32)
     # Distance to each bone segment, with four normalized influences per vertex.
@@ -160,6 +172,11 @@ def export(job, name='Image reconstructed avatar', t_pose=False, use_texture=Tru
                 if weight>0:indices[vertex,slot]=names.index(bone);weights[vertex,slot]=weight
     if face_features:
         for vertex,binding in face_features['bindings'].items():
+            indices[vertex]=0;weights[vertex]=0
+            for slot,(bone,weight) in enumerate(binding.items()):
+                indices[vertex,slot]=names.index(bone);weights[vertex,slot]=weight
+    if torso_cloth:
+        for vertex,binding in torso_cloth['bindings'].items():
             indices[vertex]=0;weights[vertex]=0
             for slot,(bone,weight) in enumerate(binding.items()):
                 indices[vertex,slot]=names.index(bone);weights[vertex,slot]=weight
@@ -237,7 +254,10 @@ def export(job, name='Image reconstructed avatar', t_pose=False, use_texture=Tru
         facing = normals[faces].mean(axis=1)[:,2]
         uv_valid = ((uv >= 0) & (uv <= 1)).all(axis=1)
         texture_faces = (facing > .35) & uv_valid[faces].all(axis=1)
-        if repair:texture_faces[repair['hand_faces']]=False
+        if repair:
+            hand_mask=np.zeros(len(faces),dtype=bool)
+            hand_mask[:len(repair['hand_faces'])]=repair['hand_faces']
+            texture_faces[hand_mask]=False
         if face_features:texture_faces[face_features['feature_faces']]=False
         texture = (job/'input-prepared.png').read_bytes()
         blob.extend(b'\0'*(-len(blob)%4))
@@ -268,6 +288,7 @@ def export(job, name='Image reconstructed avatar', t_pose=False, use_texture=Tru
                      (np.abs(centers[:,0]) < .23) & (centers[:,2] > -.015) &
                      (face_normals[:,2] > -.15))
         groups[face_region]=0
+        if torso_cloth:groups[cloth_face_mask]=0
         if repair:
             hand_faces=np.pad(repair['hand_faces'],(0,len(faces)-len(repair['hand_faces'])))
             groups[hand_faces]=-1
@@ -311,16 +332,21 @@ def export(job, name='Image reconstructed avatar', t_pose=False, use_texture=Tru
         primitives.append({'attributes':attributes,'indices':accessor(faces[untextured&feature_faces].reshape(-1),5125,'SCALAR',34963),'material':len(document['materials'])-1})
     face_expressions = None
     expression_targets = []
+    expression_names = []
     if expression_config.is_file():
         face_expressions = json.loads(expression_config.read_text('utf-8'))
         expression_targets = _build_expression_targets(vertices, face_expressions,face_features['feature_vertices'] if face_features else None)
-        if expression_targets:
-            for primitive in primitives:
-                primitive['targets']=[{'POSITION': accessor(delta,5126,'VEC3',34962,True)} for delta in expression_targets]
-            document['meshes'].append({'primitives':primitives,
-                                       'weights':[0.0]*len(expression_targets)})
-        else:
-            document['meshes'].append({'primitives':primitives})
+        expression_names=['blinkLeft','blinkRight','happy','aa'][:len(expression_targets)]
+    if torso_cloth:
+        bounce=np.zeros_like(vertices,dtype=np.float32)
+        bounce[torso_cloth['cloth_vertices'],2]=torso_cloth['softness']*torso_cloth['amplitude']
+        expression_targets.append(bounce)
+        expression_names.append('chestBounce')
+    if expression_targets:
+        for primitive in primitives:
+            primitive['targets']=[{'POSITION': accessor(delta,5126,'VEC3',34962,True)} for delta in expression_targets]
+        document['meshes'].append({'primitives':primitives,
+                                   'weights':[0.0]*len(expression_targets)})
     else:
         document['meshes'].append({'primitives':primitives})
     times = np.array([0,.5,1,1.5,2],dtype=np.float32)
@@ -342,10 +368,15 @@ def export(job, name='Image reconstructed avatar', t_pose=False, use_texture=Tru
         'humanoid': {'humanBones': {n:{'node':i} for n,i in node_indices.items() if not n.endswith('Tip')}}}}
     if expression_targets:
         surface_node=len(names)+1
-        preset_names=['blinkLeft','blinkRight','happy','aa'][:len(expression_targets)]
-        document['extensions']['VRMC_vrm']['expressions']={'preset':{
+        preset_names=[name for name in expression_names if name in {'blinkLeft','blinkRight','happy','aa'}]
+        custom_names=[name for name in expression_names if name not in set(preset_names)]
+        expression_extension={'preset':{
             name:{'morphTargetBinds':[{'node':surface_node,'index':i,'weight':1.0}]}
-            for i,name in enumerate(preset_names)}}
+            for i,name in enumerate(expression_names) if name in set(preset_names)}}
+        if custom_names:
+            expression_extension['custom']={name:{'morphTargetBinds':[{'node':surface_node,'index':i,'weight':1.0}]}
+                                          for i,name in enumerate(expression_names) if name in set(custom_names)}
+        document['extensions']['VRMC_vrm']['expressions']=expression_extension
     (job/'avatar.vrm').write_bytes(glb(document,bytes(blob)))
     report = {'format':'VRM 1.0', 'model':'avatar.vrm', 'glb':'avatar.glb',
               'name': name,
@@ -355,12 +386,17 @@ def export(job, name='Image reconstructed avatar', t_pose=False, use_texture=Tru
               'source':engine,
               'appearance':'multiview reference projection (missing right view may be mirrored)' if multiview else ('native-resolution reference projection + inferred side/back colors' if textured else 'vertex colors'),
               'texturedTriangles': int(texture_faces.sum()),
-              'limitations':(['AI-generated view inconsistencies and texture seams','Unobserved right-side texture approximated'] if multiview else ['Back surface inferred from one image'])+([] if expression_targets else ['No facial blendshapes'])+['Hair and clothing have no physics'],
+              'limitations':(['AI-generated view inconsistencies and texture seams','Unobserved right-side texture approximated'] if multiview else ['Back surface inferred from one image'])+([] if expression_targets else ['No facial blendshapes'])+(['Hair has no physics','Clothing has no collisions'] if torso_cloth else ['Hair and clothing have no physics']),
               'weightSumError':float(abs(weights.sum(1)-1).max())}
     if expression_targets:
         report['expressions']=preset_names
-        report['expressionQuality']='reviewed landmark-driven generic morphs; not captured facial anatomy'
-        report['expressionFeatureVertices']=int(sum(len(v) for v in face_features['feature_vertices'].values())) if face_features else 0
+        if face_features:
+            report['expressionQuality']='reviewed landmark-driven generic morphs; not captured facial anatomy'
+            report['expressionFeatureVertices']=int(sum(len(v) for v in face_features['feature_vertices'].values()))
+    if torso_cloth:
+        report['clothPhysics']={'morph':'chestBounce','copiedFrontFaces':torso_cloth['copiedFaces'],
+                                'maxForwardMeters':torso_cloth['amplitude'],
+                                'quality':'separated front-cloth layer; not a full soft-body simulation'}
     if multiview:
         report['faceProjection']='front reference locked for visible face region to avoid duplicate side eyes'
     if nose_vertices:
