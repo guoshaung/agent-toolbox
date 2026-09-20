@@ -117,14 +117,18 @@ def export(job, name='Image reconstructed avatar', t_pose=False, use_texture=Tru
         colors=rgba[:,:3].astype(np.float32)/255
         colors=np.where(colors<=.04045,colors/12.92,((colors+.055)/1.055)**2.4)
     torso_cloth=None
+    torso_cloth_error=None
     torso_config=job/'torso-cloth.json'
     if torso_config.is_file():
         from torso_cloth import add_torso_cloth
-        torso_cloth=add_torso_cloth(vertices,faces,rgba,source_indices,json.loads(torso_config.read_text('utf-8')))
-        vertices=torso_cloth['vertices'];faces=torso_cloth['faces'];rgba=torso_cloth['colors']
-        source_indices=torso_cloth['source_indices']
-        colors=rgba[:,:3].astype(np.float32)/255
-        colors=np.where(colors<=.04045,colors/12.92,((colors+.055)/1.055)**2.4)
+        try:
+            torso_cloth=add_torso_cloth(vertices,faces,rgba,source_indices,json.loads(torso_config.read_text('utf-8')))
+            vertices=torso_cloth['vertices'];faces=torso_cloth['faces'];rgba=torso_cloth['colors']
+            source_indices=torso_cloth['source_indices']
+            colors=rgba[:,:3].astype(np.float32)/255
+            colors=np.where(colors<=.04045,colors/12.92,((colors+.055)/1.055)**2.4)
+        except ValueError as error:
+            torso_cloth_error=str(error)
     face_features=None
     expression_config = job / 'face-expressions.json'
     if expression_config.is_file():
@@ -397,6 +401,8 @@ def export(job, name='Image reconstructed avatar', t_pose=False, use_texture=Tru
         report['clothPhysics']={'morph':'chestBounce','copiedFrontFaces':torso_cloth['copiedFaces'],
                                 'maxForwardMeters':torso_cloth['amplitude'],
                                 'quality':'separated front-cloth layer; not a full soft-body simulation'}
+    elif torso_cloth_error:
+        report['clothPhysics']={'enabled':False,'reason':torso_cloth_error}
     if multiview:
         report['faceProjection']='front reference locked for visible face region to avoid duplicate side eyes'
     if nose_vertices:

@@ -25,6 +25,8 @@ test('three views are required and each image is validated before running anythi
   assert.deepEqual(Object.keys(validateInput(payload()).images), ['front', 'left', 'back']);
   const four = payload(); four.views.right = image;
   assert.equal(validateInput(four).images.right.toString(), 'image-fixture');
+  assert.equal(validateInput({ ...four, options: { torsoCloth: true } }).options.torsoCloth, true);
+  assert.equal(validateInput({ mode: 'single', base64: image.base64, options: { torsoCloth: true } }).options.torsoCloth, false);
   four.views.right = { base64: 'invalid!' };
   assert.throws(() => validateInput(four), /无效/);
 });
@@ -43,13 +45,14 @@ test('multiview IPC writes distinct inputs, selects mv interpreter and blocks co
       assert.ok(exe.includes('.venv-mv'));
       const job = args.at(-1);
       for (const view of ['front', 'left', 'back', 'right']) assert.equal((await fs.readFile(path.join(job, 'input-' + view + '.png'))).toString(), 'image-fixture');
+      assert.equal(JSON.parse(await fs.readFile(path.join(job, 'torso-cloth.json'))).bounce.amplitude, .01);
       options.onOutput('STAGE:export_vrm.py');
       const bytes = Buffer.alloc(1024); bytes.write('glTF'); bytes.writeUInt32LE(2, 4); bytes.writeUInt32LE(1024, 8);
       await fs.writeFile(path.join(job, 'avatar.vrm'), bytes);
       await fs.writeFile(path.join(job, 'project.json'), JSON.stringify({ source: 'Hunyuan3D-2mv', bones: 21 }));
     },
   });
-  const four = payload(); four.views.right = image;
+  const four = payload(); four.views.right = image; four.options = { torsoCloth: true };
   const job = handlers['avatarRig:generate'](null, four);
   await entered;
   assert.equal((await handlers['avatarRig:status']()).running, true);

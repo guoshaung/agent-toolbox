@@ -8,6 +8,11 @@ const { randomUUID } = require('node:crypto');
 const VIEWS = ['front', 'left', 'back'];
 const MAX_IMAGE_BYTES = 40 * 1024 * 1024;
 const MODEL_MV = 'models/Hunyuan3D-2mv/hunyuan3d-dit-v2-mv/';
+const DEFAULT_TORSO_CLOTH = Object.freeze({
+  outer: { center: [0, 1.10, .055], radius: [.17, .24, .105] },
+  bounce: { center: [0, 1.19, .075], radius: [.14, .13, .095], amplitude: .010 },
+  restOffset: .0025,
+});
 const pythonPath = (root, mode = 'single') => path.join(root,
   mode === 'multiview' ? '.venv-mv' : '.venv', process.platform === 'win32' ? 'Scripts/python.exe' : 'bin/python');
 
@@ -30,7 +35,8 @@ function validateInput(payload = {}) {
     ? { single: decodeImage(payload, '人物') }
     : Object.fromEntries(VIEWS.map((view, i) => [view, decodeImage(payload.views?.[view], ['正面', '左侧', '背面'][i])]));
   if(mode==='multiview' && payload.views?.right)images.right=decodeImage(payload.views.right,'右侧');
-  return { mode, images, name: String(payload.name || '图片重建角色').trim().slice(0, 100) || '图片重建角色' };
+  const options = { torsoCloth: mode === 'multiview' && payload.options?.torsoCloth === true };
+  return { mode, images, name: String(payload.name || '图片重建角色').trim().slice(0, 100) || '图片重建角色', options };
 }
 
 async function exists(file, minimum = 1) {
@@ -209,12 +215,13 @@ function registerAvatarRigIpc(ipcMain, { getUserDataPath, shell, getSeedPath, ap
 
   ipcMain.handle('avatarRig:generate', (_event, payload = {}) => exclusive(async () => {
     // Fail before allocating a job if any view or environment is missing.
-    const { mode, images, name } = validateInput(payload);
+    const { mode, images, name, options } = validateInput(payload);
     if (!(await checkReadiness(root()))[mode]) throw new Error('所选模式尚未安装，请点击“安装所选环境”。');
     const jobId = new Date().toISOString().replace(/[-:.TZ]/g, '').slice(0, 14) + '-' + randomUUID().slice(0, 8);
     const job = path.join(root(), 'jobs', jobId);
     await fs.mkdir(job, { recursive: true });
     await fs.writeFile(path.join(job, 'reference.json'), JSON.stringify({ name }, null, 2));
+    if (options.torsoCloth) await fs.writeFile(path.join(job, 'torso-cloth.json'), JSON.stringify(DEFAULT_TORSO_CLOTH, null, 2));
     for (const [view, bytes] of Object.entries(images)) await fs.writeFile(path.join(job, 'input-' + view + '.png'), bytes);
     const script = mode === 'multiview' ? 'pipeline_multiview.py' : 'pipeline.py';
     const args = mode === 'multiview' ? ['--job', job] : ['--input', path.join(job, 'input-single.png'), '--output', job];
