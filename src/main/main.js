@@ -3079,20 +3079,36 @@ function armForceExit() {
   forceExitTimer.unref?.();     // 它自己不该成为「阻止退出」的那个句柄
 }
 
+/**
+ * 退出时逐个收尾。
+ *
+ * 每一步都单独兜住：之前 `voiceBoxService?.stop()` 抛了 TypeError（那个类根本没有
+ * stop），整个 will-quit 就断在那儿 —— 表现是退出时弹一个 JavaScript error，
+ * 而且排在它后面的 `voiceboxService.stop()`（真正负责杀掉 voicebox-server 子进程的
+ * 那一步）从来没执行过，语音服务每次都是被强退硬掐掉的。
+ * 一个收尾动作失败不该连累其余的。
+ */
 app.on('will-quit', () => {
   armForceExit();
-  stopAllShelfApps();      // 别把工具架启动的子进程留成孤儿
-  stopAutoCheck();
-  globalShortcut.unregisterAll();
-  remoteControl?.stop();
-  argosService?.destroy();
-  for (const pending of pendingRemoteCommands.values()) {
-    clearTimeout(pending.timer);
-    pending.reject(new Error('工具箱正在退出。'));
+  const steps = [
+    ['工具架子进程', () => stopAllShelfApps()],
+    ['更新检查', () => stopAutoCheck()],
+    ['全局快捷键', () => globalShortcut.unregisterAll()],
+    ['手机控制', () => remoteControl?.stop?.()],
+    ['Argos', () => argosService?.destroy?.()],
+    ['未完成的手机请求', () => {
+      for (const pending of pendingRemoteCommands.values()) {
+        clearTimeout(pending.timer);
+        pending.reject(new Error('工具箱正在退出。'));
+      }
+      pendingRemoteCommands.clear();
+    }],
+    ['DSH', () => dshService?.stop?.()],
+    ['酒馆', () => tavernService?.stop?.()],
+    ['Voicebox 外部应用', () => voiceBoxService?.stop?.()],
+    ['Voicebox 服务', () => voiceboxService?.stop?.()],
+  ];
+  for (const [name, run] of steps) {
+    try { run(); } catch (error) { console.warn(`[quit] ${name} 收尾失败：`, error?.message || error); }
   }
-  pendingRemoteCommands.clear();
-  dshService?.stop();
-  tavernService?.stop();
-  voiceBoxService?.stop();
-  voiceboxService?.stop();
 });
