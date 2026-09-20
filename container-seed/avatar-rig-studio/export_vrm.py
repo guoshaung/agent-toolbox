@@ -32,7 +32,7 @@ def glb(document, blob):
             + struct.pack('<II', len(blob), 0x004e4942) + blob)
 
 
-def _build_expression_targets(vertices, config):
+def _build_expression_targets(vertices, config, feature_vertices=None):
     """Build conservative, explicitly configured face deltas.
 
     These are only a bridge for a reviewed face landmark file. They are not a
@@ -49,6 +49,15 @@ def _build_expression_targets(vertices, config):
             raise ValueError('face expression regions require finite XYZ center/radius')
         d=(vertices-center)/radius
         return np.clip(1-(d*d).sum(axis=1),0,1).astype(np.float32)
+    if feature_vertices:
+        targets=[]
+        for name in ('blinkLeft','blinkRight','happy','aa'):
+            delta=np.zeros_like(vertices,dtype=np.float32)
+            # These surfaces begin behind the face and become visible only when
+            # their VRM expression moves them in front of the painted texture.
+            delta[feature_vertices[name],2]=.115
+            targets.append(delta)
+        return targets
     left=mask(regions['leftEye']); right=mask(regions['rightEye']); mouth=mask(regions['mouth'])
     blink_left=np.zeros_like(vertices,dtype=np.float32); blink_left[:,1]=-0.018*left
     blink_right=np.zeros_like(vertices,dtype=np.float32); blink_right[:,1]=-0.018*right
@@ -57,17 +66,43 @@ def _build_expression_targets(vertices, config):
     aa=np.zeros_like(vertices,dtype=np.float32); aa[:,1]=-0.018*mouth; aa[:,2]+=0.008*mouth
     return [blink_left,blink_right,happy,aa]
 
+
+def _apply_face_shape(vertices, config):
+    nose=config.get('nose') if isinstance(config,dict) else None
+    if not nose:return vertices,0
+    center=np.asarray(nose.get('center'),dtype=float)
+    radius=np.asarray(nose.get('radius'),dtype=float)
+    max_z=float(nose.get('maxZ'))
+    if center.shape!=(3,) or radius.shape!=(3,) or not np.isfinite(center).all() or not np.isfinite(radius).all() or np.any(radius<=0) or not np.isfinite(max_z):
+        raise ValueError('face-shape nose requires finite XYZ center/radius and maxZ')
+    distance=((vertices-center)/radius)**2
+    mask=(distance.sum(axis=1)<1) & (vertices[:,2]>max_z)
+    vertices=vertices.copy()
+    # Keep a small anime-style bridge instead of the long reconstruction spike.
+    vertices[mask,2]=max_z+(vertices[mask,2]-max_z)*.18
+    return vertices,int(mask.sum())
+
+
+def _remap_uv(uv, source_indices):
+    remapped=np.zeros((len(source_indices),2),dtype=np.float32)
+    valid=(source_indices>=0)&(source_indices<len(uv))
+    remapped[valid]=uv[source_indices[valid]]
+    return remapped
+
 def export(job, name='Image reconstructed avatar', t_pose=False, use_texture=True):
     reference = json.loads((job/'reference.json').read_text('utf-8')) if (job/'reference.json').is_file() else {}
     engine = 'Hunyuan3D-2mv' if (job/'multiview-reconstruction.json').is_file() else 'TripoSR'
     name = reference.get('name', name)
     data = np.load(job / 'mesh.npz')
     vertices = data['vertices'].astype(np.float32)
+    face_shape = json.loads((job/'face-shape.json').read_text('utf-8')) if (job/'face-shape.json').is_file() else {}
+    vertices,nose_vertices=_apply_face_shape(vertices,face_shape)
     rgba = data['colors']
     colors = rgba[:, :3].astype(np.float32) / 255
     # Vertex colors in glTF are linear, whereas TripoSR predicts display RGB.
     colors = np.where(colors <= .04045, colors / 12.92, ((colors+.055)/1.055)**2.4)
     faces = data['faces'].astype(np.uint32)
+    source_indices=np.arange(len(vertices),dtype=int)
     positions = dict(POSITIONS)
     parents = dict(PARENTS)
     if (job/'landmarks.json').exists():
@@ -78,6 +113,17 @@ def export(job, name='Image reconstructed avatar', t_pose=False, use_texture=Tru
         from hand_rig import replace_hands
         repair=replace_hands(vertices,faces,rgba,parents,positions,json.loads((job/'hand-repair.json').read_text('utf-8')))
         vertices=repair['vertices'].astype(np.float32);faces=repair['faces'].astype(np.uint32);rgba=repair['colors']
+        source_indices=repair['source_indices']
+        colors=rgba[:,:3].astype(np.float32)/255
+        colors=np.where(colors<=.04045,colors/12.92,((colors+.055)/1.055)**2.4)
+    face_features=None
+    expression_config = job / 'face-expressions.json'
+    if expression_config.is_file():
+        from face_rig import add_expression_features
+        face_expressions=json.loads(expression_config.read_text('utf-8'))
+        face_features=add_expression_features(vertices,faces,rgba,face_expressions,source_indices)
+        vertices=face_features['vertices'];faces=face_features['faces'];rgba=face_features['colors']
+        source_indices=face_features['source_indices']
         colors=rgba[:,:3].astype(np.float32)/255
         colors=np.where(colors<=.04045,colors/12.92,((colors+.055)/1.055)**2.4)
     names = list(parents)
@@ -112,6 +158,11 @@ def export(job, name='Image reconstructed avatar', t_pose=False, use_texture=Tru
             indices[vertex]=0;weights[vertex]=0
             for slot,(bone,weight) in enumerate(binding.items()):
                 if weight>0:indices[vertex,slot]=names.index(bone);weights[vertex,slot]=weight
+    if face_features:
+        for vertex,binding in face_features['bindings'].items():
+            indices[vertex]=0;weights[vertex]=0
+            for slot,(bone,weight) in enumerate(binding.items()):
+                indices[vertex,slot]=names.index(bone);weights[vertex,slot]=weight
     # Bake arms into an approximate T pose; recompute rest skeleton and normals.
     transforms = np.repeat(np.eye(4)[None], len(names), axis=0)
     for side, sign in ([('left', 1), ('right', -1)] if t_pose else []):
@@ -180,16 +231,14 @@ def export(job, name='Image reconstructed avatar', t_pose=False, use_texture=Tru
     texture_faces = np.zeros(len(faces), dtype=bool)
     if textured:
         uv = data['projection_uv'].astype(np.float32)
-        if repair:
-            padded=np.zeros((int(repair['source_indices'].max())+1,2),dtype=np.float32)
-            padded[:len(uv)]=uv
-            uv=padded[repair['source_indices']]
+        uv=_remap_uv(uv,source_indices)
         # Restrict the reference projection to front-facing triangles inside the
         # image. Occluded side/back surfaces retain the learned appearance.
         facing = normals[faces].mean(axis=1)[:,2]
         uv_valid = ((uv >= 0) & (uv <= 1)).all(axis=1)
         texture_faces = (facing > .35) & uv_valid[faces].all(axis=1)
         if repair:texture_faces[repair['hand_faces']]=False
+        if face_features:texture_faces[face_features['feature_faces']]=False
         texture = (job/'input-prepared.png').read_bytes()
         blob.extend(b'\0'*(-len(blob)%4))
         image_view = len(document['bufferViews'])
@@ -219,7 +268,10 @@ def export(job, name='Image reconstructed avatar', t_pose=False, use_texture=Tru
                      (np.abs(centers[:,0]) < .23) & (centers[:,2] > -.015) &
                      (face_normals[:,2] > -.15))
         groups[face_region]=0
-        if repair:groups[repair['hand_faces']]=-1
+        if repair:
+            hand_faces=np.pad(repair['hand_faces'],(0,len(faces)-len(repair['hand_faces'])))
+            groups[hand_faces]=-1
+        if face_features:groups[face_features['feature_faces']]=-1
         document['images']=[];document['textures']=[]
         document['samplers']=[{'magFilter':9729,'minFilter':9987,'wrapS':33071,'wrapT':33071}]
         for j,filename in enumerate(data['texture_files']):
@@ -236,29 +288,32 @@ def export(job, name='Image reconstructed avatar', t_pose=False, use_texture=Tru
                 'extensions':{'KHR_materials_unlit':{}}})
             attrs={k:v for k,v in attributes.items() if k!='COLOR_0'}
             uv=data['multiview_uv'][j].astype(np.float32)
-            if repair:
-                padded=np.zeros((int(repair['source_indices'].max())+1,2),dtype=np.float32)
-                padded[:len(uv)]=uv
-                uv=padded[repair['source_indices']]
+            uv=_remap_uv(uv,source_indices)
             attrs['TEXCOORD_0']=accessor(uv,5126,'VEC2',34962)
             chosen=groups==j
             if chosen.any():
                 primitives.append({'attributes':attrs,'indices':accessor(faces[chosen].reshape(-1),5125,'SCALAR',34963),'material':len(document['materials'])-1})
         texture_faces=groups>=0
-    if (~texture_faces).any():
-        material=0
-        if repair and multiview:
-            document['materials'].append({'name':'Generic fitted hand surface','doubleSided':True,
-               'pbrMetallicRoughness':{'baseColorFactor':[.72,.72,.72,1],'metallicFactor':0,'roughnessFactor':.8}})
-            material=len(document['materials'])-1
-        primitives.append({'attributes':attributes,'indices':accessor(faces[~texture_faces].reshape(-1),5125,'SCALAR',34963),'material':0})
-        primitives[-1]['material']=material
+    untextured=~texture_faces
+    hand_faces=np.zeros(len(faces),dtype=bool)
+    if repair:hand_faces[:len(repair['hand_faces'])]=repair['hand_faces']
+    feature_faces=face_features['feature_faces'] if face_features else np.zeros(len(faces),dtype=bool)
+    base_faces=untextured & ~hand_faces & ~feature_faces
+    if base_faces.any():
+        primitives.append({'attributes':attributes,'indices':accessor(faces[base_faces].reshape(-1),5125,'SCALAR',34963),'material':0})
+    if (untextured & hand_faces).any():
+        document['materials'].append({'name':'Generic fitted hand surface','doubleSided':True,
+           'pbrMetallicRoughness':{'baseColorFactor':[.72,.72,.72,1],'metallicFactor':0,'roughnessFactor':.8}})
+        primitives.append({'attributes':attributes,'indices':accessor(faces[untextured&hand_faces].reshape(-1),5125,'SCALAR',34963),'material':len(document['materials'])-1})
+    if (untextured & feature_faces).any():
+        document['materials'].append({'name':'Expression eyelids and mouth','doubleSided':True,
+           'pbrMetallicRoughness':{'metallicFactor':0,'roughnessFactor':.85},'extensions':{'KHR_materials_unlit':{}}})
+        primitives.append({'attributes':attributes,'indices':accessor(faces[untextured&feature_faces].reshape(-1),5125,'SCALAR',34963),'material':len(document['materials'])-1})
     face_expressions = None
     expression_targets = []
-    expression_config = job / 'face-expressions.json'
     if expression_config.is_file():
         face_expressions = json.loads(expression_config.read_text('utf-8'))
-        expression_targets = _build_expression_targets(vertices, face_expressions)
+        expression_targets = _build_expression_targets(vertices, face_expressions,face_features['feature_vertices'] if face_features else None)
         if expression_targets:
             for primitive in primitives:
                 primitive['targets']=[{'POSITION': accessor(delta,5126,'VEC3',34962,True)} for delta in expression_targets]
@@ -305,8 +360,11 @@ def export(job, name='Image reconstructed avatar', t_pose=False, use_texture=Tru
     if expression_targets:
         report['expressions']=preset_names
         report['expressionQuality']='reviewed landmark-driven generic morphs; not captured facial anatomy'
+        report['expressionFeatureVertices']=int(sum(len(v) for v in face_features['feature_vertices'].values())) if face_features else 0
     if multiview:
         report['faceProjection']='front reference locked for visible face region to avoid duplicate side eyes'
+    if nose_vertices:
+        report['noseShapeVerticesAdjusted']=nose_vertices
     if (job/'texture-provenance.json').is_file():
         report['textureProvenance']=json.loads((job/'texture-provenance.json').read_text('utf-8'))
     if repair:

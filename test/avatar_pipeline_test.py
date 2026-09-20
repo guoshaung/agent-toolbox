@@ -62,11 +62,24 @@ class ExportTest(unittest.TestCase):
                 'mouth':{'center':[0,1.35,.1],'radius':[.12,.12,.12]}}}))
             result=export(job)
             self.assertEqual(result['expressions'],['blinkLeft','blinkRight','happy','aa'])
+            self.assertGreater(result['expressionFeatureVertices'],0)
             raw=(job/'avatar.vrm').read_bytes();size=struct.unpack_from('<I',raw,12)[0]
             doc=json.loads(raw[20:20+size]);mesh_doc=doc['meshes'][0]
             self.assertEqual(len(mesh_doc['primitives'][0]['targets']),4)
+            self.assertIn('Expression eyelids and mouth',[m['name'] for m in doc['materials']])
             self.assertEqual(set(doc['extensions']['VRMC_vrm']['expressions']['preset']),
                              {'blinkLeft','blinkRight','happy','aa'})
+
+    def test_reviewed_nose_limit_reduces_only_front_spike(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            job=Path(tmp)
+            vertices=np.array([[0,1.40,.22],[.16,1.40,.22],[0,1.1,.22]],dtype=float)
+            np.savez(job/'mesh.npz',vertices=vertices,faces=np.array([[0,1,2]]),
+                     colors=np.tile([240,220,210,255],(3,1)))
+            (job/'face-shape.json').write_text(json.dumps({'nose':{
+                'center':[0,1.40,.13],'radius':[.08,.08,.15],'maxZ':.135}}))
+            result=export(job)
+            self.assertEqual(result['noseShapeVerticesAdjusted'],1)
 
     def test_missing_side_is_mirrored_and_negative_x_faces_use_it(self):
         with tempfile.TemporaryDirectory() as tmp:

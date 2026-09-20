@@ -74,6 +74,9 @@ def replace_hands(vertices, faces, colors, parents, positions, config):
                 [width*.21,width*.23,width*.22,width*.17],
                 [{side+'Hand':1}]*4)
         fingers = [('Index',-.27,.053),('Middle',-.03,.059),('Ring',.21,.054),('Little',.43,.044)]
+        finger_radius=float(spec.get('fingerRadius',.16))
+        if not .10 <= finger_radius <= .26:
+            raise ValueError('fingerRadius must be 0.10–0.26 times hand width')
         for finger, spread, finger_length in fingers+[('Thumb',-.66,.041)]:
             thumb = finger == 'Thumb'
             base = wrist+direction*length*(.38 if thumb else .92)+across*width*spread
@@ -90,7 +93,7 @@ def replace_hands(vertices, faces, colors, parents, positions, config):
             centers=[];radii=[];ring_bindings=[]
             for t in [0,.08,.23,.4,.43,.57,.71,.74,.87,.97,1]:
                 centers.append(base+finger_direction*finger_length*t)
-                radius=width*(.115 if thumb else .095)*(1-.38*t)
+                radius=width*(finger_radius*1.08 if thumb else finger_radius)*(1-.30*t)
                 if t>.96:radius*=.55
                 radii.append(radius)
                 if t<.12:binding={side+'Hand':1-t/.12,joint_names[0]:t/.12}

@@ -7,14 +7,14 @@ const job = new URLSearchParams(location.search).get('job') || 'miku-reconstruct
 if (!/^[a-zA-Z0-9_-]+$/.test(job)) throw Error('Invalid job');
 const base = `/jobs/${job}/`;
 let engineName='真实重建';
-let rigMetadata=null,handRest=new Map();
+let rigMetadata=null,handRest=new Map(),actionRest=new Map();
 fetch(base+'hand-rig.json').then(r=>r.ok?r.json():null).then(p=>{rigMetadata=p;document.querySelector('#hand-controls').hidden=!(p && vrm); if(p)document.querySelector('#hand-status').textContent='通用替换手 · 30 根手指骨骼（待精修）';}).catch(()=>{});
 fetch(base+'project.json').then(r=>r.ok?r.json():{}).then(p=>{
   if(p.name){document.querySelector('#character-name').textContent='模型验收 / '+p.name;document.title='Avatar Studio · '+p.name;}
   if(p.source || p.engine){engineName=p.source || p.engine;document.querySelector('#engine').textContent=engineName+' · VRM 1.0';}
   if((p.source||'').includes('Hunyuan'))document.querySelector('.note').textContent='豆包三视图联合重建草稿。视图差异、贴图接缝和未提供的另一侧细节仍需修正；骨骼为初步绑定，无表情或头发物理。';
   if(p.handRepair)document.querySelector('.note').textContent='原手指粘连，现为显式拟合的通用五指替换手；缺失一侧贴图为镜像近似。不是精确还原或动画成品。';
-  if(Array.isArray(p.expressions) && p.expressions.length) { document.querySelector('#expression-controls').hidden=false; document.querySelector('#expression-status').textContent='VRM 表情 Morph · '+p.expressions.join(' / '); }
+  if(Array.isArray(p.expressions) && p.expressions.length) { document.querySelector('#expression-controls').hidden=false; document.querySelector('#expression-status').textContent='VRM 表情 Morph · '+p.expressions.join(' / '); document.querySelector('.note').textContent='当前样例使用经核对的眼睑和口腔 Morph；走路和挥手仅用于蒙皮验收。头发、衣服及全身拓扑仍是自动重建草稿。'; }
 }).catch(()=>{});
 document.querySelector('#reference').src = base+'source.png';
 document.querySelector('#download').href = base+'avatar.vrm';
@@ -58,7 +58,7 @@ async function load(file){
   scene.add(root);root.updateMatrixWorld(true);
   helper=new THREE.SkeletonHelper(root);helper.visible=document.querySelector('#bones').checked;scene.add(helper);
   helper.material.depthTest=false;helper.material.transparent=true;helper.material.opacity=.9;helper.renderOrder=100;
-  handRest=new Map();root.traverse(o=>{if(o.isBone)handRest.set(o.name,o.quaternion.clone());});
+  handRest=new Map();actionRest=new Map();root.traverse(o=>{if(o.isBone){handRest.set(o.name,o.quaternion.clone());actionRest.set(o.name,o.quaternion.clone());}});
   mixer=new THREE.AnimationMixer(root);if(gltf.animations[0])mixer.clipAction(gltf.animations[0]).play();
   let vertices=0,triangles=0,skins=0,bones=0;const seen=new Set();root.traverse(o=>{if(o.isMesh){const p=o.geometry.attributes.position;if(!seen.has(p.array)){vertices+=p.count;seen.add(p.array);}triangles+=(o.geometry.index?.count||p.count)/3;if(o.material.map)o.material.map.anisotropy=Math.min(16,renderer.capabilities.getMaxAnisotropy());}if(o.isSkinnedMesh)skins++;if(o.isBone)bones++;});
   const bounds=new THREE.Box3().setFromObject(root);window.loadedAvatar={root,vrm,renderer,camera,scene};
@@ -86,9 +86,29 @@ function applyExpressionTest(){
  if(!vrm?.expressionManager || document.querySelector('#expression-controls').hidden)return;
  const selected=document.querySelector('#expression').value;
  const weight=Number(document.querySelector('#expression-weight').value)/100;
- for(const expression of ['blinkLeft','blinkRight','happy','aa'])vrm.expressionManager.setValue(expression,expression===selected?weight:0);
+ for(const expression of ['blinkLeft','blinkRight','happy','aa'])vrm.expressionManager.setValue(expression,(selected==='blink' ? expression.startsWith('blink') : expression===selected)?weight:0);
+}
+function applyAction(now){
+ if(!vrm)return;
+ const action=document.querySelector('#action').value;
+ const names=['leftUpperArm','leftLowerArm','rightUpperArm','rightLowerArm','rightHand','leftUpperLeg','leftLowerLeg','rightUpperLeg','rightLowerLeg'];
+ const bone=name=>vrm.humanoid.getRawBoneNode(name);
+ const reset=name=>{const b=bone(name),rest=b&&actionRest.get(b.name);if(rest)b.quaternion.copy(rest);return b;};
+ const turn=(name,axis,angle)=>{const b=reset(name);if(b)b.quaternion.multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(...axis),angle));};
+ for(const name of names)reset(name);
+ if(action==='walk'){
+  const phase=now/260,step=Math.sin(phase);
+  turn('leftUpperLeg',[1,0,0],step*.18);turn('rightUpperLeg',[1,0,0],-step*.18);
+  turn('leftLowerLeg',[1,0,0],Math.max(0,-step)*.18);turn('rightLowerLeg',[1,0,0],Math.max(0,step)*.18);
+  turn('leftUpperArm',[1,0,0],-step*.12);turn('rightUpperArm',[1,0,0],step*.12);
+ } else if(action==='wave'){
+  const wave=Math.sin(now/150);
+  // The reconstructed sleeve has unreliable arm weights. Keep the wave on the
+  // explicitly weighted hand rather than tearing detached clothing away.
+  turn('rightHand',[0,0,1],wave*.34);
+ }
 }
 let resizeFrame;
 new ResizeObserver(()=>{cancelAnimationFrame(resizeFrame);resizeFrame=requestAnimationFrame(()=>{const w=viewport.clientWidth,h=viewport.clientHeight;if(!w||!h)return;renderer.setSize(w,h,false);camera.aspect=w/h;camera.updateProjectionMatrix();});}).observe(viewport);
-renderer.setAnimationLoop(()=>{const now=performance.now();const dt=(now-previousTime)/1000;previousTime=now;if(document.querySelector('#motion').checked){if(vrm){const head=vrm.humanoid.getNormalizedBoneNode('head');if(head)head.rotation.y=Math.sin(now/600)*.20;}else if(mixer)mixer.update(dt);}else if(vrm){const head=vrm.humanoid.getNormalizedBoneNode('head');if(head)head.rotation.y=0;}applyExpressionTest();if(vrm)vrm.update(dt);applyFingerTest();controls.update();renderer.render(scene,camera);});
+renderer.setAnimationLoop(()=>{const now=performance.now();const dt=(now-previousTime)/1000;previousTime=now;if(document.querySelector('#motion').checked){if(vrm){const head=vrm.humanoid.getNormalizedBoneNode('head');if(head)head.rotation.y=Math.sin(now/600)*.20;}else if(mixer)mixer.update(dt);}else if(vrm){const head=vrm.humanoid.getNormalizedBoneNode('head');if(head)head.rotation.y=0;}applyExpressionTest();if(vrm)vrm.update(dt);applyAction(now);applyFingerTest();controls.update();renderer.render(scene,camera);});
 load(document.querySelector('#model').value);
