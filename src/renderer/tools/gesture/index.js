@@ -35,20 +35,36 @@ export default {
 
     // ---------- 银河 ----------
     const galaxyCanvas = h('canvas', { class: 'gesture__galaxy-canvas' });
-    // 银河页上直接列出现在开着的应用和编号 —— 不然比数字前根本不知道几号是谁
-    const appsRow = h('div', { class: 'gesture__apps' });
+    // 开着的应用和它们的编号。
+    // 这份列表要一直在：以前只画在银河页上，关掉右下角小窗就跟着没了 —— 而关小窗
+    // 常常只是想把那个总在最前面的框挪开，不是不想看编号了。所以正常页面上也放一份，
+    // 两边用同一个数据渲染，摄像头开不开都看得到。
+    const appsRow = h('div', { class: 'gesture__apps' });          // 银河页上的那份
+    const appsCard = h('div', { class: 'gesture__apps' });         // 常驻页面上的那份
     let appsTimer = 0;
-    async function refreshApps() {
-      let apps = [];
-      try { apps = await window.toolbox.gesture.listApps(); } catch { apps = []; }
-      appsRow.replaceChildren(...(apps.length ? apps.map((a, i) => h('button', {
+    function appCards(apps) {
+      if (!apps.length) return [h('span', { class: 'faint' }, '没扫到开着的应用')];
+      return apps.map((a, i) => h('button', {
         class: 'gesture__app', title: `比 ${i + 1} 或点这里切到 ${a.name}`,
         onclick: () => window.toolbox.switcher?.pick?.(i + 1) ?? window.toolbox.gesture.showSwitcher(),
       },
         h('span', { class: 'gesture__app-n' }, String(i + 1)),
         a.icon ? h('img', { class: 'gesture__app-icon', src: a.icon, alt: '' }) : h('span', { class: 'gesture__app-icon' }),
         h('span', { class: 'gesture__app-name' }, a.name),
-      )) : [h('span', { class: 'faint' }, '没扫到开着的应用')]));
+      ));
+    }
+    async function refreshApps() {
+      let apps = [];
+      try { apps = await window.toolbox.gesture.listApps(); } catch { apps = []; }
+      appsRow.replaceChildren(...appCards(apps));
+      appsCard.replaceChildren(...appCards(apps));
+    }
+    function watchApps(on) {
+      clearInterval(appsTimer);
+      appsTimer = 0;
+      if (!on) return;
+      refreshApps();
+      appsTimer = setInterval(refreshApps, 5000);
     }
     const hud = h('div', { class: 'gesture__hud' },
       h('div', { class: 'gesture__hud-title' }, '手势模式 · 比数字切到这些应用'),
@@ -79,8 +95,6 @@ export default {
       body.classList.add('is-away');
       requestAnimationFrame(() => { galaxy.classList.add('is-in'); sky.start(); });
       refreshApps();
-      clearInterval(appsTimer);
-      appsTimer = setInterval(refreshApps, 5000);
     }
     function stop() {
       if (!enabled) return;
@@ -93,7 +107,7 @@ export default {
       setStatus('未启动');
       galaxy.classList.remove('is-in');
       body.classList.remove('is-away');
-      clearInterval(appsTimer);
+      // 注意：不停 appsTimer —— 应用列表在常驻页面上还要继续显示和刷新
       setTimeout(() => { if (!enabled) { galaxy.hidden = true; sky.stop(); } }, 700);
     }
     // 小窗那边点了 ×，这边也退出银河
@@ -102,6 +116,10 @@ export default {
     const saveMusic = h('button', { class: 'btn btn--sm', onclick: async () => { await config.set('gesture.musicUrl', musicInput.value); toast('音乐网址已保存', 'good'); } }, '保存音乐网址');
     const testMusic = h('button', { class: 'btn btn--sm', onclick: () => action('music') }, '试听');
     body.append(
+      h('section', { class: 'card' },
+        h('h3', { class: 'card__title' }, '现在开着的应用'),
+        h('p', { class: 'faint settings__hint' }, '开着摄像头时比对应的数字就切过去；不开摄像头也能点这里切。每 5 秒重扫一次。'),
+        appsCard),
       h('section', { class: 'card' }, h('h3', { class: 'card__title' }, '比数字切应用'),
         h('p', { class: 'faint settings__hint' }, '开摄像头后：打响指（拇指中指弹开，或两指并拢横着快扫）唤出带编号的切换栏，单手比 1–9 就切到那个应用，握拳收起。识别窗常驻右下角，切走了也能继续比。'),
         h('div', { class: 'gesture__actions' },
@@ -123,6 +141,11 @@ export default {
       h('div', { class: 'gesture__stage' }, body, galaxy),
     );
     window.toolbox.gesture.isOpen?.().then((open) => { if (open) start(); });
-    return { deactivate: () => { /* 小窗独立于这一页，切栏目不打断识别 */ } };
+    watchApps(true);
+    return {
+      // 切回这一页时重新扫一遍应用；离开就别再定时扫了，白费电
+      activate: () => watchApps(true),
+      deactivate: () => watchApps(false),   // 小窗和识别都不受影响，只是停掉这页的刷新
+    };
   },
 };
