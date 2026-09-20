@@ -4125,3 +4125,25 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 }
 .git__output.is-good { border-color: color-mix(in srgb, var(--good) 45%, var(--line-soft)); }
 .git__output.is-bad { border-color: color-mix(in srgb, var(--bad) 55%, var(--line-soft)); }
+
+/* 银河页上的应用条做成 ⌘Tab 那个样子：大图标横着排，编号顶在角上。
+   常驻页面上那份保持紧凑列表，两种场景各自合适。 */
+.gesture__hud { background: rgba(10, 8, 24, .42); border-color: rgba(201,167,255,.3); }
+.gesture__galaxy .gesture__apps {
+  display: flex; flex-wrap: wrap; justify-content: center; gap: 10px;
+  grid-template-columns: none; margin-bottom: 18px;
+}
+.gesture__galaxy .gesture__app {
+  position: relative; flex-direction: column; gap: 6px;
+  width: 96px; padding: 14px 8px 10px;
+  border-radius: 16px; background: rgba(28, 22, 50, .72);
+  border-color: rgba(201,167,255,.22);
+}
+.gesture__galaxy .gesture__app:hover { background: rgba(48, 38, 84, .9); transform: translateY(-3px); }
+.gesture__galaxy .gesture__app-icon { width: 46px; height: 46px; border-radius: 12px; }
+.gesture__galaxy .gesture__app-n {
+  position: absolute; top: -9px; left: 50%; transform: translateX(-50%);
+  width: 26px; height: 26px; border-radius: 9px; font-size: 15px;
+  box-shadow: 0 4px 12px rgba(157,123,255,.45);
+}
+.gesture__galaxy .gesture__app-name { max-width: 100%; font-size: 11.5px; text-align: center; }
