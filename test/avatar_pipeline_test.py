@@ -2,6 +2,7 @@
 import importlib.util
 import json
 import struct
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -47,6 +48,47 @@ class ImagePreparationTest(unittest.TestCase):
 
 
 class ExportTest(unittest.TestCase):
+    def test_missing_side_is_mirrored_and_negative_x_faces_use_it(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            job = Path(tmp)
+            mesh = trimesh.creation.icosphere(subdivisions=1)
+            np.savez(job/'hunyuan-raw.npz', vertices=mesh.vertices, faces=mesh.faces)
+            for view in ['front','left','back']:
+                image = Image.new('RGBA', (32,32), 'red')
+                ImageDraw.Draw(image).rectangle((16,0,31,31), fill='blue')
+                image.save(job/(view+'.png'))
+            def prepare_mesh():
+                subprocess.run([sys.executable,str(STUDIO/'prepare_multiview_mesh.py'),
+                                '--job',str(job)],check=True,capture_output=True)
+            prepare_mesh()
+            right = np.asarray(Image.open(job/'right-texture.png'))
+            left = np.asarray(Image.open(job/'left-texture.png'))
+            np.testing.assert_array_equal(right,left[:,::-1])
+            report=export(job)
+            self.assertIn('mirrored',report['textureProvenance']['right'])
+            raw=(job/'avatar.vrm').read_bytes();size=struct.unpack_from('<I',raw,12)[0]
+            doc=json.loads(raw[20:20+size]);buffer=raw[28+size:]
+            def read(accessor,dtype,width):
+                a=doc['accessors'][accessor];v=doc['bufferViews'][a['bufferView']]
+                return np.frombuffer(buffer,dtype=dtype,count=a['count']*width,
+                                     offset=v.get('byteOffset',0)).reshape(-1,width)
+            primitives=doc['meshes'][0]['primitives']
+            self.assertEqual(len(primitives),4)
+            normals=read(primitives[0]['attributes']['NORMAL'],'<f4',3)
+            negative_x_count=0
+            for primitive in primitives:
+                faces=read(primitive['indices'],'<u4',1).reshape(-1,3)
+                n=normals[faces].mean(1)
+                negative=(n[:,0]<0)&(-n[:,0]>np.abs(n[:,2]))
+                if negative.any():
+                    negative_x_count+=int(negative.sum())
+                    self.assertIn('right-texture.png',doc['materials'][primitive['material']]['name'])
+            self.assertGreater(negative_x_count,0)
+            Image.new('RGBA',(32,32),'green').save(job/'right.png')
+            prepare_mesh()
+            self.assertEqual(json.loads((job/'texture-provenance.json').read_text())['right'],'supplied reference')
+            self.assertEqual(Image.open(job/'right-texture.png').getpixel((0,0)),(0,128,0))
+
     def test_multiview_vrm_keeps_views_materials_and_character_metadata(self):
         with tempfile.TemporaryDirectory() as tmp:
             job = Path(tmp)

@@ -38,7 +38,7 @@ def cutout(image):
 
 
 def prepare(job):
-    for view in VIEWS:
+    for view in VIEWS + (('right',) if (job/'input-right.png').is_file() else ()):
         source = job / f'input-{view}.png'
         if not source.is_file():
             raise ValueError(f'缺少 {view} 图片')

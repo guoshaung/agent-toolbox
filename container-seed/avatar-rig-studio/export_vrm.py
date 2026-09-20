@@ -37,27 +37,41 @@ def export(job, name='Image reconstructed avatar', t_pose=False, use_texture=Tru
     name = reference.get('name', name)
     data = np.load(job / 'mesh.npz')
     vertices = data['vertices'].astype(np.float32)
-    colors = data['colors'][:, :3].astype(np.float32) / 255
+    rgba = data['colors']
+    colors = rgba[:, :3].astype(np.float32) / 255
     # Vertex colors in glTF are linear, whereas TripoSR predicts display RGB.
     colors = np.where(colors <= .04045, colors / 12.92, ((colors+.055)/1.055)**2.4)
     faces = data['faces'].astype(np.uint32)
     positions = dict(POSITIONS)
+    parents = dict(PARENTS)
     if (job/'landmarks.json').exists():
         positions.update(json.loads((job/'landmarks.json').read_text('utf-8')))
-    names = list(PARENTS)
+    repair = None
+    if (job/'hand-repair.json').is_file():
+        if t_pose:raise ValueError('Correct hand repair landmarks in the final pose; --t-pose not supported with replaced hands')
+        from hand_rig import replace_hands
+        repair=replace_hands(vertices,faces,rgba,parents,positions,json.loads((job/'hand-repair.json').read_text('utf-8')))
+        vertices=repair['vertices'].astype(np.float32);faces=repair['faces'].astype(np.uint32);rgba=repair['colors']
+        colors=rgba[:,:3].astype(np.float32)/255
+        colors=np.where(colors<=.04045,colors/12.92,((colors+.055)/1.055)**2.4)
+    names = list(parents)
     joints = np.array([positions[n] for n in names], dtype=np.float32)
     # Distance to each bone segment, with four normalized influences per vertex.
     distances = []
     for i, bone in enumerate(names):
-        children = [n for n in names if PARENTS[n] == bone]
+        children = [n for n in names if parents[n] == bone]
         tail = joints[names.index(children[0])] if children else joints[i] + [0, .045, 0]
         direction = tail-joints[i]
         t = np.clip((vertices-joints[i]) @ direction / max(direction@direction, 1e-8), 0, 1)
         distances.append(np.linalg.norm(vertices-joints[i]-t[:, None]*direction, axis=1))
     distances = np.stack(distances, axis=1)
+    if repair:
+        # Finger weights come only from replacement geometry, never accidentally
+        # pull sleeves, hair or torso towards nearby finger joints.
+        distances[:,21:] = 1e6
     # Optional job-specific hint; do not mistake arbitrary turquoise clothing
     # for hair in every character.
-    raw = data['colors'][:, :3].astype(np.float32)/255
+    raw = rgba[:, :3].astype(np.float32)/255
     hair = reference.get('turquoiseHair', False) & (raw[:, 1] > raw[:, 0]*1.3) & (raw[:, 2] > raw[:, 0]*1.2) & (np.abs(vertices[:, 0])>.23)
     distances[hair] = 10
     distances[hair, names.index('head')] = 0
@@ -67,6 +81,11 @@ def export(job, name='Image reconstructed avatar', t_pose=False, use_texture=Tru
     weights[weights < 1e-6] = 0
     weights /= weights.sum(axis=1, keepdims=True)
     indices[weights == 0] = 0
+    if repair:
+        for vertex,binding in repair['bindings'].items():
+            indices[vertex]=0;weights[vertex]=0
+            for slot,(bone,weight) in enumerate(binding.items()):
+                if weight>0:indices[vertex,slot]=names.index(bone);weights[vertex,slot]=weight
     # Bake arms into an approximate T pose; recompute rest skeleton and normals.
     transforms = np.repeat(np.eye(4)[None], len(names), axis=0)
     for side, sign in ([('left', 1), ('right', -1)] if t_pose else []):
@@ -85,7 +104,10 @@ def export(job, name='Image reconstructed avatar', t_pose=False, use_texture=Tru
     vertices = sum(weights[:, k, None] * np.einsum('nij,nj->ni', transforms[indices[:, k]], homogeneous)[:, :3] for k in range(4)).astype(np.float32)
     joints = np.einsum('nij,nj->ni', transforms, np.c_[joints,np.ones(len(joints))])[:, :3]
     import trimesh
-    normals = trimesh.Trimesh(vertices=vertices, faces=faces, process=False).vertex_normals.astype(np.float32)
+    normal_mesh=trimesh.Trimesh(vertices=vertices, faces=faces, process=False)
+    normal_mesh.fix_normals(multibody=True)
+    faces=normal_mesh.faces.astype(np.uint32)
+    normals = normal_mesh.vertex_normals.astype(np.float32)
     document = {'asset': {'version': '2.0', 'generator': 'Avatar Rig Studio / '+engine},
                 'scene': 0, 'scenes': [{'nodes': [0, len(names)+1]}], 'nodes': [], 'meshes': [],
                 'bufferViews': [], 'accessors': [], 'buffers': [], 'skins': [],
@@ -110,10 +132,10 @@ def export(job, name='Image reconstructed avatar', t_pose=False, use_texture=Tru
     node_indices = {n: i+1 for i,n in enumerate(names)}
     document['nodes'].append({'name': 'Avatar', 'children': [1]})
     for i, bone in enumerate(names):
-        parent = PARENTS[bone]
+        parent = parents[bone]
         local = joints[i] - joints[names.index(parent)] if parent else joints[i]
         node = {'name': bone, 'translation': local.tolist()}
-        children = [node_indices[n] for n in names if PARENTS[n] == bone]
+        children = [node_indices[n] for n in names if parents[n] == bone]
         if children: node['children'] = children
         document['nodes'].append(node)
     document['nodes'].append({'name': 'Character surface', 'mesh': 0, 'skin': 0})
@@ -132,11 +154,16 @@ def export(job, name='Image reconstructed avatar', t_pose=False, use_texture=Tru
     texture_faces = np.zeros(len(faces), dtype=bool)
     if textured:
         uv = data['projection_uv'].astype(np.float32)
+        if repair:
+            padded=np.zeros((int(repair['source_indices'].max())+1,2),dtype=np.float32)
+            padded[:len(uv)]=uv
+            uv=padded[repair['source_indices']]
         # Restrict the reference projection to front-facing triangles inside the
         # image. Occluded side/back surfaces retain the learned appearance.
         facing = normals[faces].mean(axis=1)[:,2]
         uv_valid = ((uv >= 0) & (uv <= 1)).all(axis=1)
         texture_faces = (facing > .35) & uv_valid[faces].all(axis=1)
+        if repair:texture_faces[repair['hand_faces']]=False
         texture = (job/'input-prepared.png').read_bytes()
         blob.extend(b'\0'*(-len(blob)%4))
         image_view = len(document['bufferViews'])
@@ -154,8 +181,11 @@ def export(job, name='Image reconstructed avatar', t_pose=False, use_texture=Tru
             primitives.append({'attributes':attrs,'indices':accessor(faces[texture_faces].reshape(-1),5125,'SCALAR',34963),'material':1})
     if multiview:
         face_normals=normals[faces].mean(axis=1)
-        scores=np.stack((face_normals[:,2],face_normals[:,0],-face_normals[:,2]),axis=1)
+        directions=[face_normals[:,2],face_normals[:,0],-face_normals[:,2]]
+        if len(data['texture_files'])==4:directions.append(-face_normals[:,0])
+        scores=np.stack(directions,axis=1)
         groups=scores.argmax(axis=1)
+        if repair:groups[repair['hand_faces']]=-1
         document['images']=[];document['textures']=[]
         document['samplers']=[{'magFilter':9729,'minFilter':9987,'wrapS':33071,'wrapT':33071}]
         for j,filename in enumerate(data['texture_files']):
@@ -171,13 +201,24 @@ def export(job, name='Image reconstructed avatar', t_pose=False, use_texture=Tru
                 'pbrMetallicRoughness':{'baseColorTexture':{'index':j},'metallicFactor':0,'roughnessFactor':.85},
                 'extensions':{'KHR_materials_unlit':{}}})
             attrs={k:v for k,v in attributes.items() if k!='COLOR_0'}
-            attrs['TEXCOORD_0']=accessor(data['multiview_uv'][j].astype(np.float32),5126,'VEC2',34962)
+            uv=data['multiview_uv'][j].astype(np.float32)
+            if repair:
+                padded=np.zeros((int(repair['source_indices'].max())+1,2),dtype=np.float32)
+                padded[:len(uv)]=uv
+                uv=padded[repair['source_indices']]
+            attrs['TEXCOORD_0']=accessor(uv,5126,'VEC2',34962)
             chosen=groups==j
             if chosen.any():
                 primitives.append({'attributes':attrs,'indices':accessor(faces[chosen].reshape(-1),5125,'SCALAR',34963),'material':len(document['materials'])-1})
-        texture_faces[:]=True
+        texture_faces=groups>=0
     if (~texture_faces).any():
+        material=0
+        if repair and multiview:
+            document['materials'].append({'name':'Generic fitted hand surface','doubleSided':True,
+               'pbrMetallicRoughness':{'baseColorFactor':[.72,.72,.72,1],'metallicFactor':0,'roughnessFactor':.8}})
+            material=len(document['materials'])-1
         primitives.append({'attributes':attributes,'indices':accessor(faces[~texture_faces].reshape(-1),5125,'SCALAR',34963),'material':0})
+        primitives[-1]['material']=material
     document['meshes'].append({'primitives':primitives})
     times = np.array([0,.5,1,1.5,2],dtype=np.float32)
     angles = np.array([0,.35,0,-.35,0])/2
@@ -195,7 +236,7 @@ def export(job, name='Image reconstructed avatar', t_pose=False, use_texture=Tru
                  **({'otherLicenseUrl':reference['licenseUrl']} if reference.get('licenseUrl') else {}),
                  **({'references':[reference['sourceUrl']]} if reference.get('sourceUrl') else {}),
                  'allowRedistribution':False, 'commercialUsage':'personalNonProfit'},
-        'humanoid': {'humanBones': {n:{'node':i} for n,i in node_indices.items()}}}}
+        'humanoid': {'humanBones': {n:{'node':i} for n,i in node_indices.items() if not n.endswith('Tip')}}}}
     (job/'avatar.vrm').write_bytes(glb(document,bytes(blob)))
     report = {'format':'VRM 1.0', 'model':'avatar.vrm', 'glb':'avatar.glb',
               'name': name,
@@ -203,10 +244,19 @@ def export(job, name='Image reconstructed avatar', t_pose=False, use_texture=Tru
               'skin':'4 normalized weights per vertex', 'rigQuality':'estimated draft; manual correction required',
               'restPose':'approximate T pose' if t_pose else 'reference pose (T-pose correction required for retargeting)',
               'source':engine,
-              'appearance':'three-view reference projection (not diffusion texture)' if multiview else ('native-resolution reference projection + inferred side/back colors' if textured else 'vertex colors'),
+              'appearance':'multiview reference projection (missing right view may be mirrored)' if multiview else ('native-resolution reference projection + inferred side/back colors' if textured else 'vertex colors'),
               'texturedTriangles': int(texture_faces.sum()),
               'limitations':(['AI-generated view inconsistencies and texture seams','Unobserved right-side texture approximated'] if multiview else ['Back surface inferred from one image'])+['No facial blendshapes','Hair and clothing have no physics'],
               'weightSumError':float(abs(weights.sum(1)-1).max())}
+    if (job/'texture-provenance.json').is_file():
+        report['textureProvenance']=json.loads((job/'texture-provenance.json').read_text('utf-8'))
+    if repair:
+        report.update(handRepair=repair['report'],fingerBones=30,tipHelpers=10,
+                      handQuality='fitted generic replacement; not character-specific anatomical reconstruction')
+        coverage={n:int(np.sum(np.any((indices==names.index(n)) & (weights>.01),axis=1))) for n in repair['axes']}
+        (job/'hand-rig.json').write_text(json.dumps({'curlAxes':repair['axes'],'weightedVertices':coverage,'positions':positions},indent=2),'utf-8')
+    else:
+        (job/'hand-rig.json').unlink(missing_ok=True)
     (job/'project.json').write_text(json.dumps(report,ensure_ascii=False,indent=2),'utf-8')
     print(json.dumps(report),flush=True)
     return report

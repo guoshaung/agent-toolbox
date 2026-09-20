@@ -1,6 +1,6 @@
 import { h, toast } from '../../core/ui.js';
 
-const VIEW_LABELS = { front: '正面', left: '左侧（鼻尖朝左）', back: '背面' };
+const VIEW_LABELS = { front: '正面', left: '左侧（鼻尖朝左）', back: '背面', right:'右侧（可选，鼻尖朝右）' };
 
 export default {
   id: 'avatar-rig',
@@ -48,7 +48,7 @@ export default {
       const mv = mode.value === 'multiview';
       singlePanel.hidden = mv;
       multiviewPanel.hidden = !mv;
-      const complete = mv ? Object.keys(VIEW_LABELS).every(k => views[k]) : Boolean(single);
+      const complete = mv ? ['front','left','back'].every(k => views[k]) : Boolean(single);
       generate.disabled = busy || !complete || !environments[mode.value];
       generate.textContent = busy ? '执行中…' : '重建并导出 VRM';
       [mode, name, setup, refresh, pickSingle, sample, ...Object.values(cards).map(c => c.button)]
@@ -65,7 +65,7 @@ export default {
       if (key === 'single') { single = file; singlePreview.replaceChildren(image); singleLabel.textContent = file.name; }
       else { views[key] = file; cards[key].preview.replaceChildren(image); cards[key].filename.textContent = file.name; }
       state.textContent = mode.value === 'multiview'
-        ? '已选择 ' + Object.keys(views).length + '/3 张。请确认同一姿势、比例、服装和正确左右方向。'
+        ? '必需三图已选择 ' + ['front','left','back'].filter(k=>views[k]).length + '/3。可另加右侧图；缺少时右侧贴图只能镜像近似。'
         : '参考图就绪。背面和遮挡部分由模型推断。';
       update();
     }
@@ -155,7 +155,7 @@ export default {
         h('div', { class: 'avatar-rig__toolbar' }, mode, name),
         singlePanel, multiviewPanel,
         h('details', { class: 'avatar-rig__card' }, h('summary', {}, '参考图要求与首次安装'),
-          h('p', {}, '三张图片需同一姿势、等高全身、透明或纯白背景。左侧图的鼻尖朝画面左边。三视图拼图请先裁成三个独立文件；角色四肢分开的 A 姿势更适合绑定。'),
+          h('p', {}, '必需正面、左侧、背面；可加右侧。图片需同一姿势、等高全身、透明或纯白背景。左侧图鼻尖朝画面左边，右侧图鼻尖朝画面右边。缺少右侧时使用镜像近似，不保证服装左右不对称细节准确。拼图请先裁成独立文件。'),
           h('p', {}, '可以在豆包等工具生成一致三视图后导入。这里不会自动登录网页，也不承诺 AI 视图完全一致。'),
           h('p', {}, '三视图模式实测 RTX 4070 Laptop 8GB；需要 NVIDIA CUDA、Python 3.12、uv 和 Git。首次下载约 4.9GB 权重及依赖，遵循 Hunyuan 项目的模型许可。旧环境不被替换。'),
           h('p', {}, '升级后请点击“更新项目脚本”；覆盖前自动备份。用户图片、任务、权重与虚拟环境保留。')),

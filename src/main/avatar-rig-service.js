@@ -29,6 +29,7 @@ function validateInput(payload = {}) {
   const images = mode === 'single'
     ? { single: decodeImage(payload, '人物') }
     : Object.fromEntries(VIEWS.map((view, i) => [view, decodeImage(payload.views?.[view], ['正面', '左侧', '背面'][i])]));
+  if(mode==='multiview' && payload.views?.right)images.right=decodeImage(payload.views.right,'右侧');
   return { mode, images, name: String(payload.name || '图片重建角色').trim().slice(0, 100) || '图片重建角色' };
 }
 
