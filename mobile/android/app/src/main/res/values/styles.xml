@@ -6,4 +6,12 @@
         <item name="android:statusBarColor">#071B14</item>
         <item name="android:windowLightStatusBar">false</item>
     </style>
+    <!-- 听语音那一下用的：完全透明，底下的应用照常显示，只有边框流光和精灵在动 -->
+    <style name="Transparent" parent="android:style/Theme.Material.NoActionBar">
+        <item name="android:windowIsTranslucent">true</item>
+        <item name="android:windowBackground">@android:color/transparent</item>
+        <item name="android:windowNoTitle">true</item>
+        <item name="android:backgroundDimEnabled">false</item>
+        <item name="android:windowAnimationStyle">@null</item>
+    </style>
 </resources>

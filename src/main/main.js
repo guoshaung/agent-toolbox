@@ -10,6 +10,7 @@ const {
   app, BrowserWindow, ipcMain, session, shell, dialog, clipboard, nativeTheme, safeStorage, screen,
   nativeImage, globalShortcut,
   systemPreferences,
+  Notification,
 } = require('electron');
 const { Store } = require('./store');
 const { buildQuickExplainMessages, parseQuickExplainResponse } = require('./quick-explain');
@@ -32,6 +33,7 @@ const httpClient = require('./http-client');
 const { GitDesk } = require('./git-desk');
 const { NetCapture } = require('./net-capture');
 const { Monologue } = require('./monologue');
+const { PhoneAgent, PhoneOutbox } = require('./phone-agent');
 const chatRead = require('./chat-read');
 const { registerCertTrust } = require('./certtrust');
 const translator = require('./translate');
@@ -116,6 +118,21 @@ let netCapture = null;
 let monologue = null;
 let monologueWindow = null;
 let overlayWindow = null;
+let phoneAgent = null;
+let phoneOutbox = null;
+
+/** 手机精灵在干嘛 → 桌面精灵跟着变、通知一声 */
+function relayPhoneState(payload) {
+  if (petWindow && !petWindow.isDestroyed()) petWindow.webContents.send('pet:phone', payload);
+  if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('phone:event', { type: 'state', ...payload, at: Date.now() });
+  if (payload.state === 'gave' && payload.path) {
+    try {
+      const n = new Notification({ title: '手机精灵递来一个文件', body: payload.text });
+      n.on('click', () => shell.showItemInFolder(payload.path));
+      n.show();
+    } catch { /* 系统不让发通知就算了 */ }
+  }
+}
 const MONOLOGUE_SHORTCUT = 'CommandOrControl+Shift+M';
 let dshService;
 let tavernService;
@@ -1868,6 +1885,23 @@ function registerIpc() {
   ipcMain.handle('monologue:analyze', (_e, text) => runMonologue(text));
   ipcMain.handle('monologue:analyzeSelection', async () => runMonologue(await captureSelectedText()));
   ipcMain.handle('monologue:startWatch', () => { createMonologueWindow().showInactive(); return monologue?.start() || { ok: false }; });
+  // 手机精灵：把文件放进出件箱（拖到桌面精灵身上 / 面板里选）
+  ipcMain.handle('phone:sendFiles', (_e, paths) => {
+    const results = (Array.isArray(paths) ? paths : [paths]).map((p) => phoneOutbox.add(p));
+    const sent = results.filter((r) => r.ok).map((r) => r.item);
+    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('phone:event', { type: 'outbox', items: phoneOutbox.list(), at: Date.now() });
+    return { ok: sent.length > 0, sent, errors: results.filter((r) => !r.ok).map((r) => r.error), connected: Boolean(remoteControl?.server) };
+  });
+  ipcMain.handle('phone:pickFiles', async () => {
+    const { canceled, filePaths } = await dialog.showOpenDialog({ properties: ['openFile', 'multiSelections'] });
+    if (canceled || !filePaths.length) return { ok: false, canceled: true };
+    const results = filePaths.map((p) => phoneOutbox.add(p));
+    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('phone:event', { type: 'outbox', items: phoneOutbox.list(), at: Date.now() });
+    return { ok: true, sent: results.filter((r) => r.ok).map((r) => r.item), errors: results.filter((r) => !r.ok).map((r) => r.error) };
+  });
+  ipcMain.handle('phone:outbox', () => ({ items: phoneOutbox.list(), inboxDir: phoneOutbox.inboxDir, log: phoneAgent.log }));
+  ipcMain.handle('phone:outboxRemove', (_e, id) => ({ removed: phoneOutbox.remove(String(id)) }));
+  ipcMain.handle('phone:openInboxDir', () => { fs.mkdirSync(phoneOutbox.inboxDir, { recursive: true }); return shell.openPath(phoneOutbox.inboxDir); });
   ipcMain.handle('monologue:startOverlay', () => {
     createOverlayWindow();
     return monologue?.startOverlay({
@@ -3102,10 +3136,18 @@ app.whenReady().then(async () => {
     onGestureClosed: () => { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('gesture:window-closed'); },
   });
 
+  phoneOutbox = new PhoneOutbox();
+  phoneAgent = new PhoneAgent({
+    ask: (messages) => callStoredCompatibleApi({ messages, temperature: 0.1, timeout: 60000 }),
+    onEvent: (item) => { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('phone:event', item); },
+  });
   remoteControl = new RemoteControl({
     deviceName: 'Agent 工具箱',
     onCommand: handleRemoteCommand,
-    apkPath: path.join(__dirname, '..', '..', 'assets', 'mobile', 'Agent-Toolbox-Remote-0.2.2-debug.apk'),
+    onPhoneStep: (body) => phoneAgent.step(body),
+    onPhoneState: relayPhoneState,
+    outbox: phoneOutbox,
+    apkPath: path.join(__dirname, '..', '..', 'assets', 'mobile', 'Agent-Toolbox-Remote-0.3.0-debug.apk'),
     assetsDir: path.join(__dirname, '..', '..', 'assets'),
     onScreen: async ({ width: wanted = 900 } = {}) => {
       if (!mainWindow || mainWindow.isDestroyed()) return null;
@@ -3116,7 +3158,7 @@ app.whenReady().then(async () => {
       const scaled = width > target ? image.resize({ width: target }) : image;
       return scaled.toJPEG(target > 1000 ? 70 : 62);
     },
-    apkName: 'Agent-Toolbox-Remote-0.2.2-debug.apk',
+    apkName: 'Agent-Toolbox-Remote-0.3.0-debug.apk',
     inbox: store.get('remote.inbox', []),
     onInbox: (item) => {
       const inbox = [item, ...(store.get('remote.inbox', []) || [])].slice(0, 100);

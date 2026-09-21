@@ -15,6 +15,29 @@ export default {
     const stopBtn = h('button', { class: 'btn btn--sm btn--ghost', disabled: true, onclick: stop }, '停止');
     const rotateBtn = h('button', { class: 'btn btn--sm', disabled: true, onclick: rotate }, '重新配对');
     const inboxEl = h('div', { class: 'remote__inbox' });
+    const phoneOutboxEl = h('div', { class: 'remote__inbox' });
+    const phoneLogEl = h('div', { class: 'remote__inbox' });
+    const describeAction = (a) => !a ? '' : a.action === 'tap' ? `点 [${a.index}]` : a.action === 'type' ? `在 [${a.index}] 输入「${a.text}」` : a.action === 'swipe' ? `滑 ${a.dir}` : a.action === 'scroll' ? `滚 [${a.index}] ${a.dir}` : a.action === 'open' ? `打开 ${a.app}` : a.action === 'done' ? `完成：${a.say}` : a.action === 'ask' ? `问：${a.say}` : a.action;
+    async function renderPhone() {
+      const { items = [], log = [] } = await window.toolbox.phone.outbox();
+      phoneOutboxEl.replaceChildren();
+      if (!items.length) phoneOutboxEl.append(h('div', { class: 'faint remote__empty' }, '出件箱是空的 —— 拖个文件到桌面精灵身上试试。'));
+      for (const it of items) {
+        phoneOutboxEl.append(h('article', { class: 'remote__inbox-item' },
+          h('div', { class: 'remote__inbox-head' }, h('strong', {}, it.name), h('span', { class: 'faint' }, `${(it.size / 1024).toFixed(0)} KB · 等手机来取`)),
+          h('div', { class: 'remote__inbox-actions' }, h('button', { class: 'btn btn--sm', onclick: async () => { await window.toolbox.phone.outboxRemove(it.id); renderPhone(); } }, '撤回')),
+        ));
+      }
+      phoneLogEl.replaceChildren();
+      const steps = log.filter((x) => x.type !== 'outbox').slice(0, 12);
+      if (!steps.length) return;
+      phoneLogEl.append(h('div', { class: 'remote__section-head' }, h('strong', {}, '精灵刚才做了什么')));
+      for (const x of steps) {
+        const when = new Date(x.at).toLocaleTimeString('zh-CN', { hour12: false });
+        const line = x.type === 'step' ? `${describeAction(x.action)}${x.target ? ` → ${x.target}` : ''}` : x.type === 'stuck' ? '转圈了，停下来问你' : x.type === 'error' ? `出错：${x.error}` : x.type === 'state' ? `${x.state}${x.text ? ' ' + x.text : ''}` : x.type;
+        phoneLogEl.append(h('div', { class: 'remote__inbox-item' }, h('span', { class: 'faint' }, when + ' '), h('span', {}, line), x.goal ? h('div', { class: 'faint' }, `目标：${x.goal}`) : null));
+      }
+    }
     const apkQrEl = h('img', { class: 'remote__apk-qr', alt: '手机 APK 下载二维码', hidden: true });
     const apkQrPlaceholder = h('div', { class: 'remote__apk-placeholder' }, '启动手机控制后显示二维码');
     const apkQrBox = h('div', { class: 'remote__apk-qr-box' }, apkQrEl, apkQrPlaceholder);
@@ -101,6 +124,15 @@ export default {
           h('p', { class: 'faint remote__security' }, '当前版本不开放任意 shell、任意键鼠模拟或删除文件。需要验证码、付款、系统权限或敏感操作时，仍在电脑端确认。换 Wi-Fi 时请使用设备名.local、Tailscale 或其他 VPN 地址。'),
         ),
         h('section', { class: 'card remote__inbox-card' },
+          h('div', { class: 'remote__section-head' }, h('strong', {}, '手机精灵'), h('div', { class: 'remote__inbox-actions' },
+            h('button', { class: 'btn btn--sm btn--primary', onclick: async () => { const r = await window.toolbox.phone.pickFiles(); if (r.ok) toast(`放进出件箱：${r.sent.map((x) => x.name).join('、')}`, 'good'); renderPhone(); } }, '发文件给手机'),
+            h('button', { class: 'btn btn--sm', onclick: () => window.toolbox.phone.openInboxDir() }, '手机递来的文件'),
+          )),
+          h('p', { class: 'faint remote__security' }, '把文件拖到桌面精灵身上就是递给手机；手机精灵每几秒来取一次。手机上对精灵说话，它会替你操作手机，每一步都在下面留痕。'),
+          phoneOutboxEl,
+          phoneLogEl,
+        ),
+        h('section', { class: 'card remote__inbox-card' },
           h('div', { class: 'remote__section-head' }, h('strong', {}, '手机分享收件箱'), h('button', { class: 'btn btn--sm', onclick: async () => refresh() }, '刷新')),
           h('p', { class: 'faint remote__security' }, '手机上分享的链接、论文和公众号内容会同步到这里。'),
           inboxEl,
@@ -108,6 +140,8 @@ export default {
       ),
     );
     window.toolbox.remote.onInbox((item) => renderInbox([item, ...inboxItems.filter((old) => old.id !== item.id)].slice(0, 100)));
+    window.toolbox.phone.onEvent(() => renderPhone());
+    renderPhone();
     refresh();
     return {};
   },

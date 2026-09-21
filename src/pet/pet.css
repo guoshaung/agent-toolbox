@@ -22,6 +22,12 @@ button, input, textarea { font: inherit; }
 .avatar__hint { position: absolute; right: 8px; top: 12px; padding: 3px 7px; border-radius: 10px 10px 10px 3px; color: #244b91; background: rgba(238,248,255,.95); border: 1px solid #a9d6ff; font-size: 11px; font-weight: 700; opacity: 0; transform: translateY(4px); transition: .16s; }
 .avatar:hover .avatar__hint { opacity: 1; transform: none; }
 .shell.is-expanded .avatar { display: none; }
+/* 往精灵身上拖文件 = 递给手机精灵 */
+.shell.is-drop .avatar img { transform: scale(1.06); filter: drop-shadow(0 0 10px #21e6a5) saturate(1.1); }
+.drop-hint { position: absolute; left: 50%; bottom: 6px; transform: translateX(-50%); padding: 3px 9px; border-radius: 10px; font-size: 11px; font-weight: 700; color: #05301f; background: #21e6a5; white-space: nowrap; pointer-events: none; }
+.phone-bubble { position: absolute; left: 6px; top: 6px; max-width: 170px; padding: 4px 8px; border-radius: 10px 10px 10px 3px; font-size: 11px; line-height: 1.35; color: #0b2a1f; background: rgba(226,255,243,.97); border: 1px solid #21e6a5; box-shadow: 0 4px 14px rgba(0,0,0,.18); pointer-events: none; animation: bubble-in .18s ease-out; }
+.phone-bubble.is-busy::before { content: "📱 "; }
+@keyframes bubble-in { from { opacity: 0; transform: translateY(4px); } }
 .card { width: 390px; height: 548px; border-radius: 20px; overflow: hidden; color: #eaf2ff; background: rgba(17,25,40,.97); border: 1px solid rgba(134,182,255,.3); box-shadow: 0 18px 60px rgba(0,0,0,.48); font-size: var(--body-font); }
 .card__header { height: 64px; padding: 12px 14px 10px 18px; display: flex; justify-content: space-between; align-items: center; background: linear-gradient(110deg, rgba(63,111,210,.28), rgba(17,25,40,.2)); border-bottom: 1px solid rgba(145,180,234,.16); cursor: grab; }
 .card__header:active { cursor: grabbing; }

@@ -107,6 +107,42 @@ for (const target of [avatar, dragbar]) {
   target.addEventListener('pointerup', endDrag);
   target.addEventListener('pointercancel', endDrag);
 }
+// ---- 手机精灵：往桌宠身上拖文件 = 递给手机；手机那边在干嘛，这边冒个气泡 ----
+const phoneBubble = document.getElementById('phone-bubble');
+const dropHint = document.getElementById('drop-hint');
+let bubbleTimer = 0;
+function phoneSay(text, { busy = false, ms = 4000 } = {}) {
+  clearTimeout(bubbleTimer);
+  phoneBubble.textContent = text;
+  phoneBubble.classList.toggle('is-busy', busy);
+  phoneBubble.hidden = !text;
+  if (text && ms) bubbleTimer = setTimeout(() => { phoneBubble.hidden = true; }, ms);
+}
+let dropDepth = 0;
+shell.addEventListener('dragenter', (event) => { event.preventDefault(); dropDepth += 1; shell.classList.add('is-drop'); dropHint.hidden = false; });
+shell.addEventListener('dragover', (event) => { event.preventDefault(); event.dataTransfer.dropEffect = 'copy'; });
+shell.addEventListener('dragleave', () => { dropDepth = Math.max(0, dropDepth - 1); if (!dropDepth) { shell.classList.remove('is-drop'); dropHint.hidden = true; } });
+shell.addEventListener('drop', async (event) => {
+  event.preventDefault();
+  dropDepth = 0; shell.classList.remove('is-drop'); dropHint.hidden = true;
+  const paths = [...(event.dataTransfer?.files || [])].map((f) => window.toolbox.files.getPathForFile(f)).filter(Boolean);
+  if (!paths.length) { phoneSay('只能递文件哦'); return; }
+  const result = await window.toolbox.phone.sendFiles(paths);
+  if (!result.ok) { phoneSay(result.errors?.[0] || '递不出去'); return; }
+  const names = result.sent.map((x) => x.name).join('、');
+  phoneSay(result.connected ? `递给手机：${names}（等它来取）` : `放好了：${names}。手机端连上后会来取`, { ms: 6000 });
+});
+window.toolbox.pet.onPhone?.((p) => {
+  const map = {
+    listening: ['手机精灵在听…', true], thinking: ['手机精灵在想…', true], acting: [p.text ? `手机：${p.text}` : '手机精灵在操作…', true],
+    done: [p.text || '手机那边搞定了', false], ask: [p.text ? `手机在问：${p.text}` : '手机需要你看一眼', false],
+    took: [p.text ? `手机取走了 ${p.text}` : '手机取走了文件', false], gave: [p.text ? `手机递来 ${p.text}` : '手机递来一个文件', false],
+    idle: ['', false],
+  };
+  const [text, busy] = map[p.state] || [p.text || '', false];
+  phoneSay(text, { busy, ms: busy ? 0 : 5000 });
+});
+
 // 点桌宠默认开记忆栈——这才是现在的主功能，四行解释退到里面的一个按钮。
 avatar.addEventListener('click', () => { if (!moved) setExpanded('memory'); });
 document.getElementById('collapse').addEventListener('click', () => setExpanded(false));

@@ -214,6 +214,11 @@ function pageHtml(token, deviceName, tools) {
 </section>
 
 <section class="panel" id="tab-pc">
+  <div class="card" id="spriteCard" hidden>
+    <h2>手机精灵 <small id="spriteHint">对它说话，它替你操作手机</small></h2>
+    <div class="row"><button class="sm primary" id="spriteListen">🎤 说句话</button><button class="sm" id="spriteToggle">显示精灵</button><button class="sm ghost" id="spriteSetup">开启无障碍</button></div>
+    <div class="log" id="spriteLog"></div>
+  </div>
   <div class="card">
     <h2>电脑画面 <small id="screenHint">点一下就是点电脑，上下滑就是滚动</small></h2>
     <div class="screen" id="screenBox"><img id="screenImg" alt="" draggable="false"><div class="screen-empty" id="screenEmpty">正在取画面…</div></div>
@@ -284,6 +289,7 @@ async function openAgent(a){setTarget(a);const head=$('chatHead');head.hidden=fa
 const prompt=$('prompt');prompt.addEventListener('input',()=>{prompt.style.height='auto';prompt.style.height=Math.min(120,prompt.scrollHeight)+'px'});
 $('send').onclick=async()=>{const text=prompt.value.trim();if(!text)return;if(selected&&!selected.installed)return say(selected.label+' 未安装，只能看历史',1);$('send').disabled=true;prompt.value='';prompt.style.height='auto';const src=selected?selected.source:'';bubble('user',text,src);const wait=bubble('assistant',selected?'等电脑端确认':'AI 在想',src,' typing');try{const r=selected?await command('agent.run',{source:src,prompt:text}):await command('ai.ask',{prompt:text});wait.remove();bubble('assistant',r.text||'任务已完成',src)}catch(e){wait.remove();bubble('assistant','失败：'+e.message,src,' bad')}finally{$('send').disabled=false}};
 prompt.addEventListener('keydown',e=>{if(e.key==='Enter'&&(e.metaKey||e.ctrlKey))$('send').click()});
+if(window.AgentToolboxSprite){const sc=$('spriteCard');sc.hidden=false;const refreshSprite=()=>{let st={};try{st=JSON.parse(window.AgentToolboxSprite.status()||'{}')}catch{}$('spriteHint').textContent=st.enabled?(st.visible?'精灵在屏幕下方 · 点它或按这里说话':'无障碍已开 · 精灵隐藏中'):'先开无障碍服务，它才能看见和操作屏幕';$('spriteToggle').textContent=st.visible?'隐藏精灵':'显示精灵';$('spriteSetup').hidden=!!st.enabled;$('spriteLog').textContent=st.enabled?'':'若系统提示「受限设置」：应用信息 → 右上角 ⋮ → 允许受限设置，再回来开。'};$('spriteListen').onclick=()=>{window.AgentToolboxSprite.listen()};$('spriteToggle').onclick=()=>{window.AgentToolboxSprite.toggle();setTimeout(refreshSprite,300)};$('spriteSetup').onclick=()=>{window.AgentToolboxSprite.openSettings()};document.addEventListener('visibilitychange',()=>{if(!document.hidden)refreshSprite()});refreshSprite()}
 window.agentVoiceResult=text=>{prompt.value=String(text||'');prompt.dispatchEvent(new Event('input'));say('已转成文字，确认后发送')};
 const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
 if(window.AgentToolboxVoice){$('voice').onclick=()=>{say('正在听…');window.AgentToolboxVoice.start()}}else if(!SR){$('voice').disabled=true;$('voice').title='当前浏览器不支持语音识别'}else{$('voice').onclick=()=>{const rec=new SR();rec.lang='zh-CN';rec.interimResults=false;rec.onstart=()=>say('正在听…');rec.onresult=e=>window.agentVoiceResult(e.results[0][0].transcript);rec.onerror=e=>say('语音识别失败：'+e.error,1);rec.start()}}

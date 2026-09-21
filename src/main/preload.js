@@ -313,6 +313,18 @@ contextBridge.exposeInMainWorld('toolbox', {
     openAiSettings: () => ipcRenderer.invoke('pet:openAiSettings'),
     onSettingsChanged: (callback) => ipcRenderer.on('pet:settings-changed', (_event, settings) => callback(settings)),
     onCollapse: (callback) => ipcRenderer.on('pet:collapse', callback),
+    /** 手机精灵在干嘛（听/想/做/递文件），桌面精灵跟着表演 */
+    onPhone: (callback) => ipcRenderer.on('pet:phone', (_event, payload) => callback(payload)),
+  },
+
+  /** 手机精灵：往手机递文件、看它干活的日志 */
+  phone: {
+    sendFiles: (paths) => ipcRenderer.invoke('phone:sendFiles', paths),
+    pickFiles: () => ipcRenderer.invoke('phone:pickFiles'),
+    outbox: () => ipcRenderer.invoke('phone:outbox'),
+    outboxRemove: (id) => ipcRenderer.invoke('phone:outboxRemove', id),
+    openInboxDir: () => ipcRenderer.invoke('phone:openInboxDir'),
+    onEvent: (callback) => ipcRenderer.on('phone:event', (_event, payload) => callback(payload)),
   },
 
   notebook: {

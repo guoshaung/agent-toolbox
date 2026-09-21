@@ -38,7 +38,11 @@ function constantTimeEqual(left, right) {
 const { pageHtml } = require('./remote-page');
 
 class RemoteControl {
-  constructor({ deviceName = 'Agent 工具箱', onCommand, onInbox, onScreen, preferredPort = 43127, inbox = [], apkPath = '', apkName = 'Agent-Toolbox-Remote.apk', assetsDir = '' }) {
+  constructor({ deviceName = 'Agent 工具箱', onCommand, onInbox, onScreen, onPhoneStep, onPhoneState, outbox = null, preferredPort = 43127, inbox = [], apkPath = '', apkName = 'Agent-Toolbox-Remote.apk', assetsDir = '' }) {
+    // 手机精灵：大脑（onPhoneStep）+ 出件箱（outbox，电脑放、手机取）+ 状态回传（onPhoneState）
+    this.onPhoneStep = onPhoneStep;
+    this.onPhoneState = onPhoneState;
+    this.outbox = outbox;
     this.deviceName = deviceName;
     // 工具表由渲染层推过来（setTools）。写死的话每加一个工具手机端就少一个，
     // 之前手机上只能切到 8 个，而工具箱已经有 19 个了。
@@ -203,6 +207,8 @@ class RemoteControl {
         return this._json(response, 200, { ok: true, item });
       } catch (error) { return this._json(response, 400, { ok: false, error: error.message }); }
     }
+    // ---------- 手机精灵 ----------
+    if (url.pathname.startsWith('/api/phone/')) return this._phone(request, response, url);
     if (url.pathname === '/api/command' && request.method === 'POST') {
       if (!constantTimeEqual(url.searchParams.get('token'), this.token)) return this._json(response, 401, { ok: false, error: '配对已失效。' });
       let raw = '';
@@ -219,6 +225,63 @@ class RemoteControl {
       }
     }
     this._json(response, 404, { ok: false, error: 'Not found' });
+  }
+
+  async _phone(request, response, url) {
+    if (!constantTimeEqual(url.searchParams.get('token'), this.token)) return this._json(response, 401, { ok: false, error: '配对已失效。' });
+    const sub = url.pathname.slice('/api/phone/'.length);
+    const readJson = async () => {
+      let raw = '';
+      for await (const chunk of request) { raw += chunk; if (raw.length > MAX_BODY) throw new Error('请求太大。'); }
+      return JSON.parse(raw || '{}');
+    };
+    try {
+      // 大脑：屏幕树 + 目标 → 下一步动作
+      if (sub === 'step' && request.method === 'POST') {
+        const body = await readJson();
+        const result = await this.onPhoneStep?.(body);
+        return this._json(response, result?.ok ? 200 : 400, result || { ok: false, error: '电脑端没有接上大脑。' });
+      }
+      // 手机精灵报告自己在干嘛（听 / 想 / 做 / 闲），桌面精灵跟着变
+      if (sub === 'state' && request.method === 'POST') {
+        const body = await readJson();
+        this.onPhoneState?.({ state: String(body.state || 'idle').slice(0, 20), text: String(body.text || '').slice(0, 200) });
+        return this._json(response, 200, { ok: true });
+      }
+      // 出件箱：电脑放进去的文件，手机来取
+      if (sub === 'outbox' && request.method === 'GET') {
+        return this._json(response, 200, { ok: true, items: this.outbox?.list() || [] });
+      }
+      const take = sub.match(/^outbox\/([0-9a-f-]{36})$/);
+      if (take && request.method === 'GET') {
+        const item = this.outbox?.get(take[1]);
+        if (!item || !fs.existsSync(item.path)) return this._json(response, 404, { ok: false, error: '文件已经不在了。' });
+        response.writeHead(200, {
+          'Content-Type': item.mime, 'Content-Length': fs.statSync(item.path).size, 'Cache-Control': 'no-store',
+          'Content-Disposition': `attachment; filename*=UTF-8''${encodeURIComponent(item.name)}`,
+        });
+        fs.createReadStream(item.path).pipe(response);
+        return;
+      }
+      const done = sub.match(/^outbox\/([0-9a-f-]{36})\/done$/);
+      if (done && request.method === 'POST') {
+        const removed = this.outbox?.remove(done[1]);
+        this.onPhoneState?.({ state: 'took', text: String(url.searchParams.get('name') || '').slice(0, 200) });
+        return this._json(response, 200, { ok: true, removed: Boolean(removed) });
+      }
+      // 手机推文件上来：原始字节流，文件名在查询串里
+      if (sub === 'upload' && request.method === 'POST') {
+        if (!this.outbox) return this._json(response, 500, { ok: false, error: '电脑端没开出件箱。' });
+        const saved = await this.outbox.receive(request, { name: url.searchParams.get('name'), size: request.headers['content-length'] });
+        let item = null;
+        try { item = this.addInbox({ title: saved.name, text: `手机精灵递来的文件（${(saved.size / 1024).toFixed(0)} KB）`, url: `file://${saved.path}`, mime: saved.mime, source: 'phone-sprite' }); } catch { item = null; }
+        this.onPhoneState?.({ state: 'gave', text: saved.name, path: saved.path });
+        return this._json(response, 200, { ok: true, saved: { name: saved.name, size: saved.size, path: saved.path }, item });
+      }
+      return this._json(response, 404, { ok: false, error: 'Not found' });
+    } catch (error) {
+      return this._json(response, 400, { ok: false, error: error.message });
+    }
   }
 
   _json(response, status, data, contentType = 'application/json; charset=utf-8') {
