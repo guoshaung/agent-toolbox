@@ -63,8 +63,15 @@ function runPowerShell(command, args, { exec = execFileAsync, env = process.env 
   const script = path.join(directory, 'probe.ps1');
   fs.writeFileSync(script, `\uFEFF${WINDOWS_SCRIPT}`, 'utf8');
   const nextEnv = { ...env, AGENT_TOOLBOX_OWN_PID: String(process.pid) };
-  return exec('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', script, command, ...(args || []).map(String)], { env: nextEnv, timeout: 5000, windowsHide: true })
+  return exec('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', script, command, ...(args || []).map(String)], { env: nextEnv, timeout: 15000, windowsHide: true })
     .then(({ stdout }) => { if (!String(stdout).trim()) throw new Error('窗口探测没有返回结果。'); return JSON.parse(stdout); })
+    // execFile 超时杀掉进程后只给一句 "Command failed"、stderr 是空的，看日志根本猜不到是超时。
+    // 第一次跑 Add-Type 要编译一段 C#，冷机器上不止 5 秒（CI 的 Windows 机器实测 5034ms 被杀）。
+    .catch((error) => {
+      if (error?.killed || error?.signal === 'SIGTERM') throw new Error('窗口探测超时：PowerShell 首次加载要编译一段代码，机器慢的话得等几秒，再试一次。');
+      const detail = String(error?.stderr || '').trim();
+      throw new Error(detail ? `窗口探测失败：${detail.split('\n')[0]}` : (error?.message || '窗口探测失败'));
+    })
     .finally(() => { try { fs.unlinkSync(script); fs.rmdirSync(directory); } catch { /* already removed */ } });
 }
 
