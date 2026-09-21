@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data:; style-src 'self'; script-src 'self'" />
+  <title>内心独白</title>
+  <link rel="stylesheet" href="monologue.css" />
+</head>
+<body>
+  <div class="panel" id="panel">
+    <div class="head" id="drag">
+      <span class="dot" id="dot"></span>
+      <strong id="title">内心独白</strong>
+      <span class="src" id="src">选中一句话，按 ⌘⇧M</span>
+      <span class="grow"></span>
+      <select id="tpl" class="tpl"></select>
+      <button id="watch" class="mini" title="盯住聊天窗口，有新消息自动分析">▶ 自动</button>
+      <button id="close" class="mini" title="收起">×</button>
+    </div>
+    <div class="body" id="body">
+      <div class="empty" id="empty">
+        在微信（或任何地方）选中对方那句话，按 <b>⌘⇧M</b> —— 这里出解读。
+      </div>
+    </div>
+    <div class="foot" id="foot" hidden>
+      <span class="risk" id="risk"></span>
+      <span class="advice" id="advice"></span>
+    </div>
+  </div>
+  <script src="monologue.js"></script>
+</body>
+</html>

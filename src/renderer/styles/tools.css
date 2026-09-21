@@ -4217,3 +4217,33 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
   box-shadow: 0 4px 12px rgba(157,123,255,.45);
 }
 .gesture__galaxy .gesture__app-name { max-width: 100%; font-size: 11.5px; text-align: center; }
+
+/* ---------- 内心独白（设置页） ---------- */
+.mono__tpls { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 8px; }
+.mono__tpl {
+  display: flex; align-items: flex-start; gap: 9px; padding: 10px 11px; text-align: left;
+  border: 1px solid var(--line-soft); border-radius: 11px; background: var(--bg-sunken);
+  color: var(--text); font: inherit; cursor: pointer;
+}
+.mono__tpl:hover { border-color: var(--accent); }
+.mono__tpl.is-on { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 14%, var(--bg-sunken)); }
+.mono__tpl-icon { font-size: 18px; flex: none; }
+.mono__tpl span span { display: block; }
+.mono__tpl strong { font-size: 12.5px; }
+.mono__tpl .faint { font-size: 11px; line-height: 1.45; }
+.mono__row { display: flex; align-items: center; gap: 9px; margin-top: 8px; flex-wrap: wrap; }
+.mono__lbl { min-width: 86px; font-size: 12px; }
+.mono__range { flex: 1; min-width: 160px; accent-color: var(--accent); }
+.mono__num { font: 700 11.5px var(--mono); min-width: 38px; }
+.mono__preview {
+  margin-top: 10px; padding: 9px 11px; border-radius: 10px;
+  background: var(--code-bg); border: 1px solid var(--line-soft);
+  max-height: 220px; overflow: auto; font-size: 12px; line-height: 1.7;
+}
+.mono__preview-head { margin-bottom: 6px; font-size: 11.5px; }
+.mono__line { display: flex; gap: 8px; margin-bottom: 2px; }
+.mono__who { flex: none; width: 30px; font-size: 10.5px; padding-top: 2px; }
+.mono__line.is-them .mono__who { color: var(--accent); }
+.mono__line.is-me .mono__who { color: var(--text-faint); }
+.mono__line.is-me span:last-child { color: var(--text-dim); }
+.mono__err { color: var(--bad); font-size: 12px; line-height: 1.6; }

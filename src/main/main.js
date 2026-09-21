@@ -31,6 +31,8 @@ const deckPptx = require('./deck-pptx');
 const httpClient = require('./http-client');
 const { GitDesk } = require('./git-desk');
 const { NetCapture } = require('./net-capture');
+const { Monologue } = require('./monologue');
+const chatRead = require('./chat-read');
 const { registerCertTrust } = require('./certtrust');
 const translator = require('./translate');
 const ocr = require('./ocr');
@@ -111,6 +113,9 @@ let remoteControl;
 let gestureDesk = null;
 let gitDesk = null;
 let netCapture = null;
+let monologue = null;
+let monologueWindow = null;
+const MONOLOGUE_SHORTCUT = 'CommandOrControl+Shift+M';
 let dshService;
 let tavernService;
 let argosService;
@@ -1484,6 +1489,50 @@ function shrinkPetToAvatar(sizeSetting) {
   petWindow.setBounds({ ...size, ...pos });
 }
 
+/** 内心独白浮窗：默认贴在屏幕底部中间，置顶、不抢焦点 */
+function createMonologueWindow() {
+  if (monologueWindow && !monologueWindow.isDestroyed()) return monologueWindow;
+  const size = { width: 420, height: 340 };
+  const work = screen.getDisplayNearestPoint(screen.getCursorScreenPoint()).workArea;
+  const saved = store.get('monologue.position');
+  const position = clampToWorkArea({
+    x: Number.isFinite(saved?.x) ? saved.x : Math.round(work.x + (work.width - size.width) / 2),
+    y: Number.isFinite(saved?.y) ? saved.y : work.y + work.height - size.height - 24,
+    ...size,
+  });
+  monologueWindow = new BrowserWindow({
+    ...size, ...position,
+    frame: false, transparent: true, resizable: true, skipTaskbar: true, hasShadow: false,
+    alwaysOnTop: true, show: false,
+    minWidth: 320, minHeight: 200,
+    webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false, sandbox: true },
+  });
+  monologueWindow.setAlwaysOnTop(true, 'floating');
+  monologueWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+  monologueWindow.loadFile(path.join(__dirname, '..', 'monologue', 'index.html'));
+  monologueWindow.on('moved', () => {
+    const b = monologueWindow.getBounds();
+    store.set('monologue.position', { x: b.x, y: b.y });
+  });
+  monologueWindow.on('closed', () => { monologueWindow = null; });
+  return monologueWindow;
+}
+
+function pushMonologue(payload) {
+  if (monologueWindow && !monologueWindow.isDestroyed()) monologueWindow.webContents.send('monologue:update', payload);
+}
+
+/** 选中的文字 → 解读 → 浮窗。快捷键和「分析剪贴板」都走这里。 */
+async function runMonologue(text) {
+  const win = createMonologueWindow();
+  if (!win.isVisible()) win.showInactive();      // 不抢焦点，微信那边不会失焦
+  const clean = String(text || '').trim();
+  if (!clean) { pushMonologue({ type: 'error', error: '没选中任何文字。先在微信里选中对方那句话，再按快捷键。' }); return; }
+  pushMonologue({ type: 'thinking', text: clean });
+  const result = await monologue.analyze(clean);
+  pushMonologue(result.ok ? { type: 'result', ...result } : { type: 'error', error: result.error });
+}
+
 function createPetWindow() {
   const avatarSize = petAvatarSize();
   const saved = store.get('pet.position');
@@ -1769,6 +1818,33 @@ function registerIpc() {
   ipcMain.handle('git:run', (_e, repo, args) => gitDesk?.run(String(repo || ''), args) || { ok: false });
   ipcMain.handle('git:runCombo', (_e, repo, id, params) => gitDesk?.runCombo(String(repo || ''), String(id || ''), params || {}) || { ok: false });
   ipcMain.handle('git:reveal', (_e, repo) => { if (repo) shell.openPath(String(repo)); return { ok: true }; });
+
+  // ---------- 内心独白 ----------
+  ipcMain.handle('monologue:templates', () => monologue?.templates() || []);
+  ipcMain.handle('monologue:status', () => monologue?.status() || {});
+  ipcMain.handle('monologue:setTemplate', (_e, id) => { store.set('monologue.template', String(id || 'chat')); return { ok: true }; });
+  ipcMain.handle('monologue:set', (_e, patch) => {
+    for (const [key, value] of Object.entries(patch || {})) {
+      if (['app', 'chatLeft', 'chatRight', 'interval', 'template'].includes(key)) store.set(`monologue.${key}`, value);
+    }
+    return monologue?.status() || {};
+  });
+  ipcMain.handle('monologue:show', () => { const w = createMonologueWindow(); w.showInactive(); return { ok: true }; });
+  ipcMain.handle('monologue:hide', () => { monologue?.stop(); monologueWindow?.hide(); return { ok: true }; });
+  ipcMain.handle('monologue:analyze', (_e, text) => runMonologue(text));
+  ipcMain.handle('monologue:analyzeSelection', async () => runMonologue(await captureSelectedText()));
+  ipcMain.handle('monologue:startWatch', () => { createMonologueWindow().showInactive(); return monologue?.start() || { ok: false }; });
+  ipcMain.handle('monologue:stopWatch', () => monologue?.stop() || { ok: false });
+  ipcMain.handle('monologue:openScreenPerm', () => {
+    if (process.platform === 'darwin') shell.openExternal('x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture');
+    return { ok: true };
+  });
+  ipcMain.handle('monologue:peek', async () => {
+    const { app: appName, chatLeft, chatRight } = monologue.status();
+    const read = await chatRead.readWindow(app.getPath('userData'), appName);
+    if (!read.ok) return read;
+    return { ok: true, app: read.app, messages: chatRead.toMessages(read.lines, { chatLeft, chatRight }).slice(-12) };
+  });
 
   ipcMain.handle('gesture:openWindow', async () => {
     // macOS 上要先向系统正式要摄像头权限（TCC）。不要的话 Chromium 也说 granted，
@@ -2960,6 +3036,13 @@ app.whenReady().then(async () => {
   });
 
   gitDesk = new GitDesk({ execFile: execFileAsync, store, dialog, getWindow: () => mainWindow });
+  monologue = new Monologue({
+    ask: (messages) => callStoredCompatibleApi({ messages, temperature: 0.2, timeout: 60000 }),
+    readChat: (dir, app) => chatRead.readWindow(dir, app),
+    getUserDataPath: () => app.getPath('userData'),
+    store,
+    onUpdate: (payload) => pushMonologue(payload),
+  });
   netCapture = new NetCapture({
     session,
     partitions: [...Object.values(PARTITIONS), 'persist:eat-meituan', 'persist:eat-eleme', 'persist:eat-jd'],
@@ -3029,6 +3112,13 @@ app.whenReady().then(async () => {
       .then((result) => saveRemoteToken(result.token))
       .catch((error) => console.warn('[remote] 自动启动失败:', error.message));
   }
+  // 选中文字 → ⌘⇧M → 浮窗给解读
+  try {
+    globalShortcut.register(MONOLOGUE_SHORTCUT, () => {
+      captureSelectedText().then((text) => runMonologue(text)).catch(() => runMonologue(''));
+    });
+  } catch (error) { console.warn('[monologue] 快捷键注册失败：', error.message); }
+
   const termShortcut = registerTermShortcut();
   if (!termShortcut.ok) console.warn('[terms]', termShortcut.error);
   const dockShortcut = registerDockShortcut();
@@ -3113,6 +3203,7 @@ app.on('will-quit', () => {
     ['酒馆', () => tavernService?.stop?.()],
     ['Voicebox 外部应用', () => voiceBoxService?.stop?.()],
     ['Voicebox 服务', () => voiceboxService?.stop?.()],
+    ['内心独白', () => monologue?.stop?.()],
   ];
   for (const [name, run] of steps) {
     try { run(); } catch (error) { console.warn(`[quit] ${name} 收尾失败：`, error?.message || error); }

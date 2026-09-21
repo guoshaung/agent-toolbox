@@ -9,6 +9,7 @@ const PATHS = {
   search: '<circle cx="10.8" cy="10.8" r="6.8"/><path d="m16 16 5 5"/>',
   mic: '<rect x="8" y="3" width="8" height="12" rx="4"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3M9 21h6"/>',
   bot: '<rect x="4" y="7" width="16" height="13" rx="3"/><path d="M12 3v4M8 12h.01M16 12h.01M8 16h8"/><circle cx="12" cy="3" r="1"/>',
+  brain: '<path d="M12 5.5a3 3 0 0 0-5.7-1.3A2.8 2.8 0 0 0 4 9a3 3 0 0 0 .6 4.6A3 3 0 0 0 7 19a3 3 0 0 0 5 1.3Z"/><path d="M12 5.5a3 3 0 0 1 5.7-1.3A2.8 2.8 0 0 1 20 9a3 3 0 0 1-.6 4.6A3 3 0 0 1 17 19a3 3 0 0 1-5 1.3Z"/><path d="M12 5.5v15"/>',
   plug: '<path d="M9 3v6M15 3v6"/><path d="M6.5 9h11v3a5.5 5.5 0 0 1-11 0V9Z"/><path d="M12 17.5V21"/>',
   activity: '<path d="M3 12h4l2.5-7 4 14 2.5-7h5"/>',
   branch: '<circle cx="6.5" cy="5" r="2.5"/><circle cx="6.5" cy="19" r="2.5"/><circle cx="17.5" cy="8" r="2.5"/><path d="M6.5 7.5v9M17.5 10.5c0 4-4 4.5-7 5.5"/>',

@@ -279,6 +279,23 @@ contextBridge.exposeInMainWorld('toolbox', {
     reveal: (repo) => ipcRenderer.invoke('git:reveal', repo),
   },
 
+  /** 内心独白：选中的话 → 结构化解读 */
+  monologue: {
+    templates: () => ipcRenderer.invoke('monologue:templates'),
+    status: () => ipcRenderer.invoke('monologue:status'),
+    setTemplate: (id) => ipcRenderer.invoke('monologue:setTemplate', id),
+    set: (patch) => ipcRenderer.invoke('monologue:set', patch),
+    show: () => ipcRenderer.invoke('monologue:show'),
+    hide: () => ipcRenderer.invoke('monologue:hide'),
+    analyze: (text) => ipcRenderer.invoke('monologue:analyze', text),
+    analyzeSelection: () => ipcRenderer.invoke('monologue:analyzeSelection'),
+    startWatch: () => ipcRenderer.invoke('monologue:startWatch'),
+    stopWatch: () => ipcRenderer.invoke('monologue:stopWatch'),
+    peek: () => ipcRenderer.invoke('monologue:peek'),
+    openScreenPerm: () => ipcRenderer.invoke('monologue:openScreenPerm'),
+    onUpdate: (cb) => ipcRenderer.on('monologue:update', (_e, payload) => cb(payload)),
+  },
+
   pet: {
     getState: () => ipcRenderer.invoke('pet:getState'),
     setEnabled: (enabled) => ipcRenderer.invoke('pet:setEnabled', enabled),
