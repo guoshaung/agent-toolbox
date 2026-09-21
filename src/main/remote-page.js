@@ -254,7 +254,7 @@ function pageHtml(token, deviceName, tools) {
 </div>
 <div class="fs" id="fs" hidden>
   <canvas id="fsCanvas"></canvas>
-  <div class="fs-bar"><button class="sm" id="fsExit">✕ 退出</button><button class="sm ghost" id="fsRotate">⟳ 转向</button><button class="sm ghost" id="fsZoomOut">－</button><span id="fsZoom">100%</span><button class="sm ghost" id="fsZoomIn">＋</button><button class="sm ghost" id="fsFit">适应</button><span class="faint" id="fsHint">点=点电脑 · 一指拖=平移 · 两指=缩放 · 双击=放大/还原</span></div>
+  <div class="fs-bar"><button class="sm" id="fsExit">✕ 退出</button><button class="sm ghost" id="fsRotate">⟳ 转向</button><button class="sm ghost" id="fsZoomOut">－</button><span id="fsZoom">100%</span><button class="sm ghost" id="fsZoomIn">＋</button><button class="sm ghost" id="fsFit">适应屏幕</button><span class="faint" id="fsHint">点=点电脑 · 一指拖=平移 · 两指=缩放 · 双击=放大/还原</span></div>
 </div>
 <div class="tip" id="tip"></div>
 

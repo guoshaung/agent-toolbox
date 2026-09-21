@@ -247,7 +247,6 @@ contextBridge.exposeInMainWorld('toolbox', {
     /** 焦点在 webview 里时，Ctrl+Tab 由主进程截获再转发过来（以前单独写了一个同名块，把上面这些覆盖掉了 —— 切换栏因此一片空白） */
     onStep: (cb) => ipcRenderer.on('switcher:step', (_e, payload) => cb(payload || {})),
     onCommit: (cb) => ipcRenderer.on('switcher:commit', () => cb()),
-    onCancel: (cb) => ipcRenderer.on('switcher:cancel', () => cb()),
   },
 
   /** 把本机 Edge/Chrome 里某个站点的登录 cookie 同步到工具箱的内嵌浏览器 */
