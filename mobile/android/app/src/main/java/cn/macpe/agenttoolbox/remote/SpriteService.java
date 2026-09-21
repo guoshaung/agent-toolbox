@@ -142,9 +142,9 @@ public class SpriteService extends AccessibilityService {
         bubble.setMaxWidth(dp(260));
         bubble.setPadding(dp(12), dp(8), dp(12), dp(8));
         GradientDrawable bg = new GradientDrawable();
-        bg.setColor(0xF0101828);
-        bg.setCornerRadius(dp(14));
-        bg.setStroke(dp(1), 0xFF21E6A5);
+        bg.setColor(0xF2171A23);                       // 和网页 / 壳统一的深蓝卡片色
+        bg.setCornerRadius(dp(16));
+        bg.setStroke(dp(1), 0xFF7C5CFF);
         bubble.setBackground(bg);
         bubble.setVisibility(View.GONE);
         bubble.setOnClickListener(v -> openLastFile());
@@ -152,7 +152,7 @@ public class SpriteService extends AccessibilityService {
         bp.bottomMargin = dp(6);
         box.addView(bubble, bp);
         sprite = new SpriteView(this);
-        box.addView(sprite, new LinearLayout.LayoutParams(dp(84), dp(92)));
+        box.addView(sprite, new LinearLayout.LayoutParams(dp(92), dp(100)));
 
         boxParams = new WindowManager.LayoutParams(-2, -2,
             WindowManager.LayoutParams.TYPE_ACCESSIBILITY_OVERLAY,
