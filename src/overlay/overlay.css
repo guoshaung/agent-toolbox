@@ -2,7 +2,9 @@
   color-scheme: dark;
   font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif;
 }
-html, body { margin: 0; height: 100%; background: transparent; overflow: hidden; }
+/* 这一层除了卡片以外必须全透明、全穿透：底下是用户真正在用的微信。
+   调试时千万别给 body 加背景色 —— 加了就是一块盖住整个微信的挡板（犯过）。 */
+html, body { margin: 0; height: 100%; background: transparent !important; overflow: hidden; }
 * { box-sizing: border-box; }
 
 /* 整层鼠标穿透（主进程也设了 setIgnoreMouseEvents），只负责显示 */
@@ -16,9 +18,8 @@ html, body { margin: 0; height: 100%; background: transparent; overflow: hidden;
   padding: 7px 9px;
   border-radius: 10px;
   border: 1px solid rgba(201, 167, 255, .38);
-  background: rgba(16, 13, 28, .90);
+  background: rgba(16, 13, 28, .94);
   box-shadow: 0 6px 20px rgba(0,0,0,.45);
-  backdrop-filter: blur(8px);
   color: #efeaff;
   font-size: 11px; line-height: 1.5;
   animation: in .18s ease-out;

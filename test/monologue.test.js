@@ -116,3 +116,17 @@ test('latestIncoming 取最下面那条对方的', () => {
   assert.equal(latestIncoming(msgs).text, '在吗');
   assert.equal(latestIncoming([{ side: 'me', text: '只有我' }]), null);
 });
+
+test('覆盖层必须全透明：除了卡片，不许有任何不透明背景', () => {
+  const fs = require('node:fs');
+  const path = require('node:path');
+  const css = fs.readFileSync(path.join(__dirname, '..', 'src', 'overlay', 'overlay.css'), 'utf8');
+  // 底下是用户真正在用的微信，给 body/html/stage 上底色 = 一块盖住整个窗口的挡板
+  const bodyRule = css.match(/html,\s*body\s*\{[^}]*\}/)?.[0] || '';
+  assert.match(bodyRule, /background:\s*transparent/, 'body 必须透明');
+  const stageRule = css.match(/\.stage\s*\{[^}]*\}/)?.[0] || '';
+  assert.match(stageRule, /pointer-events:\s*none/, 'stage 必须鼠标穿透');
+  assert.doesNotMatch(stageRule, /background:\s*(?!transparent|none)/, 'stage 不许有底色');
+  // backdrop-filter 在透明窗口上会采样到空背景，可能整块糊掉
+  assert.doesNotMatch(css, /backdrop-filter/, '透明覆盖层上别用 backdrop-filter');
+});
