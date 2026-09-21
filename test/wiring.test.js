@@ -14,7 +14,7 @@ const path = require('node:path');
 
 const ROOT = path.join(__dirname, '..');
 // Windows 上 path.relative 给的是反斜杠，和这里写死的 'src/main/preload.js' 对不上 —— 统一成正斜杠
-const rel = (f) => rel(f).split(path.sep).join('/');
+const rel = (f) => path.relative(ROOT, f).split(path.sep).join('/');
 
 function walk(dir, out = []) {
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
