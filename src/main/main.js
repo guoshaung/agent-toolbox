@@ -3147,7 +3147,7 @@ app.whenReady().then(async () => {
     onPhoneStep: (body) => phoneAgent.step(body),
     onPhoneState: relayPhoneState,
     outbox: phoneOutbox,
-    apkPath: path.join(__dirname, '..', '..', 'assets', 'mobile', 'Agent-Toolbox-Remote-0.3.0-debug.apk'),
+    apkPath: path.join(__dirname, '..', '..', 'assets', 'mobile', 'Agent-Toolbox-Remote-0.3.1-debug.apk'),
     assetsDir: path.join(__dirname, '..', '..', 'assets'),
     onScreen: async ({ width: wanted = 900 } = {}) => {
       if (!mainWindow || mainWindow.isDestroyed()) return null;
@@ -3158,7 +3158,7 @@ app.whenReady().then(async () => {
       const scaled = width > target ? image.resize({ width: target }) : image;
       return scaled.toJPEG(target > 1000 ? 70 : 62);
     },
-    apkName: 'Agent-Toolbox-Remote-0.3.0-debug.apk',
+    apkName: 'Agent-Toolbox-Remote-0.3.1-debug.apk',
     inbox: store.get('remote.inbox', []),
     onInbox: (item) => {
       const inbox = [item, ...(store.get('remote.inbox', []) || [])].slice(0, 100);

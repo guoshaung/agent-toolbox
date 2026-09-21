@@ -114,7 +114,7 @@ export default {
         h('section', { class: 'card remote__pairing' },
           h('div', { class: 'remote__section-head' }, h('strong', {}, '手动连接（备用）'), h('button', { class: 'btn btn--sm btn--ghost', onclick: async () => { if (!urls.value) return; await window.toolbox.clipboard.write(urls.value); toast('配对地址已复制', 'good'); } }, '复制地址')),
           urls,
-          h('div', { class: 'faint remote__security' }, '两台设备需要连接同一 Wi‑Fi。重新配对会同时更新二维码并让旧连接失效。'),
+          h('div', { class: 'faint remote__security' }, '两台设备需要连接同一 Wi‑Fi。用手机 App 里的「扫描连接二维码」扫这个码 —— 用系统相机扫会跳到浏览器，那不是配对。重新配对会同时更新二维码并让旧连接失效。'),
         ),
         h('section', { class: 'card remote__scope' },
           h('div', { class: 'remote__section-head' }, h('strong', {}, '手机端可以做什么')),
