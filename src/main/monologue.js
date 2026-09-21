@@ -189,6 +189,84 @@ class Monologue {
     }
   }
 
+  // ---------- 覆盖层：把卡片贴在微信窗口上 ----------
+
+  /**
+   * 两个循环，频率差很多：
+   *  - 跟踪（快）：只问窗口在哪、是不是前台，很轻，用来让覆盖层贴住微信
+   *  - 扫描（慢）：截图 + OCR + 分析，贵，所以按文本缓存，滚回去看过的不会重算
+   */
+  startOverlay({ onBounds, onCards } = {}) {
+    if (this.trackTimer) return { ok: true, already: true };
+    this.onBounds = onBounds;
+    this.onCards = onCards;
+    this.cache = this.cache || new Map();
+    this.overlayOn = true;
+    const { intervalMs } = this.settings();
+    this.trackTimer = setInterval(() => this.trackTick().catch(() => {}), 500);
+    this.scanTimer = setInterval(() => this.scanTick().catch(() => {}), Math.max(2000, intervalMs));
+    this.trackTick().catch(() => {});
+    this.scanTick().catch(() => {});
+    return { ok: true };
+  }
+
+  stopOverlay() {
+    clearInterval(this.trackTimer);
+    clearInterval(this.scanTimer);
+    this.trackTimer = null;
+    this.scanTimer = null;
+    this.overlayOn = false;
+    this.onCards?.([]);
+    return { ok: true };
+  }
+
+  async trackTick() {
+    const { windowBounds } = require('./chat-read');
+    const b = await windowBounds(this.getUserDataPath(), this.settings().app);
+    this.onBounds?.(b.ok ? b : null);
+  }
+
+  /** 截一次、OCR 一次，把看得见的对方消息都配上卡片 */
+  async scanTick() {
+    if (this.scanning) return;
+    this.scanning = true;
+    try {
+      const { app, chatLeft, chatRight, template } = this.settings();
+      const read = await this.readChat(this.getUserDataPath(), app);
+      if (!read.ok) { this.state.lastError = read.error || '读不到窗口'; return; }
+      this.state.lastError = '';
+      const { toMessages } = require('./chat-read');
+      const messages = toMessages(read.lines, { chatLeft, chatRight });
+      const incoming = messages.filter((m) => m.side === 'them' && m.text.length >= 2);
+
+      // 卡片贴在气泡下面一点、往右缩一档，看着像从那句话里长出来的
+      const place = (m) => ({ x: Math.min(0.72, m.x + 0.02), y: Math.min(0.94, m.yEnd + 0.03) });
+      const cards = incoming.map((m) => {
+        const hit = this.cache.get(m.text);
+        return hit ? { ...hit, ...place(m) } : { pending: true, ...place(m) };
+      });
+      this.onCards?.(cards);
+
+      // 一轮最多分析 2 条没见过的，别一屏几十条把额度打光
+      const todo = incoming.filter((m) => !this.cache.has(m.text)).slice(-2);
+      for (const m of todo) {
+        const context = messages.slice(-6).map((x) => `${x.side === 'them' ? '对方' : '我'}：${x.text}`).join('\n');
+        const analysis = await this.analyze(m.text, { templateId: template, context });
+        if (analysis.ok) {
+          this.cache.set(m.text, { headline: analysis.headline, cards: analysis.cards, risk: analysis.risk, advice: analysis.advice });
+          if (this.cache.size > 200) this.cache.delete(this.cache.keys().next().value);
+        } else {
+          this.cache.set(m.text, { headline: '读不出来', cards: [], risk: null, advice: analysis.error?.slice(0, 40) || '' });
+        }
+      }
+      if (todo.length) {
+        this.onCards?.(incoming.map((m) => ({ ...(this.cache.get(m.text) || { pending: true }), ...place(m) })));
+      }
+    } finally {
+      this.scanning = false;
+    }
+  }
+
   start() {
     if (this.timer) return { ok: true, already: true };
     const { intervalMs } = this.settings();
@@ -203,11 +281,12 @@ class Monologue {
     clearInterval(this.timer);
     this.timer = null;
     this.state.watching = false;
+    this.stopOverlay();
     return { ok: true };
   }
 
   status() {
-    return { ...this.state, ...this.settings() };
+    return { ...this.state, ...this.settings(), overlay: Boolean(this.overlayOn) };
   }
 }
 

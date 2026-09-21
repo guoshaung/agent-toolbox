@@ -293,7 +293,14 @@ contextBridge.exposeInMainWorld('toolbox', {
     stopWatch: () => ipcRenderer.invoke('monologue:stopWatch'),
     peek: () => ipcRenderer.invoke('monologue:peek'),
     openScreenPerm: () => ipcRenderer.invoke('monologue:openScreenPerm'),
+    startOverlay: () => ipcRenderer.invoke('monologue:startOverlay'),
+    stopOverlay: () => ipcRenderer.invoke('monologue:stopOverlay'),
     onUpdate: (cb) => ipcRenderer.on('monologue:update', (_e, payload) => cb(payload)),
+  },
+
+  /** 覆盖层页面自己用的 */
+  overlay: {
+    onCards: (cb) => ipcRenderer.on('overlay:cards', (_e, cards) => cb(cards)),
   },
 
   pet: {

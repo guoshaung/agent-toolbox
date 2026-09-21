@@ -73,6 +73,15 @@ export default {
       );
     } }, '试读一次');
 
+    const overlayBtn = h('button', { class: 'btn btn--sm btn--primary', onclick: async () => {
+      if (status.overlay) { await window.toolbox.monologue.stopOverlay(); }
+      else {
+        await window.toolbox.monologue.startOverlay();
+        toast('覆盖层开了 —— 切到微信看看，卡片会贴在对方消息旁边', 'good', 5000);
+      }
+      await refresh();
+    } }, '贴到微信上');
+
     const watchBtn = h('button', { class: 'btn btn--sm', onclick: async () => {
       if (status.watching) { await window.toolbox.monologue.stopWatch(); }
       else { await window.toolbox.monologue.startWatch(); toast('开始盯着聊天窗口了', 'good'); }
@@ -83,7 +92,9 @@ export default {
       status = await window.toolbox.monologue.status();
       statusTag.textContent = status.watching ? '自动盯着' : '待命';
       statusTag.className = `tag ${status.watching ? 'tag--good' : ''}`;
-      watchBtn.textContent = status.watching ? '停止自动盯' : '开始自动盯';
+      watchBtn.textContent = status.watching ? '停止自动盯' : '只盯最新一条';
+      overlayBtn.textContent = status.overlay ? '收起覆盖层' : '贴到微信上';
+      overlayBtn.classList.toggle('btn--primary', !status.overlay);
       appInput.value = status.app || '微信';
       leftRange.value = String(status.chatLeft ?? 0.3);
       rightRange.value = String(status.chatRight ?? 1);
@@ -113,10 +124,13 @@ export default {
           tplRow,
         ),
         h('section', { class: 'card' },
-          h('h3', { class: 'card__title' }, '自动盯着聊天窗口'),
+          h('h3', { class: 'card__title' }, '贴在微信上（覆盖层）'),
           h('p', { class: 'faint settings__hint' },
             '每隔几秒截一次窗口、OCR 出最新一条对方消息，变了就自动分析。需要「屏幕录制」权限。'),
-          h('div', { class: 'mono__row' }, h('span', { class: 'faint' }, '盯哪个应用'), appInput, watchBtn, peekBtn),
+          h('div', { class: 'mono__row' }, h('span', { class: 'faint' }, '盯哪个应用'), appInput, overlayBtn, watchBtn, peekBtn),
+          h('p', { class: 'faint settings__hint' },
+            '「贴到微信上」= 透明覆盖层，卡片直接画在对方每条消息旁边，跟着窗口移动和滚动走，鼠标完全穿透。'
+            + '微信不在前台时自动隐藏。做不到真的嵌进微信（那要往它进程里注入代码，会被封号），但看着是一回事。'),
           h('p', { class: 'faint settings__hint' },
             '微信窗口是多栏的（图标条 + 会话列表 + 聊天区，有时右边还有面板），得把聊天区框出来：'),
           h('div', { class: 'mono__row' }, h('span', { class: 'faint mono__lbl' }, '聊天区左边界'), leftRange, leftLabel),

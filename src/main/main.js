@@ -115,6 +115,7 @@ let gitDesk = null;
 let netCapture = null;
 let monologue = null;
 let monologueWindow = null;
+let overlayWindow = null;
 const MONOLOGUE_SHORTCUT = 'CommandOrControl+Shift+M';
 let dshService;
 let tavernService;
@@ -1518,6 +1519,39 @@ function createMonologueWindow() {
   return monologueWindow;
 }
 
+/**
+ * 覆盖层：一个完全透明、鼠标穿透的窗口，贴着微信窗口浮在上面。
+ * 做不到真的嵌进微信（那得往它进程里注入代码），但视觉上是一回事 ——
+ * Discord / Steam 的游戏内浮层、翻译软件的悬浮译文都是这么做的。
+ */
+function createOverlayWindow() {
+  if (overlayWindow && !overlayWindow.isDestroyed()) return overlayWindow;
+  overlayWindow = new BrowserWindow({
+    width: 800, height: 600, x: 0, y: 0,
+    frame: false, transparent: true, resizable: false, movable: false,
+    skipTaskbar: true, hasShadow: false, focusable: false, show: false,
+    alwaysOnTop: true, acceptFirstMouse: false,
+    webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false, sandbox: true },
+  });
+  // 整层点击穿透：点在卡片上也会落到底下的微信
+  overlayWindow.setIgnoreMouseEvents(true, { forward: true });
+  overlayWindow.setAlwaysOnTop(true, 'floating');
+  overlayWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+  overlayWindow.loadFile(path.join(__dirname, '..', 'overlay', 'index.html'));
+  overlayWindow.on('closed', () => { overlayWindow = null; });
+  return overlayWindow;
+}
+
+/** 跟着微信窗口走；微信不在前台就藏起来，免得浮在别的应用上面 */
+function placeOverlay(bounds) {
+  const win = overlayWindow;
+  if (!win || win.isDestroyed()) return;
+  if (!bounds) { if (win.isVisible()) win.hide(); return; }
+  win.setBounds({ x: Math.round(bounds.x), y: Math.round(bounds.y), width: Math.round(bounds.w), height: Math.round(bounds.h) });
+  if (bounds.front) { if (!win.isVisible()) win.showInactive(); }
+  else if (win.isVisible()) win.hide();
+}
+
 function pushMonologue(payload) {
   if (monologueWindow && !monologueWindow.isDestroyed()) monologueWindow.webContents.send('monologue:update', payload);
 }
@@ -1834,6 +1868,18 @@ function registerIpc() {
   ipcMain.handle('monologue:analyze', (_e, text) => runMonologue(text));
   ipcMain.handle('monologue:analyzeSelection', async () => runMonologue(await captureSelectedText()));
   ipcMain.handle('monologue:startWatch', () => { createMonologueWindow().showInactive(); return monologue?.start() || { ok: false }; });
+  ipcMain.handle('monologue:startOverlay', () => {
+    createOverlayWindow();
+    return monologue?.startOverlay({
+      onBounds: (bounds) => placeOverlay(bounds),
+      onCards: (cards) => { if (overlayWindow && !overlayWindow.isDestroyed()) overlayWindow.webContents.send('overlay:cards', cards); },
+    }) || { ok: false };
+  });
+  ipcMain.handle('monologue:stopOverlay', () => {
+    const result = monologue?.stopOverlay() || { ok: false };
+    if (overlayWindow && !overlayWindow.isDestroyed()) overlayWindow.hide();
+    return result;
+  });
   ipcMain.handle('monologue:stopWatch', () => monologue?.stop() || { ok: false });
   ipcMain.handle('monologue:openScreenPerm', () => {
     if (process.platform === 'darwin') shell.openExternal('x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture');

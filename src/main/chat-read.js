@@ -58,7 +58,11 @@ if cmd == "list" {
         // 同一个应用可能开好几个窗口，取面积最大的那个（主聊天窗）
         if w * h > bestArea {
             bestArea = w * h
-            found = ["ok": true, "id": wid, "app": owner, "w": Int(w), "h": Int(h)]
+            let frontApp = NSWorkspace.shared.frontmostApplication?.localizedName ?? ""
+            found = ["ok": true, "id": wid, "app": owner,
+                     "x": Int(b["X"] ?? 0), "y": Int(b["Y"] ?? 0),
+                     "w": Int(w), "h": Int(h),
+                     "front": frontApp == owner]
         }
     }
     guard let result = found else { fail("no-window", "没找到这个应用的窗口") }
@@ -125,7 +129,7 @@ function ensureBin(userDataDir) {
 }
 
 /** 截一次窗口并 OCR，返回带坐标的文本行 */
-async function readWindow(userDataDir, appName, { timeout = 30000 } = {}) {
+async function readWindow(userDataDir, appName, { timeout = 30000, bounds = false } = {}) {
   if (process.platform !== 'darwin') return { ok: false, error: '目前只做了 macOS。' };
   const ensured = ensureBin(userDataDir);
   if (!ensured.ok) return ensured;
@@ -138,6 +142,7 @@ async function readWindow(userDataDir, appName, { timeout = 30000 } = {}) {
     return { ok: false, error: `列窗口失败：${String(error.stderr || error.message).slice(0, 160)}` };
   }
   if (!win.ok) return win;
+  if (bounds) return win;         // 只要窗口位置，不截图（跟踪窗口移动时每秒都要问）
 
   // 截图走系统的 screencapture：-x 不出快门声，-o 不要窗口阴影，-l 指定窗口
   const shot = path.join(os.tmpdir(), `toolbox-chat-${Date.now()}.png`);
@@ -214,4 +219,7 @@ function latestIncoming(messages) {
   return null;
 }
 
-module.exports = { readWindow, toMessages, latestIncoming, ensureBin, binPath };
+/** 只问窗口在哪、是不是前台，不截图 —— 跟踪窗口用，很轻 */
+const windowBounds = (userDataDir, appName) => readWindow(userDataDir, appName, { bounds: true });
+
+module.exports = { readWindow, windowBounds, toMessages, latestIncoming, ensureBin, binPath };

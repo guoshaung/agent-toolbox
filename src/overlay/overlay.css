@@ -1,0 +1,50 @@
+:root {
+  color-scheme: dark;
+  font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", sans-serif;
+}
+html, body { margin: 0; height: 100%; background: transparent; overflow: hidden; }
+* { box-sizing: border-box; }
+
+/* 整层鼠标穿透（主进程也设了 setIgnoreMouseEvents），只负责显示 */
+.stage { position: absolute; inset: 0; pointer-events: none; }
+
+/* 一张贴在气泡旁边的解读卡。位置由 JS 按 OCR 出的坐标算，单位是百分比，
+   所以微信窗口缩放、滚动之后跟着走。 */
+.card {
+  position: absolute;
+  min-width: 168px; max-width: 300px;
+  padding: 7px 9px;
+  border-radius: 10px;
+  border: 1px solid rgba(201, 167, 255, .38);
+  background: rgba(16, 13, 28, .90);
+  box-shadow: 0 6px 20px rgba(0,0,0,.45);
+  backdrop-filter: blur(8px);
+  color: #efeaff;
+  font-size: 11px; line-height: 1.5;
+  animation: in .18s ease-out;
+}
+@keyframes in { from { opacity: 0; transform: translateY(-4px); } }
+
+.card .tag {
+  display: inline-block; margin-bottom: 4px;
+  font: 700 9.5px ui-monospace, monospace; letter-spacing: .5px;
+  color: #1a0f33; background: linear-gradient(135deg, #c9a7ff, #9d7bff);
+  padding: 1px 6px; border-radius: 5px;
+}
+.card .head { color: #c9a7ff; font-size: 11px; margin-bottom: 4px; }
+.card .row { display: flex; align-items: center; gap: 6px; margin-top: 2px; }
+.card .lbl { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.card .row.top .lbl { font-weight: 700; color: #fff; }
+.card .pct { flex: none; font: 700 10px ui-monospace, monospace; color: #9d95bd; }
+.card .row.top .pct { color: #5fd3a0; }
+.card .foot { margin-top: 5px; padding-top: 4px; border-top: 1px dashed rgba(201,167,255,.25); display: flex; gap: 6px; align-items: center; }
+.card .risk { flex: none; font: 700 9.5px ui-monospace, monospace; padding: 1px 5px; border-radius: 4px; }
+.card .risk.low { background: rgba(95,211,160,.2); color: #5fd3a0; }
+.card .risk.mid { background: rgba(240,185,61,.2); color: #f0b93d; }
+.card .risk.high { background: rgba(239,107,138,.22); color: #ef6b8a; }
+.card .advice { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #c8c0e4; font-size: 10.5px; }
+
+/* 正在分析的占位 */
+.card.pending { border-style: dashed; opacity: .75; }
+.card.pending .head::after { content: "…"; animation: dots 1s steps(3,end) infinite; }
+@keyframes dots { 0% { content: "·"; } 33% { content: "··"; } 66% { content: "···"; } }
