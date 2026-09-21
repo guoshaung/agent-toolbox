@@ -484,6 +484,11 @@ export default {
     );
     newFolderInput.addEventListener('keydown', (event) => { if (event.key === 'Enter') makeFolder(); });
     refresh('');
+    // 内嵌页面里点下载，文件落进容器后这里才知道 —— 以前这个事件发了没人接，下载完静悄悄的
+    window.toolbox.container.onDownloaded?.(({ file, folder } = {}) => {
+      toast(`已下载到容器${folder ? '/' + folder : ''}：${file}`, 'good');
+      refresh(currentPath);
+    });
     return {
       activate: () => { refresh(currentPath); },
       deactivate: () => stopRunPolling(),

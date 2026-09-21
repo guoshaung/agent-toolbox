@@ -154,6 +154,6 @@ export default {
 
     refresh();
 
-    return {};
+    return { activate: refresh };
   },
 };

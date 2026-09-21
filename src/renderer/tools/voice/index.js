@@ -235,6 +235,6 @@ export default {
       ),
     );
 
-    return {};
+    return { activate: refresh };
   },
 };

@@ -3066,6 +3066,23 @@ function forwardSwitcherKeys(contents) {
 
 app.on('web-contents-created', (_e, contents) => forwardSwitcherKeys(contents));
 
+/**
+ * 主进程的全局兜底。没有这两个，任何一个漏掉 catch 的 Promise 都会弹出 Electron 那个
+ * 「A JavaScript error occurred in the main process」对话框（退出时那次就是这么来的）。
+ * 这里记到 userData/logs/main-errors.log，界面上不打扰。
+ */
+function logMainError(kind, error) {
+  const line = `[${new Date().toISOString()}] ${kind}: ${error?.stack || error?.message || String(error)}\n`;
+  try {
+    const dir = path.join(app.getPath('userData'), 'logs');
+    fs.mkdirSync(dir, { recursive: true });
+    fs.appendFileSync(path.join(dir, 'main-errors.log'), line);
+  } catch { /* 连日志都写不了就只能 console 了 */ }
+  console.error(line.trim());
+}
+process.on('unhandledRejection', (reason) => logMainError('unhandledRejection', reason));
+process.on('uncaughtException', (error) => logMainError('uncaughtException', error));
+
 app.whenReady().then(async () => {
   if (process.platform === 'win32') app.setAppUserModelId(APP_USER_MODEL_ID);
   store = new Store(app.getPath('userData'));

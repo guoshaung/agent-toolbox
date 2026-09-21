@@ -462,5 +462,7 @@ export default {
     for (const tab of tabs) tabBar.appendChild(h('button', { class: 'btn btn--sm research__subbtn', dataset: { tab: tab.id }, onclick: () => select(tab.id) }, tab.label));
     root.append(h('div', { class: 'bar' }, h('strong', {}, 'Skill 工厂'), tabBar), body);
     select(tabs.some((tab) => tab.id === current) ? current : 'distill');
+    // 切走再切回来时技能库要重扫一遍：新装的 skill 才会出现
+    return { activate: () => { if (current === 'library') refreshLibrary(); } };
   },
 };

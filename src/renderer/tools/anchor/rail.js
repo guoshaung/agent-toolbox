@@ -109,7 +109,7 @@ export function createRail(store, { fill, toNotebook }) {
           h('button', {
             class: 'btn btn--xs btn--ghost',
             onclick: async () => {
-              await window.toolbox.clipboard.writeText(clip.text);
+              await window.toolbox.clipboard.write(clip.text);
               toast('已复制', 'good');
             },
           }, '复制'),

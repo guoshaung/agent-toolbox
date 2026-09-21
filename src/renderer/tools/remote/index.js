@@ -143,6 +143,6 @@ export default {
     window.toolbox.phone.onEvent(() => renderPhone());
     renderPhone();
     refresh();
-    return {};
+    return { activate: () => { refresh(); renderPhone(); } };
   },
 };

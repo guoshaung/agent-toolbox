@@ -244,6 +244,15 @@ contextBridge.exposeInMainWorld('toolbox', {
     onHighlight: (callback) => ipcRenderer.on('switcher:highlight', (_event, n) => callback(n)),
     pick: (n) => ipcRenderer.invoke('switcher:pick', n),
     hide: () => ipcRenderer.invoke('switcher:hide'),
+    /** 焦点在 webview 里时，Ctrl+Tab 由主进程截获再转发过来（以前单独写了一个同名块，把上面这些覆盖掉了 —— 切换栏因此一片空白） */
+    onStep: (cb) => ipcRenderer.on('switcher:step', (_e, payload) => cb(payload || {})),
+    onCommit: (cb) => ipcRenderer.on('switcher:commit', () => cb()),
+    onCancel: (cb) => ipcRenderer.on('switcher:cancel', () => cb()),
+  },
+
+  /** 把本机 Edge/Chrome 里某个站点的登录 cookie 同步到工具箱的内嵌浏览器 */
+  edge: {
+    syncCookies: (partition, host) => ipcRenderer.invoke('edge:syncCookies', { partition, host }),   // 主进程那头收的是一个对象
   },
 
   /** 接口台：在主进程里发请求，没有跨域限制，Header 想怎么写就怎么写 */
@@ -368,6 +377,8 @@ contextBridge.exposeInMainWorld('toolbox', {
     filePath: (relPath) => ipcRenderer.invoke('container:filePath', relPath),
     workspace: () => ipcRenderer.invoke('container:workspace'),
     toLiterature: (relPaths) => ipcRenderer.invoke('container:toLiterature', relPaths),
+    /** 内嵌页面里下载的文件落进容器后通知一声 */
+    onDownloaded: (callback) => ipcRenderer.on('container:downloaded', (_event, payload) => callback(payload)),
     open: () => ipcRenderer.invoke('container:open'),
     /** 把二进制内容写进容器的某个子目录（画图工具导出走这条） */
     saveBinary: (payload) => ipcRenderer.invoke('container:saveBinary', payload),
@@ -466,13 +477,6 @@ contextBridge.exposeInMainWorld('toolbox', {
     depsList: (dir) => ipcRenderer.invoke('shelf:depsList', dir),
     /** 用 uv init/add 安装依赖，返回安装日志 */
     depsInstall: (payload) => ipcRenderer.invoke('shelf:depsInstall', payload),
-  },
-
-  switcher: {
-    /** 焦点在 webview 里时，Ctrl+Tab 由主进程截获再转发过来 */
-    onStep: (cb) => ipcRenderer.on('switcher:step', (_e, payload) => cb(payload || {})),
-    onCommit: (cb) => ipcRenderer.on('switcher:commit', () => cb()),
-    onCancel: (cb) => ipcRenderer.on('switcher:cancel', () => cb()),
   },
 
   docs: {

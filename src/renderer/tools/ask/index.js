@@ -125,7 +125,7 @@ export default {
         await view.executeJavaScript(`window.__tbx.setText(${JSON.stringify(text)})`, true);
       } catch {
         // 填不进去就退而求其次，至少让你能粘
-        await window.toolbox.clipboard.writeText(text);
+        await window.toolbox.clipboard.write(text);
         toast('输入框还没就绪，已复制到剪贴板', 'info');
       }
     }
