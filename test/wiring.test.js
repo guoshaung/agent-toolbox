@@ -13,6 +13,8 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const ROOT = path.join(__dirname, '..');
+// Windows 上 path.relative 给的是反斜杠，和这里写死的 'src/main/preload.js' 对不上 —— 统一成正斜杠
+const rel = (f) => rel(f).split(path.sep).join('/');
 
 function walk(dir, out = []) {
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
@@ -25,7 +27,7 @@ function walk(dir, out = []) {
 }
 
 const ALL = walk(path.join(ROOT, 'src'));
-const PRELOADS = ALL.filter((f) => /preload[^/]*\.js$/.test(f));
+const PRELOADS = ALL.filter((f) => /preload[^/\\]*\.js$/.test(f));
 const MAIN_SIDE = ALL.filter((f) => !PRELOADS.includes(f) && /\.(js|mjs)$/.test(f))
   .map((f) => fs.readFileSync(f, 'utf8')).join('\n');
 const HANDLED = new Set([...MAIN_SIDE.matchAll(/ipcMain\.(?:handle|on)\('([^']+)'/g)].map((m) => m[1]));
@@ -46,7 +48,7 @@ function parsePreload(file) {
   }
   const invoked = [...src.matchAll(/ipcRenderer\.(?:invoke|send)\('([^']+)'/g)].map((m) => m[1]);
   const listened = [...src.matchAll(/ipcRenderer\.on\('([^']+)'/g)].map((m) => m[1]);
-  return { file: path.relative(ROOT, file), names, ns, topKeys, invoked, listened };
+  return { file: rel(file), names, ns, topKeys, invoked, listened };
 }
 
 const PARSED = PRELOADS.map(parsePreload);
@@ -88,10 +90,10 @@ test('页面调用的 window.<暴露名>.x(.y)，preload 里都存在', () => {
         for (const m of src.matchAll(two)) {
           const [, a, b] = m;
           if (!p.ns[a]) continue;                         // 一级键不存在的由下面那条报
-          if (p.ns[a].size && !p.ns[a].has(b)) bad.add(`${path.relative(ROOT, f)}: ${name}.${a}.${b} 不存在`);
+          if (p.ns[a].size && !p.ns[a].has(b)) bad.add(`${rel(f)}: ${name}.${a}.${b} 不存在`);
         }
         for (const m of src.matchAll(one)) {
-          if (!(m[1] in p.ns)) bad.add(`${path.relative(ROOT, f)}: ${name}.${m[1]} 不存在`);
+          if (!(m[1] in p.ns)) bad.add(`${rel(f)}: ${name}.${m[1]} 不存在`);
         }
       }
     }
