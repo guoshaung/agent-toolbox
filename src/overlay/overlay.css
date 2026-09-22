@@ -45,6 +45,11 @@ html, body { margin: 0; height: 100%; background: transparent !important; overfl
 .card .risk.high { background: rgba(239,107,138,.22); color: #ef6b8a; }
 .card .advice { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #c8c0e4; font-size: 10.5px; }
 
+/* 读不到窗口时的说明卡：固定贴在顶部中间，不跟 OCR 坐标走 */
+.card.notice { left: 50%; top: 12px; transform: translateX(-50%); max-width: 420px; border-color: rgba(240,185,61,.6); }
+.card.notice .tag { background: linear-gradient(135deg, #f0b93d, #e08a2e); }
+.card.notice .advice { white-space: normal; margin-top: 4px; }
+
 /* 正在分析的占位 */
 .card.pending { border-style: dashed; opacity: .75; }
 .card.pending .head::after { content: "…"; animation: dots 1s steps(3,end) infinite; }

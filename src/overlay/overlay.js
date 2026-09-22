@@ -9,7 +9,18 @@
 const stage = document.getElementById('stage');
 const el = (tag, cls, text) => { const n = document.createElement(tag); if (cls) n.className = cls; if (text != null) n.textContent = text; return n; };
 
+function buildNotice(item) {
+  const card = el('div', 'card notice');
+  card.append(el('span', 'tag', item.code === 'no-permission' ? '需要权限' : '读不到'));
+  card.append(el('div', 'head', item.text || '读不到这个窗口'));
+  if (item.code === 'no-permission') {
+    card.append(el('div', 'advice', '系统设置 → 隐私与安全性 → 屏幕录制 → 勾上「Agent 工具箱」→ 重启工具箱'));
+  }
+  return card;
+}
+
 function buildCard(item) {
+  if (item.notice) return buildNotice(item);
   const card = el('div', `card${item.pending ? ' pending' : ''}`);
   card.append(el('span', 'tag', 'JEV'));
   card.append(el('div', 'head', item.pending ? '读这句' : (item.headline || '')));

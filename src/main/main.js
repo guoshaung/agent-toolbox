@@ -1905,6 +1905,10 @@ function registerIpc() {
   ipcMain.handle('monologue:startOverlay', () => {
     createOverlayWindow();
     return monologue?.startOverlay({
+      onNotice: ({ code, error }) => {
+        try { const n = new Notification({ title: '内心独白读不到微信窗口', body: error }); n.show(); } catch { /* 不让发通知就算了 */ }
+        if (code === 'no-permission' && process.platform === 'darwin') shell.openExternal('x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture');
+      },
       onBounds: (bounds) => placeOverlay(bounds),
       onCards: (cards) => { if (overlayWindow && !overlayWindow.isDestroyed()) overlayWindow.webContents.send('overlay:cards', cards); },
     }) || { ok: false };

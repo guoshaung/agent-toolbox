@@ -78,9 +78,22 @@ export default {
       else {
         await window.toolbox.monologue.startOverlay();
         toast('覆盖层开了 —— 切到微信看看，卡片会贴在对方消息旁边', 'good', 5000);
+        // 第一次截图要几秒；没权限的话什么都不会出现，这里把原因说出来
+        setTimeout(async () => {
+          const s = await window.toolbox.monologue.status();
+          if (!s.lastError) return;
+          toast(s.lastError, 'bad', 8000);
+          overlayHint.replaceChildren(
+            h('span', { class: 'faint' }, s.lastError),
+            h('button', { class: 'btn btn--sm', onclick: () => window.toolbox.monologue.openScreenPerm() }, '打开设置'),
+          );
+          overlayHint.hidden = false;
+        }, 3500);
       }
       await refresh();
     } }, '贴到微信上');
+
+    const overlayHint = h('div', { class: 'mono__row', hidden: true });
 
     const watchBtn = h('button', { class: 'btn btn--sm', onclick: async () => {
       if (status.watching) { await window.toolbox.monologue.stopWatch(); }
@@ -128,6 +141,7 @@ export default {
           h('p', { class: 'faint settings__hint' },
             '每隔几秒截一次窗口、OCR 出最新一条对方消息，变了就自动分析。需要「屏幕录制」权限。'),
           h('div', { class: 'mono__row' }, h('span', { class: 'faint' }, '盯哪个应用'), appInput, overlayBtn, watchBtn, peekBtn),
+          overlayHint,
           h('p', { class: 'faint settings__hint' },
             '「贴到微信上」= 透明覆盖层，卡片直接画在对方每条消息旁边，跟着窗口移动和滚动走，鼠标完全穿透。'
             + '微信不在前台时自动隐藏。做不到真的嵌进微信（那要往它进程里注入代码，会被封号），但看着是一回事。'),

@@ -196,10 +196,12 @@ class Monologue {
    *  - 跟踪（快）：只问窗口在哪、是不是前台，很轻，用来让覆盖层贴住微信
    *  - 扫描（慢）：截图 + OCR + 分析，贵，所以按文本缓存，滚回去看过的不会重算
    */
-  startOverlay({ onBounds, onCards } = {}) {
+  startOverlay({ onBounds, onCards, onNotice } = {}) {
     if (this.trackTimer) return { ok: true, already: true };
     this.onBounds = onBounds;
     this.onCards = onCards;
+    this.onNotice = onNotice;
+    this.noticed = false;
     this.cache = this.cache || new Map();
     this.overlayOn = true;
     const { intervalMs } = this.settings();
@@ -233,7 +235,13 @@ class Monologue {
     try {
       const { app, chatLeft, chatRight, template } = this.settings();
       const read = await this.readChat(this.getUserDataPath(), app);
-      if (!read.ok) { this.state.lastError = read.error || '读不到窗口'; return; }
+      if (!read.ok) {
+        this.state.lastError = read.error || '读不到窗口';
+        // 没权限的话覆盖层上什么都不会出现，用户只会觉得「点了没反应」——把原因直接贴在覆盖层上
+        this.onCards?.([{ notice: true, code: read.code || 'error', text: this.state.lastError }]);
+        if (!this.noticed) { this.noticed = true; this.onNotice?.({ code: read.code || 'error', error: this.state.lastError }); }
+        return;
+      }
       this.state.lastError = '';
       const { toMessages } = require('./chat-read');
       const messages = toMessages(read.lines, { chatLeft, chatRight });
