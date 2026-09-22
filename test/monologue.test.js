@@ -130,3 +130,30 @@ test('覆盖层必须全透明：除了卡片，不许有任何不透明背景',
   // backdrop-filter 在透明窗口上会采样到空背景，可能整块糊掉
   assert.doesNotMatch(css, /backdrop-filter/, '透明覆盖层上别用 backdrop-filter');
 });
+
+test('称呼按设置换：他 / TA，提示词和卡片标题里都不再是「她」', async () => {
+  const { groupIncoming } = require('../src/main/monologue');
+  const mono = new Monologue({
+    ask: async (msgs) => { assert.match(msgs[1].content, /他说的是字面意思吗/); assert.doesNotMatch(msgs[1].content, /她说/); return { ok: true, text: '{"headline":"x","answers":[{"key":"literal","options":[{"label":"话里有话","p":100}]}],"risk":1,"advice":"y"}' }; },
+    store: { get: (k, d) => (k === 'monologue.who' ? '他' : d), set: () => {} },
+  });
+  const r = await mono.analyze('在吗');
+  assert.equal(r.cards[0].q, '他说的是字面意思吗？');
+  assert.equal(typeof groupIncoming, 'function');
+});
+
+test('对方连发几条合成一组：一起分析，卡片贴在最后一条下面', () => {
+  const { groupIncoming } = require('../src/main/monologue');
+  const msgs = [
+    { side: 'them', text: '在吗', x: 0.32, y: 0.30, yEnd: 0.32 },
+    { side: 'them', text: '你今天是不是又忘了', x: 0.31, y: 0.34, yEnd: 0.36 },
+    { side: 'me', text: '没有啊', x: 0.8, y: 0.40, yEnd: 0.42 },
+    { side: 'them', text: '算了', x: 0.32, y: 0.46, yEnd: 0.48 },
+  ];
+  const groups = groupIncoming(msgs);
+  assert.equal(groups.length, 2, '中间被我打断，分成两组');
+  assert.equal(groups[0].text, '在吗\n你今天是不是又忘了');
+  assert.equal(groups[0].yEnd, 0.36, '坐标取这组最后一条');
+  assert.equal(groups[0].count, 2);
+  assert.equal(groups[1].text, '算了');
+});

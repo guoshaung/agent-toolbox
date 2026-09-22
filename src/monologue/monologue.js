@@ -80,17 +80,23 @@ api?.templates?.().then((list) => {
   sel.onchange = () => api.setTemplate(sel.value);
 });
 
-// 自动盯窗口
+// 对方的称呼：她 / 他 / TA
+const whoSel = $('who');
+whoSel.onchange = () => api.set({ who: whoSel.value });
+
+// 「自动」= 把卡片贴到微信对话下面（透明覆盖层），不是在这个浮窗里刷
 const watchBtn = $('watch');
 async function syncWatch() {
   const s = await api.status();
-  watchBtn.classList.toggle('on', !!s.watching);
-  watchBtn.textContent = s.watching ? '■ 自动' : '▶ 自动';
-  if (s.watching) setDot('on', `盯着「${s.app}」`);
+  whoSel.value = s.who || '她';
+  watchBtn.classList.toggle('on', !!s.overlay);
+  watchBtn.textContent = s.overlay ? '■ 贴在微信上' : '▶ 贴到微信';
+  if (s.overlay) setDot('on', `贴在「${s.app}」上`);
 }
 watchBtn.onclick = async () => {
   const s = await api.status();
-  await (s.watching ? api.stopWatch() : api.startWatch());
+  if (s.overlay) { await api.stopOverlay(); }
+  else { await api.startOverlay(); setTimeout(() => api.hide(), 600); }   // 贴上去之后这个浮窗就不用杵着了
   syncWatch();
 };
 $('close').onclick = () => api.hide();

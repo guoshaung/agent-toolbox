@@ -59,11 +59,15 @@ const SYSTEM_PROMPT = `你是一个只做判断、不写文章的助手。
 
 risk 是 0-10 的整数，表示这句话背后的状况有多需要认真对待；不需要就给 0。`;
 
-function buildPrompt(template, text, context) {
+/** 模板里的问题默认写的是「她」，按设置换成 她 / 他 / TA */
+const withWho = (text, who) => String(text || '').replace(/她/g, who || '她');
+
+function buildPrompt(template, text, context, who = '她') {
   const spec = (template.questions || [])
-    .map((q) => `- key=${q.key}  问题：${q.q}  选项：${q.options.join(' / ')}`)
+    .map((q) => `- key=${q.key}  问题：${withWho(q.q, who)}  选项：${q.options.join(' / ')}`)
     .join('\n');
   return [
+    `【对方的称呼】用「${who}」称呼对方，headline 和 advice 里也用这个字。`,
     context ? `【上下文，最近几条】\n${context}\n` : '',
     `【要分析的这句话】\n${text}\n`,
     `【要回答的问题】\n${spec}`,
@@ -88,7 +92,7 @@ function parseJson(raw) {
  * 把模型返回的东西normalize成界面能直接渲染的卡片。
  * 概率做两件事：非负、每题归一到 100 —— 模型经常给出加起来 97 或 103 的数。
  */
-function toCards(template, parsed) {
+function toCards(template, parsed, who = '她') {
   if (!parsed) return null;
   const byKey = new Map((parsed.answers || []).map((a) => [String(a.key), a]));
   const cards = [];
@@ -102,7 +106,7 @@ function toCards(template, parsed) {
     const total = options.reduce((sum, o) => sum + o.p, 0);
     if (total > 0) options = options.map((o) => ({ ...o, p: Math.round((o.p / total) * 100) }));
     options.sort((a, b) => b.p - a.p);
-    cards.push({ q: question.q, options });
+    cards.push({ q: withWho(question.q, who), options });
   }
   if (!cards.length) return null;
   return {
@@ -111,6 +115,28 @@ function toCards(template, parsed) {
     risk: template.risk ? Math.max(0, Math.min(10, Math.round(Number(parsed.risk) || 0))) : null,
     advice: String(parsed.advice || '').slice(0, 50),
   };
+}
+
+/**
+ * 把对方连续发的几条合成一组（微信里对方一口气发三条很常见，逐条解读又碎又费钱）。
+ * 组的坐标取最后一条的：卡片贴在整组的最下面。
+ */
+function groupIncoming(messages) {
+  const groups = [];
+  let current = null;
+  for (const m of messages) {
+    if (m.side !== 'them' || !m.text || m.text.length < 2) { current = null; continue; }
+    if (current) {
+      current.text = `${current.text}\n${m.text}`;
+      current.x = Math.min(current.x, m.x);
+      current.yEnd = m.yEnd;
+      current.count += 1;
+    } else {
+      current = { side: 'them', text: m.text, x: m.x, y: m.y, yEnd: m.yEnd, count: 1 };
+      groups.push(current);
+    }
+  }
+  return groups;
 }
 
 class Monologue {
@@ -142,6 +168,7 @@ class Monologue {
       chatLeft: Number(this.store?.get('monologue.chatLeft', 0.3)) || 0.3,
       chatRight: Number(this.store?.get('monologue.chatRight', 1)) || 1,
       intervalMs: Math.max(2000, Number(this.store?.get('monologue.interval', 4000)) || 4000),
+      who: ['她', '他', 'TA'].includes(this.store?.get('monologue.who', '她')) ? this.store.get('monologue.who', '她') : '她',
     };
   }
 
@@ -150,13 +177,14 @@ class Monologue {
     const clean = String(text || '').trim();
     if (!clean) return { ok: false, error: '没有内容可以分析。' };
     if (clean.length > 1500) return { ok: false, error: '这段太长了，选短一点。' };
-    const template = TEMPLATES[templateId || this.settings().template] || TEMPLATES.chat;
+    const settings = this.settings();
+    const template = TEMPLATES[templateId || settings.template] || TEMPLATES.chat;
     const result = await this.ask([
       { role: 'system', content: SYSTEM_PROMPT },
-      { role: 'user', content: buildPrompt(template, clean, context) },
+      { role: 'user', content: buildPrompt(template, clean, context, settings.who) },
     ]);
     if (!result?.ok) return { ok: false, error: result?.error || '模型没返回。' };
-    const cards = toCards(template, parseJson(result.text));
+    const cards = toCards(template, parseJson(result.text), settings.who);
     if (!cards) return { ok: false, error: `模型返回的不是预期格式：${String(result.text).slice(0, 80)}` };
     return { ok: true, source: clean, template: template.id, ...cards, at: Date.now() };
   }
@@ -245,7 +273,8 @@ class Monologue {
       this.state.lastError = '';
       const { toMessages } = require('./chat-read');
       const messages = toMessages(read.lines, { chatLeft, chatRight });
-      const incoming = messages.filter((m) => m.side === 'them' && m.text.length >= 2);
+      // 对方连着发的几条算一组：一起分析、卡片贴在这组最后一条下面
+      const incoming = groupIncoming(messages);
 
       // 卡片贴在气泡下面一点、往右缩一档，看着像从那句话里长出来的
       const place = (m) => ({ x: Math.min(0.72, m.x + 0.02), y: Math.min(0.94, m.yEnd + 0.03) });
@@ -298,4 +327,5 @@ class Monologue {
   }
 }
 
-module.exports = { Monologue, TEMPLATES, parseJson, toCards, buildPrompt, SYSTEM_PROMPT };
+module.exports = {
+  groupIncoming, Monologue, TEMPLATES, parseJson, toCards, buildPrompt, SYSTEM_PROMPT };

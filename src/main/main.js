@@ -1898,7 +1898,7 @@ function registerIpc() {
   ipcMain.handle('monologue:setTemplate', (_e, id) => { store.set('monologue.template', String(id || 'chat')); return { ok: true }; });
   ipcMain.handle('monologue:set', (_e, patch) => {
     for (const [key, value] of Object.entries(patch || {})) {
-      if (['app', 'chatLeft', 'chatRight', 'interval', 'template'].includes(key)) store.set(`monologue.${key}`, value);
+      if (['app', 'chatLeft', 'chatRight', 'interval', 'template', 'who'].includes(key)) store.set(`monologue.${key}`, value);
     }
     return monologue?.status() || {};
   });

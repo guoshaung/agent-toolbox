@@ -93,6 +93,8 @@ export default {
       await refresh();
     } }, '贴到微信上');
 
+    const whoSel = h('select', { class: 'input input--sm', onchange: () => window.toolbox.monologue.set({ who: whoSel.value }) },
+      ...['她', '他', 'TA'].map((w) => h('option', { value: w }, w)));
     const overlayHint = h('div', { class: 'mono__row', hidden: true });
 
     const watchBtn = h('button', { class: 'btn btn--sm', onclick: async () => {
@@ -109,6 +111,7 @@ export default {
       overlayBtn.textContent = status.overlay ? '收起覆盖层' : '贴到微信上';
       overlayBtn.classList.toggle('btn--primary', !status.overlay);
       appInput.value = status.app || '微信';
+      whoSel.value = status.who || '她';
       leftRange.value = String(status.chatLeft ?? 0.3);
       rightRange.value = String(status.chatRight ?? 1);
       leftLabel.textContent = Number(leftRange.value).toFixed(2);
@@ -140,7 +143,7 @@ export default {
           h('h3', { class: 'card__title' }, '贴在微信上（覆盖层）'),
           h('p', { class: 'faint settings__hint' },
             '每隔几秒截一次窗口、OCR 出最新一条对方消息，变了就自动分析。需要「屏幕录制」权限。'),
-          h('div', { class: 'mono__row' }, h('span', { class: 'faint' }, '盯哪个应用'), appInput, overlayBtn, watchBtn, peekBtn),
+          h('div', { class: 'mono__row' }, h('span', { class: 'faint' }, '盯哪个应用'), appInput, h('span', { class: 'faint' }, '对方是'), whoSel, overlayBtn, watchBtn, peekBtn),
           overlayHint,
           h('p', { class: 'faint settings__hint' },
             '「贴到微信上」= 透明覆盖层，卡片直接画在对方每条消息旁边，跟着窗口移动和滚动走，鼠标完全穿透。'
