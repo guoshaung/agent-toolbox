@@ -10,7 +10,7 @@ const {
   app, BrowserWindow, ipcMain, session, shell, dialog, clipboard, nativeTheme, safeStorage, screen,
   nativeImage, globalShortcut,
   systemPreferences,
-  Notification,
+  Notification, Tray, Menu,
 } = require('electron');
 const { Store } = require('./store');
 const { buildQuickExplainMessages, parseQuickExplainResponse } = require('./quick-explain');
@@ -134,6 +134,28 @@ function relayPhoneState(payload) {
   }
 }
 const MONOLOGUE_SHORTCUT = 'CommandOrControl+Shift+M';
+// 叫回主窗口。关掉窗口后应用还在后台（桌宠、手机服务都靠它），但没有一个显眼的入口能把窗口叫回来，
+// 于是「叉掉就找不到了」。菜单栏图标 + 这个快捷键 + 点 Dock 图标，三条路都能回来。
+const WAKE_SHORTCUT = 'CommandOrControl+Shift+A';
+let tray = null;
+
+function createTray() {
+  if (tray) return tray;
+  try {
+    let icon = nativeImage.createFromPath(path.join(__dirname, '..', '..', 'assets', 'icon.png'));
+    if (!icon.isEmpty()) icon = icon.resize({ width: 18, height: 18 });
+    tray = new Tray(icon);
+    tray.setToolTip('Agent 工具箱 —— 点一下叫回窗口');
+    const menu = Menu.buildFromTemplate([
+      { label: '显示工具箱', accelerator: WAKE_SHORTCUT, click: () => ensureMainWindow({ show: true }) },
+      { type: 'separator' },
+      { label: '退出工具箱', click: () => quitToolbox() },
+    ]);
+    tray.setContextMenu(menu);
+    tray.on('click', () => ensureMainWindow({ show: true }));
+  } catch (error) { console.warn('[tray] 建不出菜单栏图标：', error.message); }
+  return tray;
+}
 let dshService;
 let tavernService;
 let argosService;
@@ -3221,6 +3243,10 @@ app.whenReady().then(async () => {
       .then((result) => saveRemoteToken(result.token))
       .catch((error) => console.warn('[remote] 自动启动失败:', error.message));
   }
+  createTray();
+  try {
+    if (!globalShortcut.register(WAKE_SHORTCUT, () => ensureMainWindow({ show: true }))) console.warn('[wake] 快捷键被占用：', WAKE_SHORTCUT);
+  } catch (error) { console.warn('[wake] 快捷键注册失败：', error.message); }
   // 选中文字 → ⌘⇧M → 浮窗给解读
   try {
     globalShortcut.register(MONOLOGUE_SHORTCUT, () => {
@@ -3239,9 +3265,8 @@ app.whenReady().then(async () => {
       : '快捷键被其他应用占用了。');
   }
 
-  app.on('activate', () => {
-    if (!mainWindow || mainWindow.isDestroyed()) createWindow();
-  });
+  // 点 Dock 图标：窗口被关了就重建，只是藏着就拉出来
+  app.on('activate', () => ensureMainWindow({ show: true }));
 });
 
 app.on('window-all-closed', () => {
