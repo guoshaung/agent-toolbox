@@ -378,6 +378,50 @@ async function activity({ days = 7, limit = 8 } = {}) {
   return { ok: true, days, scanned: roots.length, items: active };
 }
 
+// ---------- 带我读：按讲解里的顺序一个文件一个文件讲 ----------
+
+/** 从讲解的「从哪个文件开始读」一节里抠出文件路径（相对项目根），只留真实存在的。纯函数 + fs */
+function readingList(markdown, root) {
+  const lines = String(markdown || '').split('\n');
+  const start = lines.findIndex((l) => /^#{1,4}\s/.test(l) && /(从哪|开始读|入口|先看)/.test(l));
+  const scope = start < 0 ? lines : lines.slice(start + 1, lines.findIndex((l, i) => i > start && /^#{1,4}\s/.test(l)) > 0 ? lines.findIndex((l, i) => i > start && /^#{1,4}\s/.test(l)) : undefined);
+  const out = [];
+  for (const line of scope) {
+    if (!/^\s*(?:[-*]|\d+[.)])\s+/.test(line)) continue;
+    const tokens = line.match(/[`]?([A-Za-z0-9_./-]+\.[A-Za-z0-9]{1,6})[`]?/g) || [];
+    for (const raw of tokens) {
+      const rel = raw.replace(/`/g, '').replace(/^\.\//, '');
+      if (!rel.includes('.') || /^\d+\.\d+$/.test(rel)) continue;
+      const abs = path.join(root, rel);
+      if (fs.existsSync(abs) && statSafe(abs)?.isFile() && !out.some((o) => o.rel === rel)) { out.push({ rel, abs, why: line.replace(/^\s*(?:[-*]|\d+[.)])\s+/, '').replace(/\*\*/g, '').slice(0, 120) }); break; }
+    }
+  }
+  return out.slice(0, 8);
+}
+
+/** 讲一个文件：在项目里干什么、关键函数、和谁相连、读的时候注意什么 */
+async function explainFile(root, rel, ask, { priorMarkdown = '' } = {}) {
+  const abs = path.resolve(String(root || ''), String(rel || ''));
+  if (!abs.startsWith(path.resolve(root))) return { ok: false, error: '不在项目里。' };
+  const st = statSafe(abs);
+  if (!st?.isFile()) return { ok: false, error: '文件不存在。' };
+  if (st.size > 400 * 1024) return { ok: false, error: '这个文件太大（>400KB），先挑别的读。' };
+  const head = readHead(abs, 260);
+  if (typeof ask !== 'function') return { ok: false, error: '没有配好模型。' };
+  const prompt = `项目「${path.basename(root)}」。${priorMarkdown ? `之前对整个项目的讲解：\n${String(priorMarkdown).slice(0, 1500)}\n\n` : ''}现在带一个初学者读文件 ${rel}（下面是前 260 行）。用 Markdown，四节，每节两到四句：
+## 这个文件在项目里干什么
+## 从上往下怎么读（按顺序点出 3-5 个关键函数 / 段落，各一句话）
+## 它和哪些文件相连（import 了谁、被谁用）
+## 读的时候容易卡在哪
+
+\`\`\`
+${head}
+\`\`\``;
+  const r = await ask([{ role: 'system', content: '你是个耐心的师兄，讲人话，不说废话，不要复述代码。' }, { role: 'user', content: prompt }]);
+  if (!r?.ok) return { ok: false, error: r?.error || '模型没返回。' };
+  return { ok: true, rel, markdown: String(r.text || ''), lines: head.split('\n').length };
+}
+
 /** 接着问这个项目：把项目事实和上次的讲解一起带上，模型只根据这些回答 */
 async function askProject(root, question, priorMarkdown, ask) {
   const f = projectFacts(root);
@@ -400,4 +444,4 @@ ${priorMarkdown ? `\n之前给用户的讲解：\n${String(priorMarkdown).slice(
   return { ok: true, markdown: String(r.text || '') };
 }
 
-module.exports = { scan, suggest, refine, apply, undo, lastUndo, recent, projectFacts, overview, askProject, studyPlanToTasks, activity, parseGitLog, projectRoots, findRepos, destinations, classifyDir, classifyFile, looksCareless, labelOf, HOME };
+module.exports = { scan, suggest, refine, apply, undo, lastUndo, recent, projectFacts, overview, askProject, studyPlanToTasks, activity, parseGitLog, projectRoots, findRepos, readingList, explainFile, destinations, classifyDir, classifyFile, looksCareless, labelOf, HOME };

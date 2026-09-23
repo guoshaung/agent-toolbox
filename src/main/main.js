@@ -1802,6 +1802,20 @@ function registerIpc() {
     return r;
   });
   ipcMain.handle('tidy:ask', (_e, { root, question, prior }) => tidy.askProject(root, question, prior, tidyAsk));
+  ipcMain.handle('tidy:readingList', (_e, { root, markdown }) => tidy.readingList(markdown, root));
+  // 单个文件的讲解也缓存（键：根目录 + 相对路径）
+  ipcMain.handle('tidy:explainFile', async (_e, { root, rel, prior, fresh = false }) => {
+    const cache = store.get('tidy.fileExplains', {}) || {};
+    const key = `${root}::${rel}`;
+    if (!fresh && cache[key]?.markdown) return { ok: true, cached: true, rel, ...cache[key] };
+    const r = await tidy.explainFile(root, rel, tidyAsk, { priorMarkdown: prior });
+    if (r.ok) {
+      const next = { ...cache, [key]: { markdown: r.markdown, at: Date.now() } };
+      const keys = Object.keys(next).sort((a, b) => next[b].at - next[a].at).slice(0, 120);
+      store.set('tidy.fileExplains', Object.fromEntries(keys.map((k) => [k, next[k]])));
+    }
+    return r;
+  });
   // 讲解里的「学习顺序」→ 任务清单（和「任务」工具存同一个键，首页也会显示）
   ipcMain.handle('tidy:planToTasks', (_e, { markdown, name }) => {
     const titles = tidy.studyPlanToTasks(markdown);

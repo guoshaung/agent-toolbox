@@ -127,3 +127,20 @@ test('projectRoots：项目本身 + 项目集里带 .git 的子目录', () => {
   const roots = tidy.projectRoots([{ kind: 'project', path: '/x/p' }, { kind: 'workspace', path: path.join(d, 'ws') }, { kind: 'docs', path: '/x/d' }]);
   assert.deepEqual(roots, ['/x/p', path.join(d, 'ws', 'a')], 'b 没有 .git，不算');
 });
+
+test('readingList：从「从哪个文件开始读」抠出真实存在的文件，按顺序、去重', () => {
+  const d = tmp();
+  touch(path.join(d, 'README.md'), '#'); touch(path.join(d, 'src', 'main', 'main.js'), ''); touch(path.join(d, 'package.json'), '{}');
+  const md = '## 这是什么\nx\n## 从哪个文件开始读\n1. **`README.md`**：先看定位\n2. `package.json` → 入口在 `src/main/main.js`\n3. `src/nope.js`：不存在\n4. 版本 1.2 不是文件\n## 核心模块\n- `src/main/main.js` 这节不算';
+  const list = tidy.readingList(md, d);
+  assert.deepEqual(list.map((x) => x.rel), ['README.md', 'package.json'], '每行只取第一个存在的；不存在的跳过');
+  assert.match(list[0].why, /先看定位/);
+});
+
+test('explainFile：越界 / 不存在 / 太大都拒绝；正常时把前 260 行喂给模型', async () => {
+  const d = tmp(); touch(path.join(d, 'a.js'), 'const a = 1;\n'.repeat(300));
+  assert.equal((await tidy.explainFile(d, '../etc/passwd', async () => ({ ok: true, text: '' }))).ok, false);
+  assert.equal((await tidy.explainFile(d, 'nope.js', async () => ({ ok: true, text: '' }))).ok, false);
+  const r = await tidy.explainFile(d, 'a.js', async (m) => { assert.match(m[1].content, /a\.js/); assert.doesNotMatch(m[1].content, /(const a = 1;\n){270}/); return { ok: true, text: '## ok' }; });
+  assert.equal(r.ok, true); assert.equal(r.lines, 260);
+});

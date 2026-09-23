@@ -4310,3 +4310,6 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .home__toggle { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; cursor: pointer; }
 .home__toggle input { accent-color: var(--accent); }
 .home__meta { max-width: 120px; }
+.tidy__reading { margin-top: 14px; padding-top: 12px; border-top: 1px dashed var(--line); display: flex; flex-direction: column; gap: 8px; }
+.tidy__reading:empty { display: none; }
+.tidy__reading-detail { margin-top: 4px; }

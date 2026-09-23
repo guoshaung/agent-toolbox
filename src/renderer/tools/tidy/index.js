@@ -170,6 +170,28 @@ export default {
         a.classList.remove('faint');
       };
       qInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') askIt(); });
+      // 带我读：按讲解给的顺序，一个文件一个文件讲
+      const reading = h('div', { class: 'tidy__reading' });
+      api().readingList({ root: rootPath, markdown: r.markdown }).then((files) => {
+        if (!files?.length) return;
+        const detail = h('div', { class: 'tidy__reading-detail' });
+        let current = -1;
+        const stops = files.map((f, i) => h('button', { class: 'btn btn--sm', title: f.why, onclick: () => openStop(i) }, `${i + 1}. ${f.rel.split('/').pop()}`));
+        const openStop = async (i, fresh = false) => {
+          current = i; stops.forEach((b, k) => b.classList.toggle('btn--primary', k === i));
+          const f = files[i];
+          detail.replaceChildren(h('div', { class: 'tidy__stat' }, h('b', {}, f.rel), h('span', { class: 'faint' }, f.why)), h('div', { class: 'tidy__empty' }, '在读这个文件…'));
+          const res = await api().explainFile({ root: rootPath, rel: f.rel, prior: r.markdown, fresh });
+          detail.replaceChildren(
+            h('div', { class: 'tidy__stat' }, h('b', {}, f.rel), h('span', { class: 'faint' }, f.why),
+              h('button', { class: 'btn btn--sm', onclick: () => api().open(f.abs) }, '打开文件'),
+              h('button', { class: 'btn btn--sm', onclick: () => openStop(i, true) }, '重新讲'),
+              i + 1 < files.length ? h('button', { class: 'btn btn--sm btn--primary', onclick: () => openStop(i + 1) }, `下一站：${files[i + 1].rel.split('/').pop()} →`) : h('span', { class: 'tag' }, '读完了 🎉')),
+            res.ok ? md(res.markdown) : h('div', { class: 'bad' }, res.error),
+          );
+        };
+        reading.replaceChildren(h('div', { class: 'tidy__stat' }, h('b', {}, '带我读'), h('span', { class: 'faint' }, `按上面的顺序，${files.length} 站，一站一个文件`)), h('div', { class: 'tidy__chips' }, ...stops), detail);
+      });
       out.replaceChildren(
         h('div', { class: 'tidy__stat' }, h('b', {}, r.facts.name), h('code', {}, short(r.facts.root)), r.facts.markers?.length ? h('span', { class: 'faint' }, r.facts.markers.join(' · ')) : null,
           r.cached ? h('span', { class: 'faint' }, `上次讲的（${new Date(r.at).toLocaleDateString('zh-CN')}）`) : null,
@@ -178,6 +200,7 @@ export default {
           h('button', { class: 'btn btn--sm', onclick: () => navigator.clipboard.writeText(r.markdown).then(() => toast('已复制', 'good')) }, '复制讲解'),
           h('button', { class: 'btn btn--sm btn--primary', title: '把「学习顺序」那节变成任务，首页和任务工具里都能看到', onclick: async () => { const t = await api().planToTasks({ markdown: r.markdown, name: r.facts.name }); toast(t.ok ? `加了 ${t.added} 条任务${t.skipped ? `（${t.skipped} 条已存在）` : ''}` : t.error, t.ok ? 'good' : 'bad'); } }, '学习顺序 → 任务')),
         md(r.markdown),
+        reading,
         h('div', { class: 'tidy__askbar' }, qInput, h('button', { class: 'btn btn--sm btn--primary', onclick: askIt }, '问')),
         thread,
       );
