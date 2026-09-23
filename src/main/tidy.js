@@ -29,10 +29,12 @@ const SKIP_PREFIX = ['actions-runner', '.'];
 const IMAGE = /\.(png|jpe?g|gif|webp|heic|heif|bmp|tiff?|svg|avif)$/i;
 const VIDEO = /\.(mp4|mov|mkv|avi|webm|m4v)$/i;
 const AUDIO = /\.(mp3|m4a|wav|flac|aac|ogg)$/i;
-const DOC = /\.(pdf|docx?|pptx?|xlsx?|csv|txt|md|rtf|pages|numbers|key|epub)$/i;
+const DOC = /\.(pdf|docx?|pptx?|xlsx?|txt|md|rtf|pages|numbers|key|epub)$/i;   // csv 算数据，不算文档
 const ARCHIVE = /\.(zip|rar|7z|tar|gz|tgz|bz2|xz)$/i;
 const INSTALLER = /\.(dmg|pkg|apk|exe|msi|deb|rpm|appimage|ipa)$/i;
 const CODE = /\.(js|ts|jsx|tsx|py|go|rs|java|kt|swift|c|cc|cpp|h|hpp|cs|rb|php|sh|zsh|sql|ipynb|vue|svelte|lua|dart|scala|m|mm)$/i;
+const DATA = /\.(json|jsonl|csv|tsv|xml|ya?ml|toml|parquet|npy|npz|pkl|pt|pth|safetensors|onnx|h5|db|sqlite3?)$/i;
+const FONT = /\.(ttf|otf|woff2?)$/i;
 const PROJECT_MARKERS = ['package.json', 'pyproject.toml', 'requirements.txt', 'go.mod', 'Cargo.toml', 'pom.xml', 'build.gradle', 'CMakeLists.txt', 'Makefile', '.git', 'Gemfile', 'composer.json', 'setup.py', 'Package.swift', 'pubspec.yaml', 'environment.yml', 'main.tex'];
 
 function statSafe(p) { try { return fs.statSync(p); } catch { return null; } }
@@ -68,6 +70,8 @@ function classifyFile(name) {
   if (ARCHIVE.test(name)) return 'archive';
   if (INSTALLER.test(name)) return 'installer';
   if (CODE.test(name)) return 'code';
+  if (DATA.test(name)) return 'data';
+  if (FONT.test(name)) return 'font';
   return 'other';
 }
 
@@ -85,6 +89,25 @@ function describeItem(dirPath, entry, now) {
   return { ...base, isDir: false, kind: classifyFile(entry.name), size: st.size };
 }
 
+/** 同名（去掉 " (2)" / "-1" 这种后缀）且同大小的文件 = 下载了两遍。纯函数 */
+function findDuplicates(items) {
+  const norm = (name) => name.replace(/\s*\((\d+)\)(\.[^.]+)?$/, '$2').replace(/[-_ ]?copy(\.[^.]+)?$/i, '$1').replace(/-\d+(\.[^.]+)$/, '$1').toLowerCase();
+  const groups = new Map();
+  for (const it of items) {
+    if (it.isDir || !it.size) continue;
+    const key = `${norm(it.name)}|${it.size}`;
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(it);
+  }
+  const out = [];
+  for (const list of groups.values()) {
+    if (list.length < 2) continue;
+    list.sort((a, b) => a.name.length - b.name.length || a.mtime - b.mtime);   // 名字最短、最早的那份当原件
+    out.push({ keep: list[0], extra: list.slice(1), size: list[0].size });
+  }
+  return out.sort((a, b) => b.size * b.extra.length - a.size * a.extra.length);
+}
+
 /** 三处顶层散落的东西 */
 function scan() {
   const now = Date.now();
@@ -100,7 +123,7 @@ function scan() {
     }
   }
   items.sort((a, b) => b.mtime - a.mtime);
-  return { ok: true, items, roots: roots.map((r) => r.replace(HOME, '~')) };
+  return { ok: true, items, duplicates: findDuplicates(items), roots: roots.map((r) => r.replace(HOME, '~')) };
 }
 
 /** 目的地：都放在 ~/收纳 下面，一眼能找到；代码单独一个目录 */
@@ -113,7 +136,7 @@ function destinations(settings = {}) {
     videos: path.join(base, '视频'), video: path.join(base, '视频'), audio: path.join(base, '音频'),
     docs: path.join(base, '文档'), doc: path.join(base, '文档'),
     archive: path.join(base, '压缩包'), installer: path.join(base, '安装包'),
-    code: path.join(base, '零散代码'), mixed: path.join(base, '杂项'), other: path.join(base, '杂项'), empty: null,
+    code: path.join(base, '零散代码'), data: path.join(base, '数据'), font: path.join(base, '字体'), mixed: path.join(base, '杂项'), other: path.join(base, '杂项'), empty: null,
   };
 }
 
@@ -131,7 +154,7 @@ function suggest(items, settings = {}) {
 }
 
 function labelOf(kind) {
-  return { workspace: '项目集', images: '图片', image: '图片', videos: '视频', video: '视频', audio: '音频', docs: '文档', doc: '文档', archive: '压缩包', installer: '安装包', code: '零散代码', mixed: '杂项', other: '杂项', project: '代码项目', empty: '空' }[kind] || kind;
+  return { workspace: '项目集', data: '数据文件', font: '字体', images: '图片', image: '图片', videos: '视频', video: '视频', audio: '音频', docs: '文档', doc: '文档', archive: '压缩包', installer: '安装包', code: '零散代码', mixed: '杂项', other: '杂项', project: '代码项目', empty: '空' }[kind] || kind;
 }
 
 /** 让模型给 unsure 的那几项起个像样的归属：只发名字和几个文件名，不发内容 */
@@ -514,4 +537,4 @@ ${priorMarkdown ? `\n之前给用户的讲解：\n${String(priorMarkdown).slice(
   return { ok: true, markdown: String(r.text || '') };
 }
 
-module.exports = { scan, suggest, refine, apply, undo, lastUndo, recent, projectFacts, overview, askProject, studyPlanToTasks, activity, parseGitLog, projectRoots, findRepos, readingList, explainFile, draftReadme, saveReadme, parseQuiz, quizFor, destinations, classifyDir, classifyFile, looksCareless, labelOf, HOME };
+module.exports = { scan, suggest, findDuplicates, refine, apply, undo, lastUndo, recent, projectFacts, overview, askProject, studyPlanToTasks, activity, parseGitLog, projectRoots, findRepos, readingList, explainFile, draftReadme, saveReadme, parseQuiz, quizFor, destinations, classifyDir, classifyFile, looksCareless, labelOf, HOME };

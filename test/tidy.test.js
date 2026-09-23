@@ -163,3 +163,25 @@ test('parseQuiz：剥代码块、丢掉形状不对的题、answer 越界的题�
   assert.equal(qs.length, 1); assert.equal(qs[0].answer, 2); assert.equal(qs[0].why, '因为');
   assert.deepEqual(tidy.parseQuiz('不是 JSON'), []);
 });
+
+test('classifyFile：json / csv 是数据，字体单独一类', () => {
+  assert.equal(tidy.classifyFile('cookies.json'), 'data');
+  assert.equal(tidy.classifyFile('表.CSV'), 'data');
+  assert.equal(tidy.classifyFile('a.ttf'), 'font');
+  assert.match(tidy.suggest([{ name: 'x.json', isDir: false, kind: 'data' }], {})[0].to, /数据$/);
+});
+
+test('findDuplicates：同名同大小算重复，名字最短最早的当原件，"(2)"/"-1"/"copy" 后缀都认', () => {
+  const items = [
+    { name: 'paper.pdf', size: 100, mtime: 1, isDir: false, path: '/a/paper.pdf' },
+    { name: 'paper (2).pdf', size: 100, mtime: 2, isDir: false, path: '/a/paper (2).pdf' },
+    { name: 'paper-1.pdf', size: 100, mtime: 3, isDir: false, path: '/a/paper-1.pdf' },
+    { name: 'paper copy.pdf', size: 100, mtime: 4, isDir: false, path: '/a/paper copy.pdf' },
+    { name: 'other.pdf', size: 100, mtime: 5, isDir: false, path: '/a/other.pdf' },
+    { name: 'paper.pdf', size: 999, mtime: 6, isDir: false, path: '/b/paper.pdf' },
+  ];
+  const d = tidy.findDuplicates(items);
+  assert.equal(d.length, 1);
+  assert.equal(d[0].keep.name, 'paper.pdf');
+  assert.deepEqual(d[0].extra.map((x) => x.name).sort(), ['paper (2).pdf', 'paper copy.pdf', 'paper-1.pdf']);
+});

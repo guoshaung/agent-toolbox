@@ -73,13 +73,23 @@ export default {
       if (!scanData) return loadScan(false);
       const items = scanData.items;
       const groups = new Map();
+      const dupPaths = new Set((scanData.duplicates || []).flatMap((g) => g.extra.map((x) => x.path)));
       for (const it of items) {
-        if (it.action === 'keep') continue;                 // 项目集之类，原地不动，不展示
+        if (it.action === 'keep' || dupPaths.has(it.path)) continue;   // 项目集原地不动；重复的在上面那组
         const key = it.action === 'delete' ? '__delete' : it.action === 'unsure' ? '__unsure' : it.to;
         if (!groups.has(key)) groups.set(key, []);
         groups.get(key).push(it);
       }
       const checks = new Map();
+      // 下载了两遍的：多出来的那份建议扔废纸篓
+      const dupEl = (scanData.duplicates || []).length ? h('div', { class: 'tidy__group' },
+        h('div', { class: 'tidy__group-head' }, h('strong', {}, '下载了两遍的 —— 多出来的那份扔废纸篓'), h('code', {}, `${scanData.duplicates.reduce((n, g) => n + g.extra.length, 0)} 项 · 省 ${fmtSize(scanData.duplicates.reduce((n, g) => n + g.size * g.extra.length, 0))}`)),
+        ...scanData.duplicates.flatMap((g) => g.extra.map((it) => {
+          const cb = h('input', { type: 'checkbox', checked: true });
+          checks.set(it.path, { cb, it: { ...it, action: 'delete', to: null } });
+          return h('div', { class: 'tidy__row' }, cb, h('span', { class: 'tidy__name', title: it.path }, `📄 ${it.name}`), h('span', { class: 'tidy__reason' }, `和 ${g.keep.name} 一样`), h('span', { class: 'tidy__meta' }, fmtSize(it.size)), h('button', { class: 'btn btn--sm', onclick: () => api().reveal(it.path) }, '看看'));
+        })),
+      ) : null;
       const groupEls = [...groups.entries()].sort(([a], [b]) => (a.startsWith('__') ? 1 : 0) - (b.startsWith('__') ? 1 : 0)).map(([key, list]) => {
         const title = key === '__delete' ? '建议删掉（空文件夹 / 垃圾）' : key === '__unsure' ? '认不出来的 —— 先放「杂项」，或者点右边改' : `搬到 ${short(key)}`;
         const rows = list.map((it) => {
@@ -118,7 +128,7 @@ export default {
             scanData.undo ? h('button', { class: 'btn btn--sm', onclick: async () => { const r = await api().undo(); toast(r.ok ? `搬回去了 ${r.restored.length} 项` : (r.error || `部分失败：${r.errors[0]}`), r.ok ? 'good' : 'bad'); loadScan(false); } }, `撤销上次（${scanData.undo.count} 项）`) : null,
           ),
         ),
-        items.length ? h('div', { class: 'tidy__grid' }, ...groupEls) : h('div', { class: 'tidy__empty' }, '桌面、下载、主目录都很干净 🎉'),
+        items.length ? h('div', { class: 'tidy__grid' }, dupEl, ...groupEls) : h('div', { class: 'tidy__empty' }, '桌面、下载、主目录都很干净 🎉'),
       );
     }
 
