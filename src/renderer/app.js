@@ -85,7 +85,7 @@ let switcher = null;
 let currentId = null;
 const SETTINGS_ID = 'settings';
 const MAX_PINNED = LEFT_MAX;
-const DEFAULT_PINNED = ['ask', 'terms', 'docs', 'controls', 'avatar-rig', 'voice', 'focus'];
+const DEFAULT_PINNED = ['home', 'ask', 'terms', 'docs', 'controls', 'avatar-rig', 'voice', 'focus'];
 const pinEligibleTools = TOOLS.filter((tool) => tool.id !== SETTINGS_ID && tool.id !== 'tasks');
 let pinnedIds = config.get('ui.pinnedTools', null);
 let rightPinnedIds = config.get('ui.rightPinnedTools', []);
@@ -102,7 +102,7 @@ if (!pinnedIds || !pinnedIds.length) {
   // 启动都把栏尾那个静默顶掉 —— 实测用户钉着的 7 个里，「学习」在尾巴上，
   // 于是它每次启动都被 voice 挤掉，配置里明明还存着却怎么都不出现。
   // 自己钉上去的东西不该被自动补位挤走；补不进去就让它留在「更多」里。
-  for (const id of ['controls', 'avatar-rig', 'voice', 'tidy']) {
+  for (const id of ['home', 'controls', 'avatar-rig', 'voice', 'tidy']) {
     if (pinnedIds.includes(id) || pinnedIds.length >= MAX_PINNED) continue;
     pinnedIds = [...pinnedIds, id];
   }
@@ -438,8 +438,10 @@ window.addEventListener('keydown', (e) => {
 // 把工具表推给手机端。写死的话每加一个工具手机上就少一个。
 window.toolbox.remote?.setTools?.(TOOLS.map((t) => ({ id: t.id, title: t.title, emoji: t.emoji || '', color: colorOf(t.id) })));
 
+// 每次打开先落在「今天」；关掉这个开关就回到上次用的工具
 const last = config.get('ui.lastTool');
-activate(TOOLS.some((t) => t.id === last) ? last : TOOLS[0].id);
+const startHome = config.get('ui.startHome', true) !== false && TOOLS.some((t) => t.id === 'home');
+activate(startHome ? 'home' : (TOOLS.some((t) => t.id === last) ? last : TOOLS[0].id));
 
 // 桥接出问题时说清楚，不要让工具静默转圈
 bridge.onStatus((state, detail) => {

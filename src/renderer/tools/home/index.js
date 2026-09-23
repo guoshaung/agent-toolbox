@@ -1,0 +1,87 @@
+import { h, toast } from '../../core/ui.js';
+import { iconFor } from '../../core/icons.js';
+import { TOOLS } from '../../core/registry.js';
+import { colorOf } from '../../core/tool-colors.js';
+
+/**
+ * 今天：打开工具箱先看这一屏。
+ *
+ * 四块：
+ *  - 刚建的：最近三天你在主目录下新建的东西（找不到东西时先来这）
+ *  - 该归位的：桌面 / 下载 / 主目录顶层散落了多少，一键去收纳
+ *  - 讲过的项目：点一下回到那份讲解
+ *  - 没做完的任务 + 最近用的工具
+ *
+ * 全是别处已有数据的摘要，不新存任何东西。
+ */
+
+const short = (p) => String(p || '').replace(/^\/Users\/[^/]+/, '~');
+const greet = () => { const hr = new Date().getHours(); return hr < 5 ? '还没睡？' : hr < 11 ? '早' : hr < 14 ? '中午好' : hr < 18 ? '下午好' : '晚上好'; };
+
+export default {
+  id: 'home',
+  title: '今天',
+  icon: 'zap',
+  hint: '刚建的东西、该归位的、讲过的项目、没做完的任务，一屏看完',
+
+  create(root, ctx) {
+    const { config, goto } = ctx;
+    const body = h('div', { class: 'settings__body settings__body--wide home' });
+    const startToggle = h('label', { class: 'home__toggle faint', title: '关掉就回到上次用的工具' },
+      h('input', { type: 'checkbox', checked: config.get('ui.startHome', true) !== false, onchange: (e) => config.set('ui.startHome', e.target.checked) }), '打开工具箱先到这页');
+    root.append(h('div', { class: 'bar bar--drag' }, h('strong', {}, '今天'), h('span', { class: 'faint' }, new Date().toLocaleDateString('zh-CN', { month: 'long', day: 'numeric', weekday: 'long' })), h('span', { style: { flex: 1 } }), startToggle), body);
+
+    const section = (title, extra, ...kids) => h('section', { class: 'card home__card' }, h('div', { class: 'home__head' }, h('h3', { class: 'card__title' }, title), extra), ...kids);
+    const empty = (text) => h('div', { class: 'faint home__empty' }, text);
+
+    async function render() {
+      const tasks = (config.get('tasks.items', []) || []).filter((t) => !t.done).slice(0, 6);
+      const mru = (config.get('ui.mru') || []).filter((id) => id !== 'home').slice(0, 6).map((id) => TOOLS.find((t) => t.id === id)).filter(Boolean);
+      const [recent, scan, overviews] = await Promise.all([
+        window.toolbox.tidy.recent({ days: 3, limit: 8 }).catch(() => ({ items: [] })),
+        window.toolbox.tidy.scan({ ai: false }).catch(() => ({ items: [] })),
+        window.toolbox.tidy.overviewList().catch(() => []),
+      ]);
+      const stray = (scan.items || []).filter((x) => x.action !== 'keep');
+      const careless = stray.filter((x) => x.careless).length;
+
+      body.replaceChildren(
+        h('div', { class: 'home__hero' },
+          h('div', {}, h('div', { class: 'home__greet' }, `${greet()}，`), h('div', { class: 'faint' }, '想找什么直接按 ⌘K；下面是今天可能用得上的。')),
+          h('div', { class: 'home__quick' },
+            h('button', { class: 'btn btn--sm btn--primary', onclick: () => document.querySelector('.atelier-banner__k')?.click() }, '⌘K 搜'),
+            h('button', { class: 'btn btn--sm', onclick: () => goto('tidy') }, '收纳'),
+            h('button', { class: 'btn btn--sm', onclick: () => goto('ask') }, '快问'),
+          ),
+        ),
+        h('div', { class: 'home__grid' },
+          section('刚建的', h('button', { class: 'btn btn--sm', onclick: () => goto('tidy') }, '全部'),
+            ...(recent.items?.length ? recent.items.map((it) => h('div', { class: 'home__row' },
+              h('span', { class: 'home__name', title: it.path }, `${it.isDir ? '📁' : '📄'} ${it.name}`),
+              h('span', { class: 'faint home__meta' }, it.where),
+              h('button', { class: 'btn btn--sm', onclick: () => window.toolbox.tidy.reveal(it.path) }, '显示'),
+              it.isDir ? h('button', { class: 'btn btn--sm', onclick: async () => { await config.set('tidy.pending', it.path); goto('tidy'); } }, '看懂') : null,
+            )) : [empty('最近三天没新建什么')]),
+          ),
+          section('该归位的', h('button', { class: 'btn btn--sm btn--primary', onclick: () => goto('tidy') }, '去归位'),
+            h('div', { class: 'home__big' }, h('b', {}, String(stray.length)), h('span', { class: 'faint' }, ' 项散落在桌面 / 下载 / 主目录')),
+            careless ? h('div', { class: 'faint' }, `其中 ${careless} 个一看就是随手建的（数字名、未命名、test…）`) : null,
+            h('div', { class: 'home__chips' }, ...Object.entries(stray.reduce((m, x) => { m[x.reason] = (m[x.reason] || 0) + 1; return m; }, {})).sort((a, b) => b[1] - a[1]).slice(0, 6).map(([k, n]) => h('span', { class: 'tag' }, `${k} ${n}`))),
+          ),
+          section('讲过的项目', null,
+            ...(overviews.length ? [h('div', { class: 'home__chips' }, ...overviews.slice(0, 10).map((o) => h('button', { class: 'btn btn--sm', title: short(o.root), onclick: async () => { await config.set('tidy.pending', o.root); goto('tidy'); } }, o.name)))] : [empty('还没让 AI 讲过项目。把一个文件夹拖进「收纳 → 看懂项目」试试')]),
+          ),
+          section('没做完的', h('button', { class: 'btn btn--sm', onclick: () => goto('tasks') }, '任务'),
+            ...(tasks.length ? tasks.map((t) => h('div', { class: 'home__row' }, h('span', { class: `home__dot home__dot--${t.priority || 'normal'}` }), h('span', { class: 'home__name' }, t.title), t.due ? h('span', { class: 'faint home__meta' }, t.due) : null)) : [empty('任务清单是空的 —— 要么很闲，要么没写')]),
+          ),
+          section('最近用的', null,
+            h('div', { class: 'home__tools' }, ...(mru.length ? mru : TOOLS.slice(1, 7)).map((t) => h('button', { class: 'home__tool', style: { '--tool-color': colorOf(t.id) }, onclick: () => goto(t.id) }, iconFor(t.icon || 'more'), h('span', {}, t.title)))),
+          ),
+        ),
+      );
+    }
+
+    render().catch((error) => toast(error.message, 'bad'));
+    return { activate: () => render().catch(() => {}) };
+  },
+};

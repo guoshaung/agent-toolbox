@@ -44,6 +44,7 @@ export const TOOL_COLORS = {
   typing:         '#e879c7',
   skills:         '#f2b33d',
   container:      '#e8a33d',
+  home:           '#ffd166',   // 暖黄，早上的那种
   tidy:           '#f5b04c',   // 暖橙，像收纳箱
   voice:          '#6ad5c0',
   'digital-human':'#b59cf5',
