@@ -444,6 +444,8 @@ export default {
             return el;
           })(),
           danger('打开数据目录', '看看 config.json 和日志', () => window.toolbox.app.openUserData()),
+          danger('导出设置', '换电脑（比如去 Windows）时带走：皮肤、钉住的工具、任务、学习记录…API Key 不在里面', async () => { const r = await window.toolbox.app.exportSettings(); toast(r.ok ? `导出了 ${r.keys} 项设置` : '导出失败', r.ok ? 'good' : 'bad'); }),
+          danger('导入设置', '选之前导出的 JSON，覆盖同名设置，然后重载界面', async () => { const r = await window.toolbox.app.importSettings(); if (r.canceled) return; toast(r.ok ? `导入了 ${r.keys} 项，正在重载…` : r.error, r.ok ? 'good' : 'bad'); if (r.ok) setTimeout(() => window.toolbox.app.reload(), 900); }),
           danger('导出学习记录', '存成 JSON 到下载目录', async () => { const r = await window.toolbox.learn.export(); toast(r.ok ? `导出了 ${r.count} 条` : '导出失败', r.ok ? 'good' : 'bad'); }),
           danger('清空学习记录', '首页「这周学了什么」会归零', async () => { if (window.confirm('清空所有学习记录？不可恢复。')) { await window.toolbox.learn.clear(); toast('已清空', 'good'); } }),
         ),

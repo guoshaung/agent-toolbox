@@ -160,6 +160,9 @@ function createTray() {
     tray.setToolTip('Agent 工具箱 —— 点一下叫回窗口');
     const menu = Menu.buildFromTemplate([
       { label: '显示工具箱', accelerator: WAKE_SHORTCUT, click: () => ensureMainWindow({ show: true }) },
+      { label: '今天', click: () => ensureMainWindow({ show: true }).webContents.send('app:navigate-tool', { id: 'home' }) },
+      { label: '去归位（收纳）', click: () => ensureMainWindow({ show: true }).webContents.send('app:navigate-tool', { id: 'tidy' }) },
+      { label: '搜一下（⌘K）', click: () => ensureMainWindow({ show: true }).webContents.send('palette:open') },
       { type: 'separator' },
       { label: '退出工具箱', click: () => quitToolbox() },
     ]);
@@ -1794,6 +1797,27 @@ function registerIpc() {
   ipcMain.handle('learn:clear', () => { store.set('learn.journal', []); return { ok: true }; });
   ipcMain.handle('app:dataPaths', () => ({ userData: app.getPath('userData'), tidy: path.join(os.homedir(), '收纳'), phoneInbox: phoneOutbox?.inboxDir || '', logs: path.join(app.getPath('userData'), 'logs') }));
   ipcMain.handle('app:openUserData', () => shell.openPath(app.getPath('userData')));
+  // 换电脑（比如去 Windows）：把设置带走。API Key 在系统安全存储里，不在这份文件里，到那边重新填
+  const EXPORT_SKIP = /^(remote\.|pet\.position|ui\.lastTool|tidy\.overviews|tidy\.fileExplains|tidy\.nudgedOn)/;
+  ipcMain.handle('app:exportSettings', async () => {
+    const all = store.store || {};
+    const picked = Object.fromEntries(Object.entries(all).filter(([k]) => !EXPORT_SKIP.test(k)));
+    const target = path.join(app.getPath('downloads'), `agent-toolbox-设置-${new Date().toISOString().slice(0, 10)}.json`);
+    fs.writeFileSync(target, JSON.stringify({ exportedAt: new Date().toISOString(), version: app.getVersion(), settings: picked }, null, 2));
+    shell.showItemInFolder(target);
+    return { ok: true, path: target, keys: Object.keys(picked).length };
+  });
+  ipcMain.handle('app:importSettings', async () => {
+    const r = await dialog.showOpenDialog(mainWindow, { title: '选之前导出的设置文件', filters: [{ name: 'JSON', extensions: ['json'] }], properties: ['openFile'] });
+    if (r.canceled || !r.filePaths.length) return { ok: false, canceled: true };
+    let parsed;
+    try { parsed = JSON.parse(fs.readFileSync(r.filePaths[0], 'utf8')); } catch { return { ok: false, error: '这个文件不是合法的 JSON。' }; }
+    const settings = parsed?.settings && typeof parsed.settings === 'object' ? parsed.settings : null;
+    if (!settings) return { ok: false, error: '这不像工具箱导出的设置文件（缺 settings 字段）。' };
+    let n = 0;
+    for (const [k, v] of Object.entries(settings)) { if (EXPORT_SKIP.test(k)) continue; store.set(k, v); n += 1; }
+    return { ok: true, keys: n };
+  });
   ipcMain.handle('learn:note', (_e, entry) => { journalAdd({ kind: String(entry?.kind || 'note').slice(0, 20), title: String(entry?.title || '').slice(0, 200), meta: entry?.meta ?? null, score: entry?.score, total: entry?.total }); return { ok: true }; });
 
   // 收纳：主目录 / 桌面 / 下载 三处顶层散落的东西

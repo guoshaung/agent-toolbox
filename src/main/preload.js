@@ -588,6 +588,8 @@ contextBridge.exposeInMainWorld('toolbox', {
     quit: () => ipcRenderer.invoke('app:quit'),
     /** 数据都放在哪 */
     dataPaths: () => ipcRenderer.invoke('app:dataPaths'),
+    exportSettings: () => ipcRenderer.invoke('app:exportSettings'),
+    importSettings: () => ipcRenderer.invoke('app:importSettings'),
     openUserData: () => ipcRenderer.invoke('app:openUserData'),
     reload: () => ipcRenderer.invoke('app:reload'),
     openDevTools: () => ipcRenderer.invoke('app:openDevTools'),

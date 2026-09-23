@@ -1,3 +1,11 @@
+> 2026-09 补充：
+> - `create(root, ctx)` 可以返回 `{ activate, deactivate }`。面板只创建一次、切走时不会销毁，
+>   所以任何轮询 / 状态刷新都要放在 `activate()` 里重新同步，否则切回来就是冻住的。
+> - `npm run check` 里有 `test/wiring.test.js`（preload ↔ 主进程 ↔ 渲染层的接线）和
+>   `test/registry.test.js`（图标名存在、id 不重复、有 hint）。invoke 了没人 handle 的通道、
+>   preload 顶层键重复、图标名打错，都会在这里被拦下来，不用等到点按钮才炸。
+> - 新工具会自动出现在 ⌘K 里（按 title / hint 搜），hint 请写成一句人话。
+
 # 加一个新工具
 
 需求第 5 条「可能还需要更多好用的工具」就是靠这个。加一个工具是两步：写一个文件夹，注册一行。
