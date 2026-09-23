@@ -328,6 +328,11 @@ contextBridge.exposeInMainWorld('toolbox', {
     quickSelection: () => ipcRenderer.invoke('pet:quickSelection'),
   },
 
+  /** 渲染层未捕获错误 → userData/logs/main-errors.log */
+  log: {
+    renderer: (payload) => ipcRenderer.send('log:renderer', payload),
+  },
+
   /** ⌘K 命令面板：焦点在 webview 里时由主进程转发过来 */
   palette: {
     onOpen: (callback) => ipcRenderer.on('palette:open', () => callback()),
@@ -567,6 +572,8 @@ contextBridge.exposeInMainWorld('toolbox', {
   app: {
     version: () => ipcRenderer.invoke('app:version'),
     relaunch: () => ipcRenderer.invoke('app:relaunch'),
+    /** 真的退出（关窗口只是藏起来） */
+    quit: () => ipcRenderer.invoke('app:quit'),
     reload: () => ipcRenderer.invoke('app:reload'),
     openDevTools: () => ipcRenderer.invoke('app:openDevTools'),
     onNavigateTool: (callback) => ipcRenderer.on('app:navigate-tool', (_event, target) => callback(target)),

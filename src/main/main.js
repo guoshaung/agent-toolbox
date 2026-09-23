@@ -2274,6 +2274,7 @@ function registerIpc() {
   });
 
   ipcMain.handle('app:version', () => app.getVersion());
+  ipcMain.handle('app:quit', () => { setImmediate(() => quitToolbox()); return { ok: true }; });
   ipcMain.handle('app:relaunch', () => {
     app.relaunch();
     app.quit();
@@ -3232,6 +3233,11 @@ function logMainError(kind, error) {
   console.error(line.trim());
 }
 process.on('unhandledRejection', (reason) => logMainError('unhandledRejection', reason));
+// 渲染层（主窗口 / 桌宠 / 浮窗）的未捕获错误也送到同一份日志，排查时不用开 DevTools
+ipcMain.on('log:renderer', (event, payload = {}) => {
+  const where = (() => { try { return new URL(event.sender.getURL()).pathname.split('/').slice(-2).join('/'); } catch { return '?'; } })();
+  logMainError(`renderer(${where}) ${String(payload.kind || 'error')}`, `${String(payload.message || '').slice(0, 500)}\n${String(payload.stack || '').slice(0, 1500)}`);
+});
 process.on('uncaughtException', (error) => logMainError('uncaughtException', error));
 
 app.whenReady().then(async () => {

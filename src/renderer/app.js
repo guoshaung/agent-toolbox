@@ -409,6 +409,10 @@ switcher = createSwitcher({
   config,
 });
 
+// 渲染层没接住的错误也进日志（userData/logs/main-errors.log）
+window.addEventListener('error', (e) => window.toolbox.log?.renderer?.({ kind: 'error', message: e.message, stack: e.error?.stack || `${e.filename}:${e.lineno}` }));
+window.addEventListener('unhandledrejection', (e) => window.toolbox.log?.renderer?.({ kind: 'unhandledrejection', message: e.reason?.message || String(e.reason), stack: e.reason?.stack || '' }));
+
 // 皮肤跟随系统深浅色（皮肤面板里开）
 watchSystemTheme(config);
 
@@ -419,6 +423,8 @@ palette = createPalette({
     { id: 'act:pet', kind: 'action', title: '显示桌宠', hint: '把桌面精灵叫出来', icon: 'bot', keywords: ['pet', '精灵'], run: () => window.toolbox.pet.setEnabled(true) },
     { id: 'act:library', kind: 'action', title: '更多工具', hint: '打开工具库，钉常用的到左栏', icon: 'more', keywords: ['library', '工具库'], run: () => setLibraryOpen(true) },
     { id: 'act:remote', kind: 'action', title: '手机控制', hint: '扫码把手机连上', icon: 'smartphone', keywords: ['phone', '手机', '精灵'], run: () => activate('remote') },
+    { id: 'act:tidy-now', kind: 'action', title: '去归位', hint: '桌面 / 下载 / 主目录散落的东西', icon: 'archive', keywords: ['收纳', '整理', 'tidy'], run: () => activate('tidy') },
+    { id: 'act:quit', kind: 'action', title: '退出工具箱', hint: '真的退出（关窗口只是藏起来）', icon: 'close', keywords: ['quit', 'exit', '退出'], run: () => window.toolbox.app?.quit?.() },
   ],
   // 面板里选了个文件夹要「看懂」：记下来，切到收纳，它 activate 时接手
   learn: async (dir) => { await config.set('tidy.pending', dir); activate('tidy'); },

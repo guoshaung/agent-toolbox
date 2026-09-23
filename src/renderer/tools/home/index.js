@@ -17,6 +17,18 @@ import { colorOf } from '../../core/tool-colors.js';
 
 const short = (p) => String(p || '').replace(/^\/Users\/[^/]+/, '~');
 const greet = () => { const hr = new Date().getHours(); return hr < 5 ? '还没睡？' : hr < 11 ? '早' : hr < 14 ? '中午好' : hr < 18 ? '下午好' : '晚上好'; };
+// 懒得读 README 的人靠这个知道有什么：每天换一条
+const TIPS = [
+  '按 ⌘K 打字就能到任何地方：工具、皮肤、刚建的文件夹都能搜。',
+  '在任何应用里选中一段代码，按 ⌘⇧L，桌宠直接给四行解释。',
+  '把文件或文件夹拖到这个窗口任何地方，它会问你想干嘛。',
+  '⌘K 里打「+ 事情」直接记一条任务。',
+  '收纳 → 看懂项目：拖个项目进来，AI 讲它是什么、怎么跑、从哪读起，还能一站一站带你读。',
+  '关掉窗口应用还在菜单栏；⌘⇧A 随时叫回来。',
+  '皮肤里能开「跟随系统深浅色」，白天白纸晚上银河。',
+  '选中微信里对方那句话按 ⌘⇧M，内心独白告诉你她到底想说什么。',
+];
+const tipOfDay = () => TIPS[Math.floor(Date.now() / 86400000) % TIPS.length];
 
 export default {
   id: 'home',
@@ -49,7 +61,7 @@ export default {
 
       body.replaceChildren(
         h('div', { class: 'home__hero' },
-          h('div', {}, h('div', { class: 'home__greet' }, `${greet()}，`), h('div', { class: 'faint' }, '想找什么直接按 ⌘K；下面是今天可能用得上的。')),
+          h('div', {}, h('div', { class: 'home__greet' }, `${greet()}，`), h('div', { class: 'faint' }, `💡 ${tipOfDay()}`)),
           h('div', { class: 'home__quick' },
             h('button', { class: 'btn btn--sm btn--primary', onclick: () => document.querySelector('.atelier-banner__k')?.click() }, '⌘K 搜'),
             h('button', { class: 'btn btn--sm', onclick: () => goto('tidy') }, '收纳'),
