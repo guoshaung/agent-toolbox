@@ -34,6 +34,9 @@ export default {
     const nudgeBox = h('input', { type: 'checkbox', onchange: (e) => api().nudge(e.target.checked) });
     api().nudge().then((r) => { nudgeBox.checked = r.on; });
     const nudgeToggle = h('label', { class: 'home__toggle faint', title: '散落超过 30 项时，每天最多提醒一次' }, nudgeBox, '散落太多时提醒我');
+    const autoBox = h('input', { type: 'checkbox', onchange: (e) => api().autoNotify(e.target.checked) });
+    api().autoNotify().then((r) => { autoBox.checked = r.on; });
+    const autoToggle = h('label', { class: 'home__toggle faint', title: '盯着 ~/Downloads：下载完图片 / 文档 / 压缩包 / 安装包，弹一条通知，点一下就归位（可撤销）' }, autoBox, '下载完问我要不要归位');
     async function loadScan(ai = false, fresh = false) {
       body.replaceChildren(h('div', { class: 'tidy__empty' }, ai ? '让 AI 认一下那些看不出来的…' : '正在看桌面、下载和主目录…'));
       scanData = await api().scan({ ai, fresh });
@@ -106,7 +109,7 @@ export default {
             h('span', {}, '代码项目会去 ', h('code', {}, short(scanData.destinations.project))),
             h('button', { class: 'btn btn--sm', onclick: async () => { const r = await api().setCodeDir(); if (r.ok) loadScan(false); } }, '改'),
             h('span', { class: 'faint' }, '其余去 ~/收纳/ 下按类型分的文件夹'),
-            nudgeToggle,
+            nudgeToggle, autoToggle,
           ),
           h('div', { class: 'settings__actions', style: { marginTop: '10px' } },
             h('button', { class: 'btn btn--sm btn--primary', onclick: apply }, '勾选的一键归位'),

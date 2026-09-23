@@ -358,6 +358,7 @@ contextBridge.exposeInMainWorld('toolbox', {
     activity: (opts) => ipcRenderer.invoke('tidy:activity', opts),
     search: (q) => ipcRenderer.invoke('tidy:search', q),
     nudge: (on) => ipcRenderer.invoke('tidy:nudge', on),
+    autoNotify: (on) => ipcRenderer.invoke('tidy:autoNotify', on),
     overview: (root, opts) => ipcRenderer.invoke('tidy:overview', root, opts),
     ask: (payload) => ipcRenderer.invoke('tidy:ask', payload),
     planToTasks: (payload) => ipcRenderer.invoke('tidy:planToTasks', payload),

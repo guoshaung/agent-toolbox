@@ -1908,6 +1908,42 @@ function registerIpc() {
   };
   setTimeout(tidyNudge, 90 * 1000);
   setInterval(tidyNudge, 6 * 3600 * 1000);
+
+  // 下载完新东西时问一句要不要归位（开关在收纳里，默认关）。只盯 ~/Downloads 顶层，
+  // 等文件大小稳定 3 秒（下载中的临时文件 .crdownload / .part 直接忽略）再问。
+  let downloadsWatcher = null;
+  const pendingDownloads = new Map();
+  const tidyWatchState = { on: false, last: null };
+  const considerDownload = (name) => {
+    const full = path.join(os.homedir(), 'Downloads', name);
+    if (/\.(crdownload|part|download|tmp)$/i.test(name) || name.startsWith('.')) return;
+    clearTimeout(pendingDownloads.get(name));
+    pendingDownloads.set(name, setTimeout(() => {
+      pendingDownloads.delete(name);
+      let st; try { st = fs.statSync(full); } catch { return; }
+      if (!st.isFile() || Date.now() - st.mtimeMs < 2500) { considerDownload(name); return; }   // 还在写，再等
+      const kind = tidy.classifyFile(name);
+      const dest = tidy.destinations(tidySettings())[kind];
+      const SAFE = new Set(['image', 'doc', 'archive', 'installer', 'video', 'audio', 'data', 'invoice']);
+      if (!dest || !SAFE.has(kind)) return;
+      tidyWatchState.last = { name, kind, dest, at: Date.now() };
+      try {
+        const n = new Notification({ title: `下载好了：${name}`, body: `点一下归位到 ${dest.replace(os.homedir(), '~')}（可撤销）` });
+        n.on('click', () => { tidy.apply(app.getPath('userData'), [{ path: full, to: dest, action: 'move' }]).then(() => tidyInvalidate()); });
+        n.show();
+      } catch { /* 不让发通知就算了 */ }
+    }, 3000));
+  };
+  const syncDownloadsWatcher = () => {
+    const want = store.get('tidy.autoNotify', false) === true;
+    tidyWatchState.on = want;
+    if (want && !downloadsWatcher) {
+      try { downloadsWatcher = fs.watch(path.join(os.homedir(), 'Downloads'), (_ev, name) => { if (name) considerDownload(String(name)); }); downloadsWatcher.on('error', () => { downloadsWatcher = null; }); }
+      catch { downloadsWatcher = null; }
+    } else if (!want && downloadsWatcher) { downloadsWatcher.close(); downloadsWatcher = null; }
+  };
+  ipcMain.handle('tidy:autoNotify', (_e, on) => { if (typeof on === 'boolean') store.set('tidy.autoNotify', on); syncDownloadsWatcher(); return { on: tidyWatchState.on, last: tidyWatchState.last }; });
+  syncDownloadsWatcher();
   // 讲解按目录缓存：同一个项目再打开秒出，想重来点「重新讲」
   ipcMain.handle('tidy:overview', async (_e, root, { fresh = false } = {}) => {
     const cache = store.get('tidy.overviews', {}) || {};
