@@ -345,6 +345,8 @@ contextBridge.exposeInMainWorld('toolbox', {
     ask: (payload) => ipcRenderer.invoke('tidy:ask', payload),
     planToTasks: (payload) => ipcRenderer.invoke('tidy:planToTasks', payload),
     readingList: (payload) => ipcRenderer.invoke('tidy:readingList', payload),
+    draftReadme: (root) => ipcRenderer.invoke('tidy:draftReadme', root),
+    saveReadme: (payload) => ipcRenderer.invoke('tidy:saveReadme', payload),
     explainFile: (payload) => ipcRenderer.invoke('tidy:explainFile', payload),
     overviewList: () => ipcRenderer.invoke('tidy:overviewList'),
     facts: (root) => ipcRenderer.invoke('tidy:facts', root),

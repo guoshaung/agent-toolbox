@@ -422,6 +422,41 @@ ${head}
   return { ok: true, rel, markdown: String(r.text || ''), lines: head.split('\n').length };
 }
 
+/** 帮懒得写文档的人起一份 README 草稿：只根据事实，缺的地方留 TODO */
+async function draftReadme(root, ask) {
+  const f = projectFacts(root);
+  if (!f.ok) return f;
+  if (typeof ask !== 'function') return { ok: false, error: '没有配好模型。' };
+  const prompt = `给项目「${f.name}」写一份 README.md 草稿（中文，Markdown）。只根据下面的事实，不知道的写「TODO：…」别编。结构：
+# 项目名 —— 一句话
+## 这是什么（2-4 句）
+## 怎么跑起来（具体命令；没有清单文件就写 TODO）
+## 目录结构（挑重要的 5-10 项，每项一句话）
+## 常见问题（2-3 条，没有就 TODO）
+
+识别到的标记：${f.markers.join(', ') || '无'}
+可能的入口：${(f.entries || []).join(', ') || '无'}
+目录树：
+${f.tree}
+${f.manifest ? `清单文件：\n${f.manifest}` : ''}
+${f.readme ? `已有 README 开头（保留其中有用的信息）：\n${f.readme}` : ''}`;
+  const r = await ask([{ role: 'system', content: '你写技术文档，短句，不吹。' }, { role: 'user', content: prompt }]);
+  if (!r?.ok) return { ok: false, error: r?.error || '模型没返回。' };
+  const markdown = String(r.text || '').replace(/^```(?:markdown|md)?\s*/i, '').replace(/\s*```$/, '');
+  const target = fs.existsSync(path.join(f.root, 'README.md')) ? path.join(f.root, 'README.draft.md') : path.join(f.root, 'README.md');
+  return { ok: true, markdown, target, existed: target.endsWith('README.draft.md') };
+}
+
+/** 把草稿写进项目（只写 README.md / README.draft.md，别的名字不写） */
+function saveReadme(root, target, markdown) {
+  const abs = path.resolve(String(target || ''));
+  const base = path.basename(abs);
+  if (!abs.startsWith(path.resolve(root)) || !['README.md', 'README.draft.md'].includes(base)) return { ok: false, error: '只允许写 README.md 或 README.draft.md。' };
+  if (base === 'README.md' && fs.existsSync(abs)) return { ok: false, error: 'README.md 已经存在，不覆盖。' };
+  fs.writeFileSync(abs, String(markdown || ''));
+  return { ok: true, path: abs };
+}
+
 /** 接着问这个项目：把项目事实和上次的讲解一起带上，模型只根据这些回答 */
 async function askProject(root, question, priorMarkdown, ask) {
   const f = projectFacts(root);
@@ -444,4 +479,4 @@ ${priorMarkdown ? `\n之前给用户的讲解：\n${String(priorMarkdown).slice(
   return { ok: true, markdown: String(r.text || '') };
 }
 
-module.exports = { scan, suggest, refine, apply, undo, lastUndo, recent, projectFacts, overview, askProject, studyPlanToTasks, activity, parseGitLog, projectRoots, findRepos, readingList, explainFile, destinations, classifyDir, classifyFile, looksCareless, labelOf, HOME };
+module.exports = { scan, suggest, refine, apply, undo, lastUndo, recent, projectFacts, overview, askProject, studyPlanToTasks, activity, parseGitLog, projectRoots, findRepos, readingList, explainFile, draftReadme, saveReadme, destinations, classifyDir, classifyFile, looksCareless, labelOf, HOME };

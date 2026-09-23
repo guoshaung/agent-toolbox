@@ -207,7 +207,20 @@ export default {
           h('button', { class: 'btn btn--sm', onclick: () => api().reveal(r.facts.root) }, '在访达显示'),
           h('button', { class: 'btn btn--sm', onclick: () => renderLearn(rootPath, { fresh: true }) }, '重新讲'),
           h('button', { class: 'btn btn--sm', onclick: () => navigator.clipboard.writeText(r.markdown).then(() => toast('已复制', 'good')) }, '复制讲解'),
-          h('button', { class: 'btn btn--sm btn--primary', title: '把「学习顺序」那节变成任务，首页和任务工具里都能看到', onclick: async () => { const t = await api().planToTasks({ markdown: r.markdown, name: r.facts.name }); toast(t.ok ? `加了 ${t.added} 条任务${t.skipped ? `（${t.skipped} 条已存在）` : ''}` : t.error, t.ok ? 'good' : 'bad'); } }, '学习顺序 → 任务')),
+          h('button', { class: 'btn btn--sm btn--primary', title: '把「学习顺序」那节变成任务，首页和任务工具里都能看到', onclick: async () => { const t = await api().planToTasks({ markdown: r.markdown, name: r.facts.name }); toast(t.ok ? `加了 ${t.added} 条任务${t.skipped ? `（${t.skipped} 条已存在）` : ''}` : t.error, t.ok ? 'good' : 'bad'); } }, '学习顺序 → 任务'),
+          h('button', { class: 'btn btn--sm', title: '自己的项目懒得写文档？让它起个草稿，看一眼再存', onclick: async (e) => {
+            const btn = e.currentTarget; btn.disabled = true; btn.textContent = '在写…';
+            const d = await api().draftReadme(rootPath);
+            btn.disabled = false; btn.textContent = '帮我写 README';
+            if (!d.ok) return toast(d.error, 'bad');
+            const box = h('section', { class: 'card' },
+              h('div', { class: 'tidy__stat' }, h('b', {}, d.existed ? 'README 草稿（已有 README，会存成 README.draft.md）' : 'README 草稿'), h('code', {}, short(d.target)),
+                h('button', { class: 'btn btn--sm btn--primary', onclick: async () => { const s = await api().saveReadme({ root: rootPath, target: d.target, markdown: d.markdown }); toast(s.ok ? `存好了：${short(s.path)}` : s.error, s.ok ? 'good' : 'bad'); if (s.ok) api().reveal(s.path); } }, '存进项目'),
+                h('button', { class: 'btn btn--sm', onclick: () => navigator.clipboard.writeText(d.markdown).then(() => toast('已复制', 'good')) }, '复制'),
+                h('button', { class: 'btn btn--sm', onclick: () => box.remove() }, '不要')),
+              md(d.markdown));
+            out.after(box);
+          } }, '帮我写 README')),
         md(r.markdown),
         reading,
         h('div', { class: 'tidy__askbar' }, qInput, h('button', { class: 'btn btn--sm btn--primary', onclick: askIt }, '问')),

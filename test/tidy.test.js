@@ -144,3 +144,15 @@ test('explainFile：越界 / 不存在 / 太大都拒绝；正常时把前 260 �
   const r = await tidy.explainFile(d, 'a.js', async (m) => { assert.match(m[1].content, /a\.js/); assert.doesNotMatch(m[1].content, /(const a = 1;\n){270}/); return { ok: true, text: '## ok' }; });
   assert.equal(r.ok, true); assert.equal(r.lines, 260);
 });
+
+test('draftReadme / saveReadme：有 README 就存草稿；只允许写这两个名字；不覆盖已有 README', async () => {
+  const d = tmp(); touch(path.join(d, 'package.json'), '{"name":"x"}');
+  const a = await tidy.draftReadme(d, async () => ({ ok: true, text: '```markdown\n# x\n草稿\n```' }));
+  assert.equal(a.ok, true); assert.equal(a.markdown, '# x\n草稿'); assert.ok(a.target.endsWith('README.md')); assert.equal(a.existed, false);
+  assert.equal(tidy.saveReadme(d, a.target, a.markdown).ok, true);
+  const b = await tidy.draftReadme(d, async () => ({ ok: true, text: '# x2' }));
+  assert.ok(b.target.endsWith('README.draft.md')); assert.equal(b.existed, true);
+  assert.equal(tidy.saveReadme(d, path.join(d, 'README.md'), 'x').ok, false, '不覆盖');
+  assert.equal(tidy.saveReadme(d, path.join(d, 'evil.md'), 'x').ok, false, '别的名字不写');
+  assert.equal(tidy.saveReadme(d, '/tmp/README.md', 'x').ok, false, '不出项目');
+});
