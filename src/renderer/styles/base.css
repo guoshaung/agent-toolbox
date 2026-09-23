@@ -970,3 +970,8 @@ html[data-effect='neon'] .rail__logo { filter: drop-shadow(0 0 10px var(--accent
 .palette__kind { flex: none; font-size: 10.5px; padding: 1px 7px; border-radius: 6px; border: 1px solid var(--line-soft); }
 .palette__empty { padding: 26px; text-align: center; }
 .palette__foot { padding: 8px 14px; border-top: 1px solid var(--line-soft); font-size: 11px; }
+/* 全局拖放选择器（复用命令面板的样式） */
+.dropzone__head { gap: 8px; }
+.dropzone__title { font-size: 14px; color: var(--text); flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dropzone__sub { font-size: 12px; flex: none; }
+body.is-dropping::after { content: ''; position: fixed; inset: 6px; z-index: 9050; border: 2px dashed color-mix(in srgb, var(--accent) 70%, transparent); border-radius: 18px; pointer-events: none; background: color-mix(in srgb, var(--accent) 6%, transparent); }

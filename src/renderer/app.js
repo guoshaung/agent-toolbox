@@ -10,6 +10,7 @@ import { iconFor } from './core/icons.js';
 import { buildTermPrompt, buildTermSystemPrompt, normalizeTermResult } from './tools/terms/prompt.js';
 import { createSwitcher } from './core/switcher.js';
 import { createPalette } from './core/palette.js';
+import { createDropzone } from './core/dropzone.js';
 import { togglePinned as togglePinnedState, addToRight, removePinned, LEFT_MAX, RIGHT_MAX } from './core/right-rail.js';
 
 const rail = document.getElementById('rail');
@@ -423,6 +424,8 @@ window.addEventListener('keydown', (e) => {
   if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'k') { e.preventDefault(); palette.toggle(); }
 });
 window.toolbox.palette?.onOpen?.(() => palette.show());
+// 把东西拖到窗口任何地方 → 问你想干嘛（工具自己的拖放区优先）
+createDropzone({ activate, config, toast });
 
 // Cmd+1..9 快速切工具
 window.addEventListener('keydown', (e) => {
