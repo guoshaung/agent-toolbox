@@ -332,16 +332,16 @@
   width: 2.4em;
   margin-right: 12px;
   text-align: right;
-  color: #444c5c;
+  color: var(--code-ln);
   user-select: none;
 }
-.tok--com { color: #6b7382; font-style: italic; }
-.tok--str { color: #8fc98f; }
-.tok--kw  { color: #c085d8; }
-.tok--fn  { color: #6fa8ff; }
-.tok--bi  { color: #5fb8c4; }
-.tok--num { color: #dfa145; }
-.tok--dec { color: #dfa145; }
+.tok--com { color: var(--tok-com); font-style: italic; }
+.tok--str { color: var(--tok-str); }
+.tok--kw  { color: var(--tok-kw); }
+.tok--fn  { color: var(--tok-fn); }
+.tok--bi  { color: var(--tok-bi); }
+.tok--num { color: var(--tok-num); }
+.tok--dec { color: var(--tok-num); }
 
 /* ---------- 学习工具 ---------- */
 
@@ -1826,7 +1826,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .nb__side { width: 210px; flex: 0 0 auto; min-width: 28px; border-right: 1px solid var(--line-soft); background: var(--bg-sunken); overflow: hidden auto; padding: 10px 8px 24px; }
 /* 行高和上内边距在这里定一次：行号槽、编辑器、阅读视图三边都引用它，
    谁自己写死一个值，切换模式时文字就会跳、行号就会越往下越歪。 */
-.nb__main { position: relative; flex: 1; min-width: 0; display: flex; flex-direction: column; --nb-line-h: 1.7; --nb-pad-top: 12px; --nb-editor-bg: var(--code-bg); --nb-editor-fg: #c9cfd8; --nb-editor-line: #2f333b; --nb-editor-font: JetBrains Mono, SFMono-Regular, Menlo, monospace; --nb-editor-size: 13px; }
+.nb__main { position: relative; flex: 1; min-width: 0; display: flex; flex-direction: column; --nb-line-h: 1.7; --nb-pad-top: 12px; --nb-editor-bg: var(--code-bg); --nb-editor-fg: var(--code-fg); --nb-editor-line: var(--code-line); --nb-editor-font: JetBrains Mono, SFMono-Regular, Menlo, monospace; --nb-editor-size: 13px; }
 .nb__main--markdown { background: var(--bg-sunken); }
 .nb__find-panel { position: absolute; top: 8px; right: 14px; z-index: 12; width: min(560px, calc(100% - 28px)); padding: 8px; border: 1px solid var(--line); border-radius: 9px; background: color-mix(in srgb, var(--panel) 96%, transparent); box-shadow: 0 14px 32px rgba(0,0,0,.4); backdrop-filter: blur(12px); }
 .nb__find-panel[hidden] { display: none; }
@@ -1873,9 +1873,9 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .nb__markdown-preview h4, .nb__markdown-preview h5, .nb__markdown-preview h6 { margin: 16px 0 6px; font-size: 15px; }
 .nb__markdown-preview p { margin: 9px 0; }
 .nb__markdown-preview strong { color: var(--text); font-weight: 700; }
-.nb__markdown-preview em { color: #c9d5f5; }
+.nb__markdown-preview em { color: var(--text); }
 .nb__markdown-preview del { opacity: .65; }
-.nb__markdown-preview code { padding: 2px 6px; border-radius: 5px; color: #c9d5f5; background: var(--bg-raised); font: 12.5px/1.5 var(--mono); }
+.nb__markdown-preview code { padding: 2px 6px; border-radius: 5px; color: var(--text); background: var(--bg-raised); font: 12.5px/1.5 var(--mono); }
 .nb__markdown-preview pre { margin: 13px 0; padding: 13px 15px; overflow-x: auto; border: 1px solid var(--line-soft); border-radius: 9px; background: var(--bg-raised); }
 .nb__markdown-preview pre code { padding: 0; background: transparent; white-space: pre; }
 .nb__markdown-preview ul, .nb__markdown-preview ol { margin: 9px 0; padding-left: 25px; }
@@ -1927,20 +1927,20 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .nb__code.is-wrap .nb__line { white-space: pre-wrap; overflow-wrap: anywhere; }
 .nb__line:hover { background: rgba(255,255,255,.025); }
 .nb__line.is-flash { background: rgba(91,140,255,.18); transition: background .8s; }
-.nb__ln { flex: 0 0 auto; min-width: 3ch; margin-right: 16px; text-align: right; color: #444c5c; user-select: none; }
+.nb__ln { flex: 0 0 auto; min-width: 3ch; margin-right: 16px; text-align: right; color: var(--code-ln); user-select: none; }
 .nb__src { flex: 1; }
 
 /* 标识符可点，选中后全篇同名高亮，当前那一处再重一档 */
 .tok--ident { cursor: pointer; border-radius: 3px; }
-.tok--ident:hover { background: rgba(91,140,255,.18); }
-.tok--ident.is-hit { background: rgba(223,161,69,.24); box-shadow: inset 0 -1px 0 rgba(223,161,69,.7); }
-.tok--ident.is-current { background: rgba(223,161,69,.55); color: #fff; }
+.tok--ident:hover { background: var(--accent-soft); }
+.tok--ident.is-hit { background: color-mix(in srgb, var(--tok-num) 24%, transparent); box-shadow: inset 0 -1px 0 color-mix(in srgb, var(--tok-num) 70%, transparent); }
+.tok--ident.is-current { background: color-mix(in srgb, var(--tok-num) 55%, transparent); color: var(--text); }
 /* 定义处天生更显眼，扫一眼就知道这个名字从哪来 */
-.tok--ident[data-kind="def"] { color: #6fa8ff; font-weight: 600; }
-.tok--ident[data-kind="param"] { color: #c8a2ff; }
-.tok--ident[data-kind="call"] { color: #5fc9b8; }
-.tok--ident[data-kind="member"] { color: #9aa2b1; }
-.tok--ident[data-kind="bind"] { color: #dfa145; }
+.tok--ident[data-kind="def"] { color: var(--tok-fn); font-weight: 600; }
+.tok--ident[data-kind="param"] { color: var(--tok-param); }
+.tok--ident[data-kind="call"] { color: var(--tok-call); }
+.tok--ident[data-kind="member"] { color: var(--tok-member); }
+.tok--ident[data-kind="bind"] { color: var(--tok-num); }
 
 .nb__side-head { font-size: 10.5px; text-transform: uppercase; letter-spacing: .6px; padding: 4px 8px 8px; }
 .nb__outline-item {
@@ -2760,35 +2760,36 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 }
 
 /* ---------- 深海研究工作台：记事本与学习区视觉重做 ---------- */
-.nb__bar { min-height: 48px; padding: 8px 12px; border-bottom-color: rgba(112,145,205,.16); background: linear-gradient(180deg, rgba(29,42,63,.72), rgba(13,18,27,.92)); box-shadow: 0 1px 0 rgba(255,255,255,.035); }
-.nb__bar > strong { letter-spacing: -.25px; color: #f4f7fc; }
-.nb__tabs { min-height: 38px; padding: 6px 10px 0; gap: 4px; background: var(--bg-sunken); border-bottom-color: rgba(112,145,205,.18); scrollbar-width: thin; }
+.nb__bar { min-height: 48px; padding: 8px 12px; border-bottom-color: var(--line-soft); background: var(--bg-raised); }
+.nb__bar > strong { letter-spacing: -.25px; color: var(--text); }
+.nb__tabs { min-height: 38px; padding: 6px 10px 0; gap: 4px; background: var(--bg-sunken); border-bottom-color: var(--line-soft); scrollbar-width: thin; }
 .nb__tab { border-radius: 8px 8px 0 0; transition: background .18s ease, border-color .18s ease, transform .18s ease; }
-.nb__tab:hover { transform: translateY(-1px); background: rgba(91,140,255,.08); }
-.nb__tab.is-active { border-color: rgba(91,140,255,.32); background: linear-gradient(180deg, rgba(91,140,255,.16), rgba(91,140,255,.045)); box-shadow: inset 0 -2px 0 var(--accent); }
+.nb__tab:hover { transform: translateY(-1px); background: var(--accent-soft); }
+.nb__tab.is-active { border-color: color-mix(in srgb, var(--accent) 32%, transparent); background: var(--code-bg); box-shadow: inset 0 -2px 0 var(--accent); }
+.nb__tab.is-active .nb__tab-main { color: var(--code-fg); }
 .nb__tab-main { font-size: 11.5px; }
 .nb__body { background: var(--bg-sunken); }
-.nb__side, .nb__detail-pane { background: linear-gradient(180deg, rgba(14,21,32,.96), rgba(8,12,18,.98)); border-color: rgba(112,145,205,.14); }
-.nb__side-tabs { border-bottom-color: rgba(112,145,205,.14); }
+.nb__side, .nb__detail-pane { background: var(--bg-sunken); border-color: var(--line-soft); }
+.nb__side-tabs { border-bottom-color: var(--line-soft); }
 .nb__side-tab { transition: background .16s ease, color .16s ease; }
-.nb__side-tab.is-active { background: rgba(91,140,255,.16); box-shadow: inset 0 -1px var(--accent); }
+.nb__side-tab.is-active { background: var(--accent-soft); box-shadow: inset 0 -1px var(--accent); }
 .nb__main { background: var(--code-bg); }
 /* 阅读视图和编辑视图必须同底色，否则按一下「编辑」整片背景会跳一下。
    那层 28px 的横向纸纹也去掉：行高根本不是 28px，对不上就是一片噪点，
    底色抬亮之后尤其明显 —— VSCode 的代码区是干净的。 */
 .nb__code { background-color: var(--nb-editor-bg, var(--code-bg)); scroll-behavior: smooth; overscroll-behavior: contain; }
 .nb__line { transition: background .14s ease; }
-.nb__line:hover { background: rgba(91,140,255,.07); }
-.nb__ln { color: #46556d; }
-.nb__editor { margin: 14px; border-color: rgba(112,145,205,.22); border-radius: 10px; background: var(--panel); box-shadow: inset 0 1px rgba(255,255,255,.025), 0 10px 28px rgba(0,0,0,.2); }
-.nb__editor:focus { border-color: rgba(91,140,255,.78); box-shadow: 0 0 0 3px rgba(91,140,255,.11), inset 0 1px rgba(255,255,255,.035); }
+.nb__line:hover { background: color-mix(in srgb, var(--accent) 7%, transparent); }
+.nb__ln { color: var(--code-ln); }
+.nb__editor { margin: 14px; border-color: var(--code-line); border-radius: 10px; background: var(--code-bg); box-shadow: var(--shadow-sm); }
+.nb__editor:focus { border-color: color-mix(in srgb, var(--accent) 78%, transparent); box-shadow: 0 0 0 3px var(--accent-soft); }
 .nb__split { transition: background .16s ease; }
-.nb__split:hover::after, .nb__split.is-dragging::after { background: linear-gradient(180deg, transparent, rgba(91,140,255,.72), transparent); }
-.nb__picker { background: rgba(3,7,12,.76); backdrop-filter: blur(10px); }
-.nb__picker-card, .nb__command-card, .nb__new-file-card { border-color: rgba(112,145,205,.25); background: linear-gradient(145deg, rgba(28,39,57,.98), rgba(14,19,28,.98)); box-shadow: 0 24px 70px rgba(0,0,0,.58), inset 0 1px rgba(255,255,255,.045); }
+.nb__split:hover::after, .nb__split.is-dragging::after { background: linear-gradient(180deg, transparent, color-mix(in srgb, var(--accent) 72%, transparent), transparent); }
+.nb__picker { background: color-mix(in srgb, var(--bg) 78%, transparent); backdrop-filter: blur(10px); }
+.nb__picker-card, .nb__command-card, .nb__new-file-card { border-color: var(--line); background: var(--panel); box-shadow: var(--shadow-lg, 0 24px 70px rgba(0,0,0,.3)); }
 .nb__command-item, .nb__project-search-result, .nb__graph-item { transition: background .14s ease, transform .14s ease, border-color .14s ease; }
 .nb__command-item:hover, .nb__project-search-result:hover, .nb__graph-item:hover { transform: translateX(2px); }
-.nb__find-panel, .nb__completion-panel { border-color: rgba(91,140,255,.38); background: rgba(15,23,36,.94); box-shadow: 0 18px 42px rgba(0,0,0,.48); }
+.nb__find-panel, .nb__completion-panel { border-color: color-mix(in srgb, var(--accent) 38%, transparent); background: var(--panel-glass); box-shadow: var(--shadow-lg, 0 18px 42px rgba(0,0,0,.3)); }
 
 .practice { background: radial-gradient(circle at 82% 2%, rgba(91,140,255,.08), transparent 30%), var(--bg-sunken); scroll-behavior: smooth; overscroll-behavior: contain; }
 .practice__info-row { border-color: rgba(112,145,205,.18); background: linear-gradient(90deg, rgba(18,28,43,.92), rgba(14,20,30,.92)); box-shadow: inset 0 1px rgba(255,255,255,.035); }
@@ -3594,8 +3595,8 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
   padding: var(--nb-pad-top) 10px 0 0;
   overflow: hidden;
   /* 行号跟着皮肤的 --text-faint 走会被染成强调色（绿皮肤下是绿的）。
-     VSCode 的行号是中性灰，不抢代码的注意力，这里写死一个中性值。 */
-  color: #6b7178;
+     VSCode 的行号是中性灰，不抢代码的注意力，用代码区自己的 --code-ln。 */
+  color: var(--code-ln);
   font: var(--nb-editor-size, 13px)/var(--nb-line-h) var(--nb-editor-font, ui-monospace, monospace);
   text-align: right;
   user-select: none;

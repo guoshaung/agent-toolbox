@@ -15,6 +15,11 @@
   --code-bg: #1b1d22;
   --code-fg: #c9cfd8;
   --code-fg-dim: #aeb6c0;
+  /* 代码区自己的一套：边框、行号、语法色。深色是默认值，浅色皮肤由 themes.js 整套换掉 */
+  --code-line: #2f333b;
+  --code-ln: #6b7178;
+  --tok-com: #6b7382; --tok-str: #8fc98f; --tok-kw: #c085d8; --tok-fn: #6fa8ff; --tok-bi: #5fb8c4; --tok-num: #dfa145;
+  --tok-param: #c8a2ff; --tok-call: #5fc9b8; --tok-member: #9aa2b1;
 
   --text: #d3d9e4;
   --text-dim: #a4adbe;

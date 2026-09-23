@@ -85,3 +85,18 @@ test('跟随系统深浅色：开着按白天 / 晚上选，关着用 ui.theme�
   assert.equal(resolveThemeId(cfg({ 'ui.theme': 'gold', 'ui.autoTheme': { on: false, light: 'paper', dark: 'galaxy' } }), false), 'gold');
   assert.equal(isLightTheme('paper'), true); assert.equal(isLightTheme('gold'), false);
 });
+
+test('浅色皮肤的代码区是浅的，深色皮肤跟底色走；旧皮肤继承基础深色', async () => {
+  const { THEMES, codeVars } = await import('../src/renderer/core/themes.js');
+  const paper = THEMES.find((t) => t.id === 'paper');
+  assert.equal(paper.vars['--code-bg'], '#ffffff');
+  assert.equal(paper.vars['--tok-kw'], '#a626a4');
+  const gold = THEMES.find((t) => t.id === 'gold');
+  assert.equal(gold.vars['--code-bg'], gold.vars['--bg']);
+  assert.equal(gold.vars['--code-ln'], gold.vars['--text-faint']);
+  const sakura = THEMES.find((t) => t.id === 'sakura');
+  assert.equal(sakura.vars['--code-bg'], '#ffffff');
+  assert.equal(codeVars({ dark: false, panel: '#fff', line: '#eee' })['--code-line'], '#eee');
+  // 老皮肤（默认/极夜）从 current 继承 base.css 那套深色代码区
+  assert.equal(THEMES.find((t) => t.id === 'default').vars['--code-bg'], '#1b1d22');
+});

@@ -1,7 +1,9 @@
-const COLOR_VARS = ['--glow-a','--glow-b','--bg','--bg-raised','--bg-sunken','--panel','--panel-glass','--line','--line-soft','--line-glow','--text','--text-dim','--text-faint','--accent','--accent-soft','--accent-glow','--accent-secondary','--accent-secondary-soft','--accent-tertiary','--accent-tertiary-soft','--glow-accent','--good','--warn','--bad'];
+const COLOR_VARS = ['--glow-a','--glow-b','--bg','--bg-raised','--bg-sunken','--panel','--panel-glass','--line','--line-soft','--line-glow','--text','--text-dim','--text-faint','--accent','--accent-soft','--accent-glow','--accent-secondary','--accent-secondary-soft','--accent-tertiary','--accent-tertiary-soft','--glow-accent','--good','--warn','--bad',
+  '--code-bg','--code-fg','--code-fg-dim','--code-line','--code-ln','--tok-com','--tok-str','--tok-kw','--tok-fn','--tok-bi','--tok-num','--tok-param','--tok-call','--tok-member'];
 
 const current = {
-  '--bg':'#13161d','--bg-raised':'#1c212b','--bg-sunken':'#0f1216','--panel':'#222833','--panel-glass':'rgba(26,31,41,.78)','--line':'#2a3040','--line-soft':'#1e232f','--line-glow':'rgba(91,140,255,.22)','--text':'#d3d9e4','--text-dim':'#a3abbb','--text-faint':'#6b7485','--accent':'#5b8cff','--accent-soft':'rgba(91,140,255,.14)','--accent-glow':'rgba(91,140,255,.45)','--accent-secondary':'#c084fc','--accent-secondary-soft':'rgba(192,132,252,.14)','--accent-tertiary':'#f472b6','--accent-tertiary-soft':'rgba(244,114,182,.14)','--glow-accent':'0 0 20px rgba(91,140,255,.28)','--good':'#3fb98a','--warn':'#f0a94f','--bad':'#ef6a65'
+  '--bg':'#13161d','--bg-raised':'#1c212b','--bg-sunken':'#0f1216','--panel':'#222833','--panel-glass':'rgba(26,31,41,.78)','--line':'#2a3040','--line-soft':'#1e232f','--line-glow':'rgba(91,140,255,.22)','--text':'#d3d9e4','--text-dim':'#a3abbb','--text-faint':'#6b7485','--accent':'#5b8cff','--accent-soft':'rgba(91,140,255,.14)','--accent-glow':'rgba(91,140,255,.45)','--accent-secondary':'#c084fc','--accent-secondary-soft':'rgba(192,132,252,.14)','--accent-tertiary':'#f472b6','--accent-tertiary-soft':'rgba(244,114,182,.14)','--glow-accent':'0 0 20px rgba(91,140,255,.28)','--good':'#3fb98a','--warn':'#f0a94f','--bad':'#ef6a65',
+  '--code-bg':'#1b1d22','--code-fg':'#c9cfd8','--code-fg-dim':'#aeb6c0','--code-line':'#2f333b','--code-ln':'#6b7178','--tok-com':'#6b7382','--tok-str':'#8fc98f','--tok-kw':'#c085d8','--tok-fn':'#6fa8ff','--tok-bi':'#5fb8c4','--tok-num':'#dfa145','--tok-param':'#c8a2ff','--tok-call':'#5fc9b8','--tok-member':'#9aa2b1'
 };
 
 // 三套深色皮肤原本都是「近乎纯黑 + 接近纯白」：赛博绿 18.6:1、极夜紫 16.6:1、
@@ -11,6 +13,17 @@ const current = {
  * 一套皮肤只要给 8 个关键色，其余（soft/glow/line）按规律派生。
  * dark: 深色底；bg/panel/text 三个层级；a/b/c 三个强调色。
  */
+// 浅色皮肤的代码区：白纸、GitHub Light 那套语法色；深色皮肤用底色本身，不再单独一块 #1b1d22
+const DARK_CODE = { '--code-fg': '#c9cfd8', '--code-fg-dim': '#aeb6c0', '--code-line': '#2f333b', '--code-ln': '#6b7178', '--tok-com': '#6b7382', '--tok-str': '#8fc98f', '--tok-kw': '#c085d8', '--tok-fn': '#6fa8ff', '--tok-bi': '#5fb8c4', '--tok-num': '#dfa145', '--tok-param': '#c8a2ff', '--tok-call': '#5fc9b8', '--tok-member': '#9aa2b1' };
+const LIGHT_CODE = { '--code-fg': '#24292f', '--code-fg-dim': '#57606a', '--code-line': '#e5e7eb', '--code-ln': '#9ca3af', '--tok-com': '#6a737d', '--tok-str': '#22863a', '--tok-kw': '#a626a4', '--tok-fn': '#005cc5', '--tok-bi': '#0086b3', '--tok-num': '#b35900', '--tok-param': '#6f42c1', '--tok-call': '#0a7d6b', '--tok-member': '#5a6270' };
+/** 记事本手动选编辑器底色时用：底色是深的就配深色语法色，浅的配浅色 */
+export const CODE_PALETTES = { dark: DARK_CODE, light: LIGHT_CODE };
+export function codeVars({ dark, bg, sunken, panel, text, dim, line, faint }) {
+  return dark
+    ? { '--code-bg': bg, '--code-fg': text, '--code-fg-dim': dim, '--code-line': line, '--code-ln': faint }
+    : { '--code-bg': panel, ...LIGHT_CODE, '--code-line': line };
+}
+
 function make({ id, name, desc, dark = true, bg, raised, sunken, panel, line, text, dim, faint, a, b, c, good = '#3fb98a', warn = '#f0a94f', bad = '#ef6a65', clean = true, glow = .1 }) {
   const rgba = (hex, alpha) => { const n = parseInt(hex.slice(1), 16); return `rgba(${n >> 16 & 255},${n >> 8 & 255},${n & 255},${alpha})`; };
   return {
@@ -27,13 +40,14 @@ function make({ id, name, desc, dark = true, bg, raised, sunken, panel, line, te
       '--accent-tertiary': c, '--accent-tertiary-soft': rgba(c, .14),
       '--glow-accent': `0 0 20px ${rgba(a, .28)}`,
       '--good': good, '--warn': warn, '--bad': bad,
+      ...codeVars({ dark, bg, sunken, panel, text, dim, line, faint }),
     },
   };
 }
 
 export const THEMES = [
   { id:'default', name:'女仆霓虹', desc:'当前默认风格，深蓝霓虹与女仆装饰', swatches:['#5b8cff','#c084fc','#f472b6'], vars:{...current,'--glow-a':'rgba(91,140,255,.08)','--glow-b':'rgba(192,132,252,.07)'} },
-  { id:'sakura', name:'樱花校园', desc:'二次元樱花粉与奶油白，轻盈柔和', swatches:['#ec5f8c','#a56cc1','#ffb347'], vars:{...current,'--glow-a':'rgba(236,95,140,.1)','--glow-b':'rgba(255,179,71,.08)','--bg':'#faf3f0','--bg-raised':'#fff7f4','--bg-sunken':'#f3e7e3','--panel':'#ffffff','--panel-glass':'rgba(255,255,255,.84)','--line':'#e8d5d0','--line-soft':'#f0e2de','--line-glow':'rgba(236,95,140,.28)','--text':'#4a3b44','--text-dim':'#8a7582','--text-faint':'#b39aa8','--accent':'#ec5f8c','--accent-soft':'rgba(236,95,140,.14)','--accent-glow':'rgba(236,95,140,.4)','--accent-secondary':'#a56cc1','--accent-secondary-soft':'rgba(165,108,193,.14)','--accent-tertiary':'#ffb347','--accent-tertiary-soft':'rgba(255,179,71,.16)','--glow-accent':'0 0 20px rgba(236,95,140,.25)','--good':'#4dbd8f','--warn':'#e6a23c','--bad':'#e2625a'} },
+  { id:'sakura', name:'樱花校园', desc:'二次元樱花粉与奶油白，轻盈柔和', swatches:['#ec5f8c','#a56cc1','#ffb347'], vars:{...current,'--glow-a':'rgba(236,95,140,.1)','--glow-b':'rgba(255,179,71,.08)','--bg':'#faf3f0','--bg-raised':'#fff7f4','--bg-sunken':'#f3e7e3','--panel':'#ffffff','--panel-glass':'rgba(255,255,255,.84)','--line':'#e8d5d0','--line-soft':'#f0e2de','--line-glow':'rgba(236,95,140,.28)','--text':'#4a3b44','--text-dim':'#8a7582','--text-faint':'#b39aa8','--accent':'#ec5f8c','--accent-soft':'rgba(236,95,140,.14)','--accent-glow':'rgba(236,95,140,.4)','--accent-secondary':'#a56cc1','--accent-secondary-soft':'rgba(165,108,193,.14)','--accent-tertiary':'#ffb347','--accent-tertiary-soft':'rgba(255,179,71,.16)','--glow-accent':'0 0 20px rgba(236,95,140,.25)','--good':'#4dbd8f','--warn':'#e6a23c','--bad':'#e2625a', ...codeVars({ dark:false, panel:'#ffffff', line:'#e8d5d0' })} },
   { id:'violet', name:'极夜紫罗兰', desc:'深夜紫底与青紫光晕，适合长时间工作', swatches:['#a778ff','#5fc8ff','#ff7bd0'], clean:true, vars:{...current,'--glow-a':'rgba(167,120,255,.1)','--glow-b':'rgba(95,200,255,.08)','--bg':'#171226','--bg-raised':'#201a33','--bg-sunken':'#120e1f','--panel':'#272040','--panel-glass':'rgba(30,23,48,.8)','--line':'#2c2242','--line-soft':'#221a36','--line-glow':'rgba(167,121,255,.25)','--text':'#d6d0e6','--text-dim':'#b3a8cf','--text-faint':'#7a7096','--accent':'#a778ff','--accent-soft':'rgba(167,120,255,.16)','--accent-glow':'rgba(167,120,255,.45)','--accent-secondary':'#5fc8ff','--accent-secondary-soft':'rgba(95,200,255,.15)','--accent-tertiary':'#ff7bd0','--accent-tertiary-soft':'rgba(255,123,208,.15)','--good':'#46c98c','--warn':'#f0a94f','--bad':'#f06a75'} },
   // ---- 金属 ----
   make({ id:'gold', name:'镀金黑金', desc:'黑檀底、24K 金边，主按钮和标题拉丝金属渐变', bg:'#141210', raised:'#1c1915', sunken:'#0e0c0a', panel:'#221e18', line:'#3d3320', text:'#eadfc4', dim:'#b9ab8a', faint:'#7d7259', a:'#d4af37', b:'#f6e27a', c:'#b8860b', good:'#8fc98a', warn:'#f0c45f', bad:'#e0716a' }),

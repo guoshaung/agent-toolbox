@@ -12,7 +12,17 @@ const MAX_CHARS = 400_000;
 // 深色主题都压在 14:1 对比度、背景亮度不到 1%（约等于纯黑配亮白）。
 // 那是看一眼很精神、看一小时很难受的组合 —— VSCode Dark+ 是 11.25:1，
 // One Dark 才 6.6:1。这里统一往 11:1 靠，背景也从纯黑抬起来一点。
+import { CODE_PALETTES } from '../../core/themes.js';
+
+/** #rrggbb 的相对亮度 < 0.4 算深色 */
+function isDarkHex(hex) {
+  const n = parseInt(String(hex).slice(1), 16);
+  if (Number.isNaN(n)) return true;
+  return (0.2126 * (n >> 16 & 255) + 0.7152 * (n >> 8 & 255) + 0.0722 * (n & 255)) / 255 < 0.4;
+}
+
 const NOTEBOOK_THEMES = {
+  auto: { label: '跟随皮肤', bg: 'var(--code-bg)', fg: 'var(--code-fg)', line: 'var(--code-line)', follow: true },
   ink: { label: '柔和墨黑', bg: '#1b1d22', fg: '#c9cfd8', line: '#2f333b' },
   midnight: { label: '深海蓝', bg: '#161b25', fg: '#ccd6e6', line: '#2a3750' },
   graphite: { label: '石墨灰', bg: '#1f2126', fg: '#d3d7de', line: '#363b45' },
@@ -76,7 +86,7 @@ function createNotebookTool({ id, title, icon, hint, boundMode }) {
     let hitIndex = 0;         // 在出现列表里的游标
     let editing = false;
     const editorMode = boundMode === 'markdown' ? 'markdown' : 'code';  // 由工具绑定，不再运行时切换
-    let notebookTheme = config.get('notebook.theme', 'ink');
+    let notebookTheme = config.get('notebook.theme', 'auto');
     let notebookFont = config.get('notebook.font', 'jetbrains');
     let notebookFontSize = Number(config.get('notebook.fontSize', 13)) || 13;
     let wordWrap = Boolean(config.get('notebook.wordWrap', false));
@@ -2038,6 +2048,11 @@ function createNotebookTool({ id, title, icon, hint, boundMode }) {
       mainEl.style.setProperty('--nb-editor-bg', theme.bg);
       mainEl.style.setProperty('--nb-editor-fg', theme.fg);
       mainEl.style.setProperty('--nb-editor-line', theme.line);
+      // 手动选了底色：语法色跟底色深浅走，别让浅色皮肤的浅语法色落在深底上
+      const palette = theme.follow ? null : CODE_PALETTES[isDarkHex(theme.bg) ? 'dark' : 'light'];
+      for (const name of Object.keys(CODE_PALETTES.dark)) {
+        if (palette) mainEl.style.setProperty(name, palette[name]); else mainEl.style.removeProperty(name);
+      }
       mainEl.style.setProperty('--nb-editor-font', font.value);
       mainEl.style.setProperty('--nb-editor-size', `${notebookFontSize}px`);
       editor.style.whiteSpace = wordWrap ? 'pre-wrap' : 'pre';
