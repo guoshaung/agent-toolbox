@@ -1787,6 +1787,32 @@ function registerIpc() {
     const quizzes = week.filter((x) => x.kind === 'quiz' && Number.isFinite(x.score));
     return { items: list.slice(0, limit), week: { total: week.length, byKind, quizAvg: quizzes.length ? Math.round(quizzes.reduce((s, x) => s + x.score / x.total, 0) / quizzes.length * 100) : null } };
   });
+  // 本周小结：学了什么、写了什么、做完了什么、还欠什么 —— 模型写三段，按周缓存
+  ipcMain.handle('learn:weekly', async (_e, { fresh = false } = {}) => {
+    const weekKey = new Date(Date.now() - 6 * 86400000).toISOString().slice(0, 10);
+    const cache = store.get('learn.weekly', {}) || {};
+    if (!fresh && cache.key === weekKey && cache.markdown) return { ok: true, cached: true, markdown: cache.markdown, at: cache.at };
+    const weekAgo = Date.now() - 7 * 86400000;
+    const journal = (store.get('learn.journal', []) || []).filter((x) => x.at >= weekAgo);
+    const tasks = store.get('tasks.items', []) || [];
+    const done = tasks.filter((t) => t.done && (t.completedAt || 0) >= weekAgo).map((t) => t.title);
+    const pending = tasks.filter((t) => !t.done).slice(0, 8).map((t) => t.title);
+    const activity = await tidy.activity({ days: 7, limit: 8 }).catch(() => ({ items: [] }));
+    const facts = [
+      `学习记录（${journal.length} 条）：${journal.slice(0, 30).map((x) => `${{ explain: '解释', overview: '看懂', file: '读', quiz: '考' }[x.kind] || x.kind}「${x.title}」${x.kind === 'quiz' ? `${x.score}/${x.total}` : ''}`).join('；') || '无'}`,
+      `这周有提交的仓库：${activity.items.map((r) => `${r.name}（${r.count} 次，最近：${r.last.message}）`).join('；') || '无'}`,
+      `做完的任务：${done.join('；') || '无'}`,
+      `还没做的：${pending.join('；') || '无'}`,
+    ].join('\n');
+    const r = await callStoredCompatibleApi({ messages: [
+      { role: 'system', content: '你给一个人写这周的小结，像朋友聊天，不打官腔，不编事实，每段两三句。' },
+      { role: 'user', content: `根据下面的事实写本周小结，Markdown，三节：\n## 这周学了什么\n## 这周做了什么\n## 下周先干嘛（从「还没做的」里挑 1-3 件，说为什么先做它）\n\n${facts}` },
+    ], temperature: 0.4, timeout: 90000 });
+    if (!r.ok) return r;
+    const markdown = String(r.text || '');
+    store.set('learn.weekly', { key: weekKey, markdown, at: Date.now() });
+    return { ok: true, markdown, at: Date.now() };
+  });
   ipcMain.handle('learn:export', async () => {
     const list = store.get('learn.journal', []) || [];
     const target = path.join(app.getPath('downloads'), `学习记录-${new Date().toISOString().slice(0, 10)}.json`);

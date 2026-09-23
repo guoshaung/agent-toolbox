@@ -2,6 +2,7 @@ import { h, toast } from '../../core/ui.js';
 import { iconFor } from '../../core/icons.js';
 import { TOOLS } from '../../core/registry.js';
 import { colorOf } from '../../core/tool-colors.js';
+import { md } from '../../core/md.js';
 
 /**
  * 今天：打开工具箱先看这一屏。
@@ -130,7 +131,17 @@ export default {
             })(),
             ...(tasks.length ? tasks.map((t) => h('div', { class: 'home__row' }, h('span', { class: `home__dot home__dot--${t.priority || 'normal'}` }), h('span', { class: 'home__name' }, t.title), t.due ? h('span', { class: 'faint home__meta' }, t.due) : null)) : [empty('任务清单是空的 —— 要么很闲，要么没写')]),
           ),
-          section('这周学了什么', null,
+          section('这周学了什么', h('button', { class: 'btn btn--sm', title: '让模型按记录写三段：学了什么、做了什么、下周先干嘛', onclick: async (e) => {
+              const btn = e.currentTarget; btn.disabled = true; btn.textContent = '在写…';
+              const r = await window.toolbox.learn.weekly({});
+              btn.disabled = false; btn.textContent = '本周小结';
+              if (!r.ok) return toast(r.error || '没写出来', 'bad');
+              const box = h('section', { class: 'card' }, h('div', { class: 'home__head' }, h('h3', { class: 'card__title' }, `本周小结${r.cached ? '（这周写过的）' : ''}`), h('div', { class: 'home__quick' },
+                h('button', { class: 'btn btn--sm', onclick: async () => { const f = await window.toolbox.learn.weekly({ fresh: true }); if (f.ok) box.replaceChild(md(f.markdown), box.lastChild); } }, '重写'),
+                h('button', { class: 'btn btn--sm', onclick: () => navigator.clipboard.writeText(r.markdown).then(() => toast('已复制', 'good')) }, '复制'),
+                h('button', { class: 'btn btn--sm', onclick: () => box.remove() }, '收起'))), md(r.markdown));
+              body.querySelector('.home__grid')?.before(box);
+            } }, '本周小结'),
             h('div', { class: 'home__big' }, h('b', {}, String(journal.week.total)), h('span', { class: 'faint' }, ' 次 · ' + (Object.entries(journal.week.byKind).map(([k, n]) => `${{ explain: '解释', overview: '看懂项目', file: '带我读', quiz: '考考我', note: '记' }[k] || k} ${n}`).join(' · ') || '还没开始') + (journal.week.quizAvg != null ? ` · 考试平均 ${journal.week.quizAvg}%` : ''))),
             ...(journal.items.length ? journal.items.slice(0, 5).map((it) => h('div', { class: 'home__row' },
               h('span', { class: 'home__name', title: it.title }, `${{ explain: '💬', overview: '🎓', file: '📄', quiz: '📝' }[it.kind] || '•'} ${it.title}${it.kind === 'quiz' ? `（${it.score}/${it.total}）` : ''}`),

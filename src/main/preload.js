@@ -345,6 +345,7 @@ contextBridge.exposeInMainWorld('toolbox', {
     journal: (opts) => ipcRenderer.invoke('learn:journal', opts),
     note: (entry) => ipcRenderer.invoke('learn:note', entry),
     export: () => ipcRenderer.invoke('learn:export'),
+    weekly: (opts) => ipcRenderer.invoke('learn:weekly', opts),
     clear: () => ipcRenderer.invoke('learn:clear'),
   },
 
