@@ -176,6 +176,21 @@ export default {
         a.classList.remove('faint');
       };
       qInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') askIt(); });
+      // 结构一览：顶层目录按文件数画成大小不一的格子，一眼看出重心在哪
+      const mapEl = h('div', { class: 'tidy__map' });
+      api().map(rootPath).then((m) => {
+        if (!m?.ok || !m.dirs.length) return;
+        const max = Math.max(1, ...m.dirs.map((d) => d.files));
+        mapEl.replaceChildren(
+          h('div', { class: 'tidy__stat' }, h('b', {}, '结构一览'), h('span', { class: 'faint' }, `顶层 ${m.dirs.length} 个目录，格子越大文件越多${m.truncated ? '（太大了，只数了一部分）' : ''}`)),
+          h('div', { class: 'tidy__map-grid' }, ...m.dirs.slice(0, 16).map((d) => {
+            const w = 0.35 + 0.65 * Math.sqrt(d.files / max);
+            return h('button', { class: 'tidy__map-cell', style: { '--w': String(w) }, title: `${d.files} 个文件 · ${fmtSize(d.bytes)}\n${d.top.join(' · ')}`, onclick: () => api().reveal(`${rootPath}/${d.name}`) },
+              h('b', {}, d.name + '/'), h('span', {}, `${d.files} 文件`), h('i', {}, d.top.slice(0, 2).join(' · ')));
+          })),
+          m.files.length ? h('div', { class: 'faint', style: { fontSize: '12px' } }, `根目录文件：${m.files.join('  ')}`) : null,
+        );
+      }).catch(() => {});
       // 带我读：按讲解给的顺序，一个文件一个文件讲
       const reading = h('div', { class: 'tidy__reading' });
       api().readingList({ root: rootPath, markdown: r.markdown }).then((files) => {
@@ -250,6 +265,7 @@ export default {
             out.after(box);
           } }, '考考我')),
         md(r.markdown),
+        mapEl,
         reading,
         h('div', { class: 'tidy__askbar' }, qInput, h('button', { class: 'btn btn--sm btn--primary', onclick: askIt }, '问')),
         thread,

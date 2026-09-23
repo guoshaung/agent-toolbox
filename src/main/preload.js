@@ -369,6 +369,7 @@ contextBridge.exposeInMainWorld('toolbox', {
     explainFile: (payload) => ipcRenderer.invoke('tidy:explainFile', payload),
     overviewList: () => ipcRenderer.invoke('tidy:overviewList'),
     facts: (root) => ipcRenderer.invoke('tidy:facts', root),
+    map: (root) => ipcRenderer.invoke('tidy:map', root),
     pickFolder: () => ipcRenderer.invoke('tidy:pickFolder'),
     setCodeDir: () => ipcRenderer.invoke('tidy:setCodeDir'),
     reveal: (p) => ipcRenderer.invoke('tidy:reveal', p),

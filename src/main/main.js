@@ -1958,6 +1958,7 @@ function registerIpc() {
     return Object.entries(cache).map(([root, v]) => ({ root, name: v.facts?.name || root.split('/').pop(), at: v.at })).sort((a, b) => b.at - a.at);
   });
   ipcMain.handle('tidy:facts', (_e, root) => tidy.projectFacts(root));
+  ipcMain.handle('tidy:map', (_e, root) => tidy.projectMap(root));
   ipcMain.handle('tidy:pickFolder', async () => {
     const r = await dialog.showOpenDialog(mainWindow, { title: '选一个项目文件夹', properties: ['openDirectory'] });
     return r.canceled || !r.filePaths.length ? null : r.filePaths[0];

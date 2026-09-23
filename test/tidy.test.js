@@ -235,3 +235,14 @@ test('searchTidy：两个字起搜，按名字包含，不进仓库里面', () =
   assert.deepEqual(tidy.searchTidy('论', {}), [], '一个字不搜');
   assert.equal(typeof origHome, 'string');
 });
+
+test('projectMap：顶层目录按文件数排，带主要后缀；跳过 node_modules', () => {
+  const d = tmp();
+  for (let i = 0; i < 5; i += 1) touch(path.join(d, 'src', `a${i}.js`));
+  touch(path.join(d, 'src', 'b.css')); touch(path.join(d, 'docs', 'x.md')); touch(path.join(d, 'node_modules', 'z', 'i.js')); touch(path.join(d, 'README.md'));
+  const m = tidy.projectMap(d);
+  assert.equal(m.ok, true);
+  assert.deepEqual(m.dirs.map((x) => x.name), ['src', 'docs']);
+  assert.equal(m.dirs[0].files, 6); assert.equal(m.dirs[0].top[0], '.js 5');
+  assert.deepEqual(m.files, ['README.md']);
+});

@@ -345,6 +345,35 @@ function tree(dir, depth = 2, prefix = '', out = [], budget = { n: 0 }) {
   return out;
 }
 
+/** 结构一览：顶层每个目录里有多少文件、主要是什么语言、多大。给人一眼看出重心在哪 */
+function projectMap(root, { maxFiles = 4000 } = {}) {
+  const abs = path.resolve(String(root || ''));
+  if (!statSafe(abs)?.isDirectory()) return { ok: false, error: '这不是一个文件夹。' };
+  const skip = new Set(['node_modules', '.git', 'dist', 'build', '__pycache__', 'venv', '.venv', 'target', 'out', '.next', 'coverage']);
+  const budget = { n: 0 };
+  const tally = (dir, acc) => {
+    if (budget.n > maxFiles) return acc;
+    for (const e of listSafe(dir)) {
+      if (e.name.startsWith('.') || skip.has(e.name)) continue;
+      const full = path.join(dir, e.name);
+      if (e.isDirectory()) { tally(full, acc); continue; }
+      budget.n += 1; acc.files += 1;
+      const st = statSafe(full); acc.bytes += st?.size || 0;
+      const ext = (path.extname(e.name) || '(无后缀)').toLowerCase();
+      acc.ext[ext] = (acc.ext[ext] || 0) + 1;
+    }
+    return acc;
+  };
+  const entries = listSafe(abs).filter((e) => !e.name.startsWith('.') && !skip.has(e.name));
+  const dirs = entries.filter((e) => e.isDirectory()).map((e) => {
+    const acc = tally(path.join(abs, e.name), { files: 0, bytes: 0, ext: {} });
+    const top = Object.entries(acc.ext).sort((a, b) => b[1] - a[1]).slice(0, 3).map(([k, n]) => `${k} ${n}`);
+    return { name: e.name, files: acc.files, bytes: acc.bytes, top };
+  }).sort((a, b) => b.files - a.files);
+  const files = entries.filter((e) => e.isFile()).map((e) => e.name).slice(0, 24);
+  return { ok: true, root: abs, dirs, files, truncated: budget.n > maxFiles };
+}
+
 /** 收集一个项目的「事实」：技术栈线索、脚本、README 开头、目录树。给模型讲解用 */
 function projectFacts(root) {
   const abs = path.resolve(String(root || ''));
@@ -599,4 +628,4 @@ ${priorMarkdown ? `\n之前给用户的讲解：\n${String(priorMarkdown).slice(
   return { ok: true, markdown: String(r.text || '') };
 }
 
-module.exports = { scan, suggest, findDuplicates, staleDownloads, searchTidy, parseRepoUrl, cloneRepo, refine, apply, undo, lastUndo, recent, projectFacts, overview, askProject, studyPlanToTasks, activity, parseGitLog, projectRoots, findRepos, readingList, explainFile, draftReadme, saveReadme, parseQuiz, quizFor, destinations, classifyDir, classifyFile, looksCareless, labelOf, HOME };
+module.exports = { scan, suggest, findDuplicates, staleDownloads, searchTidy, projectMap, parseRepoUrl, cloneRepo, refine, apply, undo, lastUndo, recent, projectFacts, overview, askProject, studyPlanToTasks, activity, parseGitLog, projectRoots, findRepos, readingList, explainFile, draftReadme, saveReadme, parseQuiz, quizFor, destinations, classifyDir, classifyFile, looksCareless, labelOf, HOME };
