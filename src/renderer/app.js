@@ -9,6 +9,7 @@ import { applyStoredTheme, applyStoredEffect } from './core/themes.js';
 import { iconFor } from './core/icons.js';
 import { buildTermPrompt, buildTermSystemPrompt, normalizeTermResult } from './tools/terms/prompt.js';
 import { createSwitcher } from './core/switcher.js';
+import { createPalette } from './core/palette.js';
 import { togglePinned as togglePinnedState, addToRight, removePinned, LEFT_MAX, RIGHT_MAX } from './core/right-rail.js';
 
 const rail = document.getElementById('rail');
@@ -402,6 +403,20 @@ switcher = createSwitcher({
   onPick: (id) => activate(id),
   config,
 });
+
+// ⌘K 命令面板：打字就能到任何地方（工具 / 皮肤 / 刚建的文件夹）
+const palette = createPalette({
+  tools: TOOLS, activate, config, toast,
+  extraActions: [
+    { id: 'act:pet', kind: 'action', title: '显示桌宠', hint: '把桌面精灵叫出来', icon: 'bot', keywords: ['pet', '精灵'], run: () => window.toolbox.pet.setEnabled(true) },
+    { id: 'act:library', kind: 'action', title: '更多工具', hint: '打开工具库，钉常用的到左栏', icon: 'more', keywords: ['library', '工具库'], run: () => setLibraryOpen(true) },
+    { id: 'act:remote', kind: 'action', title: '手机控制', hint: '扫码把手机连上', icon: 'smartphone', keywords: ['phone', '手机', '精灵'], run: () => activate('remote') },
+  ],
+});
+window.addEventListener('keydown', (e) => {
+  if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'k') { e.preventDefault(); palette.toggle(); }
+});
+window.toolbox.palette?.onOpen?.(() => palette.show());
 
 // Cmd+1..9 快速切工具
 window.addEventListener('keydown', (e) => {

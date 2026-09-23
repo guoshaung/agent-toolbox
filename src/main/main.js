@@ -3099,6 +3099,12 @@ function forwardSwitcherKeys(contents) {
     if (!mainWindow || mainWindow.isDestroyed()) return;
     const ctrl = input.control || input.modifiers?.includes('control');
 
+    // ⌘K / Ctrl+K：焦点在 webview 里时宿主页面收不到，主进程截下来转发
+    if (input.type === 'keyDown' && (input.meta || input.control) && !input.shift && !input.alt && String(input.key).toLowerCase() === 'k') {
+      event.preventDefault();
+      mainWindow.webContents.send('palette:open');
+      return;
+    }
     if (input.type === 'keyDown' && ctrl && input.key === 'Tab') {
       event.preventDefault();
       switcherHolding = true;

@@ -325,6 +325,11 @@ contextBridge.exposeInMainWorld('toolbox', {
     onPhone: (callback) => ipcRenderer.on('pet:phone', (_event, payload) => callback(payload)),
   },
 
+  /** ⌘K 命令面板：焦点在 webview 里时由主进程转发过来 */
+  palette: {
+    onOpen: (callback) => ipcRenderer.on('palette:open', () => callback()),
+  },
+
   /** 收纳：散落在主目录 / 桌面 / 下载的东西归位；项目速览 */
   tidy: {
     scan: (opts) => ipcRenderer.invoke('tidy:scan', opts),
