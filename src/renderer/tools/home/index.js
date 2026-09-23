@@ -79,7 +79,19 @@ export default {
             )) : [empty('这周还没有提交过东西（只看桌面 / 下载 / 主目录下的仓库）')]),
           ),
           section('讲过的项目', null,
-            ...(overviews.length ? [h('div', { class: 'home__chips' }, ...overviews.slice(0, 10).map((o) => h('button', { class: 'btn btn--sm', title: short(o.root), onclick: async () => { await config.set('tidy.pending', o.root); goto('tidy'); } }, o.name)))] : [empty('还没让 AI 讲过项目。把一个文件夹拖进「收纳 → 看懂项目」试试')]),
+            ...(() => {
+              const prog = config.get('tidy.readProgress', {}) || {};
+              const cont = Object.entries(prog).sort((a, b) => b[1].at - a[1].at)[0];
+              const rows = [];
+              if (cont) {
+                const [root, p] = cont;
+                const next = p.index + 1 < p.total ? p.index + 1 : p.index;
+                rows.push(h('div', { class: 'home__row' }, h('span', { class: 'home__name' }, `📖 ${root.split('/').pop()}：读到第 ${p.index + 1}/${p.total} 站（${p.rel.split('/').pop()}）`),
+                  h('button', { class: 'btn btn--sm btn--primary', onclick: async () => { await config.set('tidy.pendingStop', next); await config.set('tidy.pending', root); goto('tidy'); } }, p.index + 1 < p.total ? '接着读' : '再看一遍')));
+              }
+              rows.push(overviews.length ? h('div', { class: 'home__chips' }, ...overviews.slice(0, 10).map((o) => h('button', { class: 'btn btn--sm', title: short(o.root), onclick: async () => { await config.set('tidy.pending', o.root); goto('tidy'); } }, o.name))) : empty('还没让 AI 讲过项目。把一个文件夹拖进「收纳 → 看懂项目」试试'));
+              return rows;
+            })(),
           ),
           section('没做完的', h('button', { class: 'btn btn--sm', onclick: () => goto('tasks') }, '任务'),
             ...(tasks.length ? tasks.map((t) => h('div', { class: 'home__row' }, h('span', { class: `home__dot home__dot--${t.priority || 'normal'}` }), h('span', { class: 'home__name' }, t.title), t.due ? h('span', { class: 'faint home__meta' }, t.due) : null)) : [empty('任务清单是空的 —— 要么很闲，要么没写')]),

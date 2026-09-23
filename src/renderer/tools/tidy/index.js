@@ -177,8 +177,13 @@ export default {
         const detail = h('div', { class: 'tidy__reading-detail' });
         let current = -1;
         const stops = files.map((f, i) => h('button', { class: 'btn btn--sm', title: f.why, onclick: () => openStop(i) }, `${i + 1}. ${f.rel.split('/').pop()}`));
+        const progressKey = 'tidy.readProgress';
         const openStop = async (i, fresh = false) => {
           current = i; stops.forEach((b, k) => b.classList.toggle('btn--primary', k === i));
+          // 记住读到第几站，首页能接着读
+          const prog = { ...(config?.get(progressKey, {}) || {}) };
+          prog[rootPath] = { index: i, total: files.length, rel: files[i].rel, at: Date.now() };
+          config?.set(progressKey, prog);
           const f = files[i];
           detail.replaceChildren(h('div', { class: 'tidy__stat' }, h('b', {}, f.rel), h('span', { class: 'faint' }, f.why)), h('div', { class: 'tidy__empty' }, '在读这个文件…'));
           const res = await api().explainFile({ root: rootPath, rel: f.rel, prior: r.markdown, fresh });
@@ -191,6 +196,10 @@ export default {
           );
         };
         reading.replaceChildren(h('div', { class: 'tidy__stat' }, h('b', {}, '带我读'), h('span', { class: 'faint' }, `按上面的顺序，${files.length} 站，一站一个文件`)), h('div', { class: 'tidy__chips' }, ...stops), detail);
+        // 首页点「接着读」进来的：直接跳到上次那一站
+        const want = config?.get('tidy.pendingStop', null);
+        if (want != null) { config.set('tidy.pendingStop', null); openStop(Math.min(files.length - 1, Number(want) || 0)); }
+        else { const last = (config?.get(progressKey, {}) || {})[rootPath]; if (last && last.index < files.length && current < 0) stops[last.index]?.classList.add('btn--primary'); }
       });
       out.replaceChildren(
         h('div', { class: 'tidy__stat' }, h('b', {}, r.facts.name), h('code', {}, short(r.facts.root)), r.facts.markers?.length ? h('span', { class: 'faint' }, r.facts.markers.join(' · ')) : null,
