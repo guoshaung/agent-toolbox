@@ -106,3 +106,10 @@ test('askProject：带着事实和上次讲解问，空问题拒绝', async () =
   const r = await tidy.askProject(d, '入口在哪', '## 这是什么\n一个 demo', async (msgs) => { assert.match(msgs[1].content, /package\.json/); assert.match(msgs[1].content, /一个 demo/); assert.match(msgs[1].content, /入口在哪/); return { ok: true, text: 'index.js' }; });
   assert.equal(r.ok, true); assert.equal(r.markdown, 'index.js');
 });
+
+test('studyPlanToTasks：只取「学习顺序」那一节的列表项，去掉加粗和反引号', () => {
+  const md = '## 这是什么\n一个项目\n## 从哪个文件开始读\n1. `index.js` 入口\n## 建议的学习顺序\n1. **今天**：先跑起来，看 `package.json`\n2. 明天：读 src/main\n- 后天：改一个小功能\n## 核心模块\n- 不该被拿进来';
+  assert.deepEqual(tidy.studyPlanToTasks(md), ['今天：先跑起来，看 package.json', '明天：读 src/main', '后天：改一个小功能']);
+  assert.deepEqual(tidy.studyPlanToTasks('## 从哪个文件开始读\n- a.js\n- b.js'), ['a.js', 'b.js'], '没有学习顺序就退到入口文件那节');
+  assert.deepEqual(tidy.studyPlanToTasks('随便一段'), []);
+});

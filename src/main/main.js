@@ -1784,6 +1784,17 @@ function registerIpc() {
     return r;
   });
   ipcMain.handle('tidy:ask', (_e, { root, question, prior }) => tidy.askProject(root, question, prior, tidyAsk));
+  // 讲解里的「学习顺序」→ 任务清单（和「任务」工具存同一个键，首页也会显示）
+  ipcMain.handle('tidy:planToTasks', (_e, { markdown, name }) => {
+    const titles = tidy.studyPlanToTasks(markdown);
+    if (!titles.length) return { ok: false, error: '这份讲解里没有找到「学习顺序」列表。' };
+    const existing = store.get('tasks.items', []) || [];
+    const makeId = () => `task-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`;
+    const fresh = titles.filter((t) => !existing.some((x) => x.title === `${name ? `[${name}] ` : ''}${t}`))
+      .map((t) => ({ id: makeId(), title: `${name ? `[${name}] ` : ''}${t}`, done: false, priority: 'normal', due: '', createdAt: Date.now(), completedAt: null }));
+    store.set('tasks.items', [...fresh, ...existing]);
+    return { ok: true, added: fresh.length, skipped: titles.length - fresh.length };
+  });
   ipcMain.handle('tidy:overviewList', () => {
     const cache = store.get('tidy.overviews', {}) || {};
     return Object.entries(cache).map(([root, v]) => ({ root, name: v.facts?.name || root.split('/').pop(), at: v.at })).sort((a, b) => b.at - a.at);

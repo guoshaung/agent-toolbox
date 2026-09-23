@@ -302,6 +302,27 @@ ${f.readme ? `README 开头：\n${f.readme}` : ''}`;
   return { ok: true, markdown: String(r.text || ''), facts: { name: f.name, root: f.root, markers: f.markers, entries: f.entries } };
 }
 
+/**
+ * 把讲解里「学习顺序」那一节变成任务清单：每个列表项一条。
+ * 找不到那一节就退而求其次，拿「从哪个文件开始读」的列表。纯函数，方便测。
+ */
+function studyPlanToTasks(markdown) {
+  const lines = String(markdown || '').split('\n');
+  const pick = (titleRe) => {
+    const start = lines.findIndex((l) => /^#{1,4}\s/.test(l) && titleRe.test(l));
+    if (start < 0) return [];
+    const out = [];
+    for (let i = start + 1; i < lines.length; i += 1) {
+      if (/^#{1,4}\s/.test(lines[i])) break;
+      const m = lines[i].match(/^\s*(?:[-*]|\d+[.)])\s+(.+)/);
+      if (m) out.push(m[1].replace(/\*\*/g, '').replace(/`/g, '').trim().slice(0, 120));
+    }
+    return out;
+  };
+  const items = pick(/学习顺序|学习计划|先看|顺序/) .length ? pick(/学习顺序|学习计划|先看|顺序/) : pick(/从哪|开始读|入口/);
+  return items.filter(Boolean);
+}
+
 /** 接着问这个项目：把项目事实和上次的讲解一起带上，模型只根据这些回答 */
 async function askProject(root, question, priorMarkdown, ask) {
   const f = projectFacts(root);
@@ -324,4 +345,4 @@ ${priorMarkdown ? `\n之前给用户的讲解：\n${String(priorMarkdown).slice(
   return { ok: true, markdown: String(r.text || '') };
 }
 
-module.exports = { scan, suggest, refine, apply, undo, lastUndo, recent, projectFacts, overview, askProject, destinations, classifyDir, classifyFile, looksCareless, labelOf, HOME };
+module.exports = { scan, suggest, refine, apply, undo, lastUndo, recent, projectFacts, overview, askProject, studyPlanToTasks, destinations, classifyDir, classifyFile, looksCareless, labelOf, HOME };

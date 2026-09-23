@@ -341,6 +341,7 @@ contextBridge.exposeInMainWorld('toolbox', {
     recent: (opts) => ipcRenderer.invoke('tidy:recent', opts),
     overview: (root, opts) => ipcRenderer.invoke('tidy:overview', root, opts),
     ask: (payload) => ipcRenderer.invoke('tidy:ask', payload),
+    planToTasks: (payload) => ipcRenderer.invoke('tidy:planToTasks', payload),
     overviewList: () => ipcRenderer.invoke('tidy:overviewList'),
     facts: (root) => ipcRenderer.invoke('tidy:facts', root),
     pickFolder: () => ipcRenderer.invoke('tidy:pickFolder'),

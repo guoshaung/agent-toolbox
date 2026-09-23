@@ -780,6 +780,8 @@ html[data-clean='1'] .rail { background-color: var(--bg-sunken); }
 html[data-clean='1'] .bar,
 html[data-clean='1'] .bar--drag { background-image: none; padding-bottom: 0; }
 html[data-clean='1'] .rail-library { background-image: none; background-color: var(--panel); border-color: var(--line); }
+/* 工具条标题在浅色皮肤上是白字，看不见 */
+html[data-clean='1'] .bar strong { color: var(--text); }
 
 /* 樱花主题的顶部横幅配色 */
 html[data-theme='sakura'] .atelier-banner { background: #ffe9ef; border-bottom-color: rgba(236,95,140,.35); }
