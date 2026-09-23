@@ -17,6 +17,9 @@ const stage = document.getElementById('stage');
 
 const dshBannerState = h('span', { class: 'atelier-banner__dsh-state' }, 'DSH Web');
 const dshButton = h('button', { class: 'atelier-banner__dsh', onclick: openDsh, title: '打开内置 DeepSeek Harness' }, '◈ ', dshBannerState);
+// ⌘K 入口放在横幅上：不知道快捷键的人也能点到
+const paletteButton = h('button', { class: 'atelier-banner__dsh atelier-banner__k', title: '搜工具、换皮肤、找刚建的文件夹（⌘K）', onclick: () => palette?.show() }, '⌘K ', h('span', { class: 'atelier-banner__dsh-state' }, '搜'));
+let palette = null;
 const atelierBanner = h('header', { class: 'atelier-banner', 'aria-label': 'Agent 工具箱装饰标题栏', onclick: (event) => { if (!event.target.closest('button')) openDsh(); } },
   h('div', { class: 'atelier-banner__brand' },
     h('span', {}, 'AGENT'),
@@ -24,6 +27,7 @@ const atelierBanner = h('header', { class: 'atelier-banner', 'aria-label': 'Agen
   ),
   h('div', { class: 'atelier-banner__bow', 'aria-hidden': 'true' }),
   h('span', { class: 'atelier-banner__caption' }, 'PERSONAL WORKSPACE'),
+  paletteButton,
   dshButton,
 );
 stage.appendChild(atelierBanner);
@@ -405,13 +409,15 @@ switcher = createSwitcher({
 });
 
 // ⌘K 命令面板：打字就能到任何地方（工具 / 皮肤 / 刚建的文件夹）
-const palette = createPalette({
+palette = createPalette({
   tools: TOOLS, activate, config, toast,
   extraActions: [
     { id: 'act:pet', kind: 'action', title: '显示桌宠', hint: '把桌面精灵叫出来', icon: 'bot', keywords: ['pet', '精灵'], run: () => window.toolbox.pet.setEnabled(true) },
     { id: 'act:library', kind: 'action', title: '更多工具', hint: '打开工具库，钉常用的到左栏', icon: 'more', keywords: ['library', '工具库'], run: () => setLibraryOpen(true) },
     { id: 'act:remote', kind: 'action', title: '手机控制', hint: '扫码把手机连上', icon: 'smartphone', keywords: ['phone', '手机', '精灵'], run: () => activate('remote') },
   ],
+  // 面板里选了个文件夹要「看懂」：记下来，切到收纳，它 activate 时接手
+  learn: async (dir) => { await config.set('tidy.pending', dir); activate('tidy'); },
 });
 window.addEventListener('keydown', (e) => {
   if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'k') { e.preventDefault(); palette.toggle(); }

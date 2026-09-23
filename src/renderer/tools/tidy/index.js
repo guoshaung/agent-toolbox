@@ -51,7 +51,8 @@ export default {
   icon: 'archive',
   hint: '桌面 / 下载 / 主目录里随手放的东西一键归位；刚建的文件夹在哪；拖个项目进来看懂它',
 
-  create(root) {
+  create(root, ctx) {
+    const config = ctx?.config;
     let tab = 'sort';
     const body = h('div', { class: 'settings__body settings__body--wide' });
     const tabs = h('div', { class: 'tidy__tabs' });
@@ -183,8 +184,16 @@ export default {
       h('div', { class: 'bar bar--drag' }, h('strong', {}, '收纳'), h('span', { class: 'faint' }, '随手放的东西一键归位 · 刚建的在哪 · 看懂一个项目'), h('span', { style: { flex: 1 } }), tabs),
       body,
     );
+    /** ⌘K 面板里选了「看懂：某文件夹」→ 切过来直接讲 */
+    async function takePending() {
+      const pending = config?.get('tidy.pending', '');
+      if (!pending) return false;
+      await config.set('tidy.pending', '');
+      tab = 'learn'; renderTabs(); renderLearn(pending);
+      return true;
+    }
     renderTabs();
-    render();
-    return { activate: () => { if (tab === 'sort') loadScan(false); else if (tab === 'recent') renderRecent(); } };
+    takePending().then((took) => { if (!took) render(); });
+    return { activate: async () => { if (await takePending()) return; if (tab === 'sort') loadScan(false); else if (tab === 'recent') renderRecent(); } };
   },
 };

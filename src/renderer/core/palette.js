@@ -39,7 +39,7 @@ export function rankItems(query, items, { recentIds = [] } = {}) {
     .map((x) => x.item);
 }
 
-export function createPalette({ tools, activate, config, toast, extraActions = [] }) {
+export function createPalette({ tools, activate, config, toast, extraActions = [], learn }) {
   let open = false;
   let index = 0;
   let items = [];
@@ -61,7 +61,9 @@ export function createPalette({ tools, activate, config, toast, extraActions = [
     const themeItems = THEMES.map((t) => ({ id: `theme:${t.id}`, kind: 'theme', title: `皮肤：${t.name}`, hint: t.desc, keywords: ['皮肤', '主题', 'theme', t.id], swatches: t.swatches, run: async () => { applyTheme(t.id); await config.set('ui.theme', t.id); toast?.(`已切换到「${t.name}」`, 'good'); } }));
     const effectItems = EFFECTS.map((e) => ({ id: `effect:${e.id}`, kind: 'effect', title: `效果：${e.name}`, hint: e.desc, keywords: ['效果', 'effect', e.id], run: async () => { applyEffect(e.id); await config.set('ui.effect', e.id); toast?.(`已切换为「${e.name}」`, 'good'); } }));
     const fileItems = (recentFiles || []).map((f) => ({ id: `file:${f.path}`, kind: 'file', title: f.name, hint: `${f.isDir ? '文件夹' : '文件'} · ${f.where}`, keywords: [f.path], isDir: f.isDir, run: () => window.toolbox.tidy.reveal(f.path), alt: () => window.toolbox.tidy.open(f.path) }));
-    return [...toolItems, ...extraActions, ...themeItems, ...effectItems, ...fileItems];
+    // 最近新建的文件夹再给一条「看懂它」：搜「看懂」或者文件夹名都能出来
+    const learnItems = learn ? (recentFiles || []).filter((f) => f.isDir).slice(0, 8).map((f) => ({ id: `learn:${f.path}`, kind: 'action', title: `看懂：${f.name}`, hint: `让 AI 讲这个项目是什么、怎么跑、从哪读起 · ${f.where}`, icon: 'graduation', keywords: ['看懂', '讲解', 'learn', f.name], run: () => learn(f.path) })) : [];
+    return [...toolItems, ...extraActions, ...themeItems, ...effectItems, ...fileItems, ...learnItems];
   };
 
   function render() {

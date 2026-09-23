@@ -4282,3 +4282,4 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .tidy__thread { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
 .tidy__q { align-self: flex-end; max-width: 80%; padding: 7px 11px; border-radius: 12px 12px 3px 12px; background: var(--accent-soft); color: var(--text); font-size: 13px; }
 .tidy__a { align-self: flex-start; max-width: 92%; padding: 8px 12px; border-radius: 12px 12px 12px 3px; background: var(--bg-raised); border: 1px solid var(--line-soft); font-size: 13px; }
+.atelier-banner__k { margin-left: 10px; letter-spacing: .02em; }
