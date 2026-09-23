@@ -77,7 +77,17 @@ export default {
               it.isDir ? h('button', { class: 'btn btn--sm', onclick: async () => { await config.set('tidy.pending', it.path); goto('tidy'); } }, '看懂') : null,
             )) : [empty('最近三天没新建什么')]),
           ),
-          section('该归位的', h('button', { class: 'btn btn--sm btn--primary', onclick: () => goto('tidy') }, '去归位'),
+          section('该归位的', h('div', { class: 'home__quick' },
+            h('button', { class: 'btn btn--sm', title: '只搬一眼就能认出来的：图片、文档、压缩包、安装包、视频、音频。项目和认不出的不动。可撤销', onclick: async () => {
+              const SAFE = new Set(['image', 'images', 'doc', 'docs', 'archive', 'installer', 'video', 'videos', 'audio']);
+              const moves = stray.filter((x) => x.action === 'move' && SAFE.has(x.kind)).map((x) => ({ path: x.path, to: x.to, action: 'move' }));
+              if (!moves.length) return toast('没有明显该搬的', 'info');
+              if (!window.confirm(`把 ${moves.length} 项图片 / 文档 / 压缩包 / 安装包搬到 ~/收纳 下对应文件夹？\n项目和认不出的不动，搬完可以在收纳里撤销。`)) return;
+              const r = await window.toolbox.tidy.apply(moves);
+              toast(r.errors.length ? `搬了 ${r.done.length} 项，${r.errors.length} 项失败` : `搬好了 ${r.done.length} 项（收纳里可撤销）`, r.errors.length ? 'bad' : 'good', 5000);
+              render();
+            } }, '把明显的都归位'),
+            h('button', { class: 'btn btn--sm btn--primary', onclick: () => goto('tidy') }, '去挑着归位')),
             h('div', { class: 'home__big' }, h('b', {}, String(stray.length)), h('span', { class: 'faint' }, ' 项散落在桌面 / 下载 / 主目录')),
             careless ? h('div', { class: 'faint' }, `其中 ${careless} 个一看就是随手建的（数字名、未命名、test…）`) : null,
             h('div', { class: 'home__chips' }, ...Object.entries(stray.reduce((m, x) => { m[x.reason] = (m[x.reason] || 0) + 1; return m; }, {})).sort((a, b) => b[1] - a[1]).slice(0, 6).map(([k, n]) => h('span', { class: 'tag' }, `${k} ${n}`))),
