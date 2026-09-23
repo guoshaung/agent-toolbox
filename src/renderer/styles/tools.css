@@ -4345,3 +4345,41 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 @keyframes home-in { from { opacity: 0; transform: translateY(8px); } }
 @media (prefers-reduced-motion: reduce) { .home__card { animation: none; } }
 .tidy__group { animation: home-in .25s ease-out both; }
+
+/* ---------- 随记重画：纸张感、跟主题走、分栏改左右 ---------- */
+.nb__main--markdown { background: var(--bg); }
+.nb__main--markdown .nb__markdown-shell { background: var(--bg); }
+.nb__main--markdown .nb__markdown-toolbar { background: color-mix(in srgb, var(--bg-raised) 92%, transparent); border-bottom-color: var(--line-soft); padding: 8px 16px; gap: 4px; }
+.nb__main--markdown .nb__md-tool { min-height: 26px; padding: 0 9px; font-size: 12px; border-radius: 7px; background: transparent; border-color: transparent; }
+.nb__main--markdown .nb__md-tool:hover { background: var(--accent-soft); border-color: transparent; }
+.nb__main--markdown .nb__md-hint { margin-left: auto; }
+.nb__md-body { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.nb__md-body > .nb__md-source[hidden], .nb__md-body > .nb__markdown-canvas[hidden], .nb__md-body > .nb__hsplit[hidden] { display: none; }
+
+/* 单栏：正文 / 源码都是居中的一张纸 */
+.nb__markdown-shell.is-single > .nb__md-body { padding: 22px 26px 40px; overflow-y: auto; }
+.nb__markdown-shell.is-single .nb__md-body > .nb__markdown-canvas,
+.nb__markdown-shell.is-single .nb__md-body > .nb__md-source {
+  flex: 0 0 auto; width: min(100%, 860px); min-height: calc(100% - 4px); margin: 0 auto;
+  padding: 44px 52px 72px; border: 1px solid var(--line-soft); border-radius: 16px;
+  background: var(--panel); box-shadow: var(--shadow-sm);
+}
+.nb__markdown-shell.is-single .nb__md-body > .nb__markdown-canvas:focus,
+.nb__markdown-shell.is-single .nb__md-body > .nb__md-source:focus { box-shadow: var(--shadow-sm), 0 0 0 2px color-mix(in srgb, var(--accent) 30%, transparent); }
+
+/* 分栏：左源码右正文，中间一条可拖的竖线 */
+.nb__markdown-shell.is-split > .nb__md-body { flex-direction: row; }
+.nb__markdown-shell.is-split .nb__md-body > .nb__md-source { height: auto; min-height: 0; align-self: stretch; border-bottom: 0; border-right: 1px solid var(--line-soft); padding: 22px 20px 40px; background: var(--bg-sunken); }
+.nb__markdown-shell.is-split .nb__md-body > .nb__md-source.is-collapsed { padding-left: 0; padding-right: 0; border-right-width: 0; }
+.nb__markdown-shell.is-split .nb__md-body > .nb__hsplit { flex: 0 0 6px; height: auto; align-self: stretch; margin: 0 -2px; cursor: col-resize; position: relative; }
+.nb__markdown-shell.is-split .nb__md-body > .nb__hsplit::after { inset: 0 2px; }
+.nb__markdown-shell.is-split .nb__md-body > .nb__markdown-canvas { flex: 1 1 0; width: auto; min-width: 0; margin: 0; padding: 28px 36px 60px; overflow-y: auto; background: var(--panel); }
+
+/* 正文排版跟主题走（原来有几处写死的浅蓝，浅色皮肤下看不见） */
+.nb__markdown-preview { color: var(--text); font-size: 15.5px; line-height: 1.9; }
+.nb__markdown-preview em { color: var(--text-dim); }
+.nb__markdown-preview code { color: var(--accent); background: var(--accent-soft); }
+.nb__markdown-preview pre { background: var(--code-bg); }
+.nb__markdown-preview pre code { color: var(--code-fg); background: transparent; }
+.nb__markdown-preview h1 { font-size: 30px; letter-spacing: -.01em; }
+.nb__markdown-preview h2 { font-size: 22px; }

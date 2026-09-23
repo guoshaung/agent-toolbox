@@ -4,6 +4,8 @@
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <!-- 收到电脑递来的文件时发一条通知（Android 13 起要用户点允许） -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <!-- 「打开某个应用」要能按名字找到别的应用；Android 11 起不声明就看不见 -->
     <queries>
@@ -54,6 +56,14 @@
             android:windowSoftInputMode="stateAlwaysHidden"
             tools:replace="android:screenOrientation" />
 
+        <!-- 拍照发给电脑：相机往这个 provider 写全尺寸照片 -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.files"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data android:name="android.support.FILE_PROVIDER_PATHS" android:resource="@xml/file_paths" />
+        </provider>
         <!-- 手机精灵：无障碍服务。系统只会把它列在「无障碍」里，用户自己去开。 -->
         <service
             android:name=".SpriteService"

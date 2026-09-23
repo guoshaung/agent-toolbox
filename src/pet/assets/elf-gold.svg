@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 180 200" role="img" aria-label="金发精灵少女桌宠">
+  <defs>
+    <linearGradient id="gh" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#ffe8a3"/><stop offset="1" stop-color="#e2a83a"/></linearGradient>
+    <linearGradient id="ge" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#9df3b8"/><stop offset="1" stop-color="#1f9c5a"/></linearGradient>
+    <filter id="gs" x="-30%" y="-30%" width="160%" height="170%"><feDropShadow dx="0" dy="6" stdDeviation="5" flood-color="#2a2010" flood-opacity=".3"/></filter>
+  </defs>
+  <ellipse cx="90" cy="184" rx="48" ry="9" fill="#2a2010" opacity=".18"/>
+  <g filter="url(#gs)">
+    <path d="M28 82c-6 26-4 60 8 96l10-4c-8-30-8-58-2-84z" fill="url(#gh)"/><path d="M152 82c6 26 4 60-8 96l-10-4c8-30 8-58 2-84z" fill="url(#gh)"/>
+    <path d="M46 126c-8 18-6 42 6 56h76c12-14 14-38 6-56z" fill="#2e7d5b"/><path d="M62 128h56l-4 18H66z" fill="#eef7d6"/><path d="M84 132l6 10 6-10z" fill="#e2a83a"/>
+    <path d="M34 60l16 14-4 24-16-8z" fill="#ffe3d2"/><path d="M146 60l-16 14 4 24 16-8z" fill="#ffe3d2"/>
+    <path d="M34 94c-2-38 26-60 56-60s58 22 56 60c1 14-4 24-10 30l-92 0c-6-6-11-16-10-30z" fill="url(#gh)"/>
+    <ellipse cx="90" cy="106" rx="44" ry="42" fill="#ffe3d2"/>
+    <path d="M44 96c2-28 20-44 46-44s44 16 46 44c-6-4-12-12-14-22-8 8-18 12-32 12s-24-4-32-12c-2 10-8 18-14 22z" fill="url(#gh)"/>
+    <path d="M60 52c-4 10-2 18 2 26" stroke="#e2a83a" stroke-width="2" fill="none" stroke-linecap="round"/>
+    <path d="M78 58l3 8 8 1-6 5 2 8-7-4-7 4 2-8-6-5 8-1z" fill="#fff3b0"/>
+    <ellipse cx="70" cy="114" rx="9" ry="12" fill="#fff"/><ellipse cx="110" cy="114" rx="9" ry="12" fill="#fff"/>
+    <ellipse cx="71" cy="116" rx="7" ry="10" fill="url(#ge)"/><ellipse cx="111" cy="116" rx="7" ry="10" fill="url(#ge)"/>
+    <ellipse cx="72" cy="118" rx="3.5" ry="5" fill="#0d3a22"/><ellipse cx="112" cy="118" rx="3.5" ry="5" fill="#0d3a22"/>
+    <circle cx="68" cy="111" r="2.6" fill="#fff"/><circle cx="108" cy="111" r="2.6" fill="#fff"/>
+    <path d="M58 100q8-5 16-1M106 99q8-4 16 1" stroke="#c78c2a" stroke-width="2.4" fill="none" stroke-linecap="round"/>
+    <ellipse cx="60" cy="130" rx="7" ry="4" fill="#ffb3c7" opacity=".85"/><ellipse cx="120" cy="130" rx="7" ry="4" fill="#ffb3c7" opacity=".85"/>
+    <path d="M84 132q6 6 12 0" stroke="#c2506b" stroke-width="2.4" fill="none" stroke-linecap="round"/>
+    <path d="M60 142c-10 12-8 26 2 34M120 142c10 12 8 26-2 34" stroke="#ffe3d2" stroke-width="10" fill="none" stroke-linecap="round"/>
+  </g>
+</svg>

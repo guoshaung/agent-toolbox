@@ -218,6 +218,7 @@ function pageHtml(token, deviceName, tools) {
     <h2>今天 <small id="todayHint">电脑那边的一眼摘要</small></h2>
     <div class="log" id="todayBody">正在看…</div>
     <div class="row" style="margin-top:8px"><button class="sm primary" id="tidyObvious">🧹 把明显的都归位</button><button class="sm ghost" id="tidyUndo">撤销上次</button></div>
+    <div class="row" style="margin-top:8px"><input id="quickNote" placeholder="记一笔：回车进任务清单" style="flex:1;min-width:0"><button class="sm" id="quickNoteTask">任务</button><button class="sm ghost" id="quickNoteNote">笔记</button></div>
   </div>
   <div class="card" id="spriteCard" hidden>
     <h2>手机精灵 <small id="spriteHint">对它说话，它替你操作手机</small></h2>
@@ -278,6 +279,8 @@ async function command(type,payload={}){let response;try{response=await fetch('/
 async function loadToday(){const box=$('todayBody');try{const s=await command('home.summary');box.textContent='';const line=(t)=>box.append(el('div','t',t));line('🧹 散落 '+s.stray+' 项'+(s.careless?'（'+s.careless+' 个随手建的）':'')+' · 📚 这周学了 '+s.learned+' 次');if(s.repos.length)line('🛠 这周在写：'+s.repos.map(r=>r.name+' '+r.count+'次').join('，'));if(s.recent.length){line('🆕 刚建的：');for(const r of s.recent)box.append(el('div','t','  '+(r.isDir?'📁 ':'📄 ')+r.name+'  '+r.where))}if(s.tasks.length){line('☐ 没做完：');for(const t of s.tasks)box.append(el('div','t','  · '+t))}if(s.latest.length)line('🎓 最近：'+s.latest.map(x=>x.title).join(' / ').slice(0,80))}catch(e){box.textContent='拿不到：'+e.message}}
 document.querySelector('nav button[data-tab=pc]')?.addEventListener('click',loadToday);
 $('tidyObvious').onclick=async()=>{try{const pre=await command('tidy.obvious',{dryRun:true});if(!pre.count)return say('没有明显该搬的');if(!confirm('把 '+pre.count+' 项图片 / 文档 / 压缩包 / 安装包搬到电脑的 ~/收纳？可撤销。'))return;const r=await command('tidy.obvious',{});say('搬好了 '+r.done+' 项'+(r.errors?'，'+r.errors+' 项失败':''));loadToday()}catch(e){say(e.message,1)}};
+const quickAdd=async(kind)=>{const v=$('quickNote').value.trim();if(!v)return say('先写点什么',1);try{if(kind==='task'){await command('tasks.add',{title:v});say('记进任务了')}else{await command('note.add',{text:v});say('记进笔记了')}$('quickNote').value='';loadToday()}catch(e){say(e.message,1)}};
+$('quickNoteTask').onclick=()=>quickAdd('task');$('quickNoteNote').onclick=()=>quickAdd('note');$('quickNote').addEventListener('keydown',e=>{if(e.key==='Enter')quickAdd('task')});
 $('tidyUndo').onclick=async()=>{try{const r=await command('tidy.undo',{});say(r.ok?'搬回去了 '+r.restored+' 项':(r.error||'没有可撤销的'),!r.ok);loadToday()}catch(e){say(e.message,1)}};
 for(const b of document.querySelectorAll('nav button'))b.onclick=()=>{document.querySelectorAll('nav button').forEach(x=>x.classList.toggle('on',x===b));document.querySelectorAll('.panel').forEach(p=>p.classList.toggle('on',p.id==='tab-'+b.dataset.tab));$('composer').style.display=b.dataset.tab==='work'?'':'none';try{localStorage.setItem('remote.tab',b.dataset.tab)}catch{}};
 try{const t=localStorage.getItem('remote.tab');if(t){document.querySelector('nav button[data-tab="'+t+'"]')?.click()}}catch{}

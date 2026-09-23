@@ -569,7 +569,7 @@ function createNotebookTool({ id, title, icon, hint, boundMode }) {
     const MD_VIEWS = [
       ['wysiwyg', '正文', '只看所见即所得的正文，写东西用这个'],
       ['source', '源码', '只看 Markdown 源码，贴代码或改格式用这个'],
-      ['split', '分栏', '上源码下正文，两边对照'],
+      ['split', '分栏', '左源码右正文，两边对照'],
     ];
     let mdView = config.get(`${NS}.mdView`, 'wysiwyg');
     if (!MD_VIEWS.some(([id]) => id === mdView)) mdView = 'wysiwyg';
@@ -595,6 +595,8 @@ function createNotebookTool({ id, title, icon, hint, boundMode }) {
       markdownEditor.hidden = mdView === 'wysiwyg';
       markdownCanvas.hidden = mdView === 'source';
       mdSplit.hidden = mdView !== 'split';
+      markdownShell.classList.toggle('is-split', mdView === 'split');
+      markdownShell.classList.toggle('is-single', mdView !== 'split');
       // 单栏时不要留着上一档拖出来的固定高度，否则只剩一条缝
       markdownEditor.style.flex = mdView === 'split' ? '' : '1 1 auto';
       markdownEditor.classList.toggle('is-collapsed', false);
@@ -632,13 +634,15 @@ function createNotebookTool({ id, title, icon, hint, boundMode }) {
     // 实际用起来下面那栏才是主力，所以这里让它可拖，并且允许把上面那栏一路拖到收起。
     const MD_EDITOR_MIN = 0;      // 允许彻底收起源码栏
     const MD_CANVAS_MIN = 160;    // 但画布不能被挤没
-    const MD_EDITOR_DEFAULT = 200;
+    const MD_EDITOR_DEFAULT = 420;   // 左右分栏时源码栏的默认宽度
     let mdEditorHeight = config.get('notebook.mdEditorHeight', MD_EDITOR_DEFAULT);
+    // 以前分栏是上下的，存的是高度（一般 200 上下）；改成左右后那个数当宽度太窄，遇到就回默认
+    if (mdEditorHeight > 0 && mdEditorHeight < 260) mdEditorHeight = MD_EDITOR_DEFAULT;
 
+    // 分栏现在是左右的：mdEditorHeight 这个名字沿用，但存的是源码栏宽度
     function applyMdSplit() {
-      const total = markdownShell.clientHeight;
-      // 工具还没显示时 clientHeight 是 0，这时候算出来的 max 也是 0，
-      // 会把源码栏永久压成 0 高（看着就像内容没了）。量不到就别动，等能量到再说。
+      const total = mdBody.clientWidth;
+      // 工具还没显示时量出来是 0，这时候算出来的 max 也是 0，会把源码栏永久压成 0。量不到就别动。
       if (!total) return;
       const max = Math.max(MD_EDITOR_MIN, total - MD_CANVAS_MIN - 6);
       mdEditorHeight = Math.max(MD_EDITOR_MIN, Math.min(mdEditorHeight, max));
@@ -654,7 +658,7 @@ function createNotebookTool({ id, title, icon, hint, boundMode }) {
     const mdSplit = h('div', {
       class: 'nb__hsplit',
       hidden: true,
-      title: '拖动调整上下高度，双击恢复默认；一路拖到顶就收起源码栏',
+      title: '拖动调整左右宽度，双击恢复默认；一路拖到左边就收起源码栏',
       ondblclick: () => {
         mdEditorHeight = MD_EDITOR_DEFAULT;
         applyMdSplit();
@@ -666,7 +670,7 @@ function createNotebookTool({ id, title, icon, hint, boundMode }) {
       mdSplit.setPointerCapture(event.pointerId);
       mdSplit.classList.add('is-dragging');
       const onMove = (e) => {
-        mdEditorHeight = e.clientY - markdownCanvas.getBoundingClientRect().top + markdownEditor.getBoundingClientRect().height;
+        mdEditorHeight = e.clientX - mdBody.getBoundingClientRect().left;
         applyMdSplit();
       };
       const onUp = () => {
@@ -679,11 +683,11 @@ function createNotebookTool({ id, title, icon, hint, boundMode }) {
       window.addEventListener('pointerup', onUp);
     });
 
+    // 工具栏单独一行，源码 / 分隔条 / 正文包在一个 body 里 —— 分栏时 body 横着排，工具栏不受影响
+    const mdBody = h('div', { class: 'nb__md-body' }, markdownEditor, mdSplit, markdownCanvas);
     const markdownShell = h('div', { class: 'nb__markdown-shell', hidden: true },
       markdownToolbar,
-      markdownEditor,
-      mdSplit,
-      markdownCanvas,
+      mdBody,
       slashPanel,
     );
 

@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 180 200" role="img" aria-label="蓝发双马尾校服少女桌宠">
+  <defs>
+    <linearGradient id="bh" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#7fb8ff"/><stop offset="1" stop-color="#3567d6"/></linearGradient>
+    <linearGradient id="be" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#ffb26b"/><stop offset="1" stop-color="#d1601a"/></linearGradient>
+    <filter id="bs" x="-30%" y="-30%" width="160%" height="170%"><feDropShadow dx="0" dy="6" stdDeviation="5" flood-color="#0f1b3a" flood-opacity=".3"/></filter>
+  </defs>
+  <ellipse cx="90" cy="184" rx="48" ry="9" fill="#0f1b3a" opacity=".18"/>
+  <g filter="url(#bs)">
+    <path d="M30 70c-14 20-16 60-4 88l14-2c-6-24-4-56 4-84z" fill="url(#bh)"/><path d="M150 70c14 20 16 60 4 88l-14-2c6-24 4-56-4-84z" fill="url(#bh)"/>
+    <path d="M50 128c-6 18-4 40 8 52h64c12-12 14-34 8-52z" fill="#2b3a6b"/>
+    <path d="M62 130h56l-6 22H68z" fill="#ffffff"/><path d="M70 130l20 16 20-16-6 26H76z" fill="#2b3a6b"/><path d="M84 138l6 10 6-10-6-4z" fill="#ff4d6d"/>
+    <path d="M32 92c-2-40 26-62 58-62s60 22 58 62c1 16-6 28-14 32l-88 0c-8-4-15-16-14-32z" fill="url(#bh)"/>
+    <ellipse cx="90" cy="104" rx="45" ry="43" fill="#ffe9de"/>
+    <path d="M42 94c4-30 22-46 48-46 28 0 46 18 48 46-8-8-14-18-16-28-8 10-18 14-32 14s-24-4-32-14c-2 10-8 20-16 28z" fill="url(#bh)"/>
+    <circle cx="36" cy="66" r="7" fill="#ff4d6d"/><circle cx="144" cy="66" r="7" fill="#ff4d6d"/>
+    <ellipse cx="70" cy="112" rx="9" ry="12" fill="#fff"/><ellipse cx="110" cy="112" rx="9" ry="12" fill="#fff"/>
+    <ellipse cx="71" cy="114" rx="7" ry="10" fill="url(#be)"/><ellipse cx="111" cy="114" rx="7" ry="10" fill="url(#be)"/>
+    <ellipse cx="72" cy="116" rx="3.5" ry="5" fill="#3a1a05"/><ellipse cx="112" cy="116" rx="3.5" ry="5" fill="#3a1a05"/>
+    <circle cx="68" cy="109" r="2.6" fill="#fff"/><circle cx="108" cy="109" r="2.6" fill="#fff"/>
+    <path d="M58 98q8-5 16-1M106 97q8-4 16 1" stroke="#2f4fb0" stroke-width="2.4" fill="none" stroke-linecap="round"/>
+    <ellipse cx="60" cy="128" rx="7" ry="4" fill="#ffb3c7" opacity=".85"/><ellipse cx="120" cy="128" rx="7" ry="4" fill="#ffb3c7" opacity=".85"/>
+    <path d="M83 131q7 7 14 0" stroke="#c2506b" stroke-width="2.4" fill="none" stroke-linecap="round"/>
+    <path d="M62 142c-8 12-6 24 4 32M118 142c8 12 6 24-4 32" stroke="#ffe9de" stroke-width="10" fill="none" stroke-linecap="round"/>
+  </g>
+</svg>

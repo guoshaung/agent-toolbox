@@ -50,7 +50,8 @@ import java.util.ArrayList;
  */
 public class MainActivity extends Activity {
     private static final String PREFS = "agent_remote", ENDPOINT = "endpoint";
-    private static final int VOICE_INPUT = 43, PICK_FILE = 42;
+    private static final int VOICE_INPUT = 43, PICK_FILE = 42, TAKE_PHOTO = 44, VOICE_TASK = 45, NOTIF_PERM = 46;
+    private Uri photoUri;
 
     // ---- 设计 token ----
     private static final int BG = 0xFF0F1117, CARD = 0xFF171A23, LINE = 0xFF262A37, FIELD = 0xFF0F1117;
@@ -91,6 +92,10 @@ public class MainActivity extends Activity {
     @Override protected void onResume() {
         super.onResume();
         refreshSpriteStatus();
+        if (android.os.Build.VERSION.SDK_INT >= 33 && checkSelfPermission("android.permission.POST_NOTIFICATIONS") != android.content.pm.PackageManager.PERMISSION_GRANTED && !getSharedPreferences(PREFS, MODE_PRIVATE).getBoolean("askedNotif", false)) {
+            getSharedPreferences(PREFS, MODE_PRIVATE).edit().putBoolean("askedNotif", true).apply();
+            requestPermissions(new String[]{ "android.permission.POST_NOTIFICATIONS" }, NOTIF_PERM);
+        }
     }
 
     // ---------------- 小工具：尺寸、形状、控件 ----------------
@@ -293,6 +298,20 @@ public class MainActivity extends Activity {
         spriteCard.addView(spriteHint);
         panel.addView(spriteCard, cardParams());
 
+        // 卡 2.5：快捷 —— 拍照 / 剪贴板双向 / 语音记任务 / 记笔记
+        LinearLayout quickCard = card();
+        quickCard.addView(title("快捷"));
+        quickCard.addView(body("手机上最常干的几件事，一步到位。都走已配对的电脑。"));
+        Button photo = button("📸 拍照发给电脑", "primary"); photo.setOnClickListener(v -> takePhoto());
+        Button voiceTask = button("🎤 说一句记任务", "normal"); voiceTask.setOnClickListener(v -> voiceTask());
+        quickCard.addView(row(photo, voiceTask));
+        Button clipUp = button("📋 手机剪贴板 → 电脑", "normal"); clipUp.setOnClickListener(v -> pushClipboard());
+        Button clipDown = button("⬇ 电脑剪贴板 → 手机", "normal"); clipDown.setOnClickListener(v -> pullClipboard());
+        LinearLayout clipRow = row(clipUp, clipDown);
+        LinearLayout.LayoutParams crp = new LinearLayout.LayoutParams(-1, -2); crp.setMargins(0, dp(8), 0, 0);
+        quickCard.addView(clipRow, crp);
+        panel.addView(quickCard, cardParams());
+
         // 卡 3：发给电脑
         LinearLayout shareCard = card();
         shareCard.addView(title("发给电脑"));
@@ -301,9 +320,11 @@ public class MainActivity extends Activity {
         shareCard.addView(manualShareInput, new LinearLayout.LayoutParams(-1, dp(92)));
         Button send = button("发送文字", "primary");
         send.setOnClickListener(v -> sendManualText());
+        Button noteBtn = button("记成笔记", "ghost");
+        noteBtn.setOnClickListener(v -> { String t = manualShareInput.getText().toString().trim(); if (t.isEmpty()) { toast("先写点什么"); return; } command("note.add", "{\"text\":" + json(t) + "}", ok -> { shareStatus.setText(ok ? "记进电脑的笔记了 ✓" : "没记上"); if (ok) manualShareInput.setText(""); }); });
         Button file = button("选择图片 / 文件", "normal");
         file.setOnClickListener(v -> pickFile());
-        LinearLayout shareRow = row(send, file);
+        LinearLayout shareRow = row(send, noteBtn, file);
         LinearLayout.LayoutParams srp = new LinearLayout.LayoutParams(-1, -2); srp.setMargins(0, dp(8), 0, 0);
         shareCard.addView(shareRow, srp);
         panel.addView(shareCard, cardParams());
@@ -450,6 +471,82 @@ public class MainActivity extends Activity {
     private String endpoint() { return getSharedPreferences(PREFS, MODE_PRIVATE).getString(ENDPOINT, ""); }
     private String originOf(String endpoint) { try { Uri u = Uri.parse(endpoint); return u.getScheme() + "://" + u.getAuthority(); } catch (Exception e) { return endpoint; } }
 
+    // ---------------- 快捷：拍照 / 剪贴板 / 语音记任务 ----------------
+
+    private void takePhoto() {
+        try {
+            java.io.File dir = new java.io.File(getCacheDir(), "photos"); dir.mkdirs();
+            java.io.File f = new java.io.File(dir, "拍照-" + new java.text.SimpleDateFormat("yyyyMMdd-HHmmss", java.util.Locale.US).format(new java.util.Date()) + ".jpg");
+            photoUri = androidx.core.content.FileProvider.getUriForFile(this, getPackageName() + ".files", f);
+            Intent i = new Intent(android.provider.MediaStore.ACTION_IMAGE_CAPTURE);
+            i.putExtra(android.provider.MediaStore.EXTRA_OUTPUT, photoUri);
+            i.addFlags(Intent.FLAG_GRANT_WRITE_URI_PERMISSION | Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            startActivityForResult(i, TAKE_PHOTO);
+        } catch (Exception e) { toast("打不开相机：" + e.getMessage()); }
+    }
+
+    private void voiceTask() {
+        try {
+            Intent intent = new Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH);
+            intent.putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM);
+            intent.putExtra(RecognizerIntent.EXTRA_LANGUAGE, "zh-CN");
+            intent.putExtra(RecognizerIntent.EXTRA_PROMPT, "说一句，记进电脑的任务清单");
+            startActivityForResult(intent, VOICE_TASK);
+        } catch (ActivityNotFoundException e) { toast("当前手机没有可用的系统语音识别服务"); }
+    }
+
+    private void pushClipboard() {
+        android.content.ClipboardManager cm = (android.content.ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
+        CharSequence t = cm != null && cm.hasPrimaryClip() && cm.getPrimaryClip().getItemCount() > 0 ? cm.getPrimaryClip().getItemAt(0).coerceToText(this) : null;
+        if (t == null || t.toString().trim().isEmpty()) { toast("手机剪贴板是空的"); return; }
+        command("clipboard.write", "{\"text\":" + json(t.toString()) + "}", ok -> toast(ok ? "已写进电脑剪贴板" : "没写上，看看是否已连接"));
+    }
+
+    private void pullClipboard() {
+        commandRaw("clipboard.read", "{}", body -> {
+            try {
+                String text = new org.json.JSONObject(body).optString("text", "");
+                if (text.isEmpty()) { toast("电脑剪贴板是空的"); return; }
+                android.content.ClipboardManager cm = (android.content.ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
+                cm.setPrimaryClip(android.content.ClipData.newPlainText("来自电脑", text));
+                toast("拿到了：" + (text.length() > 40 ? text.substring(0, 40) + "…" : text));
+            } catch (Exception e) { toast("拿不到：" + e.getMessage()); }
+        });
+    }
+
+    interface OkCallback { void done(boolean ok); }
+    interface BodyCallback { void done(String body); }
+
+    /** 调电脑端 /api/command，结果回到主线程 */
+    private void command(String type, String payloadJson, OkCallback cb) {
+        commandRaw(type, payloadJson, body -> cb.done(body != null && body.contains("\"ok\":true")));
+    }
+
+    private void commandRaw(String type, String payloadJson, BodyCallback cb) {
+        new Thread(() -> {
+            String body = null;
+            try {
+                Uri remote = Uri.parse(endpoint());
+                String token = remote.getQueryParameter("token");
+                if (token == null) throw new IllegalStateException("请先连接电脑");
+                URL target = new URL(originOf(endpoint()) + "/api/command?token=" + URLEncoder.encode(token, StandardCharsets.UTF_8.name()));
+                HttpURLConnection c = (HttpURLConnection) target.openConnection();
+                c.setRequestMethod("POST"); c.setDoOutput(true); c.setConnectTimeout(6000); c.setReadTimeout(20000);
+                c.setRequestProperty("Content-Type", "application/json");
+                String jsonBody = "{\"type\":" + json(type) + ",\"payload\":" + payloadJson + "}";
+                try (OutputStream out = c.getOutputStream()) { out.write(jsonBody.getBytes(StandardCharsets.UTF_8)); }
+                int code = c.getResponseCode();
+                try (java.io.InputStream in = code >= 400 ? c.getErrorStream() : c.getInputStream()) {
+                    java.io.ByteArrayOutputStream buf = new java.io.ByteArrayOutputStream(); byte[] chunk = new byte[8192]; int n;
+                    while (in != null && (n = in.read(chunk)) != -1) buf.write(chunk, 0, n);
+                    body = buf.toString("UTF-8");
+                }
+            } catch (Exception e) { body = null; final String msg = e.getMessage(); runOnUiThread(() -> toast("连不上电脑：" + msg)); }
+            final String result = body;
+            runOnUiThread(() -> cb.done(result));
+        }).start();
+    }
+
     // ---------------- 语音 / 精灵 ----------------
 
     private void startVoiceInput() {
@@ -485,6 +582,14 @@ public class MainActivity extends Activity {
             return;
         }
         if (req == PICK_FILE && result == RESULT_OK && data != null && data.getData() != null) { sendFile(data.getData()); return; }
+        if (req == TAKE_PHOTO) { if (result == RESULT_OK && photoUri != null) { shareStatus.setText("照片拍好了，正在递给电脑…"); setupPanel.setVisibility(View.VISIBLE); sendFile(photoUri); } return; }
+        if (req == VOICE_TASK) {
+            if (result == RESULT_OK && data != null) {
+                ArrayList<String> values = data.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS);
+                if (values != null && !values.isEmpty()) command("tasks.add", "{\"title\":" + json(values.get(0)) + "}", ok -> toast(ok ? "记进任务了：" + values.get(0) : "没记上"));
+            }
+            return;
+        }
         super.onActivityResult(req, result, data);
     }
 

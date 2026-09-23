@@ -427,6 +427,25 @@ async function handleRemoteCommand(type, payload = {}) {
       const tasks = (store.get('tasks.items', []) || []).filter((t) => !t.done).slice(0, 5).map((t) => t.title);
       return { stray: stray.length, careless: stray.filter((x) => x.careless).length, recent, learned: week.length, latest: journal.slice(0, 3).map((x) => ({ kind: x.kind, title: x.title })), repos: activity.items.map((r) => ({ name: r.name, count: r.count })), tasks };
     }
+    // 手机上记一笔：进任务清单（首页和任务工具都显示）
+    case 'tasks.add': {
+      const title = String(payload.title || '').trim().slice(0, 200);
+      if (!title) throw new Error('内容是空的。');
+      const list = store.get('tasks.items', []) || [];
+      store.set('tasks.items', [{ id: `task-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`, title, done: false, priority: 'normal', due: '', createdAt: Date.now(), completedAt: null }, ...list]);
+      if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('app:navigate-tool', { id: 'home', silent: true });
+      return { added: true, title };
+    }
+    // 手机上记一段话：进笔记工具（一条新的 Markdown 片段，带时间）
+    case 'note.add': {
+      const text = String(payload.text || '').trim().slice(0, 20000);
+      if (!text) throw new Error('内容是空的。');
+      const list = store.get('notes.snippets', []) || [];
+      const stamp = new Date().toLocaleString('zh-CN', { hour12: false });
+      const title = text.split('\n')[0].replace(/^#+\s*/, '').slice(0, 40) || '手机随记';
+      store.set('notes.snippets', [{ id: `s_${Date.now().toString(36)}`, title, lang: 'markdown', kind: 'markdown', code: `# ${title}\n\n> 手机 · ${stamp}\n\n${text}\n`, at: Date.now() }, ...list].slice(0, 200));
+      return { added: true, title };
+    }
     // 手机上一键把明显的归位（图片 / 文档 / 压缩包 / 安装包 / 视频 / 音频 / 数据 / 发票），可撤销
     case 'tidy.obvious': {
       const SAFE = new Set(['image', 'images', 'doc', 'docs', 'archive', 'installer', 'video', 'videos', 'audio', 'data', 'invoice']);
@@ -3508,7 +3527,7 @@ app.whenReady().then(async () => {
     onPhoneStep: (body) => phoneAgent.step(body),
     onPhoneState: relayPhoneState,
     outbox: phoneOutbox,
-    apkPath: path.join(__dirname, '..', '..', 'assets', 'mobile', 'Agent-Toolbox-Remote-0.3.2-debug.apk'),
+    apkPath: path.join(__dirname, '..', '..', 'assets', 'mobile', 'Agent-Toolbox-Remote-0.4.0-debug.apk'),
     assetsDir: path.join(__dirname, '..', '..', 'assets'),
     onScreen: async ({ width: wanted = 900 } = {}) => {
       if (!mainWindow || mainWindow.isDestroyed()) return null;
@@ -3519,7 +3538,7 @@ app.whenReady().then(async () => {
       const scaled = width > target ? image.resize({ width: target }) : image;
       return scaled.toJPEG(target > 1000 ? 70 : 62);
     },
-    apkName: 'Agent-Toolbox-Remote-0.3.2-debug.apk',
+    apkName: 'Agent-Toolbox-Remote-0.4.0-debug.apk',
     inbox: store.get('remote.inbox', []),
     onInbox: (item) => {
       const inbox = [item, ...(store.get('remote.inbox', []) || [])].slice(0, 100);

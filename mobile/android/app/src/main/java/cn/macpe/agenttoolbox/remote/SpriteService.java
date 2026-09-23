@@ -544,9 +544,23 @@ public class SpriteService extends AccessibilityService {
             done.getResponseCode();
             say("收好了：" + name + "（在 下载/Agent工具箱）· 点这里打开", true);
             main.postDelayed(hideBubble, 15000);
+            notifyFile(name, saved);
         } catch (Exception e) {
             say("取 " + name + " 出错：" + e.getMessage());
         }
+    }
+
+    /** 收到文件的系统通知：精灵藏着、或者你在别的应用里，也知道东西到了 */
+    private void notifyFile(String name, Uri uri) {
+        try {
+            android.app.NotificationManager nm = (android.app.NotificationManager) getSystemService(NOTIFICATION_SERVICE);
+            if (Build.VERSION.SDK_INT >= 26) nm.createNotificationChannel(new android.app.NotificationChannel("files", "电脑递来的文件", android.app.NotificationManager.IMPORTANCE_DEFAULT));
+            Intent open = new Intent(Intent.ACTION_VIEW, uri); open.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            android.app.PendingIntent pi = android.app.PendingIntent.getActivity(this, (int) (System.currentTimeMillis() & 0xffff), open, android.app.PendingIntent.FLAG_IMMUTABLE | android.app.PendingIntent.FLAG_UPDATE_CURRENT);
+            android.app.Notification.Builder b = Build.VERSION.SDK_INT >= 26 ? new android.app.Notification.Builder(this, "files") : new android.app.Notification.Builder(this);
+            b.setSmallIcon(android.R.drawable.stat_sys_download_done).setContentTitle("电脑递来：" + name).setContentText("在 下载/Agent工具箱，点一下打开").setContentIntent(pi).setAutoCancel(true);
+            nm.notify((int) (System.currentTimeMillis() & 0x7fffffff), b.build());
+        } catch (Exception ignored) { }
     }
 
     /** 落到系统「下载/Agent工具箱」：任何文件管理器都看得到，不需要存储权限 */
