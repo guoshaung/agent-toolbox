@@ -1,35 +1,45 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 180 200" role="img" aria-label="紫发魔法少女桌宠">
-  <defs>
-    <linearGradient id="mh" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#c9a4ff"/><stop offset="1" stop-color="#7c4dd6"/></linearGradient>
-    <linearGradient id="me" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#ffb6f0"/><stop offset="1" stop-color="#b3308f"/></linearGradient>
-    <linearGradient id="md" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#ff9ad5"/><stop offset="1" stop-color="#d6479f"/></linearGradient>
-    <filter id="ms" x="-30%" y="-30%" width="160%" height="170%"><feDropShadow dx="0" dy="6" stdDeviation="5" flood-color="#241436" flood-opacity=".3"/></filter>
-  </defs>
-  <ellipse cx="90" cy="184" rx="48" ry="9" fill="#241436" opacity=".18"/>
-  <g filter="url(#ms)">
-    <!-- 魔杖 -->
-    <path d="M140 110l14 60" stroke="#f5d67a" stroke-width="4" stroke-linecap="round"/>
-    <path d="M140 96l4 9 10 1-7 6 2 10-9-5-9 5 2-10-7-6 10-1z" fill="#ffe27a" stroke="#e0a800" stroke-width="1.5" stroke-linejoin="round"/>
-    <!-- 双团子 -->
-    <circle cx="42" cy="52" r="16" fill="url(#mh)"/><circle cx="138" cy="52" r="16" fill="url(#mh)"/>
-    <path d="M30 56q12-6 24 0" stroke="#ff9ad5" stroke-width="4" fill="none" stroke-linecap="round"/><path d="M126 56q12-6 24 0" stroke="#ff9ad5" stroke-width="4" fill="none" stroke-linecap="round"/>
-    <!-- 裙子：蓬蓬的粉裙 -->
-    <path d="M52 128c-12 18-14 38-8 52h92c6-14 4-34-8-52z" fill="url(#md)"/>
-    <path d="M60 128h60l4 18H56z" fill="#fff5fb"/><path d="M52 176q38 10 76 0" stroke="#fff5fb" stroke-width="3" fill="none"/>
-    <path d="M84 130l6 12 6-12z" fill="#d6479f"/><circle cx="90" cy="150" r="5" fill="#ffe27a"/>
-    <path d="M30 90c-2-40 26-64 60-64s62 24 60 64c1 18-8 30-16 34l-88 0c-8-4-17-16-16-34z" fill="url(#mh)"/>
-    <path d="M40 100c-6 14-2 32 6 42V98z" fill="url(#mh)"/><path d="M140 100c6 14 2 32-6 42V98z" fill="url(#mh)"/>
-    <ellipse cx="90" cy="102" rx="46" ry="44" fill="#ffe9de"/>
-    <path d="M40 92c6-30 24-46 50-46 30 0 46 20 50 46-10-6-18-14-22-24-6 10-14 16-28 18-14-2-24-8-30-18-4 10-12 18-20 24z" fill="url(#mh)"/>
-    <ellipse cx="70" cy="110" rx="9" ry="12" fill="#ffffff"/><ellipse cx="110" cy="110" rx="9" ry="12" fill="#ffffff"/>
-    <ellipse cx="71" cy="112" rx="7" ry="10" fill="url(#me)"/><ellipse cx="111" cy="112" rx="7" ry="10" fill="url(#me)"/>
-    <ellipse cx="72" cy="114" rx="3.5" ry="5" fill="#3a0f2e"/><ellipse cx="112" cy="114" rx="3.5" ry="5" fill="#3a0f2e"/>
-    <circle cx="68" cy="107" r="2.6" fill="#fff"/><circle cx="108" cy="107" r="2.6" fill="#fff"/>
-    <path d="M58 96q8-5 16-1" stroke="#8a5cc7" stroke-width="2.4" fill="none" stroke-linecap="round"/><path d="M106 95q8-4 16 1" stroke="#8a5cc7" stroke-width="2.4" fill="none" stroke-linecap="round"/>
-    <ellipse cx="60" cy="126" rx="7" ry="4" fill="#ffb3c7" opacity=".8"/><ellipse cx="120" cy="126" rx="7" ry="4" fill="#ffb3c7" opacity=".8"/>
-    <path d="M82 129q8 9 16 0" stroke="#c2506b" stroke-width="2.4" fill="none" stroke-linecap="round"/>
-    <path d="M62 140c-8 12-6 24 4 32M118 140c8 12 6 24-4 32" stroke="#ffe9de" stroke-width="10" fill="none" stroke-linecap="round"/>
-    <!-- 星星点缀 -->
-    <path d="M24 120l2 5 5 1-4 3 1 5-4-3-4 3 1-5-4-3 5-1z" fill="#ffe27a"/><path d="M156 70l2 5 5 1-4 3 1 5-4-3-4 3 1-5-4-3 5-1z" fill="#ffe27a"/>
-  </g>
-</svg>
+<defs>
+  <linearGradient id="magical-h" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#cfa8ff"/><stop offset="1" stop-color="#8a5ad8"/></linearGradient>
+  <linearGradient id="magical-e" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#b3308f"/><stop offset=".55" stop-color="#ffb6f0"/><stop offset="1" stop-color="#b3308f"/></linearGradient>
+  <linearGradient id="magical-c" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#ff9ad5"/><stop offset="1" stop-color="#d6479f"/></linearGradient>
+  <radialGradient id="magical-b" cx=".5" cy=".5" r=".5"><stop stop-color="#ff9db4" stop-opacity=".75"/><stop offset="1" stop-color="#ff9db4" stop-opacity="0"/></radialGradient>
+  <filter id="magical-s" x="-30%" y="-30%" width="160%" height="170%"><feDropShadow dx="0" dy="5" stdDeviation="4" flood-color="#2a2340" flood-opacity=".28"/></filter>
+</defs>
+<ellipse cx="90" cy="190" rx="40" ry="7" fill="#2a2340" opacity=".16"/>
+<g filter="url(#magical-s)">
+<path d="M142 108l16 62" stroke="#f5d67a" stroke-width="4" stroke-linecap="round"/><path d="M142 92l4 9 10 1-7 6 2 10-9-5-9 5 2-10-7-6 10-1z" fill="#ffe27a" stroke="#e0a800" stroke-width="1.5" stroke-linejoin="round"/>
+<path d="M26 96c-4-52 26-80 64-80s68 28 64 80c0 24-8 46-18 60-14 6-78 6-92 0-10-14-18-36-18-60z" fill="url(#magical-h)"/>
+<circle cx="36" cy="48" r="17" fill="#b98af0"/><circle cx="144" cy="48" r="17" fill="#b98af0"/><path d="M24 52q12-6 24 0" stroke="#ff9ad5" stroke-width="4" fill="none" stroke-linecap="round"/><path d="M132 52q12-6 24 0" stroke="#ff9ad5" stroke-width="4" fill="none" stroke-linecap="round"/>
+<path d="M58 146c-8 14-8 30-4 42h72c4-12 4-28-4-42-8-8-56-8-64 0z" fill="url(#magical-c)"/>
+<path d="M66 146h48l4 14H62z" fill="#fff5fb"/><path d="M56 186q34 8 68 0" stroke="#fff5fb" stroke-width="3" fill="none"/><circle cx="90" cy="164" r="4" fill="#ffe27a"/>
+<circle cx="60" cy="178" r="7" fill="#ffe9df"/><circle cx="120" cy="178" r="7" fill="#ffe9df"/>
+<rect x="80" y="128" width="20" height="18" rx="6" fill="#ffdccd"/>
+<path d="M32 92c0-36 26-58 58-58s58 22 58 58c0 30-24 54-58 56-34-2-58-26-58-56z" fill="#ffeee6"/>
+<path d="M34 96c4 26 26 46 56 50-30 0-54-20-56-50z" fill="#ffd9cc" opacity=".6"/><path d="M146 96c-4 26-26 46-56 50 30 0 54-20 56-50z" fill="#ffd9cc" opacity=".6"/>
+<ellipse cx="54" cy="118" rx="14" ry="9" fill="url(#magical-b)"/><ellipse cx="126" cy="118" rx="14" ry="9" fill="url(#magical-b)"/>
+<path d="M46 116l4 5M52 114l4 5M120 114l4 5M126 116l4 5" stroke="#ff8aa6" stroke-width="1.6" stroke-linecap="round" opacity=".7"/>
+<ellipse cx="66" cy="105" rx="13" ry="17" fill="#fff"/>
+<ellipse cx="66" cy="107" rx="11" ry="15" fill="url(#magical-e)"/>
+<ellipse cx="66" cy="110" rx="6.5" ry="9" fill="#3a0f2e"/>
+<ellipse cx="62" cy="99" rx="4.5" ry="5.5" fill="#fff"/>
+<circle cx="71" cy="114" r="2.4" fill="#fff" opacity=".9"/>
+<circle cx="65" cy="118" r="1.4" fill="#fff" opacity=".8"/>
+<path d="M53 96c3-12 23-12 26 0" stroke="#4a3560" stroke-width="3.6" fill="none" stroke-linecap="round"/>
+<path d="M79 96l4-3" stroke="#4a3560" stroke-width="2.6" stroke-linecap="round"/>
+<ellipse cx="114" cy="105" rx="13" ry="17" fill="#fff"/>
+<ellipse cx="114" cy="107" rx="11" ry="15" fill="url(#magical-e)"/>
+<ellipse cx="114" cy="110" rx="6.5" ry="9" fill="#3a0f2e"/>
+<ellipse cx="110" cy="99" rx="4.5" ry="5.5" fill="#fff"/>
+<circle cx="119" cy="114" r="2.4" fill="#fff" opacity=".9"/>
+<circle cx="113" cy="118" r="1.4" fill="#fff" opacity=".8"/>
+<path d="M101 96c3-12 23-12 26 0" stroke="#4a3560" stroke-width="3.6" fill="none" stroke-linecap="round"/>
+<path d="M127 96l4-3" stroke="#4a3560" stroke-width="2.6" stroke-linecap="round"/>
+<path d="M56 78q10-5 20-1" stroke="#8a5ad8" stroke-width="1.8" fill="none" stroke-linecap="round" opacity=".85"/><path d="M104 77q10-4 20 1" stroke="#8a5ad8" stroke-width="1.8" fill="none" stroke-linecap="round" opacity=".85"/>
+<path d="M84 132q3 4 6 0q3 4 6 0" stroke="#d8607e" stroke-width="2" fill="none" stroke-linecap="round"/>
+<path d="M30 92c2-38 28-62 60-62s58 24 60 62c-8-6-14-16-16-28-6 12-14 18-24 20-4-8-8-14-12-22-4 8-8 14-12 22-10-2-18-8-24-20-2 12-8 22-16 28z" fill="url(#magical-h)"/>
+<path d="M62 50c-8 8-12 20-14 34M118 50c8 8 12 20 14 34M90 42c-2 12-4 20-6 28" stroke="#8a5ad8" stroke-width="1.6" fill="none" stroke-linecap="round" opacity=".55"/>
+<path d="M50 60q40-22 80 0" stroke="#efe0ff" stroke-width="5" fill="none" stroke-linecap="round" opacity=".55"/>
+
+<path d="M22 118l2 5 5 1-4 3 1 5-4-3-4 3 1-5-4-3 5-1z" fill="#ffe27a"/><path d="M158 80l2 5 5 1-4 3 1 5-4-3-4 3 1-5-4-3 5-1z" fill="#ffe27a"/>
+</g></svg>

@@ -1,36 +1,47 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 180 200" role="img" aria-label="橙发狐耳巫女桌宠">
-  <defs>
-    <linearGradient id="fh" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#ffb35c"/><stop offset="1" stop-color="#e07a1f"/></linearGradient>
-    <linearGradient id="fe" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#ffd27a"/><stop offset="1" stop-color="#b8620a"/></linearGradient>
-    <filter id="fs" x="-30%" y="-30%" width="160%" height="170%"><feDropShadow dx="0" dy="6" stdDeviation="5" flood-color="#2a1a10" flood-opacity=".3"/></filter>
-  </defs>
-  <ellipse cx="90" cy="184" rx="48" ry="9" fill="#2a1a10" opacity=".18"/>
-  <g filter="url(#fs)">
-    <!-- 狐耳：橙底白尖 -->
-    <path d="M34 70 L50 16 L76 58Z" fill="#e07a1f" stroke="#a8520c" stroke-width="2.5" stroke-linejoin="round"/><path d="M46 56 L52 32 L64 52Z" fill="#fff2e0"/>
-    <path d="M146 70 L130 16 L104 58Z" fill="#e07a1f" stroke="#a8520c" stroke-width="2.5" stroke-linejoin="round"/><path d="M134 56 L128 32 L116 52Z" fill="#fff2e0"/>
-    <!-- 尾巴 -->
-    <path d="M132 150c22-8 34 6 30 26-4 12-18 14-26 6 8-2 12-8 10-14-6 6-14 6-20 0z" fill="#ffb35c" stroke="#e07a1f" stroke-width="2"/><path d="M152 176c6-2 10-8 10-12-4 2-8 2-12 0z" fill="#fff2e0"/>
-    <!-- 巫女服：白上衣红裙 -->
-    <path d="M48 128c-6 18-4 40 8 52h68c12-12 14-34 8-52z" fill="#d93b3b"/>
-    <path d="M56 128h68l4 26H52z" fill="#fffaf5"/><path d="M84 130l6 12 6-12z" fill="#d93b3b"/>
-    <path d="M52 150h76" stroke="#d93b3b" stroke-width="3"/>
-    <path d="M30 90c-2-40 26-64 60-64s62 24 60 64c1 18-8 30-16 34l-88 0c-8-4-17-16-16-34z" fill="url(#fh)"/>
-    <path d="M40 100c-6 14-2 32 6 42V98z" fill="url(#fh)"/><path d="M140 100c6 14 2 32-6 42V98z" fill="url(#fh)"/>
-    <ellipse cx="90" cy="102" rx="46" ry="44" fill="#ffe9de"/>
-    <path d="M40 92c6-30 24-46 50-46 30 0 46 20 50 46-10-6-18-14-22-24-6 10-14 16-28 18-14-2-24-8-30-18-4 10-12 18-20 24z" fill="url(#fh)"/>
-    <!-- 眼 -->
-    <ellipse cx="70" cy="110" rx="9" ry="12" fill="#ffffff"/><ellipse cx="110" cy="110" rx="9" ry="12" fill="#ffffff"/>
-    <ellipse cx="71" cy="112" rx="7" ry="10" fill="url(#fe)"/><ellipse cx="111" cy="112" rx="7" ry="10" fill="url(#fe)"/>
-    <ellipse cx="72" cy="114" rx="3" ry="5.5" fill="#3a1f05"/><ellipse cx="112" cy="114" rx="3" ry="5.5" fill="#3a1f05"/>
-    <circle cx="68" cy="107" r="2.6" fill="#fff"/><circle cx="108" cy="107" r="2.6" fill="#fff"/>
-    <path d="M58 96q8-5 16-1" stroke="#b8620a" stroke-width="2.4" fill="none" stroke-linecap="round"/><path d="M106 95q8-4 16 1" stroke="#b8620a" stroke-width="2.4" fill="none" stroke-linecap="round"/>
-    <!-- 脸上的狐纹 + 腮红 -->
-    <path d="M56 120l6 2M124 120l-6 2" stroke="#e07a1f" stroke-width="2" stroke-linecap="round"/>
-    <ellipse cx="60" cy="127" rx="7" ry="4" fill="#ff9aa8" opacity=".8"/><ellipse cx="120" cy="127" rx="7" ry="4" fill="#ff9aa8" opacity=".8"/>
-    <path d="M82 130q8 8 16 0" stroke="#c2506b" stroke-width="2.4" fill="none" stroke-linecap="round"/>
-    <path d="M62 140c-8 12-6 24 4 32M118 140c8 12 6 24-4 32" stroke="#fffaf5" stroke-width="12" fill="none" stroke-linecap="round"/>
-    <!-- 铃铛 -->
-    <circle cx="90" cy="144" r="5" fill="#ffd166" stroke="#c98a00" stroke-width="1.5"/><circle cx="90" cy="146" r="1.5" fill="#c98a00"/>
-  </g>
-</svg>
+<defs>
+  <linearGradient id="fox-h" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#ffb45c"/><stop offset="1" stop-color="#e07a1f"/></linearGradient>
+  <linearGradient id="fox-e" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#b8620a"/><stop offset=".55" stop-color="#ffd27a"/><stop offset="1" stop-color="#b8620a"/></linearGradient>
+  <linearGradient id="fox-c" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#ffffff"/><stop offset="1" stop-color="#f4ece6"/></linearGradient>
+  <radialGradient id="fox-b" cx=".5" cy=".5" r=".5"><stop stop-color="#ff9db4" stop-opacity=".75"/><stop offset="1" stop-color="#ff9db4" stop-opacity="0"/></radialGradient>
+  <filter id="fox-s" x="-30%" y="-30%" width="160%" height="170%"><feDropShadow dx="0" dy="5" stdDeviation="4" flood-color="#2a2340" flood-opacity=".28"/></filter>
+</defs>
+<ellipse cx="90" cy="190" rx="40" ry="7" fill="#2a2340" opacity=".16"/>
+<g filter="url(#fox-s)">
+<path d="M128 158c26-12 40 6 34 26-4 12-20 14-28 4 10-2 14-8 12-14-6 6-14 4-18-4z" fill="#ffb45c" stroke="#e07a1f" stroke-width="2"/><path d="M154 186c6-2 10-8 10-12-4 2-8 2-12 0z" fill="#fff2e0"/>
+<path d="M26 96c-4-52 26-80 64-80s68 28 64 80c0 24-8 46-18 60-14 6-78 6-92 0-10-14-18-36-18-60z" fill="url(#fox-h)"/>
+
+<path d="M58 146c-8 14-8 30-4 42h72c4-12 4-28-4-42-8-8-56-8-64 0z" fill="url(#fox-c)"/>
+<path d="M54 172h72l2 16H52z" fill="#d93b3b"/><path d="M84 148l6 12 6-12z" fill="#d93b3b"/><path d="M62 170h56" stroke="#d93b3b" stroke-width="2"/><circle cx="90" cy="164" r="4" fill="#ffd166" stroke="#c98a00" stroke-width="1.2"/>
+<circle cx="60" cy="178" r="7" fill="#ffe9df"/><circle cx="120" cy="178" r="7" fill="#ffe9df"/>
+<rect x="80" y="128" width="20" height="18" rx="6" fill="#ffdccd"/>
+<path d="M32 92c0-36 26-58 58-58s58 22 58 58c0 30-24 54-58 56-34-2-58-26-58-56z" fill="#ffeee6"/>
+<path d="M34 96c4 26 26 46 56 50-30 0-54-20-56-50z" fill="#ffd9cc" opacity=".6"/><path d="M146 96c-4 26-26 46-56 50 30 0 54-20 56-50z" fill="#ffd9cc" opacity=".6"/>
+<ellipse cx="54" cy="118" rx="14" ry="9" fill="url(#fox-b)"/><ellipse cx="126" cy="118" rx="14" ry="9" fill="url(#fox-b)"/>
+<path d="M46 116l4 5M52 114l4 5M120 114l4 5M126 116l4 5" stroke="#ff8aa6" stroke-width="1.6" stroke-linecap="round" opacity=".7"/>
+<ellipse cx="66" cy="105" rx="13" ry="17" fill="#fff"/>
+<ellipse cx="66" cy="107" rx="11" ry="15" fill="url(#fox-e)"/>
+<ellipse cx="66" cy="110" rx="6.5" ry="9" fill="#3a1f05"/>
+<ellipse cx="62" cy="99" rx="4.5" ry="5.5" fill="#fff"/>
+<circle cx="71" cy="114" r="2.4" fill="#fff" opacity=".9"/>
+<circle cx="65" cy="118" r="1.4" fill="#fff" opacity=".8"/>
+<path d="M53 96c3-12 23-12 26 0" stroke="#5a3a1a" stroke-width="3.6" fill="none" stroke-linecap="round"/>
+<path d="M79 96l4-3" stroke="#5a3a1a" stroke-width="2.6" stroke-linecap="round"/>
+<ellipse cx="114" cy="105" rx="13" ry="17" fill="#fff"/>
+<ellipse cx="114" cy="107" rx="11" ry="15" fill="url(#fox-e)"/>
+<ellipse cx="114" cy="110" rx="6.5" ry="9" fill="#3a1f05"/>
+<ellipse cx="110" cy="99" rx="4.5" ry="5.5" fill="#fff"/>
+<circle cx="119" cy="114" r="2.4" fill="#fff" opacity=".9"/>
+<circle cx="113" cy="118" r="1.4" fill="#fff" opacity=".8"/>
+<path d="M101 96c3-12 23-12 26 0" stroke="#5a3a1a" stroke-width="3.6" fill="none" stroke-linecap="round"/>
+<path d="M127 96l4-3" stroke="#5a3a1a" stroke-width="2.6" stroke-linecap="round"/>
+<path d="M56 78q10-5 20-1" stroke="#e07a1f" stroke-width="1.8" fill="none" stroke-linecap="round" opacity=".85"/><path d="M104 77q10-4 20 1" stroke="#e07a1f" stroke-width="1.8" fill="none" stroke-linecap="round" opacity=".85"/>
+<path d="M84 132q3 4 6 0q3 4 6 0" stroke="#d8607e" stroke-width="2" fill="none" stroke-linecap="round"/>
+<path d="M30 92c2-38 28-62 60-62s58 24 60 62c-8-6-14-16-16-28-6 12-14 18-24 20-4-8-8-14-12-22-4 8-8 14-12 22-10-2-18-8-24-20-2 12-8 22-16 28z" fill="url(#fox-h)"/>
+<path d="M62 50c-8 8-12 20-14 34M118 50c8 8 12 20 14 34M90 42c-2 12-4 20-6 28" stroke="#e07a1f" stroke-width="1.6" fill="none" stroke-linecap="round" opacity=".55"/>
+<path d="M50 60q40-22 80 0" stroke="#ffe0b0" stroke-width="5" fill="none" stroke-linecap="round" opacity=".55"/>
+
+<path d="M32 70L46 14l32 38z" fill="#e07a1f" stroke="#a8520c" stroke-width="2.5" stroke-linejoin="round"/><path d="M44 60l4-28 20 26z" fill="#fff2e0"/>
+<path d="M148 70L134 14l-32 38z" fill="#e07a1f" stroke="#a8520c" stroke-width="2.5" stroke-linejoin="round"/><path d="M136 60l-4-28-20 26z" fill="#fff2e0"/>
+<path d="M44 122l6 2M136 122l-6 2" stroke="#e07a1f" stroke-width="2" stroke-linecap="round"/>
+</g></svg>
