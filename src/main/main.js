@@ -427,6 +427,20 @@ async function handleRemoteCommand(type, payload = {}) {
       const tasks = (store.get('tasks.items', []) || []).filter((t) => !t.done).slice(0, 5).map((t) => t.title);
       return { stray: stray.length, careless: stray.filter((x) => x.careless).length, recent, learned: week.length, latest: journal.slice(0, 3).map((x) => ({ kind: x.kind, title: x.title })), repos: activity.items.map((r) => ({ name: r.name, count: r.count })), tasks };
     }
+    // 手机上一键把明显的归位（图片 / 文档 / 压缩包 / 安装包 / 视频 / 音频 / 数据 / 发票），可撤销
+    case 'tidy.obvious': {
+      const SAFE = new Set(['image', 'images', 'doc', 'docs', 'archive', 'installer', 'video', 'videos', 'audio', 'data', 'invoice']);
+      const items = tidy.suggest(tidy.scan().items, { codeDir: store.get('tidy.codeDir', '') || undefined });
+      const moves = items.filter((x) => x.action === 'move' && SAFE.has(x.kind)).map((x) => ({ path: x.path, to: x.to, action: 'move' }));
+      if (payload.dryRun) return { count: moves.length, dryRun: true };
+      if (!moves.length) return { count: 0, done: 0 };
+      const r = await tidy.apply(app.getPath('userData'), moves, { trash: (p) => shell.trashItem(p) });
+      return { count: moves.length, done: r.done.length, errors: r.errors.length };
+    }
+    case 'tidy.undo': {
+      const r = tidy.undo(app.getPath('userData'));
+      return { ok: r.ok, restored: r.restored?.length || 0, error: r.error || '' };
+    }
     case 'tool.open': {
       const id = String(payload.id || '');
       if (!/^[a-z0-9-]+$/.test(id)) throw new Error('工具名称无效。');
