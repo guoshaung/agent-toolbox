@@ -4275,3 +4275,10 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .tidy__md pre code { padding: 0; background: none; }
 .tidy__drop { border: 1.5px dashed var(--line); border-radius: var(--radius); padding: 22px; text-align: center; color: var(--text-dim); transition: .15s; }
 .tidy__drop.is-over { border-color: var(--accent); background: var(--accent-soft); color: var(--text); }
+.settings__body--wide { max-width: 1100px; }
+.tidy__chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.tidy__chips:empty { display: none; }
+.tidy__askbar { display: flex; gap: 8px; margin-top: 14px; padding-top: 12px; border-top: 1px dashed var(--line); }
+.tidy__thread { display: flex; flex-direction: column; gap: 8px; margin-top: 10px; }
+.tidy__q { align-self: flex-end; max-width: 80%; padding: 7px 11px; border-radius: 12px 12px 3px 12px; background: var(--accent-soft); color: var(--text); font-size: 13px; }
+.tidy__a { align-self: flex-start; max-width: 92%; padding: 8px 12px; border-radius: 12px 12px 12px 3px; background: var(--bg-raised); border: 1px solid var(--line-soft); font-size: 13px; }

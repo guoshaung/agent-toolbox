@@ -99,3 +99,10 @@ test('装着好几个代码仓库的文件夹算「项目集」，建议原地�
   const out = tidy.suggest([{ name: 'ws', isDir: true, kind: 'workspace', repos: 2 }], {});
   assert.equal(out[0].action, 'keep');
 });
+
+test('askProject：带着事实和上次讲解问，空问题拒绝', async () => {
+  const d = tmp(); touch(path.join(d, 'package.json'), '{"name":"x"}');
+  assert.equal((await tidy.askProject(d, '   ', '', async () => ({ ok: true, text: '' }))).ok, false);
+  const r = await tidy.askProject(d, '入口在哪', '## 这是什么\n一个 demo', async (msgs) => { assert.match(msgs[1].content, /package\.json/); assert.match(msgs[1].content, /一个 demo/); assert.match(msgs[1].content, /入口在哪/); return { ok: true, text: 'index.js' }; });
+  assert.equal(r.ok, true); assert.equal(r.markdown, 'index.js');
+});

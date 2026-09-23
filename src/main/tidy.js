@@ -302,4 +302,26 @@ ${f.readme ? `README 开头：\n${f.readme}` : ''}`;
   return { ok: true, markdown: String(r.text || ''), facts: { name: f.name, root: f.root, markers: f.markers, entries: f.entries } };
 }
 
-module.exports = { scan, suggest, refine, apply, undo, lastUndo, recent, projectFacts, overview, destinations, classifyDir, classifyFile, looksCareless, labelOf, HOME };
+/** 接着问这个项目：把项目事实和上次的讲解一起带上，模型只根据这些回答 */
+async function askProject(root, question, priorMarkdown, ask) {
+  const f = projectFacts(root);
+  if (!f.ok) return f;
+  const q = String(question || '').trim();
+  if (!q) return { ok: false, error: '问题是空的。' };
+  if (typeof ask !== 'function') return { ok: false, error: '没有配好模型。' };
+  const prompt = `这是项目「${f.name}」（${f.root}）。
+
+目录树：
+${f.tree}
+${f.manifest ? `\n清单文件：\n${f.manifest}` : ''}${f.readme ? `\nREADME 开头：\n${f.readme}` : ''}
+${priorMarkdown ? `\n之前给用户的讲解：\n${String(priorMarkdown).slice(0, 3000)}` : ''}
+
+用户现在问：${q}
+
+只根据上面的事实回答，不知道就说「得打开某某文件看」并指出是哪个文件。用 Markdown，简短。`;
+  const r = await ask([{ role: 'system', content: '你是个耐心的师兄，讲人话，不说废话。' }, { role: 'user', content: prompt }]);
+  if (!r?.ok) return { ok: false, error: r?.error || '模型没返回。' };
+  return { ok: true, markdown: String(r.text || '') };
+}
+
+module.exports = { scan, suggest, refine, apply, undo, lastUndo, recent, projectFacts, overview, askProject, destinations, classifyDir, classifyFile, looksCareless, labelOf, HOME };

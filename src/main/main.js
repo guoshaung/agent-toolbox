@@ -1755,7 +1755,24 @@ function registerIpc() {
   ipcMain.handle('tidy:apply', (_e, moves) => tidy.apply(app.getPath('userData'), moves, { trash: (p) => shell.trashItem(p) }));
   ipcMain.handle('tidy:undo', () => tidy.undo(app.getPath('userData')));
   ipcMain.handle('tidy:recent', (_e, opts) => tidy.recent(opts || {}));
-  ipcMain.handle('tidy:overview', (_e, root) => tidy.overview(root, tidyAsk));
+  // 讲解按目录缓存：同一个项目再打开秒出，想重来点「重新讲」
+  ipcMain.handle('tidy:overview', async (_e, root, { fresh = false } = {}) => {
+    const cache = store.get('tidy.overviews', {}) || {};
+    const key = String(root || '');
+    if (!fresh && cache[key]?.markdown) return { ok: true, cached: true, at: cache[key].at, ...cache[key] };
+    const r = await tidy.overview(root, tidyAsk);
+    if (r.ok) {
+      const next = { ...cache, [key]: { markdown: r.markdown, facts: r.facts, at: Date.now() } };
+      const keys = Object.keys(next).sort((a, b) => next[b].at - next[a].at).slice(0, 30);   // 最多留 30 个
+      store.set('tidy.overviews', Object.fromEntries(keys.map((k) => [k, next[k]])));
+    }
+    return r;
+  });
+  ipcMain.handle('tidy:ask', (_e, { root, question, prior }) => tidy.askProject(root, question, prior, tidyAsk));
+  ipcMain.handle('tidy:overviewList', () => {
+    const cache = store.get('tidy.overviews', {}) || {};
+    return Object.entries(cache).map(([root, v]) => ({ root, name: v.facts?.name || root.split('/').pop(), at: v.at })).sort((a, b) => b.at - a.at);
+  });
   ipcMain.handle('tidy:facts', (_e, root) => tidy.projectFacts(root));
   ipcMain.handle('tidy:pickFolder', async () => {
     const r = await dialog.showOpenDialog(mainWindow, { title: '选一个项目文件夹', properties: ['openDirectory'] });

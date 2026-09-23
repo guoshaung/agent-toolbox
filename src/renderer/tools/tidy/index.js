@@ -53,7 +53,7 @@ export default {
 
   create(root) {
     let tab = 'sort';
-    const body = h('div', { class: 'settings__body' });
+    const body = h('div', { class: 'settings__body settings__body--wide' });
     const tabs = h('div', { class: 'tidy__tabs' });
     const tabDefs = [['sort', '归位'], ['recent', '刚建的'], ['learn', '看懂项目']];
     const renderTabs = () => tabs.replaceChildren(...tabDefs.map(([id, label]) => h('button', { class: `btn btn--sm${tab === id ? ' btn--primary' : ''}`, onclick: () => { tab = id; renderTabs(); render(); } }, label)));
@@ -136,23 +136,44 @@ export default {
 
     // ---------- 看懂项目 ----------
     let lastRoot = '';
-    async function renderLearn(rootPath = '') {
+    async function renderLearn(rootPath = '', { fresh = false } = {}) {
       const drop = h('div', { class: 'tidy__drop' }, '把项目文件夹拖到这里，或者', ' ', h('button', { class: 'btn btn--sm', onclick: async () => { const p = await api().pickFolder(); if (p) renderLearn(p); } }, '选一个'));
+      // 讲过的项目列在这，点一下秒出
+      const history = h('div', { class: 'tidy__chips' });
+      api().overviewList().then((list) => { history.replaceChildren(...list.slice(0, 8).map((x) => h('button', { class: `btn btn--sm${x.root === rootPath ? ' btn--primary' : ''}`, title: short(x.root), onclick: () => renderLearn(x.root) }, x.name))); });
       drop.addEventListener('dragover', (e) => { e.preventDefault(); drop.classList.add('is-over'); });
       drop.addEventListener('dragleave', () => drop.classList.remove('is-over'));
       drop.addEventListener('drop', (e) => { e.preventDefault(); drop.classList.remove('is-over'); const f = e.dataTransfer?.files?.[0]; const p = f && window.toolbox.files.getPathForFile(f); if (p) renderLearn(p); });
       const out = h('section', { class: 'card' });
-      body.replaceChildren(h('section', { class: 'card' }, drop), out);
+      body.replaceChildren(h('section', { class: 'card' }, drop, history), out);
       if (!rootPath) { if (lastRoot) rootPath = lastRoot; else return; }
       lastRoot = rootPath;
-      out.replaceChildren(h('div', { class: 'tidy__empty' }, `正在读 ${short(rootPath)} …（十几秒）`));
-      const r = await api().overview(rootPath);
+      out.replaceChildren(h('div', { class: 'tidy__empty' }, fresh ? '重新讲一遍…（十几秒到一分钟）' : `正在读 ${short(rootPath)} …（第一次要十几秒到一分钟）`));
+      const r = await api().overview(rootPath, { fresh });
       if (!r.ok) { out.replaceChildren(h('div', { class: 'tidy__empty' }, r.error)); return; }
+      // 追问：带着项目事实和这份讲解，问什么都行
+      const thread = h('div', { class: 'tidy__thread' });
+      const qInput = h('input', { class: 'field', placeholder: '接着问：比如「登录逻辑在哪个文件」「怎么加一个新工具」…', style: { flex: 1 } });
+      const askIt = async () => {
+        const q = qInput.value.trim(); if (!q) return;
+        qInput.value = '';
+        thread.append(h('div', { class: 'tidy__q' }, q));
+        const a = h('div', { class: 'tidy__a faint' }, '想想…');
+        thread.append(a);
+        const res = await api().ask({ root: rootPath, question: q, prior: r.markdown });
+        a.replaceChildren(res.ok ? md(res.markdown) : h('span', { class: 'bad' }, res.error));
+        a.classList.remove('faint');
+      };
+      qInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') askIt(); });
       out.replaceChildren(
-        h('div', { class: 'tidy__stat' }, h('b', {}, r.facts.name), h('code', {}, short(r.facts.root)), r.facts.markers.length ? h('span', { class: 'faint' }, r.facts.markers.join(' · ')) : null,
+        h('div', { class: 'tidy__stat' }, h('b', {}, r.facts.name), h('code', {}, short(r.facts.root)), r.facts.markers?.length ? h('span', { class: 'faint' }, r.facts.markers.join(' · ')) : null,
+          r.cached ? h('span', { class: 'faint' }, `上次讲的（${new Date(r.at).toLocaleDateString('zh-CN')}）`) : null,
           h('button', { class: 'btn btn--sm', onclick: () => api().reveal(r.facts.root) }, '在访达显示'),
+          h('button', { class: 'btn btn--sm', onclick: () => renderLearn(rootPath, { fresh: true }) }, '重新讲'),
           h('button', { class: 'btn btn--sm', onclick: () => navigator.clipboard.writeText(r.markdown).then(() => toast('已复制', 'good')) }, '复制讲解')),
         md(r.markdown),
+        h('div', { class: 'tidy__askbar' }, qInput, h('button', { class: 'btn btn--sm btn--primary', onclick: askIt }, '问')),
+        thread,
       );
     }
 
