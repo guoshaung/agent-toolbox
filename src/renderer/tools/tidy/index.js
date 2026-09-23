@@ -152,7 +152,18 @@ export default {
     // ---------- 看懂项目 ----------
     let lastRoot = '';
     async function renderLearn(rootPath = '', { fresh = false } = {}) {
-      const drop = h('div', { class: 'tidy__drop' }, '把项目文件夹拖到这里，或者', ' ', h('button', { class: 'btn btn--sm', onclick: async () => { const p = await api().pickFolder(); if (p) renderLearn(p); } }, '选一个'));
+      const urlInput = h('input', { class: 'field field--sm', placeholder: '或贴一个 GitHub 地址：https://github.com/x/y', style: { width: '320px' } });
+      const cloneIt = async () => {
+        const v = urlInput.value.trim(); if (!v) return;
+        urlInput.disabled = true; toast('在拉代码…（浅克隆，一般十几秒）', 'info', 4000);
+        const c = await api().clone(v);
+        urlInput.disabled = false;
+        if (!c.ok) return toast(c.error, 'bad', 6000);
+        toast(c.existed ? `已经有了：${short(c.path)}` : `拉好了：${short(c.path)}`, 'good');
+        urlInput.value = ''; renderLearn(c.path);
+      };
+      urlInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') cloneIt(); });
+      const drop = h('div', { class: 'tidy__drop' }, '把项目文件夹拖到这里，或者', ' ', h('button', { class: 'btn btn--sm', onclick: async () => { const p = await api().pickFolder(); if (p) renderLearn(p); } }, '选一个'), ' ', urlInput, h('button', { class: 'btn btn--sm', onclick: cloneIt }, '拉下来看懂'));
       // 讲过的项目列在这，点一下秒出
       const history = h('div', { class: 'tidy__chips' });
       api().overviewList().then((list) => { history.replaceChildren(...list.slice(0, 8).map((x) => h('button', { class: `btn btn--sm${x.root === rootPath ? ' btn--primary' : ''}`, title: short(x.root), onclick: () => renderLearn(x.root) }, x.name))); });

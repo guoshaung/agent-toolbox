@@ -185,3 +185,19 @@ test('findDuplicates：同名同大小算重复，名字最短最早的当原件
   assert.equal(d[0].keep.name, 'paper.pdf');
   assert.deepEqual(d[0].extra.map((x) => x.name).sort(), ['paper (2).pdf', 'paper copy.pdf', 'paper-1.pdf']);
 });
+
+test('parseRepoUrl：https / 带 tree 路径 / git@ / 短写都认，别的不认', () => {
+  assert.deepEqual(tidy.parseRepoUrl('https://github.com/tencent/weknora'), { owner: 'tencent', repo: 'weknora', url: 'https://github.com/tencent/weknora.git', dirName: 'weknora' });
+  assert.equal(tidy.parseRepoUrl('https://github.com/x/y/tree/main/src').repo, 'y');
+  assert.equal(tidy.parseRepoUrl('git@github.com:x/y.git').url, 'https://github.com/x/y.git');
+  assert.equal(tidy.parseRepoUrl('x/y').dirName, 'y');
+  assert.equal(tidy.parseRepoUrl('https://gitlab.com/x/y'), null);
+  assert.equal(tidy.parseRepoUrl('随便'), null);
+});
+
+test('cloneRepo：地址不对直接说；已存在的目录不重拉', async () => {
+  const d = tmp(); fs.mkdirSync(path.join(d, 'y'));
+  assert.match((await tidy.cloneRepo('nope', d)).error, /不像 GitHub/);
+  const r = await tidy.cloneRepo('x/y', d);
+  assert.equal(r.ok, true); assert.equal(r.existed, true); assert.equal(r.path, path.join(d, 'y'));
+});

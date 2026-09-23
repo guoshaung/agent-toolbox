@@ -86,7 +86,8 @@ export function createPalette({ tools, activate, config, toast, extraActions = [
   function render() {
     const q = input.value;
     const mru = config.get('ui.mru') || [];
-    const quick = quickTaskFrom(q);
+    const repo = /^(https?:\/\/(www\.)?github\.com\/[\w.-]+\/[\w.-]+|git@github\.com:[\w.-]+\/[\w.-]+)/.test(q.trim()) ? q.trim() : null;
+    const quick = quickTaskFrom(q) || (repo && learn ? { id: `clone:${repo}`, kind: 'action', title: `拉下来看懂：${repo.replace(/^.*github\.com[/:]/, '').replace(/\.git$/, '')}`, hint: '浅克隆到代码目录，然后让 AI 讲它', icon: 'graduation', keywords: [repo], run: async () => { toast?.('在拉代码…', 'info', 4000); const c = await window.toolbox.tidy.clone(repo); if (!c.ok) return toast?.(c.error, 'bad', 6000); learn(c.path); } } : null);
     items = quick
       ? [{ ...quick, run: async () => { const list = config.get('tasks.items', []) || []; await config.set('tasks.items', [{ id: `task-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`, title: quick.keywords[0], done: false, priority: 'normal', due: '', createdAt: Date.now(), completedAt: null }, ...list]); toast?.(`加了任务：${quick.keywords[0]}`, 'good'); } }]
       : rankItems(q, catalog().filter((it) => q || it.kind !== 'journal'), { recentIds: mru }).slice(0, q ? 40 : 14);

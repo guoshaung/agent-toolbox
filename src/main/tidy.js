@@ -266,6 +266,35 @@ function recent({ days = 3, maxDepth = 4, limit = 60 } = {}) {
   return { ok: true, items: kept, days };
 }
 
+// ---------- 从 GitHub 拉一个项目来看懂 ----------
+
+/** 认 GitHub 仓库地址（https / git@ / 短写 owner/repo），给出 clone 用的 URL 和目录名。纯函数 */
+function parseRepoUrl(input) {
+  const s = String(input || '').trim().replace(/\/+$/, '').replace(/\.git$/, '');
+  let m = s.match(/^https?:\/\/(?:www\.)?github\.com\/([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+)(?:\/(?:tree|blob)\/[^/]+)?/);
+  if (!m) m = s.match(/^git@github\.com:([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+)$/);
+  if (!m) m = s.match(/^([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+)$/) && !s.includes('.') ? s.match(/^([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+)$/) : m;
+  if (!m) return null;
+  const [, owner, repo] = m;
+  return { owner, repo, url: `https://github.com/${owner}/${repo}.git`, dirName: repo };
+}
+
+/** 浅克隆到代码目录，已存在就直接用 */
+function cloneRepo(input, codeDir) {
+  const parsed = parseRepoUrl(input);
+  if (!parsed) return Promise.resolve({ ok: false, error: '这不像 GitHub 仓库地址。支持 https://github.com/x/y、git@github.com:x/y、或 x/y。' });
+  const dir = codeDir || path.join(HOME, 'Projects');
+  const target = path.join(dir, parsed.dirName);
+  if (fs.existsSync(target)) return Promise.resolve({ ok: true, path: target, existed: true, ...parsed });
+  fs.mkdirSync(dir, { recursive: true });
+  return new Promise((resolve) => {
+    execFile('git', ['clone', '--depth', '1', parsed.url, target], { timeout: 180000 }, (err, _out, stderr) => {
+      if (err) return resolve({ ok: false, error: `克隆失败：${String(stderr || err.message).split('\n').filter(Boolean).pop()?.slice(0, 200)}` });
+      resolve({ ok: true, path: target, existed: false, ...parsed });
+    });
+  });
+}
+
 // ---------- 项目速览 ----------
 
 function readHead(file, n = 60) {
@@ -537,4 +566,4 @@ ${priorMarkdown ? `\n之前给用户的讲解：\n${String(priorMarkdown).slice(
   return { ok: true, markdown: String(r.text || '') };
 }
 
-module.exports = { scan, suggest, findDuplicates, refine, apply, undo, lastUndo, recent, projectFacts, overview, askProject, studyPlanToTasks, activity, parseGitLog, projectRoots, findRepos, readingList, explainFile, draftReadme, saveReadme, parseQuiz, quizFor, destinations, classifyDir, classifyFile, looksCareless, labelOf, HOME };
+module.exports = { scan, suggest, findDuplicates, parseRepoUrl, cloneRepo, refine, apply, undo, lastUndo, recent, projectFacts, overview, askProject, studyPlanToTasks, activity, parseGitLog, projectRoots, findRepos, readingList, explainFile, draftReadme, saveReadme, parseQuiz, quizFor, destinations, classifyDir, classifyFile, looksCareless, labelOf, HOME };

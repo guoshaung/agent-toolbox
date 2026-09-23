@@ -1835,6 +1835,7 @@ function registerIpc() {
   ipcMain.handle('tidy:ask', (_e, { root, question, prior }) => tidy.askProject(root, question, prior, tidyAsk));
   ipcMain.handle('tidy:readingList', (_e, { root, markdown }) => tidy.readingList(markdown, root));
   ipcMain.handle('tidy:draftReadme', (_e, root) => tidy.draftReadme(root, tidyAsk));
+  ipcMain.handle('tidy:clone', (_e, url) => tidy.cloneRepo(url, tidySettings().codeDir));
   ipcMain.handle('tidy:quiz', (_e, { root, prior }) => tidy.quizFor(root, prior, tidyAsk));
   ipcMain.handle('tidy:saveReadme', (_e, { root, target, markdown }) => tidy.saveReadme(root, target, markdown));
   // 单个文件的讲解也缓存（键：根目录 + 相对路径）
