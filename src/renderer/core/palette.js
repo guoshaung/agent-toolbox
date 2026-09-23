@@ -66,7 +66,7 @@ export function createPalette({ tools, activate, config, toast, extraActions = [
     h('div', { class: 'palette__panel' },
       h('div', { class: 'palette__head' }, iconFor('search', 'ui-icon palette__search-icon'), input, h('kbd', {}, 'esc')),
       list,
-      h('div', { class: 'palette__foot faint' }, '↑↓ 选 · 回车打开 · ⌘K 随时呼出'),
+      h('div', { class: 'palette__foot faint' }, '↑↓ 选 · 回车打开（文件：⌘回车直接打开） · 打两个字也会在 ~/收纳 里找 · 「+ 事情」记任务'),
     ),
   );
   document.body.appendChild(root);
@@ -88,7 +88,9 @@ export function createPalette({ tools, activate, config, toast, extraActions = [
     }));
     // 收纳目录直达：「打开 收纳 文档」
     const folderItems = ['图片', '文档', '数据', '压缩包', '安装包', '视频', '音频', '零散代码', '杂项'].map((name) => ({ id: `folder:${name}`, kind: 'action', title: `打开 ~/收纳/${name}`, hint: '归位后的东西都在这', icon: 'folder', keywords: ['收纳', '打开', name], run: () => window.toolbox.tidy.open(`${homeDir()}/收纳/${name}`) }));
-    const foundItems = found.map((f) => ({ id: `found:${f.path}`, kind: 'file', title: f.name, hint: `归位后在 ${f.where}`, keywords: [f.path], isDir: f.isDir, run: () => window.toolbox.tidy.reveal(f.path), alt: () => window.toolbox.tidy.open(f.path) }));
+    // 刚建的那栏已经有的，就别在「归位后」再出现一次
+    const seen = new Set((recentFiles || []).map((f) => f.path));
+    const foundItems = found.filter((f) => !seen.has(f.path)).map((f) => ({ id: `found:${f.path}`, kind: 'file', title: f.name, hint: `归位后在 ${f.where}`, keywords: [f.path], isDir: f.isDir, run: () => window.toolbox.tidy.reveal(f.path), alt: () => window.toolbox.tidy.open(f.path) }));
     return [...toolItems, ...extraActions, ...themeItems, ...effectItems, ...fileItems, ...learnItems, ...journalItems, ...folderItems, ...foundItems];
   };
 
