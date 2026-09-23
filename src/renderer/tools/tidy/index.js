@@ -12,7 +12,7 @@ import { h, toast } from '../../core/ui.js';
 const api = () => window.toolbox.tidy;
 const fmtAge = (days) => days < 1 ? '今天' : days < 2 ? '昨天' : days < 7 ? `${Math.round(days)} 天前` : days < 30 ? `${Math.round(days / 7)} 周前` : `${Math.round(days / 30)} 个月前`;
 const fmtSize = (n) => n == null ? '' : n < 1024 ? `${n} B` : n < 1048576 ? `${(n / 1024).toFixed(0)} KB` : n < 1073741824 ? `${(n / 1048576).toFixed(1)} MB` : `${(n / 1073741824).toFixed(2)} GB`;
-const short = (p) => String(p || '').replace(/^\/Users\/[^/]+/, '~');
+const short = (p) => String(p || '').replace(/^\/Users\/[^/]+/, '~').replace(/^[A-Za-z]:\\Users\\[^\\]+/, '~');
 
 /** 够用的 Markdown → DOM：标题、列表、代码块、行内代码、粗体。不引库。 */
 function md(text) {

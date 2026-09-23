@@ -15,7 +15,7 @@ import { colorOf } from '../../core/tool-colors.js';
  * 全是别处已有数据的摘要，不新存任何东西。
  */
 
-const short = (p) => String(p || '').replace(/^\/Users\/[^/]+/, '~');
+const short = (p) => String(p || '').replace(/^\/Users\/[^/]+/, '~').replace(/^[A-Za-z]:\\Users\\[^\\]+/, '~');
 const greet = () => { const hr = new Date().getHours(); return hr < 5 ? '还没睡？' : hr < 11 ? '早' : hr < 14 ? '中午好' : hr < 18 ? '下午好' : '晚上好'; };
 // 懒得读 README 的人靠这个知道有什么：每天换一条
 const TIPS = [
