@@ -553,6 +553,9 @@ contextBridge.exposeInMainWorld('toolbox', {
   },
 
   clipboard: {
+    /** 最近 30 条复制过的文字（只在内存里） */
+    history: () => ipcRenderer.invoke('clip:history'),
+    clearHistory: () => ipcRenderer.invoke('clip:clear'),
     write: (text) => ipcRenderer.invoke('clipboard:write', text),
     read: () => ipcRenderer.invoke('clipboard:read'),
     readImage: () => ipcRenderer.invoke('clipboard:readImage'),

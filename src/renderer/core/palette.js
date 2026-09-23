@@ -56,6 +56,7 @@ export function createPalette({ tools, activate, config, toast, extraActions = [
   let items = [];
   let recentFiles = null;                 // 懒加载，打开面板时才去问
   let journal = null;                     // 学习记录，同样懒加载
+  let clips = [];                         // 剪贴板历史，打开面板时拉一次
   let found = [];                         // 在 ~/收纳 / 代码目录里按名字搜到的
   let foundFor = '';
   let searchTimer = 0;
@@ -91,7 +92,9 @@ export function createPalette({ tools, activate, config, toast, extraActions = [
     // 刚建的那栏已经有的，就别在「归位后」再出现一次
     const seen = new Set((recentFiles || []).map((f) => f.path));
     const foundItems = found.filter((f) => !seen.has(f.path)).map((f) => ({ id: `found:${f.path}`, kind: 'file', title: f.name, hint: `归位后在 ${f.where}`, keywords: [f.path], isDir: f.isDir, run: () => window.toolbox.tidy.reveal(f.path), alt: () => window.toolbox.tidy.open(f.path) }));
-    return [...toolItems, ...extraActions, ...themeItems, ...effectItems, ...fileItems, ...learnItems, ...journalItems, ...folderItems, ...foundItems];
+    // 剪贴板历史：搜「剪贴板」或直接搜内容里的字；回车复制回去
+    const clipItems = clips.map((c, i) => ({ id: `clip:${c.at}:${i}`, kind: 'clip', icon: 'paste', title: c.text.replace(/\s+/g, ' ').trim().slice(0, 90), hint: `复制于 ${new Date(c.at).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })} · 回车复制回剪贴板`, keywords: ['剪贴板', 'clipboard', c.text.slice(0, 200)], run: async () => { await window.toolbox.clipboard.write(c.text); toast?.('已复制回剪贴板', 'good'); } }));
+    return [...toolItems, ...extraActions, ...themeItems, ...effectItems, ...fileItems, ...learnItems, ...journalItems, ...folderItems, ...foundItems, ...clipItems];
   };
 
   function render() {
@@ -101,7 +104,7 @@ export function createPalette({ tools, activate, config, toast, extraActions = [
     const quick = quickTaskFrom(q) || (repo && learn ? { id: `clone:${repo}`, kind: 'action', title: `拉下来看懂：${repo.replace(/^.*github\.com[/:]/, '').replace(/\.git$/, '')}`, hint: '浅克隆到代码目录，然后让 AI 讲它', icon: 'graduation', keywords: [repo], run: async () => { toast?.('在拉代码…', 'info', 4000); const c = await window.toolbox.tidy.clone(repo); if (!c.ok) return toast?.(c.error, 'bad', 6000); learn(c.path); } } : null);
     items = quick
       ? [{ ...quick, run: async () => { const list = config.get('tasks.items', []) || []; await config.set('tasks.items', [{ id: `task-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`, title: quick.keywords[0], done: false, priority: 'normal', due: '', createdAt: Date.now(), completedAt: null }, ...list]); toast?.(`加了任务：${quick.keywords[0]}`, 'good'); } }]
-      : rankItems(q, catalog().filter((it) => q || it.kind !== 'journal'), { recentIds: mru }).slice(0, q ? 40 : 14);
+      : rankItems(q, catalog().filter((it) => q || (it.kind !== 'journal' && it.kind !== 'clip')), { recentIds: mru }).slice(0, q ? 40 : 14);
     index = Math.min(index, Math.max(0, items.length - 1));
     list.replaceChildren(...items.map((it, i) => {
       const row = h('div', { class: `palette__row${i === index ? ' is-active' : ''}`, dataset: { i: String(i) } },
@@ -109,7 +112,7 @@ export function createPalette({ tools, activate, config, toast, extraActions = [
           : it.kind === 'theme' ? h('span', { class: 'palette__swatches' }, ...(it.swatches || []).map((c) => h('i', { style: { background: c } })))
             : h('span', { class: 'palette__icon' }, it.kind === 'file' ? (it.isDir ? '📁' : '📄') : iconFor(it.icon || 'zap')),
         h('span', { class: 'palette__text' }, h('span', { class: 'palette__title' }, it.title), it.hint ? h('span', { class: 'palette__hint' }, it.hint) : null),
-        h('span', { class: 'palette__kind faint' }, { tool: '工具', theme: '皮肤', effect: '效果', file: '刚建的', action: '动作', journal: '学习记录' }[it.kind] || ''),
+        h('span', { class: 'palette__kind faint' }, { tool: '工具', theme: '皮肤', effect: '效果', file: '刚建的', action: '动作', journal: '学习记录', clip: '剪贴板' }[it.kind] || ''),
       );
       row.addEventListener('pointermove', () => { if (index !== i) { index = i; highlight(); } });
       row.addEventListener('click', () => pick(i));
@@ -134,6 +137,7 @@ export function createPalette({ tools, activate, config, toast, extraActions = [
     // 最近新建的东西：面板开着的时候悄悄拉一次，拉到了就补进列表
     window.toolbox.tidy?.recent?.({ days: 3, limit: 30 }).then((r) => { if (r?.ok) { recentFiles = r.items; const p = r.items[0]?.path || ''; const m = p.match(/^(\/Users\/[^/]+|[A-Za-z]:\\Users\\[^\\]+)/); if (m) recentHome = m[1]; if (open) render(); } }).catch(() => {});
     window.toolbox.learn?.journal?.({ limit: 60 }).then((r) => { if (r?.items) { journal = r.items; if (open) render(); } }).catch(() => {});
+    window.toolbox.clipboard?.history?.().then((r) => { if (Array.isArray(r)) { clips = r; if (open) render(); } }).catch(() => {});
   }
   function hide() { open = false; root.hidden = true; }
   function toggle() { open ? hide() : show(); }

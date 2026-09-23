@@ -1772,6 +1772,23 @@ function registerIpc() {
   // 代码记事本：读取 Understand-Anything 的知识图谱 + 按行号回读源码
   registerNotebookIpc(ipcMain, { dialog, getWindow: () => mainWindow, getUserDataPath: () => app.getPath('userData') });
   registerContainerIpc(ipcMain, { shell, getUserDataPath: () => app.getPath('userData') });
+  // 剪贴板历史：只在内存里留最近 30 条文字（不落盘 —— 剪贴板里常有密码），⌘K 里能搜回来
+  const clipHistory = [];
+  let clipLast = '';
+  setInterval(() => {
+    try {
+      const text = clipboard.readText();
+      if (!text || text === clipLast || text.length > 2000 || /^__agent_toolbox_/.test(text)) return;
+      clipLast = text;
+      const idx = clipHistory.findIndex((x) => x.text === text);
+      if (idx >= 0) clipHistory.splice(idx, 1);
+      clipHistory.unshift({ text, at: Date.now() });
+      if (clipHistory.length > 30) clipHistory.length = 30;
+    } catch { /* 读不到就算 */ }
+  }, 1500);
+  ipcMain.handle('clip:history', () => clipHistory.map((x) => ({ text: x.text, at: x.at })));
+  ipcMain.handle('clip:clear', () => { clipHistory.length = 0; clipLast = ''; return { ok: true }; });
+
   // 学习记录：解释过什么、看懂过哪个项目、读过哪个文件、考了几分 —— 首页给一点进度感
   const journalAdd = (entry) => {
     try {
