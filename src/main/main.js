@@ -1800,8 +1800,9 @@ function registerIpc() {
   // 换电脑（比如去 Windows）：把设置带走。API Key 在系统安全存储里，不在这份文件里，到那边重新填
   const EXPORT_SKIP = /^(remote\.|pet\.position|ui\.lastTool|tidy\.overviews|tidy\.fileExplains|tidy\.nudgedOn)/;
   ipcMain.handle('app:exportSettings', async () => {
-    const all = store.store || {};
-    const picked = Object.fromEntries(Object.entries(all).filter(([k]) => !EXPORT_SKIP.test(k)));
+    const all = store.all() || {};
+    // 明文 key 那几个键也不带（正常情况它们在系统安全存储里，这里只是双保险）
+    const picked = Object.fromEntries(Object.entries(all).filter(([k]) => !EXPORT_SKIP.test(k) && !API_KEY_PATHS.has(k)));
     const target = path.join(app.getPath('downloads'), `agent-toolbox-设置-${new Date().toISOString().slice(0, 10)}.json`);
     fs.writeFileSync(target, JSON.stringify({ exportedAt: new Date().toISOString(), version: app.getVersion(), settings: picked }, null, 2));
     shell.showItemInFolder(target);
@@ -1815,7 +1816,7 @@ function registerIpc() {
     const settings = parsed?.settings && typeof parsed.settings === 'object' ? parsed.settings : null;
     if (!settings) return { ok: false, error: '这不像工具箱导出的设置文件（缺 settings 字段）。' };
     let n = 0;
-    for (const [k, v] of Object.entries(settings)) { if (EXPORT_SKIP.test(k)) continue; store.set(k, v); n += 1; }
+    for (const [k, v] of Object.entries(settings)) { if (EXPORT_SKIP.test(k) || API_KEY_PATHS.has(k)) continue; store.set(k, v); n += 1; }
     return { ok: true, keys: n };
   });
   ipcMain.handle('learn:note', (_e, entry) => { journalAdd({ kind: String(entry?.kind || 'note').slice(0, 20), title: String(entry?.title || '').slice(0, 200), meta: entry?.meta ?? null, score: entry?.score, total: entry?.total }); return { ok: true }; });
