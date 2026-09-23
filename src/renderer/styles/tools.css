@@ -4331,3 +4331,5 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .tidy__map-cell i { font-style: normal; color: var(--text-faint); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tidy__group-head input[type=checkbox] { accent-color: var(--accent); }
 .tidy__more { margin: 6px 12px 10px; }
+.home__tip { cursor: pointer; }
+.home__tip:hover { color: var(--text); }

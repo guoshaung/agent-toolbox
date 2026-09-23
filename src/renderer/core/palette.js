@@ -108,6 +108,7 @@ export function createPalette({ tools, activate, config, toast, extraActions = [
     index = Math.min(index, Math.max(0, items.length - 1));
     list.replaceChildren(...items.map((it, i) => {
       const row = h('div', { class: `palette__row${i === index ? ' is-active' : ''}`, dataset: { i: String(i) } },
+        i < 9 ? h('kbd', { class: 'palette__num' }, `⌘${i + 1}`) : h('span', { class: 'palette__num' }),
         it.kind === 'tool' ? h('span', { class: 'palette__icon' }, iconFor(it.icon || 'more'))
           : it.kind === 'theme' ? h('span', { class: 'palette__swatches' }, ...(it.swatches || []).map((c) => h('i', { style: { background: c } })))
             : h('span', { class: 'palette__icon' }, it.kind === 'file' ? (it.isDir ? '📁' : '📄') : iconFor(it.icon || 'zap')),
@@ -159,6 +160,7 @@ export function createPalette({ tools, activate, config, toast, extraActions = [
     else if (e.key === 'ArrowUp') { e.preventDefault(); index = Math.max(0, index - 1); highlight(); }
     else if (e.key === 'Enter') { e.preventDefault(); pick(index, e.metaKey || e.ctrlKey); }
     else if (e.key === 'Escape') { e.preventDefault(); hide(); }
+    else if ((e.metaKey || e.ctrlKey) && /^[1-9]$/.test(e.key)) { e.preventDefault(); pick(Number(e.key) - 1); }
   });
   root.addEventListener('pointerdown', (e) => { if (e.target === root) hide(); });
 

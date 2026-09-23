@@ -975,3 +975,4 @@ html[data-effect='neon'] .rail__logo { filter: drop-shadow(0 0 10px var(--accent
 .dropzone__title { font-size: 14px; color: var(--text); flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .dropzone__sub { font-size: 12px; flex: none; }
 body.is-dropping::after { content: ''; position: fixed; inset: 6px; z-index: 9050; border: 2px dashed color-mix(in srgb, var(--accent) 70%, transparent); border-radius: 18px; pointer-events: none; background: color-mix(in srgb, var(--accent) 6%, transparent); }
+.palette__num { width: 30px; flex: none; font: 10px var(--mono); color: var(--text-faint); border: 0; background: none; text-align: center; }

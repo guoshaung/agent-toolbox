@@ -63,7 +63,7 @@ export default {
 
       body.replaceChildren(
         h('div', { class: 'home__hero' },
-          h('div', {}, h('div', { class: 'home__greet' }, `${greet()}，`), h('div', { class: 'faint' }, `💡 ${tipOfDay()}`)),
+          h('div', {}, h('div', { class: 'home__greet' }, `${greet()}，`), (() => { let k = Math.floor(Date.now() / 86400000) % TIPS.length; const el = h('div', { class: 'faint home__tip', title: '点一下换一条', onclick: () => { k = (k + 1) % TIPS.length; el.textContent = `💡 ${TIPS[k]}`; } }, `💡 ${TIPS[k]}`); return el; })()),
           h('div', { class: 'home__quick' },
             h('button', { class: 'btn btn--sm btn--primary', onclick: () => document.querySelector('.atelier-banner__k')?.click() }, '⌘K 搜'),
             h('button', { class: 'btn btn--sm', onclick: () => goto('tidy') }, '收纳'),
