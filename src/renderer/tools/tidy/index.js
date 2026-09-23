@@ -37,6 +37,8 @@ export default {
     async function loadScan(ai = false, fresh = false) {
       body.replaceChildren(h('div', { class: 'tidy__empty' }, ai ? '让 AI 认一下那些看不出来的…' : '正在看桌面、下载和主目录…'));
       scanData = await api().scan({ ai, fresh });
+      // 扫描是异步的：等它回来时用户可能已经切到别的页签了，别把人家的页面盖掉
+      if (tab !== 'sort') return;
       renderSort();
     }
     function renderSort() {
@@ -121,6 +123,7 @@ export default {
     async function renderRecent() {
       body.replaceChildren(h('div', { class: 'tidy__empty' }, '在找最近三天新建的…'));
       const r = await api().recent({ days: 3 });
+      if (tab !== 'recent') return;
       const rows = r.items.map((it) => h('div', { class: 'tidy__row' },
         h('span', { class: 'tidy__name', title: it.path }, `${it.isDir ? '📁 ' : '📄 '}${it.name}`),
         h('span', { class: 'tidy__meta' }, `${it.where} · ${new Date(it.born).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}`),
@@ -161,6 +164,7 @@ export default {
       lastRoot = rootPath;
       out.replaceChildren(h('div', { class: 'tidy__empty' }, fresh ? '重新讲一遍…（十几秒到一分钟）' : `正在读 ${short(rootPath)} …（第一次要十几秒到一分钟）`));
       const r = await api().overview(rootPath, { fresh });
+      if (tab !== 'learn') return;
       if (!r.ok) { out.replaceChildren(h('div', { class: 'tidy__empty' }, r.error)); return; }
       // 追问：带着项目事实和这份讲解，问什么都行
       const thread = h('div', { class: 'tidy__thread' });
