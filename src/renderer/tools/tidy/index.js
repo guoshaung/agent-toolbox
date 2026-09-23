@@ -72,12 +72,17 @@ export default {
       ) : null;
       const groupEls = [...groups.entries()].sort(([a], [b]) => (a.startsWith('__') ? 1 : 0) - (b.startsWith('__') ? 1 : 0)).map(([key, list]) => {
         const title = key === '__delete' ? '建议删掉（空文件夹 / 垃圾）' : key === '__unsure' ? '认不出来的 —— 先放「杂项」，或者点右边改' : `搬到 ${short(key)}`;
+        const DEST_LABELS = { project: '代码项目', images: '图片', docs: '文档', data: '数据', archive: '压缩包', installer: '安装包', videos: '视频', audio: '音频', invoice: '发票', run: '运行结果', logs: '日志备份', mixed: '杂项' };
         const rows = list.map((it) => {
           const cb = h('input', { type: 'checkbox', checked: it.action !== 'unsure' });
           checks.set(it.path, { cb, it });
+          // 认不出的：把里面前几个文件名亮出来，再给个下拉自己挑去处
+          const reason = it.action === 'unsure' && it.sample?.length ? `里面有：${it.sample.slice(0, 3).join('、')}` : it.reason;
+          const pick = it.action === 'unsure' ? h('select', { class: 'field field--sm tidy__pick', title: '自己挑一个去处', onchange: (e) => { it.to = scanData.destinations[e.target.value]; it.action = 'move'; cb.checked = true; } },
+            h('option', { value: '', selected: true }, '去哪…'), ...Object.entries(DEST_LABELS).map(([k, v]) => h('option', { value: k }, v))) : null;
           return h('div', { class: 'tidy__row' }, cb,
             h('span', { class: `tidy__name${it.careless ? ' is-careless' : ''}`, title: it.path }, `${it.isDir ? '📁 ' : '📄 '}${it.name}`),
-            h('span', { class: 'tidy__reason', title: it.reason }, it.reason),
+            h('span', { class: 'tidy__reason', title: reason }, reason), pick,
             h('span', { class: 'tidy__meta' }, `${it.where === 'www.macpe.cn' || it.where === '~' ? '主目录' : it.where === 'Desktop' ? '桌面' : it.where === 'Downloads' ? '下载' : it.where} · ${fmtAge(it.ageDays)}${it.size != null ? ' · ' + fmtSize(it.size) : it.count != null ? ` · ${it.count} 项` : ''}`),
             h('button', { class: 'btn btn--sm', onclick: () => api().reveal(it.path) }, '看看'),
           );
