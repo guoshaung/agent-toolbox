@@ -1771,6 +1771,23 @@ function registerIpc() {
   ipcMain.handle('tidy:undo', () => tidy.undo(app.getPath('userData')));
   ipcMain.handle('tidy:recent', (_e, opts) => tidy.recent(opts || {}));
   ipcMain.handle('tidy:activity', (_e, opts) => tidy.activity(opts || {}));
+  ipcMain.handle('tidy:nudge', (_e, on) => { if (typeof on === 'boolean') store.set('tidy.nudge', on); return { on: store.get('tidy.nudge', true) !== false }; });
+  // 每天最多提醒一次：散落的东西超过 30 项就发一条系统通知，点了直接去收纳
+  const tidyNudge = () => {
+    try {
+      if (store.get('tidy.nudge', true) === false) return;
+      const today = new Date().toISOString().slice(0, 10);
+      if (store.get('tidy.nudgedOn') === today) return;
+      const stray = tidy.suggest(tidy.scan().items, tidySettings()).filter((x) => x.action !== 'keep');
+      if (stray.length < 30) return;
+      store.set('tidy.nudgedOn', today);
+      const n = new Notification({ title: `桌面 / 下载 / 主目录散落了 ${stray.length} 项`, body: '点一下去收纳，勾选后一键归位（可撤销）。不想被提醒可以在收纳里关。' });
+      n.on('click', () => ensureMainWindow({ show: true }).webContents.send('app:navigate-tool', { id: 'tidy' }));
+      n.show();
+    } catch { /* 提醒失败不算事 */ }
+  };
+  setTimeout(tidyNudge, 90 * 1000);
+  setInterval(tidyNudge, 6 * 3600 * 1000);
   // 讲解按目录缓存：同一个项目再打开秒出，想重来点「重新讲」
   ipcMain.handle('tidy:overview', async (_e, root, { fresh = false } = {}) => {
     const cache = store.get('tidy.overviews', {}) || {};

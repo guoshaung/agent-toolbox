@@ -340,6 +340,7 @@ contextBridge.exposeInMainWorld('toolbox', {
     undo: () => ipcRenderer.invoke('tidy:undo'),
     recent: (opts) => ipcRenderer.invoke('tidy:recent', opts),
     activity: (opts) => ipcRenderer.invoke('tidy:activity', opts),
+    nudge: (on) => ipcRenderer.invoke('tidy:nudge', on),
     overview: (root, opts) => ipcRenderer.invoke('tidy:overview', root, opts),
     ask: (payload) => ipcRenderer.invoke('tidy:ask', payload),
     planToTasks: (payload) => ipcRenderer.invoke('tidy:planToTasks', payload),
