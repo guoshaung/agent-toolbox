@@ -325,6 +325,20 @@ contextBridge.exposeInMainWorld('toolbox', {
     onPhone: (callback) => ipcRenderer.on('pet:phone', (_event, payload) => callback(payload)),
   },
 
+  /** 收纳：散落在主目录 / 桌面 / 下载的东西归位；项目速览 */
+  tidy: {
+    scan: (opts) => ipcRenderer.invoke('tidy:scan', opts),
+    apply: (moves) => ipcRenderer.invoke('tidy:apply', moves),
+    undo: () => ipcRenderer.invoke('tidy:undo'),
+    recent: (opts) => ipcRenderer.invoke('tidy:recent', opts),
+    overview: (root) => ipcRenderer.invoke('tidy:overview', root),
+    facts: (root) => ipcRenderer.invoke('tidy:facts', root),
+    pickFolder: () => ipcRenderer.invoke('tidy:pickFolder'),
+    setCodeDir: () => ipcRenderer.invoke('tidy:setCodeDir'),
+    reveal: (p) => ipcRenderer.invoke('tidy:reveal', p),
+    open: (p) => ipcRenderer.invoke('tidy:open', p),
+  },
+
   /** 手机精灵：往手机递文件、看它干活的日志 */
   phone: {
     sendFiles: (paths) => ipcRenderer.invoke('phone:sendFiles', paths),

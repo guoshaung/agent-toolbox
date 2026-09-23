@@ -97,7 +97,7 @@ if (!pinnedIds || !pinnedIds.length) {
   // 启动都把栏尾那个静默顶掉 —— 实测用户钉着的 7 个里，「学习」在尾巴上，
   // 于是它每次启动都被 voice 挤掉，配置里明明还存着却怎么都不出现。
   // 自己钉上去的东西不该被自动补位挤走；补不进去就让它留在「更多」里。
-  for (const id of ['controls', 'avatar-rig', 'voice']) {
+  for (const id of ['controls', 'avatar-rig', 'voice', 'tidy']) {
     if (pinnedIds.includes(id) || pinnedIds.length >= MAX_PINNED) continue;
     pinnedIds = [...pinnedIds, id];
   }

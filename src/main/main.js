@@ -34,6 +34,7 @@ const { GitDesk } = require('./git-desk');
 const { NetCapture } = require('./net-capture');
 const { Monologue } = require('./monologue');
 const { PhoneAgent, PhoneOutbox } = require('./phone-agent');
+const tidy = require('./tidy');
 const chatRead = require('./chat-read');
 const { registerCertTrust } = require('./certtrust');
 const translator = require('./translate');
@@ -1742,6 +1743,32 @@ function registerIpc() {
   // 代码记事本：读取 Understand-Anything 的知识图谱 + 按行号回读源码
   registerNotebookIpc(ipcMain, { dialog, getWindow: () => mainWindow, getUserDataPath: () => app.getPath('userData') });
   registerContainerIpc(ipcMain, { shell, getUserDataPath: () => app.getPath('userData') });
+  // 收纳：主目录 / 桌面 / 下载 三处顶层散落的东西
+  const tidyAsk = (messages) => callStoredCompatibleApi({ messages, temperature: 0.2, timeout: 90000 });
+  const tidySettings = () => ({ codeDir: store.get('tidy.codeDir', '') || undefined });
+  ipcMain.handle('tidy:scan', async (_e, { ai = false } = {}) => {
+    const scanned = tidy.scan();
+    let items = tidy.suggest(scanned.items, tidySettings());
+    if (ai) items = await tidy.refine(items, tidyAsk, tidySettings());
+    return { ...scanned, items, destinations: tidy.destinations(tidySettings()), undo: tidy.lastUndo(app.getPath('userData')) };
+  });
+  ipcMain.handle('tidy:apply', (_e, moves) => tidy.apply(app.getPath('userData'), moves, { trash: (p) => shell.trashItem(p) }));
+  ipcMain.handle('tidy:undo', () => tidy.undo(app.getPath('userData')));
+  ipcMain.handle('tidy:recent', (_e, opts) => tidy.recent(opts || {}));
+  ipcMain.handle('tidy:overview', (_e, root) => tidy.overview(root, tidyAsk));
+  ipcMain.handle('tidy:facts', (_e, root) => tidy.projectFacts(root));
+  ipcMain.handle('tidy:pickFolder', async () => {
+    const r = await dialog.showOpenDialog(mainWindow, { title: '选一个项目文件夹', properties: ['openDirectory'] });
+    return r.canceled || !r.filePaths.length ? null : r.filePaths[0];
+  });
+  ipcMain.handle('tidy:setCodeDir', async () => {
+    const r = await dialog.showOpenDialog(mainWindow, { title: '代码项目统一放在哪', properties: ['openDirectory', 'createDirectory'] });
+    if (r.canceled || !r.filePaths.length) return { ok: false };
+    store.set('tidy.codeDir', r.filePaths[0]);
+    return { ok: true, codeDir: r.filePaths[0] };
+  });
+  ipcMain.handle('tidy:reveal', (_e, p) => { shell.showItemInFolder(String(p)); return { ok: true }; });
+  ipcMain.handle('tidy:open', (_e, p) => shell.openPath(String(p)));
   registerAvatarRigIpc(ipcMain, { app, shell, getUserDataPath: () => app.getPath('userData'),
     getSeedPath: () => path.join(app.isPackaged ? process.resourcesPath : path.join(__dirname, '..', '..'), 'container-seed', 'avatar-rig-studio') });
   // 画图工具导出的图、DSH 里下载的文件，都落进容器
