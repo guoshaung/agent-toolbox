@@ -684,7 +684,10 @@
 .switch__input:checked + .switch__track::after { transform: translateX(16px); background: white; }
 .switch__input:focus-visible + .switch__track { outline: 2px solid white; outline-offset: 2px; }
 .switch--large { font-weight: 650; }
-.pet-settings__skins { display: grid; grid-template-columns: repeat(2, minmax(0, 190px)); gap: 10px; margin: 12px 0; }
+/* 皮肤多了以后两列一竖排要滚好几屏，按宽度自动排列：宽屏一行五六个，窄了自己折 */
+.pet-settings__skins { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; margin: 12px 0; }
+.pet-settings__skin { transition: border-color .15s, transform .15s, box-shadow .15s; }
+.pet-settings__skin:hover { border-color: var(--accent); transform: translateY(-2px); box-shadow: var(--shadow-sm); }
 .pet-settings__skin { min-height: 142px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 5px; border: 1px solid var(--line); border-radius: 12px; color: var(--text-dim); background: var(--bg-sunken); cursor: pointer; }
 .pet-settings__skin:hover, .pet-settings__skin.is-selected { color: var(--text); border-color: var(--accent); background: var(--accent-soft); }
 .pet-settings__skin small { color: var(--text-faint); font-size: 10px; }
