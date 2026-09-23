@@ -246,3 +246,11 @@ test('projectMap：顶层目录按文件数排，带主要后缀；跳过 node_m
   assert.equal(m.dirs[0].files, 6); assert.equal(m.dirs[0].top[0], '.js 5');
   assert.deepEqual(m.files, ['README.md']);
 });
+
+test('数字命名、只装 work_dir 的文件夹算跑任务留下的工作目录', () => {
+  const d = tmp();
+  touch(path.join(d, '58720303', 'work_dir', 'a.txt'));
+  assert.equal(tidy.classifyDir(path.join(d, '58720303')).kind, 'run');
+  touch(path.join(d, '58720304', 'work_dir', 'a.txt')); touch(path.join(d, '58720304', 'photos', 'b.png'));
+  assert.notEqual(tidy.classifyDir(path.join(d, '58720304')).kind, 'run', '有别的东西就不算');
+});

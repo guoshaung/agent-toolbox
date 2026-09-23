@@ -56,6 +56,8 @@ function classifyDir(full) {
   if (repos >= 1 && repos >= dirs.length * 0.5) return { kind: 'workspace', count: entries.length, repos };
   // 发票夹：名字或里面的文件带「发票 / invoice」
   if (INVOICE.test(path.basename(full)) || (files.length && files.filter((f) => INVOICE.test(f)).length >= files.length * 0.5)) return { kind: 'invoice', count: files.length };
+  // 数字命名、里面只有 work_dir / logs / output 这类东西：某个工具跑任务留下的工作目录
+  if (/^\d{5,}$/.test(path.basename(full)) && dirs.length && dirs.every((n) => /^(work_dir|workdir|logs?|outputs?|tmp|cache|artifacts?)$/i.test(n)) && files.length <= 2) return { kind: 'run', count: entries.length };
   // 跑出来的结果夹：evidence / report / all_case_results 这种组合
   if (names.some((n) => /^(evidence|results?|outputs?)$/i.test(n)) && names.some((n) => /^(report\.md|all_case_results\.json|summary\.(md|json)|metrics\.json)$/i.test(n))) return { kind: 'run', count: entries.length };
   const tally = (re) => files.filter((f) => re.test(f)).length;
