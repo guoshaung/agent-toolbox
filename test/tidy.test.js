@@ -41,7 +41,7 @@ test('suggest：每类都有去处，空文件夹建议删，认不出的标 uns
   ];
   const out = tidy.suggest(items, { codeDir: '/tmp/code' });
   assert.equal(out[0].to, '/tmp/code');
-  assert.match(out[1].to, /收纳\/文档$/);
+  assert.ok(out[1].to.endsWith(path.join('收纳', '文档')), out[1].to);   // Windows 是反斜杠
   assert.equal(out[2].action, 'delete');
   assert.equal(out[3].action, 'unsure');
 });
@@ -50,7 +50,7 @@ test('refine：模型的回答只在白名单里生效，答坏了保持 unsure'
   const items = tidy.suggest([{ name: 'm', isDir: true, kind: 'mixed', sample: ['a'] }, { name: 'n', isDir: true, kind: 'mixed' }], {});
   const ask = async () => ({ ok: true, text: '```json\n[{"i":1,"to":"docs","reason":"都是文档"},{"i":2,"to":"/etc","reason":"x"}]\n```' });
   const out = await tidy.refine(items, ask, {});
-  assert.equal(out[0].action, 'move'); assert.match(out[0].to, /文档$/); assert.match(out[0].reason, /^AI：/);
+  assert.equal(out[0].action, 'move'); assert.ok(out[0].to.endsWith('文档')); assert.match(out[0].reason, /^AI：/);
   assert.equal(out[1].action, 'unsure', '不在白名单里的去处不接受');
   const broken = await tidy.refine(tidy.suggest([{ name: 'm', isDir: true, kind: 'mixed' }], {}), async () => ({ ok: true, text: '我不知道' }), {});
   assert.equal(broken[0].action, 'unsure');
