@@ -35,6 +35,8 @@ const INSTALLER = /\.(dmg|pkg|apk|exe|msi|deb|rpm|appimage|ipa)$/i;
 const CODE = /\.(js|ts|jsx|tsx|py|go|rs|java|kt|swift|c|cc|cpp|h|hpp|cs|rb|php|sh|zsh|sql|ipynb|vue|svelte|lua|dart|scala|m|mm)$/i;
 const DATA = /\.(json|jsonl|csv|tsv|xml|ya?ml|toml|parquet|npy|npz|pkl|pt|pth|safetensors|onnx|h5|db|sqlite3?)$/i;
 const FONT = /\.(ttf|otf|woff2?)$/i;
+const LOGISH = /\.(log|hprof|dump|bak(-[\w-]+)?|old|orig|tmp)$/i;
+const INVOICE = /(发票|invoice|receipt|收据)/i;
 const PROJECT_MARKERS = ['package.json', 'pyproject.toml', 'requirements.txt', 'go.mod', 'Cargo.toml', 'pom.xml', 'build.gradle', 'CMakeLists.txt', 'Makefile', '.git', 'Gemfile', 'composer.json', 'setup.py', 'Package.swift', 'pubspec.yaml', 'environment.yml', 'main.tex'];
 
 function statSafe(p) { try { return fs.statSync(p); } catch { return null; } }
@@ -52,6 +54,10 @@ function classifyDir(full) {
   // 它本身就是一个「项目集」，搬走会把里面正在用的路径全弄断，建议原地不动
   const repos = dirs.filter((d) => listSafe(path.join(full, d)).some((e) => PROJECT_MARKERS.includes(e.name))).length;
   if (repos >= 1 && repos >= dirs.length * 0.5) return { kind: 'workspace', count: entries.length, repos };
+  // 发票夹：名字或里面的文件带「发票 / invoice」
+  if (INVOICE.test(path.basename(full)) || (files.length && files.filter((f) => INVOICE.test(f)).length >= files.length * 0.5)) return { kind: 'invoice', count: files.length };
+  // 跑出来的结果夹：evidence / report / all_case_results 这种组合
+  if (names.some((n) => /^(evidence|results?|outputs?)$/i.test(n)) && names.some((n) => /^(report\.md|all_case_results\.json|summary\.(md|json)|metrics\.json)$/i.test(n))) return { kind: 'run', count: entries.length };
   const tally = (re) => files.filter((f) => re.test(f)).length;
   const img = tally(IMAGE); const doc = tally(DOC); const code = tally(CODE); const vid = tally(VIDEO);
   if (!files.length && !dirs.length) return { kind: 'empty', count: 0 };
@@ -72,6 +78,8 @@ function classifyFile(name) {
   if (CODE.test(name)) return 'code';
   if (DATA.test(name)) return 'data';
   if (FONT.test(name)) return 'font';
+  if (LOGISH.test(name)) return 'logs';
+  if (INVOICE.test(name)) return 'invoice';
   return 'other';
 }
 
@@ -142,7 +150,7 @@ function destinations(settings = {}) {
     videos: path.join(base, '视频'), video: path.join(base, '视频'), audio: path.join(base, '音频'),
     docs: path.join(base, '文档'), doc: path.join(base, '文档'),
     archive: path.join(base, '压缩包'), installer: path.join(base, '安装包'),
-    code: path.join(base, '零散代码'), data: path.join(base, '数据'), font: path.join(base, '字体'), mixed: path.join(base, '杂项'), other: path.join(base, '杂项'), empty: null,
+    code: path.join(base, '零散代码'), data: path.join(base, '数据'), font: path.join(base, '字体'), logs: path.join(base, '日志备份'), invoice: path.join(base, '发票'), run: path.join(base, '运行结果'), mixed: path.join(base, '杂项'), other: path.join(base, '杂项'), empty: null,
   };
 }
 
@@ -160,7 +168,7 @@ function suggest(items, settings = {}) {
 }
 
 function labelOf(kind) {
-  return { workspace: '项目集', data: '数据文件', font: '字体', images: '图片', image: '图片', videos: '视频', video: '视频', audio: '音频', docs: '文档', doc: '文档', archive: '压缩包', installer: '安装包', code: '零散代码', mixed: '杂项', other: '杂项', project: '代码项目', empty: '空' }[kind] || kind;
+  return { workspace: '项目集', data: '数据文件', font: '字体', logs: '日志 / 备份', invoice: '发票', run: '跑出来的结果', images: '图片', image: '图片', videos: '视频', video: '视频', audio: '音频', docs: '文档', doc: '文档', archive: '压缩包', installer: '安装包', code: '零散代码', mixed: '杂项', other: '杂项', project: '代码项目', empty: '空' }[kind] || kind;
 }
 
 /** 让模型给 unsure 的那几项起个像样的归属：只发名字和几个文件名，不发内容 */

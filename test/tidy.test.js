@@ -212,3 +212,15 @@ test('staleDownloads：只挑超过 30 天的安装包 / 压缩包，按大小�
   ];
   assert.deepEqual(tidy.staleDownloads(items, { now }).map((x) => x.name), ['b.zip', 'a.dmg']);
 });
+
+test('发票夹、运行结果夹、日志备份文件都认得', () => {
+  const d = tmp();
+  for (const n of ['电子发票-1.pdf', '电子发票-1.ofd', '电子发票-1.xml']) touch(path.join(d, 'invoice_2026', n));
+  assert.equal(tidy.classifyDir(path.join(d, 'invoice_2026')).kind, 'invoice');
+  touch(path.join(d, 'final 3', 'evidence', 'x.png')); touch(path.join(d, 'final 3', 'all_case_results.json'), '{}');
+  assert.equal(tidy.classifyDir(path.join(d, 'final 3')).kind, 'run');
+  assert.equal(tidy.classifyFile('app.log'), 'logs');
+  assert.equal(tidy.classifyFile('config.bak-20260914-164345'), 'logs');
+  assert.equal(tidy.classifyFile('java_pid1.hprof'), 'logs');
+  assert.match(tidy.suggest([{ name: 'x', isDir: true, kind: 'run' }], {})[0].to, /运行结果$/);
+});
