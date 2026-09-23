@@ -138,6 +138,17 @@ const MONOLOGUE_SHORTCUT = 'CommandOrControl+Shift+M';
 // 叫回主窗口。关掉窗口后应用还在后台（桌宠、手机服务都靠它），但没有一个显眼的入口能把窗口叫回来，
 // 于是「叉掉就找不到了」。菜单栏图标 + 这个快捷键 + 点 Dock 图标，三条路都能回来。
 const WAKE_SHORTCUT = 'CommandOrControl+Shift+A';
+// 在任何应用里选中一段代码 / 一句话 → 桌宠弹出四行解释。学代码最常用的一下。
+const EXPLAIN_SHORTCUT = 'CommandOrControl+Shift+L';
+
+async function explainSelectionWithPet() {
+  const text = await captureSelectedText().catch(() => '');
+  if (!store.get('pet.enabled', true)) { store.set('pet.enabled', true); applyPetSettings(); }
+  if (!petWindow || petWindow.isDestroyed()) createPetWindow();
+  const deliver = () => petWindow.webContents.send('pet:quick', { text });
+  if (petWindow.webContents.isLoading()) petWindow.webContents.once('did-finish-load', deliver); else deliver();
+  petWindow.showInactive();
+}
 let tray = null;
 
 function createTray() {
@@ -1054,9 +1065,13 @@ async function captureSelectedText() {
   clipboard.writeText(marker);
   try {
     await pressCopyShortcut();
-    await new Promise((resolve) => setTimeout(resolve, 160));
-    const selected = clipboard.readText().trim();
-    return selected && selected !== marker ? selected.slice(0, 1200) : '';
+    // 别的应用把选中内容写进剪贴板要一会儿（TextEdit 实测 160ms 不够），轮询到变了为止，最多 ~800ms
+    for (let i = 0; i < 10; i += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 80));
+      const selected = clipboard.readText().trim();
+      if (selected && selected !== marker) return selected.slice(0, 1200);
+    }
+    return '';
   } finally {
     clipboard.writeText(previous);
   }
@@ -2257,6 +2272,8 @@ function registerIpc() {
   });
 
   ipcMain.handle('pet:getState', () => ({ settings: petSettings(), clipboard: clipboard.readText() }));
+  // 同一条路也给面板 / 命令面板用：读当前前台应用里选中的文字，交给桌宠解释
+  ipcMain.handle('pet:quickSelection', () => explainSelectionWithPet().then(() => ({ ok: true })));
   ipcMain.handle('pet:setEnabled', (_e, enabled) => {
     store.set('pet.enabled', Boolean(enabled));
     applyPetSettings();
@@ -3296,6 +3313,7 @@ app.whenReady().then(async () => {
   createTray();
   try {
     if (!globalShortcut.register(WAKE_SHORTCUT, () => ensureMainWindow({ show: true }))) console.warn('[wake] 快捷键被占用：', WAKE_SHORTCUT);
+    if (!globalShortcut.register(EXPLAIN_SHORTCUT, () => explainSelectionWithPet().catch((e) => console.warn('[explain]', e.message)))) console.warn('[explain] 快捷键被占用：', EXPLAIN_SHORTCUT);
   } catch (error) { console.warn('[wake] 快捷键注册失败：', error.message); }
   // 选中文字 → ⌘⇧M → 浮窗给解读
   try {

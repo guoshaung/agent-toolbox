@@ -98,6 +98,7 @@ export default {
         ),
         h('section', { class: 'card pet-settings__how' },
           h('h3', { class: 'card__title' }, '快捷操作'),
+          h('p', { class: 'faint settings__hint' }, '在任何应用里选中一段代码或一句话，按 ⌘⇧L，桌宠直接弹出四行解释 —— 学代码最常用的一下。'),
           h('ol', {},
             h('li', {}, h('b', {}, '从会话里吃'), h('span', {}, '直接读本机的 Codex / Claude 会话记录，勾中哪几段就吃哪几段，不用复制粘贴。')),
             h('li', {}, h('b', {}, '吃剪贴板'), h('span', {}, '任何地方复制的内容都能吃，来源记作「剪贴板」。')),

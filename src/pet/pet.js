@@ -143,6 +143,13 @@ window.toolbox.pet.onPhone?.((p) => {
   phoneSay(text, { busy, ms: busy ? 0 : 5000 });
 });
 
+// ⌘⇧L：别的应用里选中的代码 / 句子送过来 → 打开解释卡直接讲
+window.toolbox.pet.onQuick?.(async ({ text } = {}) => {
+  await setExpanded('card');
+  if (text && text.trim()) { code.value = text; requestExplanation(false); }
+  else { status.textContent = '没选中东西。先选一段代码或一句话，再按 ⌘⇧L。'; status.className = 'status is-error'; }
+});
+
 // 点桌宠默认开记忆栈——这才是现在的主功能，四行解释退到里面的一个按钮。
 avatar.addEventListener('click', () => { if (!moved) setExpanded('memory'); });
 document.getElementById('collapse').addEventListener('click', () => setExpanded(false));

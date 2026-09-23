@@ -323,6 +323,9 @@ contextBridge.exposeInMainWorld('toolbox', {
     onCollapse: (callback) => ipcRenderer.on('pet:collapse', callback),
     /** 手机精灵在干嘛（听/想/做/递文件），桌面精灵跟着表演 */
     onPhone: (callback) => ipcRenderer.on('pet:phone', (_event, payload) => callback(payload)),
+    /** ⌘⇧L：在别的应用里选中的文字送过来，直接解释 */
+    onQuick: (callback) => ipcRenderer.on('pet:quick', (_event, payload) => callback(payload)),
+    quickSelection: () => ipcRenderer.invoke('pet:quickSelection'),
   },
 
   /** ⌘K 命令面板：焦点在 webview 里时由主进程转发过来 */
