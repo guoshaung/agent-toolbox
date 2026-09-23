@@ -326,6 +326,8 @@ contextBridge.exposeInMainWorld('toolbox', {
     /** ⌘⇧L：在别的应用里选中的文字送过来，直接解释 */
     onQuick: (callback) => ipcRenderer.on('pet:quick', (_event, payload) => callback(payload)),
     quickSelection: () => ipcRenderer.invoke('pet:quickSelection'),
+    /** 桌宠里叫主窗口切到某个工具 */
+    openTool: (id) => ipcRenderer.invoke('pet:openTool', id),
   },
 
   /** 渲染层未捕获错误 → userData/logs/main-errors.log */

@@ -52,6 +52,7 @@ export function createPalette({ tools, activate, config, toast, extraActions = [
   let index = 0;
   let items = [];
   let recentFiles = null;                 // 懒加载，打开面板时才去问
+  let journal = null;                     // 学习记录，同样懒加载
 
   const input = h('input', { class: 'palette__input', placeholder: '搜工具、换皮肤、找刚建的文件夹… 「+ 事情」直接记任务', spellcheck: 'false' });
   const list = h('div', { class: 'palette__list' });
@@ -71,7 +72,15 @@ export function createPalette({ tools, activate, config, toast, extraActions = [
     const fileItems = (recentFiles || []).map((f) => ({ id: `file:${f.path}`, kind: 'file', title: f.name, hint: `${f.isDir ? '文件夹' : '文件'} · ${f.where}`, keywords: [f.path], isDir: f.isDir, run: () => window.toolbox.tidy.reveal(f.path), alt: () => window.toolbox.tidy.open(f.path) }));
     // 最近新建的文件夹再给一条「看懂它」：搜「看懂」或者文件夹名都能出来
     const learnItems = learn ? (recentFiles || []).filter((f) => f.isDir).slice(0, 8).map((f) => ({ id: `learn:${f.path}`, kind: 'action', title: `看懂：${f.name}`, hint: `让 AI 讲这个项目是什么、怎么跑、从哪读起 · ${f.where}`, icon: 'graduation', keywords: ['看懂', '讲解', 'learn', f.name], run: () => learn(f.path) })) : [];
-    return [...toolItems, ...extraActions, ...themeItems, ...effectItems, ...fileItems, ...learnItems];
+    // 学习记录：解释过的那段、看懂过的项目、考过的分，都能搜回来
+    const journalItems = (journal || []).map((j, i) => ({
+      id: `journal:${j.at}:${i}`, kind: 'journal', icon: 'graduation',
+      title: `${{ explain: '解释过', overview: '看懂过', file: '读过', quiz: '考过' }[j.kind] || '记'}：${j.title}${j.kind === 'quiz' ? `（${j.score}/${j.total}）` : ''}`,
+      hint: new Date(j.at).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }),
+      keywords: ['学习', '记录', j.title],
+      run: async () => { if (j.meta && learn) return learn(j.meta); activate('home'); },
+    }));
+    return [...toolItems, ...extraActions, ...themeItems, ...effectItems, ...fileItems, ...learnItems, ...journalItems];
   };
 
   function render() {
@@ -80,7 +89,7 @@ export function createPalette({ tools, activate, config, toast, extraActions = [
     const quick = quickTaskFrom(q);
     items = quick
       ? [{ ...quick, run: async () => { const list = config.get('tasks.items', []) || []; await config.set('tasks.items', [{ id: `task-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`, title: quick.keywords[0], done: false, priority: 'normal', due: '', createdAt: Date.now(), completedAt: null }, ...list]); toast?.(`加了任务：${quick.keywords[0]}`, 'good'); } }]
-      : rankItems(q, catalog(), { recentIds: mru }).slice(0, q ? 40 : 14);
+      : rankItems(q, catalog().filter((it) => q || it.kind !== 'journal'), { recentIds: mru }).slice(0, q ? 40 : 14);
     index = Math.min(index, Math.max(0, items.length - 1));
     list.replaceChildren(...items.map((it, i) => {
       const row = h('div', { class: `palette__row${i === index ? ' is-active' : ''}`, dataset: { i: String(i) } },
@@ -88,7 +97,7 @@ export function createPalette({ tools, activate, config, toast, extraActions = [
           : it.kind === 'theme' ? h('span', { class: 'palette__swatches' }, ...(it.swatches || []).map((c) => h('i', { style: { background: c } })))
             : h('span', { class: 'palette__icon' }, it.kind === 'file' ? (it.isDir ? '📁' : '📄') : iconFor(it.icon || 'zap')),
         h('span', { class: 'palette__text' }, h('span', { class: 'palette__title' }, it.title), it.hint ? h('span', { class: 'palette__hint' }, it.hint) : null),
-        h('span', { class: 'palette__kind faint' }, { tool: '工具', theme: '皮肤', effect: '效果', file: '刚建的', action: '动作' }[it.kind] || ''),
+        h('span', { class: 'palette__kind faint' }, { tool: '工具', theme: '皮肤', effect: '效果', file: '刚建的', action: '动作', journal: '学习记录' }[it.kind] || ''),
       );
       row.addEventListener('pointermove', () => { if (index !== i) { index = i; highlight(); } });
       row.addEventListener('click', () => pick(i));
@@ -112,6 +121,7 @@ export function createPalette({ tools, activate, config, toast, extraActions = [
     input.focus();
     // 最近新建的东西：面板开着的时候悄悄拉一次，拉到了就补进列表
     window.toolbox.tidy?.recent?.({ days: 3, limit: 30 }).then((r) => { if (r?.ok) { recentFiles = r.items; if (open) render(); } }).catch(() => {});
+    window.toolbox.learn?.journal?.({ limit: 60 }).then((r) => { if (r?.items) { journal = r.items; if (open) render(); } }).catch(() => {});
   }
   function hide() { open = false; root.hidden = true; }
   function toggle() { open ? hide() : show(); }

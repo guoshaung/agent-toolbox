@@ -119,7 +119,7 @@ function phoneSay(text, { busy = false, ms = 4000 } = {}) {
   if (text && ms) bubbleTimer = setTimeout(() => { phoneBubble.hidden = true; }, ms);
 }
 let dropDepth = 0;
-shell.addEventListener('dragenter', (event) => { event.preventDefault(); dropDepth += 1; shell.classList.add('is-drop'); dropHint.hidden = false; });
+shell.addEventListener('dragenter', (event) => { event.preventDefault(); dropDepth += 1; shell.classList.add('is-drop'); dropHint.hidden = false; dropHint.textContent = event.altKey ? '看懂它' : '递给手机（按住 ⌥ = 看懂）'; });
 shell.addEventListener('dragover', (event) => { event.preventDefault(); event.dataTransfer.dropEffect = 'copy'; });
 shell.addEventListener('dragleave', () => { dropDepth = Math.max(0, dropDepth - 1); if (!dropDepth) { shell.classList.remove('is-drop'); dropHint.hidden = true; } });
 shell.addEventListener('drop', async (event) => {
@@ -127,6 +127,13 @@ shell.addEventListener('drop', async (event) => {
   dropDepth = 0; shell.classList.remove('is-drop'); dropHint.hidden = true;
   const paths = [...(event.dataTransfer?.files || [])].map((f) => window.toolbox.files.getPathForFile(f)).filter(Boolean);
   if (!paths.length) { phoneSay('只能递文件哦'); return; }
+  // 按住 ⌥ 拖进来 = 让工具箱讲这个项目，而不是递给手机
+  if (event.altKey && paths.length === 1) {
+    await window.toolbox.config.set('tidy.pending', paths[0]);
+    await window.toolbox.pet.openTool?.('tidy');
+    phoneSay(`去看懂 ${paths[0].split('/').pop()}`, { ms: 3000 });
+    return;
+  }
   const result = await window.toolbox.phone.sendFiles(paths);
   if (!result.ok) { phoneSay(result.errors?.[0] || '递不出去'); return; }
   const names = result.sent.map((x) => x.name).join('、');

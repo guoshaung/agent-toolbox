@@ -2353,6 +2353,7 @@ function registerIpc() {
   ipcMain.handle('pet:getState', () => ({ settings: petSettings(), clipboard: clipboard.readText() }));
   // 同一条路也给面板 / 命令面板用：读当前前台应用里选中的文字，交给桌宠解释
   ipcMain.handle('pet:quickSelection', () => explainSelectionWithPet().then(() => ({ ok: true })));
+  ipcMain.handle('pet:openTool', (_e, id) => { ensureMainWindow({ show: true }).webContents.send('app:navigate-tool', { id: String(id || 'home') }); return { ok: true }; });
   ipcMain.handle('pet:setEnabled', (_e, enabled) => {
     store.set('pet.enabled', Boolean(enabled));
     applyPetSettings();
