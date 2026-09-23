@@ -95,7 +95,12 @@ jobs:
               --title "Agent 工具箱 $TAG" --generate-notes
           fi
           # GitHub 的上传端点对大文件偶尔 504，重试三次
-          for file in artifacts/*; do
+          # 产物按文件找，不管 download-artifact 把它们放平还是留着子目录（runner 镜像升级后行为变过一次：
+          # artifacts/* 匹配不到东西，循环空转，release 建出来一个产物都没有，而检查还通过了）
+          mapfile -t files < <(find artifacts -type f | sort)
+          echo "找到 ${#files[@]} 个产物："; printf '  %s\n' "${files[@]}"
+          if [ "${#files[@]}" -lt 6 ]; then echo "::error::产物少于 6 个，拒绝发布"; exit 1; fi
+          for file in "${files[@]}"; do
             for attempt in 1 2 3; do
               if gh release upload "$TAG" "$file" --repo "$GITHUB_REPOSITORY" --clobber; then
                 break
@@ -110,7 +115,7 @@ jobs:
           done
           # 少传一个都可能让自动更新装不上（macOS 认 zip、Windows 认 exe），所以清点一遍
           missing=0
-          for file in artifacts/*; do
+          for file in "${files[@]}"; do
             name=$(basename "$file")
             if ! gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json assets -q '.assets[].name' | grep -qx "$name"; then
               echo "::error::$name 没出现在 release 里"
