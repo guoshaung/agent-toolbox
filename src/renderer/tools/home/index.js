@@ -37,11 +37,13 @@ export default {
     async function render() {
       const tasks = (config.get('tasks.items', []) || []).filter((t) => !t.done).slice(0, 6);
       const mru = (config.get('ui.mru') || []).filter((id) => id !== 'home').slice(0, 6).map((id) => TOOLS.find((t) => t.id === id)).filter(Boolean);
-      const [recent, scan, overviews] = await Promise.all([
+      const [recent, scan, overviews, activity] = await Promise.all([
         window.toolbox.tidy.recent({ days: 3, limit: 8 }).catch(() => ({ items: [] })),
         window.toolbox.tidy.scan({ ai: false }).catch(() => ({ items: [] })),
         window.toolbox.tidy.overviewList().catch(() => []),
+        window.toolbox.tidy.activity({ days: 7, limit: 6 }).catch(() => ({ items: [] })),
       ]);
+      const ago = (t) => { const d = (Date.now() - t) / 3600000; return d < 1 ? '刚刚' : d < 24 ? `${Math.round(d)} 小时前` : `${Math.round(d / 24)} 天前`; };
       const stray = (scan.items || []).filter((x) => x.action !== 'keep');
       const careless = stray.filter((x) => x.careless).length;
 
@@ -67,6 +69,14 @@ export default {
             h('div', { class: 'home__big' }, h('b', {}, String(stray.length)), h('span', { class: 'faint' }, ' 项散落在桌面 / 下载 / 主目录')),
             careless ? h('div', { class: 'faint' }, `其中 ${careless} 个一看就是随手建的（数字名、未命名、test…）`) : null,
             h('div', { class: 'home__chips' }, ...Object.entries(stray.reduce((m, x) => { m[x.reason] = (m[x.reason] || 0) + 1; return m; }, {})).sort((a, b) => b[1] - a[1]).slice(0, 6).map(([k, n]) => h('span', { class: 'tag' }, `${k} ${n}`))),
+          ),
+          section('这周在写的', null,
+            ...(activity.items?.length ? activity.items.map((it) => h('div', { class: 'home__row' },
+              h('span', { class: 'home__name', title: `${it.path}\n最近一次：${it.last.message}` }, `🛠 ${it.name}`),
+              h('span', { class: 'faint home__meta' }, `${it.count} 次提交 · ${ago(it.last.at)}`),
+              h('button', { class: 'btn btn--sm', onclick: () => window.toolbox.tidy.reveal(it.path) }, '显示'),
+              h('button', { class: 'btn btn--sm', onclick: async () => { await config.set('tidy.pending', it.path); goto('tidy'); } }, '看懂'),
+            )) : [empty('这周还没有提交过东西（只看桌面 / 下载 / 主目录下的仓库）')]),
           ),
           section('讲过的项目', null,
             ...(overviews.length ? [h('div', { class: 'home__chips' }, ...overviews.slice(0, 10).map((o) => h('button', { class: 'btn btn--sm', title: short(o.root), onclick: async () => { await config.set('tidy.pending', o.root); goto('tidy'); } }, o.name)))] : [empty('还没让 AI 讲过项目。把一个文件夹拖进「收纳 → 看懂项目」试试')]),

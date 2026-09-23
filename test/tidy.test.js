@@ -113,3 +113,17 @@ test('studyPlanToTasks：只取「学习顺序」那一节的列表项，去掉�
   assert.deepEqual(tidy.studyPlanToTasks('## 从哪个文件开始读\n- a.js\n- b.js'), ['a.js', 'b.js'], '没有学习顺序就退到入口文件那节');
   assert.deepEqual(tidy.studyPlanToTasks('随便一段'), []);
 });
+
+test('parseGitLog：按时间倒序，给次数和最近一条', () => {
+  const out = '1700000000\tfix: a\n1700003600\tfeat: b\n\n1699990000\tchore\n';
+  const r = tidy.parseGitLog(out);
+  assert.equal(r.count, 3); assert.equal(r.last.message, 'feat: b'); assert.equal(r.last.at, 1700003600000);
+  assert.equal(tidy.parseGitLog(''), null);
+});
+
+test('projectRoots：项目本身 + 项目集里带 .git 的子目录', () => {
+  const d = tmp();
+  touch(path.join(d, 'ws', 'a', '.git', 'HEAD'), 'ref'); touch(path.join(d, 'ws', 'b', 'package.json'), '{}');
+  const roots = tidy.projectRoots([{ kind: 'project', path: '/x/p' }, { kind: 'workspace', path: path.join(d, 'ws') }, { kind: 'docs', path: '/x/d' }]);
+  assert.deepEqual(roots, ['/x/p', path.join(d, 'ws', 'a')], 'b 没有 .git，不算');
+});

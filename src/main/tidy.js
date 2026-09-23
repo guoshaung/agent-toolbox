@@ -323,6 +323,61 @@ function studyPlanToTasks(markdown) {
   return items.filter(Boolean);
 }
 
+// ---------- 这周在写的项目 ----------
+
+const { execFile } = require('node:child_process');
+const gitLog = (dir, days) => new Promise((resolve) => {
+  execFile('git', ['-C', dir, 'log', `--since=${days} days ago`, '--format=%ct%x09%s', '--no-merges'], { timeout: 4000, maxBuffer: 1 << 20 }, (err, out) => resolve(err ? '' : String(out)));
+});
+
+/** git log 输出 → { count, last: { at, message } }。纯函数，方便测 */
+function parseGitLog(out) {
+  const rows = String(out || '').split('\n').filter(Boolean).map((l) => { const [ts, ...rest] = l.split('\t'); return { at: Number(ts) * 1000, message: rest.join('\t').trim() }; }).filter((r) => r.message);
+  if (!rows.length) return null;
+  rows.sort((a, b) => b.at - a.at);
+  return { count: rows.length, last: rows[0] };
+}
+
+/** 从散落项里把代码仓库都挑出来（项目本身 + 项目集里的每个仓库），最多 limit 个 */
+function projectRoots(items, limit = 40) {
+  const roots = [];
+  for (const it of items) {
+    if (it.kind === 'project') roots.push(it.path);
+    else if (it.kind === 'workspace') for (const e of listSafe(it.path)) if (e.isDirectory() && listSafe(path.join(it.path, e.name)).some((x) => x.name === '.git')) roots.push(path.join(it.path, e.name));
+    if (roots.length >= limit) break;
+  }
+  return roots.slice(0, limit);
+}
+
+/** 主目录 / 桌面 / 下载 下两层内所有 git 仓库（跳过系统目录和依赖目录） */
+function findRepos({ maxDepth = 2, limit = 150 } = {}) {
+  const out = [];
+  const skip = new Set(['Library', 'node_modules', '.Trash', 'Applications', '.cache', '.npm', '.nvm', 'Movies', 'Music', 'Pictures', 'venv', '.venv', 'dist', 'build', 'target']);
+  const walk = (dir, depth) => {
+    if (out.length >= limit) return;
+    for (const e of listSafe(dir)) {
+      if (!e.isDirectory() || e.isSymbolicLink() || e.name.startsWith('.') || skip.has(e.name)) continue;
+      const full = path.join(dir, e.name);
+      if (fs.existsSync(path.join(full, '.git'))) { out.push(full); continue; }   // 仓库里不再往下找
+      if (depth < maxDepth) walk(full, depth + 1);
+    }
+  };
+  for (const root of [HOME, path.join(HOME, 'Desktop'), path.join(HOME, 'Downloads')]) walk(root, 0);
+  return [...new Set(out)];
+}
+
+/** 这几天有提交的仓库，按最近一次提交排 */
+async function activity({ days = 7, limit = 8 } = {}) {
+  const roots = findRepos();
+  const results = await Promise.all(roots.map(async (dir) => {
+    if (!fs.existsSync(path.join(dir, '.git'))) return null;
+    const parsed = parseGitLog(await gitLog(dir, days));
+    return parsed ? { name: path.basename(dir), path: dir, ...parsed } : null;
+  }));
+  const active = results.filter(Boolean).sort((a, b) => b.last.at - a.last.at).slice(0, limit);
+  return { ok: true, days, scanned: roots.length, items: active };
+}
+
 /** 接着问这个项目：把项目事实和上次的讲解一起带上，模型只根据这些回答 */
 async function askProject(root, question, priorMarkdown, ask) {
   const f = projectFacts(root);
@@ -345,4 +400,4 @@ ${priorMarkdown ? `\n之前给用户的讲解：\n${String(priorMarkdown).slice(
   return { ok: true, markdown: String(r.text || '') };
 }
 
-module.exports = { scan, suggest, refine, apply, undo, lastUndo, recent, projectFacts, overview, askProject, studyPlanToTasks, destinations, classifyDir, classifyFile, looksCareless, labelOf, HOME };
+module.exports = { scan, suggest, refine, apply, undo, lastUndo, recent, projectFacts, overview, askProject, studyPlanToTasks, activity, parseGitLog, projectRoots, findRepos, destinations, classifyDir, classifyFile, looksCareless, labelOf, HOME };

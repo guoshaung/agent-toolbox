@@ -1770,6 +1770,7 @@ function registerIpc() {
   ipcMain.handle('tidy:apply', (_e, moves) => tidy.apply(app.getPath('userData'), moves, { trash: (p) => shell.trashItem(p) }));
   ipcMain.handle('tidy:undo', () => tidy.undo(app.getPath('userData')));
   ipcMain.handle('tidy:recent', (_e, opts) => tidy.recent(opts || {}));
+  ipcMain.handle('tidy:activity', (_e, opts) => tidy.activity(opts || {}));
   // 讲解按目录缓存：同一个项目再打开秒出，想重来点「重新讲」
   ipcMain.handle('tidy:overview', async (_e, root, { fresh = false } = {}) => {
     const cache = store.get('tidy.overviews', {}) || {};
