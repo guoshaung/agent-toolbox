@@ -1,5 +1,5 @@
 import { h, toast } from '../../core/ui.js';
-import { THEMES, EFFECTS, applyTheme, applyEffect, applyStoredTheme, applyStoredEffect } from '../../core/themes.js';
+import { THEMES, EFFECTS, applyTheme, applyEffect, applyStoredTheme, applyStoredEffect, isLightTheme } from '../../core/themes.js';
 import { LOGOS, applyLogo, applyAppIcon } from '../../core/logos.js';
 
 export default {
@@ -25,8 +25,10 @@ export default {
       card.addEventListener('click', async () => {
         applyTheme(theme.id);
         await config.set('ui.theme', theme.id);
+        const auto = config.get('ui.autoTheme', null);
+        if (auto?.on) { await config.set('ui.autoTheme', { ...auto, on: false }); autoBox.checked = false; toast(`已切换到「${theme.name}」，跟随系统已关`, 'good'); }
+        else toast(`已切换到「${theme.name}」主题`, 'good');
         for (const other of themeCards.children) other.classList.toggle('is-active', other === card);
-        toast(`已切换到「${theme.name}」主题`, 'good');
       });
       return card;
     }));
@@ -44,6 +46,24 @@ export default {
       });
       return card;
     }));
+
+    // 跟随系统深浅色：白天一套、晚上一套
+    const auto = config.get('ui.autoTheme', null) || { on: false, light: 'paper', dark: currentTheme === 'paper' ? 'default' : currentTheme };
+    const sel = (value, filter) => h('select', { class: 'input input--sm' }, ...THEMES.filter(filter).map((t) => h('option', { value: t.id, selected: t.id === value }, t.name)));
+    const lightSel = sel(auto.light, (t) => isLightTheme(t.id));
+    const darkSel = sel(auto.dark, (t) => !isLightTheme(t.id));
+    const autoBox = h('input', { type: 'checkbox', checked: Boolean(auto.on) });
+    const saveAuto = async () => {
+      const next = { on: autoBox.checked, light: lightSel.value, dark: darkSel.value };
+      await config.set('ui.autoTheme', next);
+      applyStoredTheme(config);
+      if (next.on) toast(`跟随系统：白天「${THEMES.find((t) => t.id === next.light)?.name}」，晚上「${THEMES.find((t) => t.id === next.dark)?.name}」`, 'good');
+    };
+    autoBox.addEventListener('change', saveAuto); lightSel.addEventListener('change', saveAuto); darkSel.addEventListener('change', saveAuto);
+    const autoRow = h('div', { class: 'appearance__auto' },
+      h('label', { class: 'home__toggle' }, autoBox, '跟随系统深浅色'),
+      h('span', { class: 'faint' }, '白天'), lightSel, h('span', { class: 'faint' }, '晚上'), darkSel,
+    );
 
     const currentEffect = config.get('ui.effect', 'glass');
     const effectGrid = h('div', { class: 'appearance__grid' }, ...EFFECTS.map((effect) => {
@@ -69,7 +89,8 @@ export default {
       h('div', { class: 'settings__body' },
         h('section', { class: 'card' },
           h('h3', { class: 'card__title' }, '主题'),
-          h('p', { class: 'faint settings__hint' }, '主题只改变颜色变量，不影响布局与功能；切换后立即应用到整个工具箱。'),
+          h('p', { class: 'faint settings__hint' }, '主题只改变颜色变量，不影响布局与功能；切换后立即应用到整个工具箱。⌘K 里打皮肤名也能换。'),
+          autoRow,
           themeCards,
         ),
         h('section', { class: 'card' },

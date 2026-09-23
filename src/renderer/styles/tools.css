@@ -4313,3 +4313,4 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .tidy__reading { margin-top: 14px; padding-top: 12px; border-top: 1px dashed var(--line); display: flex; flex-direction: column; gap: 8px; }
 .tidy__reading:empty { display: none; }
 .tidy__reading-detail { margin-top: 4px; }
+.appearance__auto { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin: 2px 0 12px; padding: 10px 12px; border: 1px dashed var(--line); border-radius: 10px; }

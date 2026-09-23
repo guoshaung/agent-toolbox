@@ -96,7 +96,22 @@ export function applyTheme(id) {
   root.style.setProperty('--accent-ink', inkOn(theme.vars['--accent']));
   return theme;
 }
-export function applyStoredTheme(config) { return applyTheme(config.get('ui.theme', 'default')); }
+/** 跟随系统深浅色：白天一套、晚上一套。关着就用 ui.theme */
+export function resolveThemeId(config, prefersDark = globalThis.matchMedia?.('(prefers-color-scheme: dark)')?.matches) {
+  const auto = config.get('ui.autoTheme', null);
+  if (auto && auto.on) return prefersDark ? (auto.dark || 'default') : (auto.light || 'paper');
+  return config.get('ui.theme', 'default');
+}
+export function applyStoredTheme(config) { return applyTheme(resolveThemeId(config)); }
+/** 系统外观一变就重新应用（只在自动模式开着时有动作） */
+export function watchSystemTheme(config) {
+  const mq = globalThis.matchMedia?.('(prefers-color-scheme: dark)');
+  if (!mq) return () => {};
+  const handler = () => { if (config.get('ui.autoTheme', null)?.on) applyStoredTheme(config); };
+  mq.addEventListener('change', handler);
+  return () => mq.removeEventListener('change', handler);
+}
+export function isLightTheme(id) { const t = themeById(id); return ['sakura', 'rosegold', 'paper', 'eink', 'ice', 'mint', 'lavender'].includes(t.id); }
 export { COLOR_VARS };
 
 /** 外观效果与主题正交：主题只改颜色变量，效果控制玻璃/发光/背景动画这类质感。 */

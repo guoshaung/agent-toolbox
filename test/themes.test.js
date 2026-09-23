@@ -75,3 +75,13 @@ test('效果：id 规范化解析与默认值', async () => {
   assert.equal(effectById('glass').id, 'glass');
   assert.equal(effectById('bogus').id, 'glass', '未知 id 应回退默认效果');
 });
+
+test('跟随系统深浅色：开着按白天 / 晚上选，关着用 ui.theme；浅色判断正确', async () => {
+  const { resolveThemeId, isLightTheme } = await import('../src/renderer/core/themes.js');
+  const cfg = (obj) => ({ get: (k, d) => (k in obj ? obj[k] : d) });
+  assert.equal(resolveThemeId(cfg({ 'ui.theme': 'gold' }), true), 'gold');
+  assert.equal(resolveThemeId(cfg({ 'ui.theme': 'gold', 'ui.autoTheme': { on: true, light: 'paper', dark: 'galaxy' } }), true), 'galaxy');
+  assert.equal(resolveThemeId(cfg({ 'ui.theme': 'gold', 'ui.autoTheme': { on: true, light: 'paper', dark: 'galaxy' } }), false), 'paper');
+  assert.equal(resolveThemeId(cfg({ 'ui.theme': 'gold', 'ui.autoTheme': { on: false, light: 'paper', dark: 'galaxy' } }), false), 'gold');
+  assert.equal(isLightTheme('paper'), true); assert.equal(isLightTheme('gold'), false);
+});

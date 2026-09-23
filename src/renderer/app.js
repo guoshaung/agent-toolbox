@@ -5,7 +5,7 @@ import { Config } from './core/config.js';
 import { AI } from './core/ai.js';
 import { h, toast } from './core/ui.js';
 import { logoById, applyAppIcon, applyLogo } from './core/logos.js';
-import { applyStoredTheme, applyStoredEffect } from './core/themes.js';
+import { applyStoredTheme, applyStoredEffect, watchSystemTheme } from './core/themes.js';
 import { iconFor } from './core/icons.js';
 import { buildTermPrompt, buildTermSystemPrompt, normalizeTermResult } from './tools/terms/prompt.js';
 import { createSwitcher } from './core/switcher.js';
@@ -408,6 +408,9 @@ switcher = createSwitcher({
   onPick: (id) => activate(id),
   config,
 });
+
+// 皮肤跟随系统深浅色（皮肤面板里开）
+watchSystemTheme(config);
 
 // ⌘K 命令面板：打字就能到任何地方（工具 / 皮肤 / 刚建的文件夹）
 palette = createPalette({
