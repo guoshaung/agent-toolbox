@@ -6,6 +6,9 @@ export const PET_SKINS = [
   { id: 'bunny-pink', name: '粉发兔耳', note: '二次元 · 卫衣', src: 'assets/bunny-pink.svg' },
   { id: 'glasses-dark', name: '黑发眼镜', note: '二次元 · 少年', src: 'assets/glasses-dark.svg' },
   { id: 'elf-gold', name: '金发精灵', note: '二次元 · 尖耳朵', src: 'assets/elf-gold.svg' },
+  { id: 'fox-miko', name: '狐耳巫女', note: '二次元 · 橙发白尖耳、大尾巴', src: 'assets/fox-miko.svg' },
+  { id: 'magical-violet', name: '紫发魔法少女', note: '二次元 · 双团子、星星魔杖', src: 'assets/magical-violet.svg' },
+  { id: 'mecha-silver', name: '银发机娘', note: '二次元 · 耳机、瞄准环', src: 'assets/mecha-silver.svg' },
 ];
 
 export function resolveSkin(settings) {

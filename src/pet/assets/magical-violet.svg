@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 180 200" role="img" aria-label="紫发魔法少女桌宠">
+  <defs>
+    <linearGradient id="mh" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#c9a4ff"/><stop offset="1" stop-color="#7c4dd6"/></linearGradient>
+    <linearGradient id="me" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#ffb6f0"/><stop offset="1" stop-color="#b3308f"/></linearGradient>
+    <linearGradient id="md" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#ff9ad5"/><stop offset="1" stop-color="#d6479f"/></linearGradient>
+    <filter id="ms" x="-30%" y="-30%" width="160%" height="170%"><feDropShadow dx="0" dy="6" stdDeviation="5" flood-color="#241436" flood-opacity=".3"/></filter>
+  </defs>
+  <ellipse cx="90" cy="184" rx="48" ry="9" fill="#241436" opacity=".18"/>
+  <g filter="url(#ms)">
+    <!-- 魔杖 -->
+    <path d="M140 110l14 60" stroke="#f5d67a" stroke-width="4" stroke-linecap="round"/>
+    <path d="M140 96l4 9 10 1-7 6 2 10-9-5-9 5 2-10-7-6 10-1z" fill="#ffe27a" stroke="#e0a800" stroke-width="1.5" stroke-linejoin="round"/>
+    <!-- 双团子 -->
+    <circle cx="42" cy="52" r="16" fill="url(#mh)"/><circle cx="138" cy="52" r="16" fill="url(#mh)"/>
+    <path d="M30 56q12-6 24 0" stroke="#ff9ad5" stroke-width="4" fill="none" stroke-linecap="round"/><path d="M126 56q12-6 24 0" stroke="#ff9ad5" stroke-width="4" fill="none" stroke-linecap="round"/>
+    <!-- 裙子：蓬蓬的粉裙 -->
+    <path d="M52 128c-12 18-14 38-8 52h92c6-14 4-34-8-52z" fill="url(#md)"/>
+    <path d="M60 128h60l4 18H56z" fill="#fff5fb"/><path d="M52 176q38 10 76 0" stroke="#fff5fb" stroke-width="3" fill="none"/>
+    <path d="M84 130l6 12 6-12z" fill="#d6479f"/><circle cx="90" cy="150" r="5" fill="#ffe27a"/>
+    <path d="M30 90c-2-40 26-64 60-64s62 24 60 64c1 18-8 30-16 34l-88 0c-8-4-17-16-16-34z" fill="url(#mh)"/>
+    <path d="M40 100c-6 14-2 32 6 42V98z" fill="url(#mh)"/><path d="M140 100c6 14 2 32-6 42V98z" fill="url(#mh)"/>
+    <ellipse cx="90" cy="102" rx="46" ry="44" fill="#ffe9de"/>
+    <path d="M40 92c6-30 24-46 50-46 30 0 46 20 50 46-10-6-18-14-22-24-6 10-14 16-28 18-14-2-24-8-30-18-4 10-12 18-20 24z" fill="url(#mh)"/>
+    <ellipse cx="70" cy="110" rx="9" ry="12" fill="#ffffff"/><ellipse cx="110" cy="110" rx="9" ry="12" fill="#ffffff"/>
+    <ellipse cx="71" cy="112" rx="7" ry="10" fill="url(#me)"/><ellipse cx="111" cy="112" rx="7" ry="10" fill="url(#me)"/>
+    <ellipse cx="72" cy="114" rx="3.5" ry="5" fill="#3a0f2e"/><ellipse cx="112" cy="114" rx="3.5" ry="5" fill="#3a0f2e"/>
+    <circle cx="68" cy="107" r="2.6" fill="#fff"/><circle cx="108" cy="107" r="2.6" fill="#fff"/>
+    <path d="M58 96q8-5 16-1" stroke="#8a5cc7" stroke-width="2.4" fill="none" stroke-linecap="round"/><path d="M106 95q8-4 16 1" stroke="#8a5cc7" stroke-width="2.4" fill="none" stroke-linecap="round"/>
+    <ellipse cx="60" cy="126" rx="7" ry="4" fill="#ffb3c7" opacity=".8"/><ellipse cx="120" cy="126" rx="7" ry="4" fill="#ffb3c7" opacity=".8"/>
+    <path d="M82 129q8 9 16 0" stroke="#c2506b" stroke-width="2.4" fill="none" stroke-linecap="round"/>
+    <path d="M62 140c-8 12-6 24 4 32M118 140c8 12 6 24-4 32" stroke="#ffe9de" stroke-width="10" fill="none" stroke-linecap="round"/>
+    <!-- 星星点缀 -->
+    <path d="M24 120l2 5 5 1-4 3 1 5-4-3-4 3 1-5-4-3 5-1z" fill="#ffe27a"/><path d="M156 70l2 5 5 1-4 3 1 5-4-3-4 3 1-5-4-3 5-1z" fill="#ffe27a"/>
+  </g>
+</svg>

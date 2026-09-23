@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 180 200" role="img" aria-label="橙发狐耳巫女桌宠">
+  <defs>
+    <linearGradient id="fh" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#ffb35c"/><stop offset="1" stop-color="#e07a1f"/></linearGradient>
+    <linearGradient id="fe" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#ffd27a"/><stop offset="1" stop-color="#b8620a"/></linearGradient>
+    <filter id="fs" x="-30%" y="-30%" width="160%" height="170%"><feDropShadow dx="0" dy="6" stdDeviation="5" flood-color="#2a1a10" flood-opacity=".3"/></filter>
+  </defs>
+  <ellipse cx="90" cy="184" rx="48" ry="9" fill="#2a1a10" opacity=".18"/>
+  <g filter="url(#fs)">
+    <!-- 狐耳：橙底白尖 -->
+    <path d="M34 70 L50 16 L76 58Z" fill="#e07a1f" stroke="#a8520c" stroke-width="2.5" stroke-linejoin="round"/><path d="M46 56 L52 32 L64 52Z" fill="#fff2e0"/>
+    <path d="M146 70 L130 16 L104 58Z" fill="#e07a1f" stroke="#a8520c" stroke-width="2.5" stroke-linejoin="round"/><path d="M134 56 L128 32 L116 52Z" fill="#fff2e0"/>
+    <!-- 尾巴 -->
+    <path d="M132 150c22-8 34 6 30 26-4 12-18 14-26 6 8-2 12-8 10-14-6 6-14 6-20 0z" fill="#ffb35c" stroke="#e07a1f" stroke-width="2"/><path d="M152 176c6-2 10-8 10-12-4 2-8 2-12 0z" fill="#fff2e0"/>
+    <!-- 巫女服：白上衣红裙 -->
+    <path d="M48 128c-6 18-4 40 8 52h68c12-12 14-34 8-52z" fill="#d93b3b"/>
+    <path d="M56 128h68l4 26H52z" fill="#fffaf5"/><path d="M84 130l6 12 6-12z" fill="#d93b3b"/>
+    <path d="M52 150h76" stroke="#d93b3b" stroke-width="3"/>
+    <path d="M30 90c-2-40 26-64 60-64s62 24 60 64c1 18-8 30-16 34l-88 0c-8-4-17-16-16-34z" fill="url(#fh)"/>
+    <path d="M40 100c-6 14-2 32 6 42V98z" fill="url(#fh)"/><path d="M140 100c6 14 2 32-6 42V98z" fill="url(#fh)"/>
+    <ellipse cx="90" cy="102" rx="46" ry="44" fill="#ffe9de"/>
+    <path d="M40 92c6-30 24-46 50-46 30 0 46 20 50 46-10-6-18-14-22-24-6 10-14 16-28 18-14-2-24-8-30-18-4 10-12 18-20 24z" fill="url(#fh)"/>
+    <!-- 眼 -->
+    <ellipse cx="70" cy="110" rx="9" ry="12" fill="#ffffff"/><ellipse cx="110" cy="110" rx="9" ry="12" fill="#ffffff"/>
+    <ellipse cx="71" cy="112" rx="7" ry="10" fill="url(#fe)"/><ellipse cx="111" cy="112" rx="7" ry="10" fill="url(#fe)"/>
+    <ellipse cx="72" cy="114" rx="3" ry="5.5" fill="#3a1f05"/><ellipse cx="112" cy="114" rx="3" ry="5.5" fill="#3a1f05"/>
+    <circle cx="68" cy="107" r="2.6" fill="#fff"/><circle cx="108" cy="107" r="2.6" fill="#fff"/>
+    <path d="M58 96q8-5 16-1" stroke="#b8620a" stroke-width="2.4" fill="none" stroke-linecap="round"/><path d="M106 95q8-4 16 1" stroke="#b8620a" stroke-width="2.4" fill="none" stroke-linecap="round"/>
+    <!-- 脸上的狐纹 + 腮红 -->
+    <path d="M56 120l6 2M124 120l-6 2" stroke="#e07a1f" stroke-width="2" stroke-linecap="round"/>
+    <ellipse cx="60" cy="127" rx="7" ry="4" fill="#ff9aa8" opacity=".8"/><ellipse cx="120" cy="127" rx="7" ry="4" fill="#ff9aa8" opacity=".8"/>
+    <path d="M82 130q8 8 16 0" stroke="#c2506b" stroke-width="2.4" fill="none" stroke-linecap="round"/>
+    <path d="M62 140c-8 12-6 24 4 32M118 140c8 12 6 24-4 32" stroke="#fffaf5" stroke-width="12" fill="none" stroke-linecap="round"/>
+    <!-- 铃铛 -->
+    <circle cx="90" cy="144" r="5" fill="#ffd166" stroke="#c98a00" stroke-width="1.5"/><circle cx="90" cy="146" r="1.5" fill="#c98a00"/>
+  </g>
+</svg>
