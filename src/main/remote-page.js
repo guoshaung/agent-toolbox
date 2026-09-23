@@ -214,6 +214,10 @@ function pageHtml(token, deviceName, tools) {
 </section>
 
 <section class="panel" id="tab-pc">
+  <div class="card" id="todayCard">
+    <h2>今天 <small id="todayHint">电脑那边的一眼摘要</small></h2>
+    <div class="log" id="todayBody">正在看…</div>
+  </div>
   <div class="card" id="spriteCard" hidden>
     <h2>手机精灵 <small id="spriteHint">对它说话，它替你操作手机</small></h2>
     <div class="row"><button class="sm primary" id="spriteListen">🎤 说句话</button><button class="sm" id="spriteToggle">显示精灵</button><button class="sm ghost" id="spriteSetup">开启无障碍</button></div>
@@ -270,6 +274,8 @@ function say(text,bad){const t=$('tip');t.textContent=text;t.classList.toggle('b
 async function command(type,payload={}){let response;try{response=await fetch('/api/command?token='+encodeURIComponent(token),{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({type,payload})})}catch(e){$('status').textContent='连不上电脑';$('status').classList.add('off');throw new Error('连不上电脑，检查是否同一 Wi-Fi')}$('status').textContent='已配对';$('status').classList.remove('off');const data=await response.json();if(!response.ok||!data.ok)throw new Error(data.error||'请求失败');return data}
 
 // ---- tab ----
+async function loadToday(){const box=$('todayBody');try{const s=await command('home.summary');box.textContent='';const line=(t)=>box.append(el('div','t',t));line('🧹 散落 '+s.stray+' 项'+(s.careless?'（'+s.careless+' 个随手建的）':'')+' · 📚 这周学了 '+s.learned+' 次');if(s.repos.length)line('🛠 这周在写：'+s.repos.map(r=>r.name+' '+r.count+'次').join('，'));if(s.recent.length){line('🆕 刚建的：');for(const r of s.recent)box.append(el('div','t','  '+(r.isDir?'📁 ':'📄 ')+r.name+'  '+r.where))}if(s.tasks.length){line('☐ 没做完：');for(const t of s.tasks)box.append(el('div','t','  · '+t))}if(s.latest.length)line('🎓 最近：'+s.latest.map(x=>x.title).join(' / ').slice(0,80))}catch(e){box.textContent='拿不到：'+e.message}}
+document.querySelector('nav button[data-tab=pc]')?.addEventListener('click',loadToday);
 for(const b of document.querySelectorAll('nav button'))b.onclick=()=>{document.querySelectorAll('nav button').forEach(x=>x.classList.toggle('on',x===b));document.querySelectorAll('.panel').forEach(p=>p.classList.toggle('on',p.id==='tab-'+b.dataset.tab));$('composer').style.display=b.dataset.tab==='work'?'':'none';try{localStorage.setItem('remote.tab',b.dataset.tab)}catch{}};
 try{const t=localStorage.getItem('remote.tab');if(t){document.querySelector('nav button[data-tab="'+t+'"]')?.click()}}catch{}
 
@@ -320,6 +326,7 @@ command('screen.tap',{x:s.x,y:s.y}).then(()=>setTimeout(grabScreen,350)).catch(x
 box.addEventListener('touchstart',down,{passive:true});box.addEventListener('touchend',up);box.addEventListener('mousedown',down);box.addEventListener('mouseup',up)})();
 for(const b of document.querySelectorAll('nav button'))b.addEventListener('click',()=>{if(b.dataset.tab==='pc')grabScreen()});
 screenTick();
+loadToday();
 
 // ---- 全屏操作：电脑是横的、手机是竖的，把画面转 90° 铺满；能捏合缩放、拖着看；点和滑都按我们自己的变换算回电脑坐标 ----
 (()=>{

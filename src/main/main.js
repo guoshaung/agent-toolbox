@@ -413,6 +413,17 @@ async function handleRemoteCommand(type, payload = {}) {
       await shell.openExternal(url);
       return { opened: true };
     }
+    // 手机上看一眼「今天」：散落几项、刚建了什么、这周学了什么、这周在写什么
+    case 'home.summary': {
+      const stray = tidy.suggest(tidy.scan().items, { codeDir: store.get('tidy.codeDir', '') || undefined }).filter((x) => x.action !== 'keep');
+      const recent = tidy.recent({ days: 3, limit: 5 }).items.map((x) => ({ name: x.name, where: x.where, isDir: x.isDir }));
+      const journal = store.get('learn.journal', []) || [];
+      const weekAgo = Date.now() - 7 * 86400000;
+      const week = journal.filter((x) => x.at >= weekAgo);
+      const activity = await tidy.activity({ days: 7, limit: 4 }).catch(() => ({ items: [] }));
+      const tasks = (store.get('tasks.items', []) || []).filter((t) => !t.done).slice(0, 5).map((t) => t.title);
+      return { stray: stray.length, careless: stray.filter((x) => x.careless).length, recent, learned: week.length, latest: journal.slice(0, 3).map((x) => ({ kind: x.kind, title: x.title })), repos: activity.items.map((r) => ({ name: r.name, count: r.count })), tasks };
+    }
     case 'tool.open': {
       const id = String(payload.id || '');
       if (!/^[a-z0-9-]+$/.test(id)) throw new Error('工具名称无效。');
