@@ -30,6 +30,14 @@ export function scoreItem(query, item) {
   return 0;
 }
 
+/** 「+ 买牛奶」这种输入 → 一条「添加任务」动作。纯函数。 */
+export function quickTaskFrom(query) {
+  const m = String(query || '').match(/^\s*[+＋]\s*(.+)$/);
+  if (!m || !m[1].trim()) return null;
+  const title = m[1].trim().slice(0, 120);
+  return { id: `task:${title}`, kind: 'action', title: `添加任务：${title}`, hint: '回车加进任务清单，首页也会显示', icon: 'checkList', keywords: [title], pinned: true };
+}
+
 export function rankItems(query, items, { recentIds = [] } = {}) {
   return items
     .map((item) => ({ item, score: scoreItem(query, item) }))
@@ -45,7 +53,7 @@ export function createPalette({ tools, activate, config, toast, extraActions = [
   let items = [];
   let recentFiles = null;                 // 懒加载，打开面板时才去问
 
-  const input = h('input', { class: 'palette__input', placeholder: '搜工具、换皮肤、找刚建的文件夹… 回车打开', spellcheck: 'false' });
+  const input = h('input', { class: 'palette__input', placeholder: '搜工具、换皮肤、找刚建的文件夹… 「+ 事情」直接记任务', spellcheck: 'false' });
   const list = h('div', { class: 'palette__list' });
   const root = h('div', { class: 'palette', hidden: true },
     h('div', { class: 'palette__panel' },
@@ -69,7 +77,10 @@ export function createPalette({ tools, activate, config, toast, extraActions = [
   function render() {
     const q = input.value;
     const mru = config.get('ui.mru') || [];
-    items = rankItems(q, catalog(), { recentIds: mru }).slice(0, q ? 40 : 14);
+    const quick = quickTaskFrom(q);
+    items = quick
+      ? [{ ...quick, run: async () => { const list = config.get('tasks.items', []) || []; await config.set('tasks.items', [{ id: `task-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`, title: quick.keywords[0], done: false, priority: 'normal', due: '', createdAt: Date.now(), completedAt: null }, ...list]); toast?.(`加了任务：${quick.keywords[0]}`, 'good'); } }]
+      : rankItems(q, catalog(), { recentIds: mru }).slice(0, q ? 40 : 14);
     index = Math.min(index, Math.max(0, items.length - 1));
     list.replaceChildren(...items.map((it, i) => {
       const row = h('div', { class: `palette__row${i === index ? ' is-active' : ''}`, dataset: { i: String(i) } },

@@ -10,9 +10,16 @@ function loadPure() {
   const start = src.indexOf('export function scoreItem');
   const end = src.indexOf('export function createPalette');
   const body = src.slice(start, end).replace(/export function/g, 'function');
-  return new Function(`${body}; return { scoreItem, rankItems };`)();
+  return new Function(`${body}; return { scoreItem, rankItems, quickTaskFrom };`)();
 }
-const { scoreItem, rankItems } = loadPure();
+const { scoreItem, rankItems, quickTaskFrom } = loadPure();
+
+test('「+ 事情」变成一条添加任务的动作；别的输入不算', () => {
+  assert.equal(quickTaskFrom('+ 买牛奶').title, '添加任务：买牛奶');
+  assert.equal(quickTaskFrom('＋看完第三章').keywords[0], '看完第三章');
+  assert.equal(quickTaskFrom('+   '), null);
+  assert.equal(quickTaskFrom('皮肤'), null);
+});
 
 test('打分：全等 > 前缀 > 包含 > 拆字 > 说明', () => {
   const t = { id: 'gold', title: '皮肤：镀金黑金', hint: '黑檀底、24K 金边', keywords: ['皮肤', 'theme'] };
