@@ -93,7 +93,7 @@ export default {
       await refresh();
     } }, '贴到微信上');
 
-    const whoSel = h('select', { class: 'input input--sm', onchange: () => window.toolbox.monologue.set({ who: whoSel.value }) },
+    const whoSel = h('select', { class: 'field field--sm', onchange: () => window.toolbox.monologue.set({ who: whoSel.value }) },
       ...['她', '他', 'TA'].map((w) => h('option', { value: w }, w)));
     const overlayHint = h('div', { class: 'mono__row', hidden: true });
 

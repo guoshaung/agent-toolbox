@@ -1761,16 +1761,29 @@ function registerIpc() {
   // 收纳：主目录 / 桌面 / 下载 三处顶层散落的东西
   const tidyAsk = (messages) => callStoredCompatibleApi({ messages, temperature: 0.2, timeout: 90000 });
   const tidySettings = () => ({ codeDir: store.get('tidy.codeDir', '') || undefined });
-  ipcMain.handle('tidy:scan', async (_e, { ai = false } = {}) => {
-    const scanned = tidy.scan();
-    let items = tidy.suggest(scanned.items, tidySettings());
-    if (ai) items = await tidy.refine(items, tidyAsk, tidySettings());
-    return { ...scanned, items, destinations: tidy.destinations(tidySettings()), undo: tidy.lastUndo(app.getPath('userData')) };
+  // 首页每次打开都要扫一遍三处目录、跑几十个 git log，几秒的 IO。短期缓存，搬过东西就作废
+  const tidyCache = new Map();
+  const cached = async (key, ttlMs, compute) => {
+    const hit = tidyCache.get(key);
+    if (hit && Date.now() - hit.at < ttlMs) return hit.value;
+    const value = await compute();
+    tidyCache.set(key, { at: Date.now(), value });
+    return value;
+  };
+  const tidyInvalidate = () => tidyCache.clear();
+  ipcMain.handle('tidy:scan', async (_e, { ai = false, fresh = false } = {}) => {
+    if (ai || fresh) tidyInvalidate();
+    return cached(ai ? 'scan:ai' : 'scan', 60 * 1000, async () => {
+      const scanned = tidy.scan();
+      let items = tidy.suggest(scanned.items, tidySettings());
+      if (ai) items = await tidy.refine(items, tidyAsk, tidySettings());
+      return { ...scanned, items, destinations: tidy.destinations(tidySettings()), undo: tidy.lastUndo(app.getPath('userData')) };
+    });
   });
-  ipcMain.handle('tidy:apply', (_e, moves) => tidy.apply(app.getPath('userData'), moves, { trash: (p) => shell.trashItem(p) }));
-  ipcMain.handle('tidy:undo', () => tidy.undo(app.getPath('userData')));
-  ipcMain.handle('tidy:recent', (_e, opts) => tidy.recent(opts || {}));
-  ipcMain.handle('tidy:activity', (_e, opts) => tidy.activity(opts || {}));
+  ipcMain.handle('tidy:apply', async (_e, moves) => { const r = await tidy.apply(app.getPath('userData'), moves, { trash: (p) => shell.trashItem(p) }); tidyInvalidate(); return r; });
+  ipcMain.handle('tidy:undo', () => { const r = tidy.undo(app.getPath('userData')); tidyInvalidate(); return r; });
+  ipcMain.handle('tidy:recent', (_e, opts) => cached(`recent:${JSON.stringify(opts || {})}`, 30 * 1000, () => tidy.recent(opts || {})));
+  ipcMain.handle('tidy:activity', (_e, opts) => cached(`activity:${JSON.stringify(opts || {})}`, 5 * 60 * 1000, () => tidy.activity(opts || {})));
   ipcMain.handle('tidy:nudge', (_e, on) => { if (typeof on === 'boolean') store.set('tidy.nudge', on); return { on: store.get('tidy.nudge', true) !== false }; });
   // 每天最多提醒一次：散落的东西超过 30 项就发一条系统通知，点了直接去收纳
   const tidyNudge = () => {

@@ -94,6 +94,17 @@ export default {
             })(),
           ),
           section('没做完的', h('button', { class: 'btn btn--sm', onclick: () => goto('tasks') }, '任务'),
+            (() => {
+              const input = h('input', { class: 'field field--sm', placeholder: '记一笔，回车就进清单', style: { width: '100%' } });
+              input.addEventListener('keydown', async (e) => {
+                if (e.key !== 'Enter' || !input.value.trim()) return;
+                const title = input.value.trim().slice(0, 120); input.value = '';
+                const list = config.get('tasks.items', []) || [];
+                await config.set('tasks.items', [{ id: `task-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`, title, done: false, priority: 'normal', due: '', createdAt: Date.now(), completedAt: null }, ...list]);
+                toast(`记下了：${title}`, 'good'); render();
+              });
+              return input;
+            })(),
             ...(tasks.length ? tasks.map((t) => h('div', { class: 'home__row' }, h('span', { class: `home__dot home__dot--${t.priority || 'normal'}` }), h('span', { class: 'home__name' }, t.title), t.due ? h('span', { class: 'faint home__meta' }, t.due) : null)) : [empty('任务清单是空的 —— 要么很闲，要么没写')]),
           ),
           section('最近用的', null,

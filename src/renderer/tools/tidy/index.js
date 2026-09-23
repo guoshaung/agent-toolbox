@@ -64,9 +64,9 @@ export default {
     const nudgeBox = h('input', { type: 'checkbox', onchange: (e) => api().nudge(e.target.checked) });
     api().nudge().then((r) => { nudgeBox.checked = r.on; });
     const nudgeToggle = h('label', { class: 'home__toggle faint', title: '散落超过 30 项时，每天最多提醒一次' }, nudgeBox, '散落太多时提醒我');
-    async function loadScan(ai = false) {
+    async function loadScan(ai = false, fresh = false) {
       body.replaceChildren(h('div', { class: 'tidy__empty' }, ai ? '让 AI 认一下那些看不出来的…' : '正在看桌面、下载和主目录…'));
-      scanData = await api().scan({ ai });
+      scanData = await api().scan({ ai, fresh });
       renderSort();
     }
     function renderSort() {
@@ -114,7 +114,7 @@ export default {
           h('div', { class: 'settings__actions', style: { marginTop: '10px' } },
             h('button', { class: 'btn btn--sm btn--primary', onclick: apply }, '勾选的一键归位'),
             h('button', { class: 'btn btn--sm', onclick: () => loadScan(true) }, '让 AI 认一下看不出来的'),
-            h('button', { class: 'btn btn--sm', onclick: () => loadScan(false) }, '重新扫描'),
+            h('button', { class: 'btn btn--sm', onclick: () => loadScan(false, true) }, '重新扫描'),
             scanData.undo ? h('button', { class: 'btn btn--sm', onclick: async () => { const r = await api().undo(); toast(r.ok ? `搬回去了 ${r.restored.length} 项` : (r.error || `部分失败：${r.errors[0]}`), r.ok ? 'good' : 'bad'); loadScan(false); } }, `撤销上次（${scanData.undo.count} 项）`) : null,
           ),
         ),

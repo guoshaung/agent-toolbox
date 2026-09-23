@@ -49,7 +49,7 @@ export default {
 
     // 跟随系统深浅色：白天一套、晚上一套
     const auto = config.get('ui.autoTheme', null) || { on: false, light: 'paper', dark: currentTheme === 'paper' ? 'default' : currentTheme };
-    const sel = (value, filter) => h('select', { class: 'input input--sm' }, ...THEMES.filter(filter).map((t) => h('option', { value: t.id, selected: t.id === value }, t.name)));
+    const sel = (value, filter) => h('select', { class: 'field field--sm' }, ...THEMES.filter(filter).map((t) => h('option', { value: t.id, selected: t.id === value }, t.name)));
     const lightSel = sel(auto.light, (t) => isLightTheme(t.id));
     const darkSel = sel(auto.dark, (t) => !isLightTheme(t.id));
     const autoBox = h('input', { type: 'checkbox', checked: Boolean(auto.on) });
