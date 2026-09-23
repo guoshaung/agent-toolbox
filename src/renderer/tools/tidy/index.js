@@ -92,7 +92,13 @@ export default {
             h('button', { class: 'btn btn--sm', onclick: () => api().reveal(it.path) }, '看看'),
           );
         });
-        return h('div', { class: 'tidy__group' }, h('div', { class: 'tidy__group-head' }, h('strong', {}, title), h('code', {}, `${list.length} 项`)), ...rows);
+        // 长列表先只露 8 行；每组一个「全选 / 全不选」
+        const LIMIT = 8;
+        const hidden = rows.slice(LIMIT);
+        hidden.forEach((r) => { r.hidden = true; });
+        const more = hidden.length ? h('button', { class: 'btn btn--sm tidy__more', onclick: (e) => { const on = hidden[0].hidden; hidden.forEach((r) => { r.hidden = !on; }); e.currentTarget.textContent = on ? '收起' : `还有 ${hidden.length} 项，展开`; } }, `还有 ${hidden.length} 项，展开`) : null;
+        const allBox = h('input', { type: 'checkbox', checked: list.every((it) => it.action !== 'unsure'), title: '这一组全选 / 全不选', onchange: (e) => { for (const it of list) { const c = checks.get(it.path); if (c) c.cb.checked = e.target.checked; } } });
+        return h('div', { class: 'tidy__group' }, h('div', { class: 'tidy__group-head' }, allBox, h('strong', {}, title), h('code', {}, `${list.length} 项`)), ...rows, more);
       });
       const apply = async () => {
         const moves = [...checks.values()].filter(({ cb }) => cb.checked).map(({ it }) => ({ path: it.path, to: it.to, action: it.action === 'delete' ? 'delete' : 'move' }));
