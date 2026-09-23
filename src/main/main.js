@@ -1773,6 +1773,16 @@ function registerIpc() {
     const quizzes = week.filter((x) => x.kind === 'quiz' && Number.isFinite(x.score));
     return { items: list.slice(0, limit), week: { total: week.length, byKind, quizAvg: quizzes.length ? Math.round(quizzes.reduce((s, x) => s + x.score / x.total, 0) / quizzes.length * 100) : null } };
   });
+  ipcMain.handle('learn:export', async () => {
+    const list = store.get('learn.journal', []) || [];
+    const target = path.join(app.getPath('downloads'), `学习记录-${new Date().toISOString().slice(0, 10)}.json`);
+    fs.writeFileSync(target, JSON.stringify(list, null, 2));
+    shell.showItemInFolder(target);
+    return { ok: true, path: target, count: list.length };
+  });
+  ipcMain.handle('learn:clear', () => { store.set('learn.journal', []); return { ok: true }; });
+  ipcMain.handle('app:dataPaths', () => ({ userData: app.getPath('userData'), tidy: path.join(os.homedir(), '收纳'), phoneInbox: phoneOutbox?.inboxDir || '', logs: path.join(app.getPath('userData'), 'logs') }));
+  ipcMain.handle('app:openUserData', () => shell.openPath(app.getPath('userData')));
   ipcMain.handle('learn:note', (_e, entry) => { journalAdd({ kind: String(entry?.kind || 'note').slice(0, 20), title: String(entry?.title || '').slice(0, 200), meta: entry?.meta ?? null, score: entry?.score, total: entry?.total }); return { ok: true }; });
 
   // 收纳：主目录 / 桌面 / 下载 三处顶层散落的东西

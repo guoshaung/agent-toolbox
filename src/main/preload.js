@@ -344,6 +344,8 @@ contextBridge.exposeInMainWorld('toolbox', {
   learn: {
     journal: (opts) => ipcRenderer.invoke('learn:journal', opts),
     note: (entry) => ipcRenderer.invoke('learn:note', entry),
+    export: () => ipcRenderer.invoke('learn:export'),
+    clear: () => ipcRenderer.invoke('learn:clear'),
   },
 
   /** 收纳：散落在主目录 / 桌面 / 下载的东西归位；项目速览 */
@@ -584,6 +586,9 @@ contextBridge.exposeInMainWorld('toolbox', {
     relaunch: () => ipcRenderer.invoke('app:relaunch'),
     /** 真的退出（关窗口只是藏起来） */
     quit: () => ipcRenderer.invoke('app:quit'),
+    /** 数据都放在哪 */
+    dataPaths: () => ipcRenderer.invoke('app:dataPaths'),
+    openUserData: () => ipcRenderer.invoke('app:openUserData'),
     reload: () => ipcRenderer.invoke('app:reload'),
     openDevTools: () => ipcRenderer.invoke('app:openDevTools'),
     onNavigateTool: (callback) => ipcRenderer.on('app:navigate-tool', (_event, target) => callback(target)),

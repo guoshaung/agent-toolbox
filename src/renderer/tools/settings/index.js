@@ -431,12 +431,30 @@ export default {
         updateCard,
 
         h('section', { class: 'card' },
+          h('h3', { class: 'card__title' }, '数据与隐私'),
+          h('p', { class: 'faint settings__hint' }, '会发给你配的模型的东西：⌘⇧L 选中的那段文字；看懂项目时的目录树、清单文件、README 开头和单个文件的前 260 行；收纳「让 AI 认一下」时只发文件名；内心独白发的是选中或 OCR 出的那句话。从不发整个项目、不发截图、不发 API Key。'),
+          (() => {
+            const el = h('div', { class: 'faint settings__hint' }, '在找数据放哪…');
+            window.toolbox.app.dataPaths?.().then((p) => el.replaceChildren(
+              h('div', {}, '设置 / 学习记录 / 讲解缓存：', h('code', {}, p.userData)),
+              h('div', {}, '归位后的文件：', h('code', {}, p.tidy)),
+              p.phoneInbox ? h('div', {}, '手机递来的文件：', h('code', {}, p.phoneInbox)) : null,
+              h('div', {}, '错误日志：', h('code', {}, p.logs)),
+            )).catch(() => { el.textContent = ''; });
+            return el;
+          })(),
+          danger('打开数据目录', '看看 config.json 和日志', () => window.toolbox.app.openUserData()),
+          danger('导出学习记录', '存成 JSON 到下载目录', async () => { const r = await window.toolbox.learn.export(); toast(r.ok ? `导出了 ${r.count} 条` : '导出失败', r.ok ? 'good' : 'bad'); }),
+          danger('清空学习记录', '首页「这周学了什么」会归零', async () => { if (window.confirm('清空所有学习记录？不可恢复。')) { await window.toolbox.learn.clear(); toast('已清空', 'good'); } }),
+        ),
+
+        h('section', { class: 'card' },
           h('h3', { class: 'card__title' }, '关于'),
           h('p', { class: 'faint settings__hint' },
             '普通设置只存在本机的 userData/config.json；API Key 使用系统安全存储加密。' +
             '需求与设计见仓库里的 docs/SPEC.md，加新工具见 docs/ADD-A-TOOL.md。'),
           h('p', { class: 'faint settings__hint' },
-            '快捷键：Cmd+1…7 切工具，Cmd+F 页内查找，Cmd+L 定位地址栏，Cmd+Enter 触发纠错。'),
+            '快捷键：⌘K 命令面板 · ⌘⇧L 选中即讲 · ⌘⇧A 叫回窗口 · ⌘⇧M 内心独白 · ⌘⇧E 术语 · Ctrl+Tab 切工具 · Cmd+1…7 切左栏工具 · Cmd+F 页内查找。'),
         ),
       ),
     );

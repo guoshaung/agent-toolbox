@@ -47,6 +47,9 @@ export function rankItems(query, items, { recentIds = [] } = {}) {
     .map((x) => x.item);
 }
 
+const homeDir = () => (recentHome || '~');
+let recentHome = '';
+
 export function createPalette({ tools, activate, config, toast, extraActions = [], learn }) {
   let open = false;
   let index = 0;
@@ -80,7 +83,9 @@ export function createPalette({ tools, activate, config, toast, extraActions = [
       keywords: ['学习', '记录', j.title],
       run: async () => { if (j.meta && learn) return learn(j.meta); activate('home'); },
     }));
-    return [...toolItems, ...extraActions, ...themeItems, ...effectItems, ...fileItems, ...learnItems, ...journalItems];
+    // 收纳目录直达：「打开 收纳 文档」
+    const folderItems = ['图片', '文档', '数据', '压缩包', '安装包', '视频', '音频', '零散代码', '杂项'].map((name) => ({ id: `folder:${name}`, kind: 'action', title: `打开 ~/收纳/${name}`, hint: '归位后的东西都在这', icon: 'folder', keywords: ['收纳', '打开', name], run: () => window.toolbox.tidy.open(`${homeDir()}/收纳/${name}`) }));
+    return [...toolItems, ...extraActions, ...themeItems, ...effectItems, ...fileItems, ...learnItems, ...journalItems, ...folderItems];
   };
 
   function render() {
@@ -121,7 +126,7 @@ export function createPalette({ tools, activate, config, toast, extraActions = [
     render();
     input.focus();
     // 最近新建的东西：面板开着的时候悄悄拉一次，拉到了就补进列表
-    window.toolbox.tidy?.recent?.({ days: 3, limit: 30 }).then((r) => { if (r?.ok) { recentFiles = r.items; if (open) render(); } }).catch(() => {});
+    window.toolbox.tidy?.recent?.({ days: 3, limit: 30 }).then((r) => { if (r?.ok) { recentFiles = r.items; const p = r.items[0]?.path || ''; const m = p.match(/^(\/Users\/[^/]+|[A-Za-z]:\\Users\\[^\\]+)/); if (m) recentHome = m[1]; if (open) render(); } }).catch(() => {});
     window.toolbox.learn?.journal?.({ limit: 60 }).then((r) => { if (r?.items) { journal = r.items; if (open) render(); } }).catch(() => {});
   }
   function hide() { open = false; root.hidden = true; }
