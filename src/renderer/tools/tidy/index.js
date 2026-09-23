@@ -235,6 +235,7 @@ export default {
                 if (opts.some((b) => b.disabled)) return;
                 opts.forEach((b, k) => { b.disabled = true; b.classList.toggle('is-right', k === q.answer); b.classList.toggle('is-wrong', k === oi && oi !== q.answer); });
                 why.hidden = false; answered += 1; if (oi === q.answer) score += 1;
+                if (answered === qz.questions.length) window.toolbox.learn?.note?.({ kind: 'quiz', title: r.facts.name, meta: rootPath, score, total: qz.questions.length });
                 if (answered === qz.questions.length) summary.replaceChildren(h('b', {}, `${score} / ${qz.questions.length}`), h('span', { class: 'faint' }, score === qz.questions.length ? '全对，真懂了' : score >= qz.questions.length / 2 ? '大体明白了，错的那几道回去看看' : '再读一遍讲解吧'));
               } }, `${'ABCD'[oi]}. ${o}`));
               box.append(h('div', { class: 'tidy__quiz-q' }, h('div', {}, `${qi + 1}. ${q.q}`), h('div', { class: 'tidy__chips' }, ...opts), why));

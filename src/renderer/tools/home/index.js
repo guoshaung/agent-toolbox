@@ -49,11 +49,12 @@ export default {
     async function render() {
       const tasks = (config.get('tasks.items', []) || []).filter((t) => !t.done).slice(0, 6);
       const mru = (config.get('ui.mru') || []).filter((id) => id !== 'home').slice(0, 6).map((id) => TOOLS.find((t) => t.id === id)).filter(Boolean);
-      const [recent, scan, overviews, activity] = await Promise.all([
+      const [recent, scan, overviews, activity, journal] = await Promise.all([
         window.toolbox.tidy.recent({ days: 3, limit: 8 }).catch(() => ({ items: [] })),
         window.toolbox.tidy.scan({ ai: false }).catch(() => ({ items: [] })),
         window.toolbox.tidy.overviewList().catch(() => []),
         window.toolbox.tidy.activity({ days: 7, limit: 6 }).catch(() => ({ items: [] })),
+        window.toolbox.learn?.journal?.({ limit: 6 }).catch(() => ({ items: [], week: { total: 0, byKind: {} } })) || { items: [], week: { total: 0, byKind: {} } },
       ]);
       const ago = (t) => { const d = (Date.now() - t) / 3600000; return d < 1 ? '刚刚' : d < 24 ? `${Math.round(d)} 小时前` : `${Math.round(d / 24)} 天前`; };
       const stray = (scan.items || []).filter((x) => x.action !== 'keep');
@@ -128,6 +129,12 @@ export default {
               return input;
             })(),
             ...(tasks.length ? tasks.map((t) => h('div', { class: 'home__row' }, h('span', { class: `home__dot home__dot--${t.priority || 'normal'}` }), h('span', { class: 'home__name' }, t.title), t.due ? h('span', { class: 'faint home__meta' }, t.due) : null)) : [empty('任务清单是空的 —— 要么很闲，要么没写')]),
+          ),
+          section('这周学了什么', null,
+            h('div', { class: 'home__big' }, h('b', {}, String(journal.week.total)), h('span', { class: 'faint' }, ' 次 · ' + (Object.entries(journal.week.byKind).map(([k, n]) => `${{ explain: '解释', overview: '看懂项目', file: '带我读', quiz: '考考我', note: '记' }[k] || k} ${n}`).join(' · ') || '还没开始') + (journal.week.quizAvg != null ? ` · 考试平均 ${journal.week.quizAvg}%` : ''))),
+            ...(journal.items.length ? journal.items.slice(0, 5).map((it) => h('div', { class: 'home__row' },
+              h('span', { class: 'home__name', title: it.title }, `${{ explain: '💬', overview: '🎓', file: '📄', quiz: '📝' }[it.kind] || '•'} ${it.title}${it.kind === 'quiz' ? `（${it.score}/${it.total}）` : ''}`),
+              h('span', { class: 'faint home__meta' }, ago(it.at)))) : [empty('⌘⇧L 解释一段代码、或去收纳看懂一个项目，都会记在这里')]),
           ),
           section('最近用的', null,
             h('div', { class: 'home__tools' }, ...(mru.length ? mru : TOOLS.slice(1, 7)).map((t) => h('button', { class: 'home__tool', style: { '--tool-color': colorOf(t.id) }, onclick: () => goto(t.id) }, iconFor(t.icon || 'more'), h('span', {}, t.title)))),

@@ -338,6 +338,12 @@ contextBridge.exposeInMainWorld('toolbox', {
     onOpen: (callback) => ipcRenderer.on('palette:open', () => callback()),
   },
 
+  /** 学习记录：解释 / 看懂 / 带我读 / 考考我 都记一笔 */
+  learn: {
+    journal: (opts) => ipcRenderer.invoke('learn:journal', opts),
+    note: (entry) => ipcRenderer.invoke('learn:note', entry),
+  },
+
   /** 收纳：散落在主目录 / 桌面 / 下载的东西归位；项目速览 */
   tidy: {
     scan: (opts) => ipcRenderer.invoke('tidy:scan', opts),

@@ -1758,6 +1758,23 @@ function registerIpc() {
   // 代码记事本：读取 Understand-Anything 的知识图谱 + 按行号回读源码
   registerNotebookIpc(ipcMain, { dialog, getWindow: () => mainWindow, getUserDataPath: () => app.getPath('userData') });
   registerContainerIpc(ipcMain, { shell, getUserDataPath: () => app.getPath('userData') });
+  // 学习记录：解释过什么、看懂过哪个项目、读过哪个文件、考了几分 —— 首页给一点进度感
+  const journalAdd = (entry) => {
+    try {
+      const list = store.get('learn.journal', []) || [];
+      store.set('learn.journal', [{ at: Date.now(), ...entry }, ...list].slice(0, 500));
+    } catch { /* 记不上不算事 */ }
+  };
+  ipcMain.handle('learn:journal', (_e, { limit = 50 } = {}) => {
+    const list = store.get('learn.journal', []) || [];
+    const weekAgo = Date.now() - 7 * 86400000;
+    const week = list.filter((x) => x.at >= weekAgo);
+    const byKind = week.reduce((m, x) => { m[x.kind] = (m[x.kind] || 0) + 1; return m; }, {});
+    const quizzes = week.filter((x) => x.kind === 'quiz' && Number.isFinite(x.score));
+    return { items: list.slice(0, limit), week: { total: week.length, byKind, quizAvg: quizzes.length ? Math.round(quizzes.reduce((s, x) => s + x.score / x.total, 0) / quizzes.length * 100) : null } };
+  });
+  ipcMain.handle('learn:note', (_e, entry) => { journalAdd({ kind: String(entry?.kind || 'note').slice(0, 20), title: String(entry?.title || '').slice(0, 200), meta: entry?.meta ?? null, score: entry?.score, total: entry?.total }); return { ok: true }; });
+
   // 收纳：主目录 / 桌面 / 下载 三处顶层散落的东西
   const tidyAsk = (messages) => callStoredCompatibleApi({ messages, temperature: 0.2, timeout: 90000 });
   const tidySettings = () => ({ codeDir: store.get('tidy.codeDir', '') || undefined });
@@ -1808,6 +1825,7 @@ function registerIpc() {
     if (!fresh && cache[key]?.markdown) return { ok: true, cached: true, at: cache[key].at, ...cache[key] };
     const r = await tidy.overview(root, tidyAsk);
     if (r.ok) {
+      journalAdd({ kind: 'overview', title: r.facts?.name || key, meta: key });
       const next = { ...cache, [key]: { markdown: r.markdown, facts: r.facts, at: Date.now() } };
       const keys = Object.keys(next).sort((a, b) => next[b].at - next[a].at).slice(0, 30);   // 最多留 30 个
       store.set('tidy.overviews', Object.fromEntries(keys.map((k) => [k, next[k]])));
@@ -1826,6 +1844,7 @@ function registerIpc() {
     if (!fresh && cache[key]?.markdown) return { ok: true, cached: true, rel, ...cache[key] };
     const r = await tidy.explainFile(root, rel, tidyAsk, { priorMarkdown: prior });
     if (r.ok) {
+      journalAdd({ kind: 'file', title: `${String(root).split('/').pop()} / ${rel}`, meta: root });
       const next = { ...cache, [key]: { markdown: r.markdown, at: Date.now() } };
       const keys = Object.keys(next).sort((a, b) => next[b].at - next[a].at).slice(0, 120);
       store.set('tidy.fileExplains', Object.fromEntries(keys.map((k) => [k, next[k]])));
@@ -2377,6 +2396,7 @@ function registerIpc() {
     const result = await callStoredCompatibleApi({ messages, temperature: 0.15, timeout: 90000 });
     if (!result.ok) return result;
     const parsed = parseQuickExplainResponse(result.text);
+    journalAdd({ kind: 'explain', title: String(input?.code || '').replace(/\s+/g, ' ').trim().slice(0, 80) });
     return { ok: true, text: parsed.quick, supplement: parsed.supplement };
   });
   ipcMain.handle('pet:openAiSettings', () => {
