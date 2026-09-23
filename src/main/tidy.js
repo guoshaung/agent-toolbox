@@ -457,6 +457,41 @@ function saveReadme(root, target, markdown) {
   return { ok: true, path: abs };
 }
 
+// ---------- 考考我：讲完之后出几道选择题 ----------
+
+/** 模型回的 JSON → 干净的题目数组；形状不对的题丢掉。纯函数 */
+function parseQuiz(raw) {
+  const text = String(raw || '').replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '');
+  let arr = null;
+  try { arr = JSON.parse(text); } catch { const s = text.indexOf('['); const e = text.lastIndexOf(']'); if (s >= 0 && e > s) { try { arr = JSON.parse(text.slice(s, e + 1)); } catch { arr = null; } } }
+  if (!Array.isArray(arr)) return [];
+  return arr.map((q) => ({
+    q: String(q?.q || q?.question || '').trim().slice(0, 300),
+    options: (Array.isArray(q?.options) ? q.options : []).map((o) => String(o).trim().slice(0, 160)).filter(Boolean).slice(0, 4),
+    answer: Number(q?.answer),
+    why: String(q?.why || q?.explain || '').trim().slice(0, 300),
+  })).filter((q) => q.q && q.options.length === 4 && Number.isInteger(q.answer) && q.answer >= 0 && q.answer < 4).slice(0, 8);
+}
+
+async function quizFor(root, priorMarkdown, ask, { count = 5 } = {}) {
+  const f = projectFacts(root);
+  if (!f.ok) return f;
+  if (typeof ask !== 'function') return { ok: false, error: '没有配好模型。' };
+  const prompt = `根据下面对项目「${f.name}」的讲解和目录树，出 ${count} 道单选题，考「这个项目怎么组织、从哪读、怎么跑」这类真正有用的理解，不考死记文件名。
+每题 4 个选项，只有一个对。只输出 JSON 数组：[{"q":"题目","options":["A","B","C","D"],"answer":0,"why":"一句话解释为什么"}]
+
+讲解：
+${String(priorMarkdown || '').slice(0, 3500)}
+
+目录树：
+${f.tree.slice(0, 2500)}`;
+  const r = await ask([{ role: 'system', content: '你只输出 JSON。' }, { role: 'user', content: prompt }]);
+  if (!r?.ok) return { ok: false, error: r?.error || '模型没返回。' };
+  const questions = parseQuiz(r.text);
+  if (!questions.length) return { ok: false, error: '模型出的题格式不对，再试一次。' };
+  return { ok: true, questions };
+}
+
 /** 接着问这个项目：把项目事实和上次的讲解一起带上，模型只根据这些回答 */
 async function askProject(root, question, priorMarkdown, ask) {
   const f = projectFacts(root);
@@ -479,4 +514,4 @@ ${priorMarkdown ? `\n之前给用户的讲解：\n${String(priorMarkdown).slice(
   return { ok: true, markdown: String(r.text || '') };
 }
 
-module.exports = { scan, suggest, refine, apply, undo, lastUndo, recent, projectFacts, overview, askProject, studyPlanToTasks, activity, parseGitLog, projectRoots, findRepos, readingList, explainFile, draftReadme, saveReadme, destinations, classifyDir, classifyFile, looksCareless, labelOf, HOME };
+module.exports = { scan, suggest, refine, apply, undo, lastUndo, recent, projectFacts, overview, askProject, studyPlanToTasks, activity, parseGitLog, projectRoots, findRepos, readingList, explainFile, draftReadme, saveReadme, parseQuiz, quizFor, destinations, classifyDir, classifyFile, looksCareless, labelOf, HOME };

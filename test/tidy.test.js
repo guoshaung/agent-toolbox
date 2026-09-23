@@ -156,3 +156,10 @@ test('draftReadme / saveReadme：有 README 就存草稿；只允许写这两个
   assert.equal(tidy.saveReadme(d, path.join(d, 'evil.md'), 'x').ok, false, '别的名字不写');
   assert.equal(tidy.saveReadme(d, '/tmp/README.md', 'x').ok, false, '不出项目');
 });
+
+test('parseQuiz：剥代码块、丢掉形状不对的题、answer 越界的题不要', () => {
+  const raw = '```json\n[{"q":"入口在哪","options":["a","b","c","d"],"answer":2,"why":"因为"},{"q":"坏题","options":["a","b"],"answer":0},{"q":"越界","options":["a","b","c","d"],"answer":4}]\n```';
+  const qs = tidy.parseQuiz(raw);
+  assert.equal(qs.length, 1); assert.equal(qs[0].answer, 2); assert.equal(qs[0].why, '因为');
+  assert.deepEqual(tidy.parseQuiz('不是 JSON'), []);
+});

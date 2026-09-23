@@ -4314,3 +4314,9 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .tidy__reading:empty { display: none; }
 .tidy__reading-detail { margin-top: 4px; }
 .appearance__auto { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin: 2px 0 12px; padding: 10px 12px; border: 1px dashed var(--line); border-radius: 10px; }
+.tidy__quiz { display: flex; flex-direction: column; gap: 12px; }
+.tidy__quiz-q { padding: 10px 12px; border: 1px solid var(--line-soft); border-radius: 10px; background: var(--bg-raised); font-size: 13.5px; display: flex; flex-direction: column; gap: 8px; }
+.tidy__quiz-opt { text-align: left; white-space: normal; }
+.tidy__quiz-opt.is-right { border-color: var(--good); background: color-mix(in srgb, var(--good) 18%, transparent); color: var(--text); }
+.tidy__quiz-opt.is-wrong { border-color: var(--bad); background: color-mix(in srgb, var(--bad) 16%, transparent); }
+.tidy__quiz-why { font-size: 12.5px; padding-left: 4px; }

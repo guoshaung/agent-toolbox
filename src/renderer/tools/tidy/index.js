@@ -220,7 +220,28 @@ export default {
                 h('button', { class: 'btn btn--sm', onclick: () => box.remove() }, '不要')),
               md(d.markdown));
             out.after(box);
-          } }, '帮我写 README')),
+          } }, '帮我写 README'),
+          h('button', { class: 'btn btn--sm', title: '讲完考五道选择题，看看真懂了没', onclick: async (e) => {
+            const btn = e.currentTarget; btn.disabled = true; btn.textContent = '出题中…';
+            const qz = await api().quiz({ root: rootPath, prior: r.markdown });
+            btn.disabled = false; btn.textContent = '考考我';
+            if (!qz.ok) return toast(qz.error, 'bad');
+            let score = 0; let answered = 0;
+            const summary = h('div', { class: 'tidy__stat' });
+            const box = h('section', { class: 'card tidy__quiz' }, h('div', { class: 'tidy__stat' }, h('b', {}, `考考我 · ${qz.questions.length} 题`), h('button', { class: 'btn btn--sm', onclick: () => box.remove() }, '收起')));
+            qz.questions.forEach((q, qi) => {
+              const why = h('div', { class: 'faint tidy__quiz-why', hidden: true }, q.why);
+              const opts = q.options.map((o, oi) => h('button', { class: 'btn btn--sm tidy__quiz-opt', onclick: () => {
+                if (opts.some((b) => b.disabled)) return;
+                opts.forEach((b, k) => { b.disabled = true; b.classList.toggle('is-right', k === q.answer); b.classList.toggle('is-wrong', k === oi && oi !== q.answer); });
+                why.hidden = false; answered += 1; if (oi === q.answer) score += 1;
+                if (answered === qz.questions.length) summary.replaceChildren(h('b', {}, `${score} / ${qz.questions.length}`), h('span', { class: 'faint' }, score === qz.questions.length ? '全对，真懂了' : score >= qz.questions.length / 2 ? '大体明白了，错的那几道回去看看' : '再读一遍讲解吧'));
+              } }, `${'ABCD'[oi]}. ${o}`));
+              box.append(h('div', { class: 'tidy__quiz-q' }, h('div', {}, `${qi + 1}. ${q.q}`), h('div', { class: 'tidy__chips' }, ...opts), why));
+            });
+            box.append(summary);
+            out.after(box);
+          } }, '考考我')),
         md(r.markdown),
         reading,
         h('div', { class: 'tidy__askbar' }, qInput, h('button', { class: 'btn btn--sm btn--primary', onclick: askIt }, '问')),
