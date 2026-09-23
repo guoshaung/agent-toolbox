@@ -37,6 +37,9 @@ export default {
     const autoBox = h('input', { type: 'checkbox', onchange: (e) => api().autoNotify(e.target.checked) });
     api().autoNotify().then((r) => { autoBox.checked = r.on; });
     const autoToggle = h('label', { class: 'home__toggle faint', title: '盯着 ~/Downloads：下载完图片 / 文档 / 压缩包 / 安装包，弹一条通知，点一下就归位（可撤销）' }, autoBox, '下载完问我要不要归位');
+    const weeklyBox = h('input', { type: 'checkbox', onchange: (e) => { if (e.target.checked && !window.confirm('每周日自动把图片 / 文档 / 压缩包 / 安装包搬进 ~/收纳（项目和认不出的不动），搬完通知你，随时可撤销。开吗？')) { e.target.checked = false; return; } api().weekly(e.target.checked); } });
+    api().weekly().then((r) => { weeklyBox.checked = r.on; });
+    const weeklyToggle = h('label', { class: 'home__toggle faint', title: '最懒的选项：每周日自动把明显的归位，撤销栈留最近 5 批' }, weeklyBox, '每周日自动把明显的归位');
     async function loadScan(ai = false, fresh = false) {
       body.replaceChildren(h('div', { class: 'tidy__empty' }, ai ? '让 AI 认一下那些看不出来的…' : '正在看桌面、下载和主目录…'));
       scanData = await api().scan({ ai, fresh });
@@ -115,13 +118,13 @@ export default {
             h('span', {}, '代码项目会去 ', h('code', {}, short(scanData.destinations.project))),
             h('button', { class: 'btn btn--sm', onclick: async () => { const r = await api().setCodeDir(); if (r.ok) loadScan(false); } }, '改'),
             h('span', { class: 'faint' }, '其余去 ~/收纳/ 下按类型分的文件夹'),
-            nudgeToggle, autoToggle,
+            nudgeToggle, autoToggle, weeklyToggle,
           ),
           h('div', { class: 'settings__actions', style: { marginTop: '10px' } },
             h('button', { class: 'btn btn--sm btn--primary', onclick: apply }, '勾选的一键归位'),
             h('button', { class: 'btn btn--sm', onclick: () => loadScan(true) }, '让 AI 认一下看不出来的'),
             h('button', { class: 'btn btn--sm', onclick: () => loadScan(false, true) }, '重新扫描'),
-            scanData.undo ? h('button', { class: 'btn btn--sm', onclick: async () => { const r = await api().undo(); toast(r.ok ? `搬回去了 ${r.restored.length} 项` : (r.error || `部分失败：${r.errors[0]}`), r.ok ? 'good' : 'bad'); loadScan(false); } }, `撤销上次（${scanData.undo.count} 项）`) : null,
+            scanData.undo ? h('button', { class: 'btn btn--sm', title: scanData.undo.batches > 1 ? `还有 ${scanData.undo.batches} 批可以撤` : '', onclick: async () => { const r = await api().undo(); toast(r.ok ? `搬回去了 ${r.restored.length} 项${r.remaining ? `，还能再撤 ${r.remaining} 批` : ''}` : (r.error || `部分失败：${r.errors[0]}`), r.ok ? 'good' : 'bad'); loadScan(false); } }, `撤销上次（${scanData.undo.count} 项${scanData.undo.source === 'weekly' ? '，周日自动的' : ''}）`) : null,
           ),
         ),
         items.length ? h('div', { class: 'tidy__grid' }, dupEl, staleEl, ...groupEls) : h('div', { class: 'tidy__empty' }, '桌面、下载、主目录都很干净 🎉'),

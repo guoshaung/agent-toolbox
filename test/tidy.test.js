@@ -64,9 +64,18 @@ test('apply：只允许搬三处顶层的东西；目的地必须在主目录里
   assert.match(r2.errors[0], /已经不在了/);
 });
 
-test('undo：没有记录时给出能看懂的提示', () => {
+test('undo：没有记录时给出能看懂的提示；撤销栈最多留 5 批、后进先出', () => {
   const r = tidy.undo(tmp());
   assert.equal(r.ok, false); assert.match(r.error, /没有可以撤销/);
+  const ud = tmp();
+  const file = path.join(ud, 'tidy-undo.json');
+  fs.writeFileSync(file, JSON.stringify([{ at: 1, moves: [] }, { at: 2, moves: [] }]));
+  assert.equal(tidy.lastUndo(ud).batches, 2);
+  const u = tidy.undo(ud);
+  assert.equal(u.at, 2); assert.equal(u.remaining, 1);
+  assert.equal(tidy.lastUndo(ud).at, 1);
+  fs.writeFileSync(file, JSON.stringify({ at: 9, moves: [] }));
+  assert.equal(tidy.lastUndo(ud).batches, 1, '旧的单批格式也认');
 });
 
 test('projectFacts：认出清单、README、入口，目录树跳过 node_modules', () => {

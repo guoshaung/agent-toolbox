@@ -1900,7 +1900,30 @@ function registerIpc() {
       return { ...scanned, items, destinations: tidy.destinations(tidySettings()), undo: tidy.lastUndo(app.getPath('userData')) };
     });
   });
-  ipcMain.handle('tidy:apply', async (_e, moves) => { const r = await tidy.apply(app.getPath('userData'), moves, { trash: (p) => shell.trashItem(p) }); tidyInvalidate(); return r; });
+  ipcMain.handle('tidy:apply', async (_e, moves) => { const r = await tidy.apply(app.getPath('userData'), moves, { trash: (p) => shell.trashItem(p), source: 'manual' }); tidyInvalidate(); return r; });
+  // 每周日自动把明显的归位（默认关）。只搬图片 / 文档 / 压缩包 / 安装包 / 视频 / 音频 / 数据 / 发票，
+  // 搬完发条通知，撤销栈里留着，随时能搬回来。
+  const weeklyTidy = async () => {
+    try {
+      if (store.get('tidy.weekly', false) !== true) return;
+      if (new Date().getDay() !== 0) return;
+      const weekKey = new Date().toISOString().slice(0, 10);
+      if (store.get('tidy.weeklyDone') === weekKey) return;
+      const SAFE = new Set(['image', 'images', 'doc', 'docs', 'archive', 'installer', 'video', 'videos', 'audio', 'data', 'invoice']);
+      const items = tidy.suggest(tidy.scan().items, tidySettings());
+      const moves = items.filter((x) => x.action === 'move' && SAFE.has(x.kind)).map((x) => ({ path: x.path, to: x.to, action: 'move' }));
+      store.set('tidy.weeklyDone', weekKey);
+      if (!moves.length) return;
+      const r = await tidy.apply(app.getPath('userData'), moves, { trash: (p) => shell.trashItem(p), source: 'weekly' });
+      tidyInvalidate();
+      const n = new Notification({ title: `周日自动归位：搬了 ${r.done.length} 项`, body: '图片 / 文档 / 压缩包 / 安装包已进 ~/收纳。点一下打开收纳，那里能撤销。' });
+      n.on('click', () => ensureMainWindow({ show: true }).webContents.send('app:navigate-tool', { id: 'tidy' }));
+      n.show();
+    } catch { /* 自动归位失败不打扰 */ }
+  };
+  setTimeout(weeklyTidy, 120 * 1000);
+  setInterval(weeklyTidy, 3 * 3600 * 1000);
+  ipcMain.handle('tidy:weekly', (_e, on) => { if (typeof on === 'boolean') store.set('tidy.weekly', on); return { on: store.get('tidy.weekly', false) === true }; });
   ipcMain.handle('tidy:undo', () => { const r = tidy.undo(app.getPath('userData')); tidyInvalidate(); return r; });
   ipcMain.handle('tidy:recent', (_e, opts) => cached(`recent:${JSON.stringify(opts || {})}`, 30 * 1000, () => tidy.recent(opts || {})));
   ipcMain.handle('tidy:search', (_e, q) => tidy.searchTidy(q, tidySettings()));

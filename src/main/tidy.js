@@ -225,7 +225,7 @@ function uniqueTarget(dir, name) {
 function undoFile(userData) { return path.join(userData, 'tidy-undo.json'); }
 
 /** 真的搬。moves: [{path, to, action}] */
-async function apply(userData, moves, { trash } = {}) {
+async function apply(userData, moves, { trash, source } = {}) {
   const done = []; const errors = [];
   for (const m of Array.isArray(moves) ? moves : []) {
     const src = path.resolve(String(m.path || ''));
@@ -247,17 +247,30 @@ async function apply(userData, moves, { trash } = {}) {
       done.push({ from: src, to: target, action: 'move' });
     } catch (error) { errors.push(`${path.basename(src)}：${error.message}`); }
   }
-  if (done.length) {
-    const log = { at: Date.now(), moves: done.filter((d) => d.action === 'move') };
-    try { fs.writeFileSync(undoFile(userData), JSON.stringify(log)); } catch { /* 写不了撤销记录不算失败 */ }
+  const moved = done.filter((d) => d.action === 'move');
+  if (moved.length) {
+    // 撤销栈：最近 5 批，每次撤销弹最后一批（自动归位也走这条路，所以得能连撤几次）
+    const stack = readUndoStack(userData);
+    stack.push({ at: Date.now(), moves: moved, source: String(source || 'manual') });
+    try { fs.writeFileSync(undoFile(userData), JSON.stringify(stack.slice(-5))); } catch { /* 写不了撤销记录不算失败 */ }
   }
   return { ok: errors.length === 0, done, errors };
 }
 
-/** 把上一次搬的东西搬回去 */
+function readUndoStack(userData) {
+  try {
+    const raw = JSON.parse(fs.readFileSync(undoFile(userData), 'utf8'));
+    if (Array.isArray(raw)) return raw;
+    if (raw && Array.isArray(raw.moves)) return [raw];          // 旧格式：单批
+  } catch { /* 没有 */ }
+  return [];
+}
+
+/** 把最近一批搬的东西搬回去 */
 function undo(userData) {
-  let log;
-  try { log = JSON.parse(fs.readFileSync(undoFile(userData), 'utf8')); } catch { return { ok: false, error: '没有可以撤销的记录。' }; }
+  const stack = readUndoStack(userData);
+  const log = stack.pop();
+  if (!log) return { ok: false, error: '没有可以撤销的记录。' };
   const restored = []; const errors = [];
   for (const m of log.moves || []) {
     try {
@@ -267,12 +280,14 @@ function undo(userData) {
       restored.push(m.from);
     } catch (error) { errors.push(`${path.basename(m.to)}：${error.message}`); }
   }
-  try { fs.unlinkSync(undoFile(userData)); } catch { /* ok */ }
-  return { ok: errors.length === 0, restored, errors, at: log.at };
+  try { if (stack.length) fs.writeFileSync(undoFile(userData), JSON.stringify(stack)); else fs.unlinkSync(undoFile(userData)); } catch { /* ok */ }
+  return { ok: errors.length === 0, restored, errors, at: log.at, remaining: stack.length };
 }
 
 function lastUndo(userData) {
-  try { const log = JSON.parse(fs.readFileSync(undoFile(userData), 'utf8')); return { at: log.at, count: (log.moves || []).length }; } catch { return null; }
+  const stack = readUndoStack(userData);
+  const log = stack[stack.length - 1];
+  return log ? { at: log.at, count: (log.moves || []).length, batches: stack.length, source: log.source || 'manual' } : null;
 }
 
 /** 最近 days 天在主目录下新建的文件夹 / 文件（深度有限，跳过大目录） */
