@@ -108,6 +108,12 @@ function findDuplicates(items) {
   return out.sort((a, b) => b.size * b.extra.length - a.size * a.extra.length);
 }
 
+/** 超过 days 天的安装包 / 压缩包：装完早该扔了。纯函数 */
+function staleDownloads(items, { days = 30, now = Date.now() } = {}) {
+  return items.filter((it) => !it.isDir && (it.kind === 'installer' || it.kind === 'archive') && (now - it.mtime) > days * 86400000)
+    .sort((a, b) => (b.size || 0) - (a.size || 0));
+}
+
 /** 三处顶层散落的东西 */
 function scan() {
   const now = Date.now();
@@ -123,7 +129,7 @@ function scan() {
     }
   }
   items.sort((a, b) => b.mtime - a.mtime);
-  return { ok: true, items, duplicates: findDuplicates(items), roots: roots.map((r) => r.replace(HOME, '~')) };
+  return { ok: true, items, duplicates: findDuplicates(items), stale: staleDownloads(items), roots: roots.map((r) => r.replace(HOME, '~')) };
 }
 
 /** 目的地：都放在 ~/收纳 下面，一眼能找到；代码单独一个目录 */
@@ -566,4 +572,4 @@ ${priorMarkdown ? `\n之前给用户的讲解：\n${String(priorMarkdown).slice(
   return { ok: true, markdown: String(r.text || '') };
 }
 
-module.exports = { scan, suggest, findDuplicates, parseRepoUrl, cloneRepo, refine, apply, undo, lastUndo, recent, projectFacts, overview, askProject, studyPlanToTasks, activity, parseGitLog, projectRoots, findRepos, readingList, explainFile, draftReadme, saveReadme, parseQuiz, quizFor, destinations, classifyDir, classifyFile, looksCareless, labelOf, HOME };
+module.exports = { scan, suggest, findDuplicates, staleDownloads, parseRepoUrl, cloneRepo, refine, apply, undo, lastUndo, recent, projectFacts, overview, askProject, studyPlanToTasks, activity, parseGitLog, projectRoots, findRepos, readingList, explainFile, draftReadme, saveReadme, parseQuiz, quizFor, destinations, classifyDir, classifyFile, looksCareless, labelOf, HOME };

@@ -122,6 +122,17 @@ if (!pinnedIds || !pinnedIds.length) {
 rightPinnedIds = rightPinnedIds
   .filter((id, index, list) => pinEligibleTools.some((tool) => tool.id === id) && !pinnedIds.includes(id) && list.indexOf(id) === index)
   .slice(0, RIGHT_MAX);
+// 左栏满了补不进去的新栏目（今天 / 收纳）放到右栏最前面，别让存量用户只能从「更多」里翻。
+// 只补一次（记在 ui.autoRight 里），之后用户拿掉了就不再塞回来。
+{
+  const autoRight = config.get('ui.autoRight', []) || [];
+  for (const id of ['tidy', 'home']) {
+    if (pinnedIds.includes(id) || rightPinnedIds.includes(id) || autoRight.includes(id) || rightPinnedIds.length >= RIGHT_MAX) continue;
+    rightPinnedIds = [id, ...rightPinnedIds];
+    autoRight.push(id);
+  }
+  if (autoRight.length) { config.set('ui.autoRight', autoRight); config.set('ui.rightPinnedTools', rightPinnedIds); }
+}
 
 const pinnedHost = h('div', { class: 'rail__pinned' });
 const rightPinnedHost = h('div', { class: 'rail__pinned' });

@@ -201,3 +201,14 @@ test('cloneRepo：地址不对直接说；已存在的目录不重拉', async ()
   const r = await tidy.cloneRepo('x/y', d);
   assert.equal(r.ok, true); assert.equal(r.existed, true); assert.equal(r.path, path.join(d, 'y'));
 });
+
+test('staleDownloads：只挑超过 30 天的安装包 / 压缩包，按大小排', () => {
+  const now = Date.now(); const d = (n) => now - n * 86400000;
+  const items = [
+    { name: 'a.dmg', kind: 'installer', isDir: false, mtime: d(40), size: 10 },
+    { name: 'b.zip', kind: 'archive', isDir: false, mtime: d(45), size: 99 },
+    { name: 'c.dmg', kind: 'installer', isDir: false, mtime: d(3), size: 5 },
+    { name: 'd.pdf', kind: 'doc', isDir: false, mtime: d(90), size: 7 },
+  ];
+  assert.deepEqual(tidy.staleDownloads(items, { now }).map((x) => x.name), ['b.zip', 'a.dmg']);
+});

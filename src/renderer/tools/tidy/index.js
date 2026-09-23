@@ -74,8 +74,9 @@ export default {
       const items = scanData.items;
       const groups = new Map();
       const dupPaths = new Set((scanData.duplicates || []).flatMap((g) => g.extra.map((x) => x.path)));
+      const stalePaths = new Set((scanData.stale || []).map((x) => x.path));
       for (const it of items) {
-        if (it.action === 'keep' || dupPaths.has(it.path)) continue;   // 项目集原地不动；重复的在上面那组
+        if (it.action === 'keep' || dupPaths.has(it.path) || stalePaths.has(it.path)) continue;   // 项目集原地不动；重复的 / 过期的在上面那组
         const key = it.action === 'delete' ? '__delete' : it.action === 'unsure' ? '__unsure' : it.to;
         if (!groups.has(key)) groups.set(key, []);
         groups.get(key).push(it);
@@ -89,6 +90,15 @@ export default {
           checks.set(it.path, { cb, it: { ...it, action: 'delete', to: null } });
           return h('div', { class: 'tidy__row' }, cb, h('span', { class: 'tidy__name', title: it.path }, `📄 ${it.name}`), h('span', { class: 'tidy__reason' }, `和 ${g.keep.name} 一样`), h('span', { class: 'tidy__meta' }, fmtSize(it.size)), h('button', { class: 'btn btn--sm', onclick: () => api().reveal(it.path) }, '看看'));
         })),
+      ) : null;
+      // 超过 30 天的安装包 / 压缩包：默认不勾，扔不扔你定
+      const staleEl = (scanData.stale || []).length ? h('div', { class: 'tidy__group' },
+        h('div', { class: 'tidy__group-head' }, h('strong', {}, '超过 30 天的安装包 / 压缩包 —— 装完了就扔？（默认不勾）'), h('code', {}, `${scanData.stale.length} 项 · ${fmtSize(scanData.stale.reduce((n, x) => n + (x.size || 0), 0))}`)),
+        ...scanData.stale.map((it) => {
+          const cb = h('input', { type: 'checkbox' });
+          checks.set(it.path, { cb, it: { ...it, action: 'delete', to: null } });
+          return h('div', { class: 'tidy__row' }, cb, h('span', { class: 'tidy__name', title: it.path }, `📦 ${it.name}`), h('span', { class: 'tidy__reason' }, '扔废纸篓'), h('span', { class: 'tidy__meta' }, `${fmtAge(it.ageDays)} · ${fmtSize(it.size)}`), h('button', { class: 'btn btn--sm', onclick: () => api().reveal(it.path) }, '看看'));
+        }),
       ) : null;
       const groupEls = [...groups.entries()].sort(([a], [b]) => (a.startsWith('__') ? 1 : 0) - (b.startsWith('__') ? 1 : 0)).map(([key, list]) => {
         const title = key === '__delete' ? '建议删掉（空文件夹 / 垃圾）' : key === '__unsure' ? '认不出来的 —— 先放「杂项」，或者点右边改' : `搬到 ${short(key)}`;
@@ -128,7 +138,7 @@ export default {
             scanData.undo ? h('button', { class: 'btn btn--sm', onclick: async () => { const r = await api().undo(); toast(r.ok ? `搬回去了 ${r.restored.length} 项` : (r.error || `部分失败：${r.errors[0]}`), r.ok ? 'good' : 'bad'); loadScan(false); } }, `撤销上次（${scanData.undo.count} 项）`) : null,
           ),
         ),
-        items.length ? h('div', { class: 'tidy__grid' }, dupEl, ...groupEls) : h('div', { class: 'tidy__empty' }, '桌面、下载、主目录都很干净 🎉'),
+        items.length ? h('div', { class: 'tidy__grid' }, dupEl, staleEl, ...groupEls) : h('div', { class: 'tidy__empty' }, '桌面、下载、主目录都很干净 🎉'),
       );
     }
 
