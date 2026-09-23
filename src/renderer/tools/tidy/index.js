@@ -78,7 +78,7 @@ export default {
           return h('div', { class: 'tidy__row' }, cb, h('span', { class: 'tidy__name', title: it.path }, `📦 ${it.name}`), h('span', { class: 'tidy__reason' }, '扔废纸篓'), h('span', { class: 'tidy__meta' }, `${fmtAge(it.ageDays)} · ${fmtSize(it.size)}`), h('button', { class: 'btn btn--sm', onclick: () => api().reveal(it.path) }, '看看'));
         }),
       ) : null;
-      const groupEls = [...groups.entries()].sort(([a], [b]) => (a.startsWith('__') ? 1 : 0) - (b.startsWith('__') ? 1 : 0)).map(([key, list]) => {
+      const groupEls = [...groups.entries()].sort(([a, la], [b, lb]) => ((a.startsWith('__') ? 1 : 0) - (b.startsWith('__') ? 1 : 0)) || (lb.length - la.length)).map(([key, list]) => {
         const title = key === '__delete' ? '建议删掉（空文件夹 / 垃圾）' : key === '__unsure' ? '认不出来的 —— 先放「杂项」，或者点右边改' : `搬到 ${short(key)}`;
         const DEST_LABELS = { project: '代码项目', images: '图片', docs: '文档', data: '数据', archive: '压缩包', installer: '安装包', videos: '视频', audio: '音频', invoice: '发票', run: '运行结果', logs: '日志备份', mixed: '杂项' };
         const rows = list.map((it) => {

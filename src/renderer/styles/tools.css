@@ -4333,3 +4333,15 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .tidy__more { margin: 6px 12px 10px; }
 .home__tip { cursor: pointer; }
 .home__tip:hover { color: var(--text); }
+/* 首页卡片进场：一张一张浮上来，别一下全糊上 */
+.home__card { animation: home-in .32s cubic-bezier(.2,.8,.2,1) both; }
+.home__grid > .home__card:nth-child(1) { animation-delay: .02s; }
+.home__grid > .home__card:nth-child(2) { animation-delay: .06s; }
+.home__grid > .home__card:nth-child(3) { animation-delay: .10s; }
+.home__grid > .home__card:nth-child(4) { animation-delay: .14s; }
+.home__grid > .home__card:nth-child(5) { animation-delay: .18s; }
+.home__grid > .home__card:nth-child(6) { animation-delay: .22s; }
+.home__grid > .home__card:nth-child(7) { animation-delay: .26s; }
+@keyframes home-in { from { opacity: 0; transform: translateY(8px); } }
+@media (prefers-reduced-motion: reduce) { .home__card { animation: none; } }
+.tidy__group { animation: home-in .25s ease-out both; }

@@ -107,7 +107,7 @@ export function createPalette({ tools, activate, config, toast, extraActions = [
       : rankItems(q, catalog().filter((it) => q || (it.kind !== 'journal' && it.kind !== 'clip')), { recentIds: mru }).slice(0, q ? 40 : 14);
     index = Math.min(index, Math.max(0, items.length - 1));
     list.replaceChildren(...items.map((it, i) => {
-      const row = h('div', { class: `palette__row${i === index ? ' is-active' : ''}`, dataset: { i: String(i) } },
+      const row = h('div', { class: `palette__row${i === index ? ' is-active' : ''}`, dataset: { i: String(i) }, title: it.kind === 'file' ? (it.keywords?.[0] || '') : '' },
         i < 9 ? h('kbd', { class: 'palette__num' }, `⌘${i + 1}`) : h('span', { class: 'palette__num' }),
         it.kind === 'tool' ? h('span', { class: 'palette__icon' }, iconFor(it.icon || 'more'))
           : it.kind === 'theme' ? h('span', { class: 'palette__swatches' }, ...(it.swatches || []).map((c) => h('i', { style: { background: c } })))
