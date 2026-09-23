@@ -56,6 +56,9 @@ export function createPalette({ tools, activate, config, toast, extraActions = [
   let items = [];
   let recentFiles = null;                 // 懒加载，打开面板时才去问
   let journal = null;                     // 学习记录，同样懒加载
+  let found = [];                         // 在 ~/收纳 / 代码目录里按名字搜到的
+  let foundFor = '';
+  let searchTimer = 0;
 
   const input = h('input', { class: 'palette__input', placeholder: '搜工具、换皮肤、找刚建的文件夹… 「+ 事情」直接记任务', spellcheck: 'false' });
   const list = h('div', { class: 'palette__list' });
@@ -85,7 +88,8 @@ export function createPalette({ tools, activate, config, toast, extraActions = [
     }));
     // 收纳目录直达：「打开 收纳 文档」
     const folderItems = ['图片', '文档', '数据', '压缩包', '安装包', '视频', '音频', '零散代码', '杂项'].map((name) => ({ id: `folder:${name}`, kind: 'action', title: `打开 ~/收纳/${name}`, hint: '归位后的东西都在这', icon: 'folder', keywords: ['收纳', '打开', name], run: () => window.toolbox.tidy.open(`${homeDir()}/收纳/${name}`) }));
-    return [...toolItems, ...extraActions, ...themeItems, ...effectItems, ...fileItems, ...learnItems, ...journalItems, ...folderItems];
+    const foundItems = found.map((f) => ({ id: `found:${f.path}`, kind: 'file', title: f.name, hint: `归位后在 ${f.where}`, keywords: [f.path], isDir: f.isDir, run: () => window.toolbox.tidy.reveal(f.path), alt: () => window.toolbox.tidy.open(f.path) }));
+    return [...toolItems, ...extraActions, ...themeItems, ...effectItems, ...fileItems, ...learnItems, ...journalItems, ...folderItems, ...foundItems];
   };
 
   function render() {
@@ -132,7 +136,18 @@ export function createPalette({ tools, activate, config, toast, extraActions = [
   function hide() { open = false; root.hidden = true; }
   function toggle() { open ? hide() : show(); }
 
-  input.addEventListener('input', () => { index = 0; render(); });
+  input.addEventListener('input', () => {
+    index = 0; render();
+    // 打了两个字以上，顺便去 ~/收纳 里按名字找一下（防抖，别每个键都读盘）
+    clearTimeout(searchTimer);
+    const q = input.value.trim();
+    if (q.length < 2) { found = []; foundFor = ''; return; }
+    searchTimer = setTimeout(async () => {
+      const r = await window.toolbox.tidy?.search?.(q).catch(() => []);
+      if (input.value.trim() !== q) return;
+      found = r || []; foundFor = q; if (open) render();
+    }, 180);
+  });
   input.addEventListener('keydown', (e) => {
     if (e.key === 'ArrowDown') { e.preventDefault(); index = Math.min(items.length - 1, index + 1); highlight(); }
     else if (e.key === 'ArrowUp') { e.preventDefault(); index = Math.max(0, index - 1); highlight(); }

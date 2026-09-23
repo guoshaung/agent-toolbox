@@ -122,6 +122,25 @@ function staleDownloads(items, { days = 30, now = Date.now() } = {}) {
     .sort((a, b) => (b.size || 0) - (a.size || 0));
 }
 
+/** 在 ~/收纳（和代码目录）里按名字找：归位之后「那个 pdf 去哪了」 */
+function searchTidy(query, { codeDir, limit = 20 } = {}) {
+  const q = String(query || '').trim().toLowerCase();
+  if (q.length < 2) return [];
+  const roots = [path.join(HOME, '收纳'), codeDir || path.join(HOME, 'Projects')];
+  const out = [];
+  const walk = (dir, depth) => {
+    if (depth > 2 || out.length >= limit * 3) return;
+    for (const e of listSafe(dir)) {
+      if (e.name.startsWith('.')) continue;
+      const full = path.join(dir, e.name);
+      if (e.name.toLowerCase().includes(q)) { const st = statSafe(full); out.push({ name: e.name, path: full, isDir: e.isDirectory(), where: path.dirname(full).replace(HOME, '~'), mtime: st?.mtimeMs || 0 }); }
+      if (e.isDirectory() && depth < 2 && !fs.existsSync(path.join(full, '.git'))) walk(full, depth + 1);
+    }
+  };
+  for (const r of roots) walk(r, 0);
+  return out.sort((a, b) => b.mtime - a.mtime).slice(0, limit);
+}
+
 /** 三处顶层散落的东西 */
 function scan() {
   const now = Date.now();
@@ -580,4 +599,4 @@ ${priorMarkdown ? `\n之前给用户的讲解：\n${String(priorMarkdown).slice(
   return { ok: true, markdown: String(r.text || '') };
 }
 
-module.exports = { scan, suggest, findDuplicates, staleDownloads, parseRepoUrl, cloneRepo, refine, apply, undo, lastUndo, recent, projectFacts, overview, askProject, studyPlanToTasks, activity, parseGitLog, projectRoots, findRepos, readingList, explainFile, draftReadme, saveReadme, parseQuiz, quizFor, destinations, classifyDir, classifyFile, looksCareless, labelOf, HOME };
+module.exports = { scan, suggest, findDuplicates, staleDownloads, searchTidy, parseRepoUrl, cloneRepo, refine, apply, undo, lastUndo, recent, projectFacts, overview, askProject, studyPlanToTasks, activity, parseGitLog, projectRoots, findRepos, readingList, explainFile, draftReadme, saveReadme, parseQuiz, quizFor, destinations, classifyDir, classifyFile, looksCareless, labelOf, HOME };

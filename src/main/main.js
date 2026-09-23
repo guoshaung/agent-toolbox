@@ -1872,6 +1872,7 @@ function registerIpc() {
   ipcMain.handle('tidy:apply', async (_e, moves) => { const r = await tidy.apply(app.getPath('userData'), moves, { trash: (p) => shell.trashItem(p) }); tidyInvalidate(); return r; });
   ipcMain.handle('tidy:undo', () => { const r = tidy.undo(app.getPath('userData')); tidyInvalidate(); return r; });
   ipcMain.handle('tidy:recent', (_e, opts) => cached(`recent:${JSON.stringify(opts || {})}`, 30 * 1000, () => tidy.recent(opts || {})));
+  ipcMain.handle('tidy:search', (_e, q) => tidy.searchTidy(q, tidySettings()));
   ipcMain.handle('tidy:activity', (_e, opts) => cached(`activity:${JSON.stringify(opts || {})}`, 5 * 60 * 1000, () => tidy.activity(opts || {})));
   ipcMain.handle('tidy:nudge', (_e, on) => { if (typeof on === 'boolean') store.set('tidy.nudge', on); return { on: store.get('tidy.nudge', true) !== false }; });
   // 每天最多提醒一次：散落的东西超过 30 项就发一条系统通知，点了直接去收纳

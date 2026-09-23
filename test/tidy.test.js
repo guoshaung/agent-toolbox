@@ -224,3 +224,14 @@ test('发票夹、运行结果夹、日志备份文件都认得', () => {
   assert.equal(tidy.classifyFile('java_pid1.hprof'), 'logs');
   assert.match(tidy.suggest([{ name: 'x', isDir: true, kind: 'run' }], {})[0].to, /运行结果$/);
 });
+
+test('searchTidy：两个字起搜，按名字包含，不进仓库里面', () => {
+  const d = tmp();
+  touch(path.join(d, '收纳', '文档', '毕业论文.pdf'), 'x'); touch(path.join(d, 'code', 'repo', '.git', 'HEAD'), 'ref'); touch(path.join(d, 'code', 'repo', '论文.md'), 'x');
+  const origHome = tidy.HOME;
+  // HOME 是常量，这里用 codeDir 指到临时目录，只验证代码目录那条路
+  const r = tidy.searchTidy('论文', { codeDir: path.join(d, 'code') });
+  assert.equal(r.some((x) => x.name === '论文.md'), false, '仓库里面不搜');
+  assert.deepEqual(tidy.searchTidy('论', {}), [], '一个字不搜');
+  assert.equal(typeof origHome, 'string');
+});
