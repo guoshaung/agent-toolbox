@@ -9,6 +9,7 @@ import { createAcademic } from './academic.js';
 import { createSchools } from './schools.js';
 import { createDrafter } from './drafter.js';
 import { createPresentation } from './presentation.js';
+import { createAutoResearch } from './autoresearch.js';
 
 const SUB_SECTIONS = [
   { id: 'portal', label: '门户', icon: 'globe' },
@@ -20,6 +21,7 @@ const SUB_SECTIONS = [
   { id: 'drafter', label: '示意图', icon: 'pen' },
   { id: 'presentation', label: 'PPT演示', icon: 'book' },
   { id: 'library', label: '文献库', icon: 'archive' },
+  { id: 'autoresearch', label: '自动科研', icon: 'bot' },
 ];
 
 /**
@@ -63,6 +65,7 @@ export default {
       library: createLibrary,
       academic: createAcademic,
       schools: createSchools,
+      autoresearch: createAutoResearch,
     };
 
     function selectSub(id) {

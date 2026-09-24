@@ -49,6 +49,7 @@ const { RemoteControl } = require('./remote-control');
 const { registerContainerIpc, seedContainer, syncContainerLiterature, containerRoot } = require('./container-storage');
 const { registerAvatarRigIpc } = require('./avatar-rig-service');
 const { DshService } = require('./dsh-service');
+const { AutoResearchService } = require('./autoresearch-service');
 const { TavernService } = require('./tavern-service');
 const { AppControls } = require('./app-controls');
 const { computeBounds, canApplyGesture } = require('./window-gesture');
@@ -172,6 +173,7 @@ function createTray() {
   return tray;
 }
 let dshService;
+let autoResearch;
 let tavernService;
 let argosService;
 let appControls;
@@ -784,7 +786,7 @@ function createWindow(showOnReady = true) {
     // 所以分区第一次出现时把 UA / Client Hints 配齐；也不套站点清理脚本。
     const isOffice = String(webPreferences.partition || '').startsWith('persist:office-');
     // 在线工具箱（IT-Tools / CyberChef 这类前端 SPA）：同样不套站点清理脚本
-    const isWebtools = webPreferences.partition === 'persist:webtools';
+    const isWebtools = webPreferences.partition === 'persist:webtools' || webPreferences.partition === 'persist:autoresearch';
     if (isOffice && !officePartitions.has(webPreferences.partition)) {
       officePartitions.add(webPreferences.partition);
       configurePartition(webPreferences.partition);
@@ -2142,6 +2144,18 @@ function registerIpc() {
     return voiceboxService.tts(text);
   });
   ipcMain.handle('voicebox:installGpu', () => voiceboxService?.installGpuAcceleration?.() || { ok: false, error: 'Voicebox 服务不可用。' });
+
+  // ---- 自动科研：AI-Researcher / DeepScientist / AI Scientist / autoresearch / Agent Laboratory ----
+  autoResearch = new AutoResearchService({ getWindow: () => mainWindow, codeDir: () => store.get('tidy.codeDir', '') || path.join(os.homedir(), 'Projects') });
+  ipcMain.handle('autoresearch:status', () => autoResearch.status());
+  ipcMain.handle('autoresearch:prepare', (_e, id) => autoResearch.prepare(id));
+  ipcMain.handle('autoresearch:install', (_e, id) => autoResearch.install(id));
+  ipcMain.handle('autoresearch:ensureConfig', (_e, id, options) => autoResearch.ensureConfig(id, options || {}));
+  ipcMain.handle('autoresearch:run', (_e, id, modeId, params) => autoResearch.run(id, modeId, params || {}));
+  ipcMain.handle('autoresearch:stop', (_e, id) => autoResearch.stop(id));
+  ipcMain.handle('autoresearch:outputs', (_e, id) => autoResearch.outputs(id));
+  ipcMain.handle('autoresearch:readOutput', (_e, file) => autoResearch.readOutput(file));
+  ipcMain.handle('autoresearch:openPath', (_e, p) => shell.openPath(String(p)));
 
   ipcMain.handle('dsh:status', () => dshService.status());
   ipcMain.handle('dsh:start', () => dshService.start());
@@ -3688,6 +3702,7 @@ app.on('will-quit', () => {
       pendingRemoteCommands.clear();
     }],
     ['DSH', () => dshService?.stop?.()],
+    ['自动科研', () => autoResearch?.stopAll?.()],
     ['酒馆', () => tavernService?.stop?.()],
     ['Voicebox 外部应用', () => voiceBoxService?.stop?.()],
     ['Voicebox 服务', () => voiceboxService?.stop?.()],

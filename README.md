@@ -137,6 +137,10 @@ DSH Web 会在工具箱启动时后台检测 `dsh web`：已有 `3080` 端口实
 
 侧栏「在线工具」是一个格子铺：IT-Tools、CyberChef、菜鸟工具、tool.lu、TinyWow、regex101、JSON Crack、Squoosh、Photopea、iLovePDF、Convertio 等二十多个在线工具站，按「万能箱 / 开发 / 图片 / 文档 / 转换」分类，点开就内嵌在工具箱里用，登录态各自保留。格子铺最后的「＋」可以加自己常用的站点，任何站点都能变成桌面悬浮球。
 
+### 自动科研
+
+「科研 → 自动科研」把五个开源的 AI 自动做研究项目接了进来：AI-Researcher（HKUDS，综述 / 找 idea / 全流程，带网页界面）、DeepScientist（ResearAI，长期跑的本地研究工作室）、AI Scientist v2（Sakana，找 idea + 树搜索全流程）、autoresearch（Karpathy，最小实验闭环）、Agent Laboratory（LLM 研究助理分工，支持中文）。每个项目按「拿代码 → 装环境 → 配置 → 跑 → 看产出」五步走，进程由工具箱管、日志实时显示，起了网页的直接嵌进来，idea 的 json 会渲染成卡片。API key 只写在各项目自己的 .env / yaml 里，工具箱只负责从模板复制出来并打开，不读不存。
+
 ### 手机控制
 
 手机 App（Android，0.4.0）的「快捷」卡：拍照直接递给电脑、说一句话记进任务清单、手机 / 电脑剪贴板互传、发送栏里的文字一键记成笔记；电脑递来文件时手机会弹系统通知（Android 13 起首次进入会询问通知权限）。

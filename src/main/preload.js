@@ -447,6 +447,20 @@ contextBridge.exposeInMainWorld('toolbox', {
     generate: (payload) => ipcRenderer.invoke('avatarRig:generate', payload),
   },
 
+  autoresearch: {
+    status: () => ipcRenderer.invoke('autoresearch:status'),
+    prepare: (id) => ipcRenderer.invoke('autoresearch:prepare', id),
+    install: (id) => ipcRenderer.invoke('autoresearch:install', id),
+    ensureConfig: (id, options) => ipcRenderer.invoke('autoresearch:ensureConfig', id, options),
+    run: (id, modeId, params) => ipcRenderer.invoke('autoresearch:run', id, modeId, params),
+    stop: (id) => ipcRenderer.invoke('autoresearch:stop', id),
+    outputs: (id) => ipcRenderer.invoke('autoresearch:outputs', id),
+    readOutput: (file) => ipcRenderer.invoke('autoresearch:readOutput', file),
+    openPath: (p) => ipcRenderer.invoke('autoresearch:openPath', p),
+    onLog: (callback) => ipcRenderer.on('autoresearch:log', (_event, payload) => callback(payload)),
+    onState: (callback) => ipcRenderer.on('autoresearch:state', (_event, payload) => callback(payload)),
+  },
+
   dsh: {
     status: () => ipcRenderer.invoke('dsh:status'),
     start: () => ipcRenderer.invoke('dsh:start'),
