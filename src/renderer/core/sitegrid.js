@@ -7,7 +7,7 @@ import { iconFor, iconLabel } from './icons.js';
  * favicon 走主进程代取（渲染进程 CSP 不放行外域图片），拿不到用 emoji 兜底并缓存。
  */
 export function createSiteGrid(root, {
-  presets, configKey, cachePrefix, partition, config, categories = [], detachable = false,
+  presets, configKey, cachePrefix, partition, config, categories = [], detachable = false, bypass = true,
 }) {
   const views = new Map(); // url -> webview
   let activeUrl = null;
@@ -374,7 +374,8 @@ export function createSiteGrid(root, {
       const view = h('webview', { partition, src: site.url, allowpopups: true });
       view.addEventListener('did-navigate', (e) => { if (activeUrl === site.url) address.value = e.url; });
       view.addEventListener('did-navigate-in-page', (e) => { if (activeUrl === site.url) address.value = e.url; });
-      view.addEventListener('dom-ready', () => injectBypass(view));
+      // 在线工具站都是干净的 SPA，不套「拆登录墙」脚本：它会改写 html/body 的滚动和选中，SPA 容易白屏
+      if (bypass) view.addEventListener('dom-ready', () => injectBypass(view));
       view.addEventListener('did-start-loading', () => showLoading(view, site.url));
       // 有些站点（知网就是典型）对内嵌浏览器直接返回 418 之类的空响应：
       // 不触发 did-fail-load，但页面是空的。不检查就又是一片白屏。
@@ -398,6 +399,7 @@ export function createSiteGrid(root, {
     for (const [url, view] of views) view.style.display = url === site.url ? 'flex' : 'none';
     address.value = site.url;
     grid.setAttribute('hidden', '');
+    categoryBar?.setAttribute('hidden', '');   // 进了站点分类栏就没用了，别占着一行
     viewBar.removeAttribute('hidden');
     viewHost.removeAttribute('hidden');
   }
@@ -417,6 +419,7 @@ export function createSiteGrid(root, {
     hideLoading();
     viewBar.setAttribute('hidden', '');
     viewHost.setAttribute('hidden', '');
+    categoryBar?.removeAttribute('hidden');
     grid.removeAttribute('hidden');
   }
 

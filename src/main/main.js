@@ -783,6 +783,8 @@ function createWindow(showOnReady = true) {
     // 办公室里各家 AI 的网页版：要像一个普通 Chrome 一样过登录和 Cloudflare，
     // 所以分区第一次出现时把 UA / Client Hints 配齐；也不套站点清理脚本。
     const isOffice = String(webPreferences.partition || '').startsWith('persist:office-');
+    // 在线工具箱（IT-Tools / CyberChef 这类前端 SPA）：同样不套站点清理脚本
+    const isWebtools = webPreferences.partition === 'persist:webtools';
     if (isOffice && !officePartitions.has(webPreferences.partition)) {
       officePartitions.add(webPreferences.partition);
       configurePartition(webPreferences.partition);
@@ -791,7 +793,7 @@ function createWindow(showOnReady = true) {
     // 该脚本会主动改写 html/body 的滚动和 user-select，且监听整个 DOM，对这些
     // 模块化 SPA 可能造成启动阶段黑屏。保留空 preload 只为明确隔离边界。
     webPreferences.preload = path.join(__dirname,
-      (isDsh || isDrafter || isTavern || isOffice) ? 'dsh-preload.js' : 'site-bypass-preload.js');
+      (isDsh || isDrafter || isTavern || isOffice || isWebtools) ? 'dsh-preload.js' : 'site-bypass-preload.js');
     console.log('[main] will-attach-webview preload:', webPreferences.preload, source);
     webPreferences.nodeIntegration = false;
     webPreferences.contextIsolation = true;
