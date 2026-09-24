@@ -1187,6 +1187,22 @@ export function createFigureboard(root, ctx) {
     }
   }
 
+  /** ⌘V：剪贴板里有图就贴图，没有再贴图板内部复制的对象。以前只看焦点在不在画布上，
+   *  焦点稍微偏一点（点过工具栏、刚选中一个对象）⌘V 就走了对象粘贴，图片永远贴不进来。 */
+  async function pasteAny() {
+    const data = await window.toolbox.clipboard.readImage();
+    if (data?.ok) {
+      try {
+        const image = await compressImage(data);
+        addImage(image.dataUrl, image.width, image.height);
+        toast('图片已粘贴到科研图板', 'good');
+      } catch (err) { toast(err.message, 'bad'); }
+      return;
+    }
+    if (data?.error) return toast(data.error, 'info');
+    pasteSelected();
+  }
+
   async function importImage() {
     const data = await window.toolbox.files.pickImage();
     if (!data || data.error) return data?.error && toast(data.error, 'bad');
@@ -1811,7 +1827,7 @@ export function createFigureboard(root, ctx) {
     if (modifier && key === 'y') { event.preventDefault(); redo(); return; }
     if (modifier && key === 'c') { event.preventDefault(); copySelected(); return; }
     if (modifier && key === 'x') { event.preventDefault(); cutSelected(); return; }
-    if (modifier && key === 'v') { if (event.target !== board) { event.preventDefault(); pasteSelected(); } return; }
+    if (modifier && key === 'v') { event.preventDefault(); pasteAny(); return; }
     if (modifier && key === 'd') { event.preventDefault(); duplicateSelected(); return; }
     if (modifier && key === 'g') { event.preventDefault(); event.shiftKey ? ungroupSelected() : groupSelected(); return; }
     if (!modifier && (event.key === 'Delete' || event.key === 'Backspace')) { event.preventDefault(); if (selectedId) removeItem(selectedId); return; }
@@ -1825,7 +1841,8 @@ export function createFigureboard(root, ctx) {
     if (!modifier && key === 'l') { event.preventDefault(); addShape('arrow'); }
   }
 
-  board.addEventListener('paste', (event) => { if ([...(event.clipboardData?.items || [])].some((item) => item.type.startsWith('image/'))) { event.preventDefault(); pasteImage(); } });
+  // 菜单栏「编辑 → 粘贴」这种不经过 keydown 的路径
+  board.addEventListener('paste', (event) => { event.preventDefault(); pasteAny(); });
   board.addEventListener('dragover', handlePaletteDragOver);
   board.addEventListener('dragleave', (event) => { if (event.target === board) board.classList.remove('is-dragover'); });
   board.addEventListener('drop', handlePaletteDrop);

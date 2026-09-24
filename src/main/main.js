@@ -2360,7 +2360,21 @@ function registerIpc() {
   ipcMain.handle('clipboard:write', (_e, text) => { clipboard.writeText(String(text ?? '')); return true; });
   ipcMain.handle('clipboard:read', () => clipboard.readText());
   ipcMain.handle('clipboard:readImage', () => {
-    const image = clipboard.readImage();
+    let image = clipboard.readImage();
+    // 从访达复制的是「文件引用」不是位图；从少数应用复制出来只有原始 PNG 字节。都补上。
+    if (image.isEmpty()) {
+      const formats = clipboard.availableFormats();
+      if (formats.includes('public.file-url') || formats.includes('text/uri-list')) {
+        const raw = formats.includes('public.file-url') ? clipboard.read('public.file-url') : clipboard.read('text/uri-list');
+        const first = String(raw || '').split(/\r?\n/).map((line) => line.trim()).find((line) => line.startsWith('file://'));
+        if (first) {
+          const filePath = decodeURIComponent(first.replace(/^file:\/\//, ''));
+          if (/\.(png|jpe?g|gif|webp|bmp|tiff?|heic|avif)$/i.test(filePath) && fs.existsSync(filePath)) image = nativeImage.createFromPath(filePath);
+        }
+      }
+      if (image.isEmpty() && formats.includes('public.png')) image = nativeImage.createFromBuffer(clipboard.readBuffer('public.png'));
+      if (image.isEmpty() && formats.includes('image/png')) image = nativeImage.createFromBuffer(clipboard.readBuffer('image/png'));
+    }
     if (image.isEmpty()) return null;
     const png = image.toPNG();
     if (png.length > 12 * 1024 * 1024) return { ok: false, error: '剪贴板图片超过 12MB，请先缩小后再粘贴。' };
