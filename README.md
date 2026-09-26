@@ -137,6 +137,10 @@ DSH Web 会在工具箱启动时后台检测 `dsh web`：已有 `3080` 端口实
 
 侧栏「在线工具」是一个格子铺：IT-Tools、CyberChef、菜鸟工具、tool.lu、TinyWow、regex101、JSON Crack、Squoosh、Photopea、iLovePDF、Convertio 等二十多个在线工具站，按「万能箱 / 开发 / 图片 / 文档 / 转换」分类，点开就内嵌在工具箱里用，登录态各自保留。格子铺最后的「＋」可以加自己常用的站点，任何站点都能变成桌面悬浮球。
 
+### Zotero 联动
+
+「科研 → Zotero」把 Zotero 当文献数据库：直接读它的 sqlite（Zotero 关着也能读）列出分类和条目，勾选后 PDF、书目、标签、Zotero 里画的高亮和批注一起同步进文献库；文献库里还没进 Zotero 的论文可以整批「送进 Zotero」（书目 + PDF，走 Zotero 桌面端的连接器，不用 API key），送完自动按标题 / DOI 挂钩。两边按 Zotero 的 key 对应，来回同步不重复；文献库列表里挂钩过的条目有个 Z 按钮，一键跳回 Zotero。
+
 ### 自动科研
 
 「科研 → 自动科研」把五个开源的 AI 自动做研究项目接了进来：AI-Researcher（HKUDS，综述 / 找 idea / 全流程，带网页界面）、DeepScientist（ResearAI，长期跑的本地研究工作室）、AI Scientist v2（Sakana，找 idea + 树搜索全流程）、autoresearch（Karpathy，最小实验闭环）、Agent Laboratory（LLM 研究助理分工，支持中文）。每个项目按「拿代码 → 装环境 → 配置 → 跑 → 看产出」五步走，进程由工具箱管、日志实时显示，起了网页的直接嵌进来，idea 的 json 会渲染成卡片。API key 只写在各项目自己的 .env / yaml 里，工具箱只负责从模板复制出来并打开，不读不存。

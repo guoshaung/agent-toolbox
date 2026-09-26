@@ -550,6 +550,17 @@ contextBridge.exposeInMainWorld('toolbox', {
     search: (query) => ipcRenderer.invoke('docs:search', query),
   },
 
+  zotero: {
+    detect: () => ipcRenderer.invoke('zotero:detect'),
+    snapshot: (force) => ipcRenderer.invoke('zotero:snapshot', force),
+    import: (keys, options) => ipcRenderer.invoke('zotero:import', keys, options),
+    send: (entries, options) => ipcRenderer.invoke('zotero:send', entries, options),
+    matchBack: (entries) => ipcRenderer.invoke('zotero:matchBack', entries),
+    selectedCollection: () => ipcRenderer.invoke('zotero:selectedCollection'),
+    launch: () => ipcRenderer.invoke('zotero:launch'),
+    openItem: (key, pdfKey) => ipcRenderer.invoke('zotero:openItem', key, pdfKey),
+  },
+
   biblio: {
     /** 按标题或 DOI 从 Crossref 查书目元数据 */
     lookup: (payload) => ipcRenderer.invoke('biblio:lookup', payload),

@@ -326,6 +326,7 @@ export function createLibrary(root, ctx) {
           h('button', { class: 'btn btn--sm btn--ghost', title: '编辑书目信息、摘要、价值判断和笔记', onclick: () => openEditor(f.file) }, '详情'),
           h('button', { class: 'btn btn--sm btn--ghost', title: '归到分类', onclick: (e) => openCollectionMenu(e, f.file) }, '🏷'),
           h('button', { class: 'btn btn--sm btn--ghost', title: '用系统程序打开', onclick: () => lit.open(f.file) }, '↗'),
+          meta()[f.file]?.zotero?.key ? h('button', { class: 'btn btn--sm btn--ghost lib__zotero-btn', title: '这篇已经在 Zotero 里，点开它', onclick: () => window.toolbox.zotero.openItem(meta()[f.file].zotero.key) }, 'Z') : null,
         ),
       ));
     }

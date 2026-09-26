@@ -50,6 +50,7 @@ const { registerContainerIpc, seedContainer, syncContainerLiterature, containerR
 const { registerAvatarRigIpc } = require('./avatar-rig-service');
 const { DshService } = require('./dsh-service');
 const { AutoResearchService } = require('./autoresearch-service');
+const { ZoteroService } = require('./zotero');
 const { TavernService } = require('./tavern-service');
 const { AppControls } = require('./app-controls');
 const { computeBounds, canApplyGesture } = require('./window-gesture');
@@ -174,6 +175,7 @@ function createTray() {
 }
 let dshService;
 let autoResearch;
+let zoteroService;
 let tavernService;
 let argosService;
 let appControls;
@@ -3245,6 +3247,17 @@ function registerIpc() {
   });
 
   ipcMain.handle('lit:importFiles', (_e, sources) => importLiteratureSources(sources));
+
+  // ---- Zotero 联动：读它的库、把它的 PDF 拷进文献库、把文献库的论文经连接器送进 Zotero ----
+  zoteroService = new ZoteroService({ litDir, tmpDir: () => path.join(app.getPath('userData'), 'cache', 'zotero') });
+  ipcMain.handle('zotero:detect', () => zoteroService.detect());
+  ipcMain.handle('zotero:snapshot', (_e, force) => zoteroService.snapshot(Boolean(force)));
+  ipcMain.handle('zotero:import', (_e, keys, options) => zoteroService.importItems(keys, options || {}));
+  ipcMain.handle('zotero:send', (_e, entries, options) => zoteroService.sendToZotero(entries, options || {}));
+  ipcMain.handle('zotero:matchBack', (_e, entries) => zoteroService.matchBack(entries));
+  ipcMain.handle('zotero:selectedCollection', () => zoteroService.selectedCollection());
+  ipcMain.handle('zotero:launch', async () => { const { app: zapp } = await zoteroService.detect(); if (!zapp) return { ok: false, error: '没找到 Zotero' }; const err = await shell.openPath(zapp); return err ? { ok: false, error: err } : { ok: true }; });
+  ipcMain.handle('zotero:openItem', (_e, key, pdfKey) => shell.openExternal(pdfKey ? `zotero://open-pdf/library/items/${encodeURIComponent(pdfKey)}` : `zotero://select/library/items/${encodeURIComponent(key)}`).then(() => ({ ok: true })));
   ipcMain.handle('container:toLiterature', async (_e, relPaths) => {
     const root = path.join(app.getPath('userData'), 'container');
     const sources = [];
