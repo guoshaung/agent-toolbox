@@ -1819,7 +1819,9 @@ export function createFigureboard(root, ctx) {
   }
 
   function handleShortcut(event) {
-    if (!root.isConnected || root.hasAttribute('hidden')) return;
+    // 监听挂在 document 上，图板只要创建过就一直在。切到别的工具后面板是 display:none，
+    // offsetParent 为 null —— 不判这个，在任何地方按 ⌘V / R / T 都会往图板里贴东西。
+    if (!root.isConnected || root.hasAttribute('hidden') || root.offsetParent === null) return;
     if (isEditableTarget(event.target)) return;
     const key = event.key.toLowerCase();
     const modifier = event.metaKey || event.ctrlKey;
