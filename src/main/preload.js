@@ -131,6 +131,8 @@ contextBridge.exposeInMainWorld('toolbox', {
     /** 学 GitHub 仓库：克隆 + 扫代码文件 + README */
     importRepo: (url) => ipcRenderer.invoke('practice:importRepo', url),
     rescanRepo: (root) => ipcRenderer.invoke('practice:rescanRepo', root),
+    notebookCells: (payload) => ipcRenderer.invoke('practice:notebookCells', payload),
+    findDefinition: (payload) => ipcRenderer.invoke('practice:findDefinition', payload),
   },
 
   /** 动效 PPT：导出带进场动画的 .pptx */

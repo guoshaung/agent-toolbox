@@ -3,7 +3,7 @@
  * 纯函数，方便测。
  */
 
-const LANG_BY_EXT = { py: 'python', sh: 'bash', bash: 'bash', sql: 'sql', js: 'javascript', mjs: 'javascript', ts: 'typescript', go: 'go', rs: 'rust', c: 'c', h: 'c', cpp: 'cpp', cc: 'cpp', java: 'java', rb: 'ruby', m: 'matlab', md: 'markdown' };
+const LANG_BY_EXT = { ipynb: 'python', py: 'python', sh: 'bash', bash: 'bash', sql: 'sql', js: 'javascript', mjs: 'javascript', ts: 'typescript', go: 'go', rs: 'rust', c: 'c', h: 'c', cpp: 'cpp', cc: 'cpp', java: 'java', rb: 'ruby', m: 'matlab', md: 'markdown' };
 const TRACK_BY_LANG = { python: 'python', bash: 'linux', sql: 'sql', matlab: 'matlab' };
 const SKIP_FILE = /(^|\/)(__init__\.py|setup\.py|setup\.cfg|conftest\.py|LICENSE|\.gitignore)$/i;
 

@@ -3434,6 +3434,10 @@ function registerIpc() {
     const scanned = practiceRunner.scanRepo(cloned.path);
     return { ok: true, path: cloned.path, name: cloned.dirName || path.basename(cloned.path), full: cloned.full || `${cloned.owner || ''}/${cloned.repo || ''}`.replace(/^\//, ''), existed: cloned.existed, ...scanned };
   });
+  // 学仓库时的两个帮手：笔记本的代码格 / NameError 时去仓库里找定义
+  const insideRepo = (root, rel) => { const r = path.resolve(String(root || '')); const t = path.resolve(r, String(rel || '')); return r.startsWith(os.homedir()) && (t === r || t.startsWith(r + path.sep)) ? t : ''; };
+  ipcMain.handle('practice:notebookCells', (_e, payload = {}) => { const t = insideRepo(payload.root, payload.relPath); if (!t || !fs.existsSync(t)) return { ok: false, error: '文件不在仓库里' }; return { ok: true, cells: require('./repo-defs').notebookCodeCells(t) }; });
+  ipcMain.handle('practice:findDefinition', (_e, payload = {}) => { const r = path.resolve(String(payload.root || '')); if (!r.startsWith(os.homedir()) || !fs.existsSync(r)) return { ok: false, error: '仓库目录不在了' }; return require('./repo-defs').findDefinition(r, payload.name); });
   ipcMain.handle('practice:rescanRepo', (_e, root) => {
     const dir = String(root || '');
     if (!dir.startsWith(os.homedir()) || !fs.existsSync(dir)) return { ok: false, error: '目录不在了' };

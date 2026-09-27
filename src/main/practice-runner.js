@@ -262,7 +262,7 @@ async function run(trackId, code, options = {}) {
 }
 
 /** 学 GitHub 仓库：克隆后扫一遍代码文件（浅层、小文件），README 一起带回 */
-const REPO_CODE_EXT = /\.(py|sh|bash|sql|js|mjs|ts|go|rs|c|h|cpp|cc|java|rb|m)$/i;
+const REPO_CODE_EXT = /\.(py|sh|bash|sql|js|mjs|ts|go|rs|c|h|cpp|cc|java|rb|m|ipynb)$/i;
 const REPO_SKIP = new Set(['.git', 'node_modules', '.venv', 'venv', '__pycache__', 'dist', 'build', '.idea', '.vscode', 'target', 'assets', 'docs', 'data', 'images', 'img']);
 function scanRepo(root) {
   const files = [];
@@ -275,7 +275,7 @@ function scanRepo(root) {
       const full = path.join(dir, e.name);
       if (e.isDirectory()) walk(full, depth + 1);
       else if (REPO_CODE_EXT.test(e.name)) {
-        try { const st = fs.statSync(full); if (st.size <= 80 * 1024) files.push({ rel: path.relative(root, full).split(path.sep).join('/'), size: st.size }); } catch { /* 跳过 */ }
+        try { const st = fs.statSync(full); const limit = /\.ipynb$/i.test(e.name) ? 3 * 1024 * 1024 : 80 * 1024; if (st.size <= limit) files.push({ rel: path.relative(root, full).split(path.sep).join('/'), size: st.size }); } catch { /* 跳过 */ }
       }
     }
   };

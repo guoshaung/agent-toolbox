@@ -623,6 +623,28 @@ export function createPracticePanel(ctx) {
     if (diagnosis.prevent) {
       cell.diagExtra.append(h('p', { class: 'practice__diag-prevent' }, `下次避免：${diagnosis.prevent}`));
     }
+    // 学仓库时的 NameError：这个名字八成定义在仓库别的文件 / 笔记本里，去找来插到前面
+    const missing = repo && /NameError/.test(diagnosis.kind || '') ? (String(cell.result?.stderr || '').match(/name '([A-Za-z_]\w*)' is not defined/) || [])[1] : '';
+    if (missing) {
+      cell.diagExtra.append(h('button', {
+        class: 'btn btn--sm btn--primary practice__diag-find',
+        onclick: async (e) => {
+          e.target.disabled = true; e.target.textContent = '找定义中…';
+          const r = await window.toolbox.practice.findDefinition({ root: repo.path, name: missing });
+          if (!r.ok) { toast(r.error, 'info', 5000); e.target.disabled = false; e.target.textContent = `在仓库里找 ${missing} 的定义`; return; }
+          const code = [r.imports, r.code].filter(Boolean).join('\n\n');
+          const index = cells.indexOf(cell);
+          const inserted = createCell(code, { title: `来自 ${r.rel} · ${missing}`, reference: code, purpose: `${missing} 定义在仓库的 ${r.rel} 里，${r.kind === 'notebook' ? '整格搬过来' : '连同它的 import 一起搬过来'}，先跑这格再跑下面那格` });
+          cells.splice(Math.max(0, index), 0, inserted);
+          renderNotebook(inserted, false);
+          persistNotebook();
+          hideDiagnosis(cell);
+          toast(`从 ${r.rel} 找到了 ${missing}，已插到前面，正在依次运行`, 'good', 5000);
+          await runCell(inserted);
+          if (inserted.result?.ok) await runCell(cell);
+        },
+      }, `在仓库里找 ${missing} 的定义`));
+    }
 
     cell.diagAiBtn.disabled = loading;
     cell.diagAiBtn.textContent = loading ? '诊断中…' : (fromAi ? '✦ 重新诊断' : '✦ AI 诊断');
@@ -1315,7 +1337,7 @@ export function createPracticePanel(ctx) {
 
   function buildLessons(scan) {
     const files = orderFiles(scan.files || []);
-    const lessons = files.map((f) => ({ id: f.rel, kind: 'file', rel: f.rel, label: `${f.rel}（${f.size > 1024 ? `${(f.size / 1024).toFixed(1)}KB` : `${f.size}B`}）`, lang: langOf(f.rel) }));
+    const lessons = files.map((f) => ({ id: f.rel, kind: /\.ipynb$/i.test(f.rel) ? 'notebook' : 'file', rel: f.rel, label: `${/\.ipynb$/i.test(f.rel) ? '📓 ' : ''}${f.rel}（${f.size > 1024 ? `${(f.size / 1024).toFixed(1)}KB` : `${f.size}B`}）`, lang: langOf(f.rel) }));
     const examples = exampleCells(scan.readme || '', scan.name || '');
     if (examples.length) lessons.push({ id: '__readme__', kind: 'readme', label: `README 示例（${examples.length} 段）`, lang: examples[0].lang, cells: examples });
     return lessons;
@@ -1380,13 +1402,19 @@ export function createPracticePanel(ctx) {
     trackSelect.value = track.id;
     let snapshots;
     if (lesson.kind === 'readme') snapshots = lesson.cells;
-    else {
+    else if (lesson.kind === 'notebook') {
+      const r = await window.toolbox.practice.notebookCells({ root: repo.path, relPath: lesson.rel });
+      if (!r.ok) return toast(r.error || '笔记本读不出来', 'bad');
+      const name = lesson.rel.split('/').pop();
+      snapshots = r.cells.map((code, i) => ({ title: `${name} · 第 ${i + 1} 格`, code, reference: code, purpose: `笔记本的第 ${i + 1} / ${r.cells.length} 格，按顺序跑，前面格子定义的名字后面能用` }));
+      if (!snapshots.length) return toast('这个笔记本里没有代码格', 'info');
+    } else {
       const r = await window.toolbox.notebook.readFile({ root: repo.path, relPath: lesson.rel });
       if (!r.ok) return toast(r.error || '文件读不出来', 'bad');
       snapshots = lessonCells(lesson.rel, r.code || '', lesson.lang);
     }
     // 存档只认「确实是这一课」的：防抖存盘可能在切课途中把上一份格子存到这个 key 下
-    const prefix = lesson.kind === 'readme' ? 'README 示例' : `${lesson.rel.split('/').pop()} · `;
+    const prefix = lesson.kind === 'readme' ? 'README 示例' : `${lesson.rel.split('/').pop()} · `;   // 笔记本课的标题也是「文件名 · 」开头
     const saved = (config.get('practice.notebooks', {}) || {})[notebookStateKey()];
     const usable = Array.isArray(saved) && saved.length && saved.every((s) => String(s.title || '').startsWith(prefix));
     cells = usable ? saved.map((s) => restoreNotebookCell(s)) : snapshots.map((s) => createCell(s.code, s));
