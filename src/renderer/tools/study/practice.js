@@ -12,6 +12,7 @@ import { PRACTICE_PROJECTS } from './data/projects.js';
 import { nextGhost } from './ghost.js';
 import { currentStep, describeTask } from './task.js';
 import { analyzeBlueprint } from './blueprint.js';
+import { orderFiles, langOf, trackForLang, lessonCells, exampleCells } from './repo-lessons.js';
 import {
   buildErrorDiagnosisPrompt,
   diagnoseRunError,
@@ -94,6 +95,9 @@ export function createPracticePanel(ctx) {
   let activeCell = null;
   let cells = [];
   let ghostEnabled = config.get('practice.ghost', true);
+  // 学 GitHub 仓库：repo = { name, full, path, files, readme, lessons }，lesson 是「一个文件 = 一课」
+  let repo = null;
+  let lessonIndex = 0;
 
   const trackSelect = h('select', { class: 'field practice__track-select' }, ...PRACTICE_TRACKS.map((item) => h('option', { value: item.id }, `${item.icon} ${item.name}`)));
   const levelSelect = h('select', { class: 'field practice__sample-select' });
@@ -147,7 +151,7 @@ export function createPracticePanel(ctx) {
 
   function currentSample() { return track.samples[sampleIndex] || track.samples[0]; }
 
-  function notebookStateKey() { return projectId ? `project:${projectId}` : `${track.id}:${sampleIndex}`; }
+  function notebookStateKey() { return repo ? `repo:${repo.name}:${repo.lessons[lessonIndex]?.id || 0}` : projectId ? `project:${projectId}` : `${track.id}:${sampleIndex}`; }
 
   function persistNotebook() {
     if (!cells.length) return;
@@ -319,6 +323,7 @@ export function createPracticePanel(ctx) {
     const project = selectedProject();
     if (!project) return toast('先选择一个项目挑战', 'info');
     persistNotebook();
+    if (repo) { repo = null; config.set('practice.currentRepo', ''); renderRepoHead(); renderRepoChips(); }
     projectId = project.id;
     track = PRACTICE_TRACKS.find((item) => item.id === project.trackId) || PRACTICE_TRACKS[0];
     trackSelect.value = track.id;
@@ -490,7 +495,7 @@ export function createPracticePanel(ctx) {
       const prelude = track.runtime.includes('python3') || track.runtime.includes('bash')
         ? cells.slice(0, Math.max(0, cellIndex)).map((item) => item.editor.value.trim()).filter(Boolean).join('\n\n')
         : '';
-      const result = await window.toolbox.practice.run({ track: track.id, code: cell.editor.value, prelude, timeout: 12000 });
+      const result = await window.toolbox.practice.run({ track: track.id, code: cell.editor.value, prelude, timeout: 12000, cwd: repo?.path || '' });
       if (currentRun !== cell.runId) return;
       const diagnosis = diagnoseRunError(track.id, result, cell.editor.value);
       cell.resultStatus.textContent = runStatusLabel(result, diagnosis);
@@ -1025,6 +1030,7 @@ export function createPracticePanel(ctx) {
 
   trackSelect.addEventListener('change', () => {
     persistNotebook();
+    if (repo) { repo = null; config.set('practice.currentRepo', ''); renderRepoHead(); renderRepoChips(); }
     projectId = null;
     projectSelect.value = '';
     renderProjectInfo(null);
@@ -1037,6 +1043,7 @@ export function createPracticePanel(ctx) {
     projectId = null;
     projectSelect.value = '';
     renderProjectInfo(null);
+    if (repo) { loadLesson(Number(levelSelect.value)); return; }
     sampleIndex = Number(levelSelect.value);
     renderSamples();
   });
@@ -1284,6 +1291,127 @@ export function createPracticePanel(ctx) {
     refreshFiles();
   }
 
+  // ---------- 学 GitHub 仓库：贴地址 → 克隆 → 一个文件一课，照着敲、在仓库目录里跑 ----------
+  const repoInput = h('input', { class: 'field practice__repo-input', placeholder: '贴 GitHub 地址，比如 https://github.com/karpathy/micrograd', onkeydown: (e) => { if (e.key === 'Enter' && !e.isComposing) importRepo(); } });
+  const repoImportBtn = h('button', { class: 'btn btn--primary', onclick: () => importRepo() }, '导入并开始学');
+  const repoChips = h('div', { class: 'practice__repo-chips' });
+  const repoHead = h('div', { class: 'practice__repo-head', hidden: true });
+  const repoPanel = h('div', { class: 'practice__repo-panel', hidden: true },
+    h('div', { class: 'practice__repo-row' }, repoInput, repoImportBtn),
+    h('div', { class: 'faint practice__repo-hint' }, '仓库克隆到你的代码目录（收纳里设的那个，默认 ~/Projects），代码文件按函数 / 类切成一格一格，README 里的示例单独一课；跑格子时就在仓库目录里，import 直接能用。'),
+    repoChips,
+  );
+  const repoBtn = h('button', { class: 'btn practice__repo-btn', title: '贴一个 GitHub 仓库地址，拆成一课一课跟着敲', onclick: () => { const hidden = repoPanel.toggleAttribute('hidden'); repoBtn.classList.toggle('is-open', !hidden); if (!hidden) repoInput.focus(); } }, '📦 学 GitHub 仓库');
+
+  function savedRepos() { return (config.get('practice.repos', []) || []).filter((r) => r && r.path); }
+
+  function renderRepoChips() {
+    const list = savedRepos();
+    repoChips.replaceChildren(
+      list.length ? h('span', { class: 'faint' }, '学过的：') : null,
+      ...list.map((r) => h('button', { class: `btn btn--sm ${repo?.path === r.path ? 'is-active' : ''}`, title: r.path, onclick: () => openRepo(r.path, r) }, r.full || r.name)),
+    );
+  }
+
+  function buildLessons(scan) {
+    const files = orderFiles(scan.files || []);
+    const lessons = files.map((f) => ({ id: f.rel, kind: 'file', rel: f.rel, label: `${f.rel}（${f.size > 1024 ? `${(f.size / 1024).toFixed(1)}KB` : `${f.size}B`}）`, lang: langOf(f.rel) }));
+    const examples = exampleCells(scan.readme || '', scan.name || '');
+    if (examples.length) lessons.push({ id: '__readme__', kind: 'readme', label: `README 示例（${examples.length} 段）`, lang: examples[0].lang, cells: examples });
+    return lessons;
+  }
+
+  async function importRepo() {
+    const url = repoInput.value.trim();
+    if (!url) return toast('先贴个 GitHub 地址', 'info');
+    repoImportBtn.disabled = true; repoImportBtn.textContent = '克隆中…';
+    try {
+      const r = await window.toolbox.practice.importRepo(url);
+      if (!r.ok) return toast(r.error || '导入失败', 'bad', 6000);
+      const entry = { name: r.name, full: r.full || r.name, path: r.path, url, at: Date.now() };
+      const list = savedRepos().filter((x) => x.path !== r.path);
+      await config.set('practice.repos', [entry, ...list].slice(0, 30));
+      await openRepo(r.path, entry, r);
+      toast(r.existed ? `${entry.full} 已经在本机了，直接开学` : `拉下来了：${entry.full}`, 'good');
+      repoInput.value = '';
+    } finally { repoImportBtn.disabled = false; repoImportBtn.textContent = '导入并开始学'; }
+  }
+
+  async function openRepo(root, entry, scanned = null) {
+    const scan = scanned || await window.toolbox.practice.rescanRepo(root);
+    if (!scan.ok) return toast(scan.error || '仓库目录读不了', 'bad');
+    persistNotebook();
+    repo = { name: entry?.name || scan.path.split('/').pop(), full: entry?.full || entry?.name || '', path: scan.path, files: scan.files, readme: scan.readme, lessons: buildLessons({ ...scan, name: entry?.name }) };
+    projectId = null;
+    if (!repo.lessons.length) { toast('这个仓库里没找到能学的代码文件（只认 py / sh / sql / js / ts / go / rs / c / java）', 'info', 6000); repo = null; return; }
+    await config.set('practice.currentRepo', repo.path);
+    renderRepoChips();
+    renderRepoHead();
+    levelSelect.replaceChildren(...repo.lessons.map((l, i) => h('option', { value: String(i) }, l.label)));
+    const remembered = config.get(`practice.repoLesson.${repo.name}`, 0);
+    // 旧格子已经在上面按旧 key 存过了，这里别再存一次 —— 否则会把样例存到新课的 key 下面
+    loadLesson(Math.min(remembered, repo.lessons.length - 1), { persist: false });
+  }
+
+  function renderRepoHead() {
+    if (!repo) { repoHead.hidden = true; repoHead.replaceChildren(); return; }
+    repoHead.hidden = false;
+    repoHead.replaceChildren(
+      h('span', { class: 'practice__repo-name' }, '📦 ', repo.full || repo.name),
+      h('span', { class: 'faint' }, `${repo.files.length} 个代码文件 · 第 ${lessonIndex + 1} / ${repo.lessons.length} 课`),
+      h('span', { class: 'practice__spacer' }),
+      h('button', { class: 'btn btn--sm btn--ghost', disabled: lessonIndex <= 0, onclick: () => loadLesson(lessonIndex - 1) }, '‹ 上一课'),
+      h('button', { class: 'btn btn--sm btn--ghost', disabled: lessonIndex >= repo.lessons.length - 1, onclick: () => loadLesson(lessonIndex + 1) }, '下一课 ›'),
+      h('button', { class: 'btn btn--sm btn--ghost', title: '在访达里看这个仓库', onclick: () => window.toolbox.tidy.reveal(repo.path) }, '打开文件夹'),
+      h('button', { class: 'btn btn--sm btn--ghost', title: '交给「收纳 → 看懂项目」，让 AI 讲它是什么、从哪读起', onclick: async () => { await config.set('tidy.pending', repo.path); ctx.goto?.('tidy'); } }, '让 AI 讲讲'),
+      h('button', { class: 'btn btn--sm btn--ghost', onclick: () => exitRepo() }, '退出仓库'),
+    );
+  }
+
+  async function loadLesson(index, { persist = true } = {}) {
+    if (!repo) return;
+    if (persist) persistNotebook();   // 用的是切换前的 lessonIndex，存到上一课的 key
+    lessonIndex = Math.max(0, Math.min(index, repo.lessons.length - 1));
+    const lesson = repo.lessons[lessonIndex];
+    config.set(`practice.repoLesson.${repo.name}`, lessonIndex);
+    levelSelect.value = String(lessonIndex);
+    const trackId = trackForLang(lesson.lang);
+    track = PRACTICE_TRACKS.find((item) => item.id === trackId) || track;
+    trackSelect.value = track.id;
+    let snapshots;
+    if (lesson.kind === 'readme') snapshots = lesson.cells;
+    else {
+      const r = await window.toolbox.notebook.readFile({ root: repo.path, relPath: lesson.rel });
+      if (!r.ok) return toast(r.error || '文件读不出来', 'bad');
+      snapshots = lessonCells(lesson.rel, r.code || '', lesson.lang);
+    }
+    // 存档只认「确实是这一课」的：防抖存盘可能在切课途中把上一份格子存到这个 key 下
+    const prefix = lesson.kind === 'readme' ? 'README 示例' : `${lesson.rel.split('/').pop()} · `;
+    const saved = (config.get('practice.notebooks', {}) || {})[notebookStateKey()];
+    const usable = Array.isArray(saved) && saved.length && saved.every((s) => String(s.title || '').startsWith(prefix));
+    cells = usable ? saved.map((s) => restoreNotebookCell(s)) : snapshots.map((s) => createCell(s.code, s));
+    renderNotebook(cells[0], false);
+    updateMeta();
+    renderRepoHead();
+    if (!trackId) toast(`${lesson.lang || '这种'} 文件在这里只能跟着敲，跑不了`, 'info', 4000);
+  }
+
+  function exitRepo() {
+    persistNotebook();
+    repo = null;
+    config.set('practice.currentRepo', '');
+    renderRepoHead();
+    renderRepoChips();
+    renderSamples();
+  }
+
+  renderRepoChips();
+  {
+    const last = config.get('practice.currentRepo', '');
+    const entry = savedRepos().find((r) => r.path === last);
+    if (last && entry) setTimeout(() => openRepo(last, entry), 0);
+  }
+
   // 溢出菜单：不常用的都收这儿，工具栏只留每次都要点的。
   // 原来顶上堆了 4 条横栏 254px，加上标题一共吃掉 589px ——
   // 860px 的窗口里，写第一行代码之前 68% 的屏幕已经没了。
@@ -1322,11 +1450,15 @@ export function createPracticePanel(ctx) {
       trackSelect,
       levelSelect,
       projectSelect,
+      h('span', { class: 'practice__bar-sep' }),
+      repoBtn,
       h('span', { style: { flex: 1 } }),
       cellCount,
       runtimeDot,
       overflowBtn,
     ),
+    repoPanel,
+    repoHead,
     overflowPanel,
     h('div', { class: 'practice__notebook' }, notebookList),
   );

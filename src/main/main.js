@@ -3426,7 +3426,19 @@ function registerIpc() {
   ipcMain.handle('coach:install', () => installCoachExtension());
 
   ipcMain.handle('practice:environment', () => practiceRunner.environment());
-  ipcMain.handle('practice:run', (_e, payload = {}) => practiceRunner.run(payload.track, payload.code, { timeout: payload.timeout, prelude: payload.prelude }));
+  ipcMain.handle('practice:run', (_e, payload = {}) => practiceRunner.run(payload.track, payload.code, { timeout: payload.timeout, prelude: payload.prelude, cwd: payload.cwd }));
+  // 学 GitHub 仓库：贴地址 → 克隆到代码目录 → 扫文件 → 渲染层切成一课一课
+  ipcMain.handle('practice:importRepo', async (_e, url) => {
+    const cloned = await tidy.cloneRepo(String(url || ''), tidySettings().codeDir);
+    if (!cloned.ok) return cloned;
+    const scanned = practiceRunner.scanRepo(cloned.path);
+    return { ok: true, path: cloned.path, name: cloned.dirName || path.basename(cloned.path), full: cloned.full || `${cloned.owner || ''}/${cloned.repo || ''}`.replace(/^\//, ''), existed: cloned.existed, ...scanned };
+  });
+  ipcMain.handle('practice:rescanRepo', (_e, root) => {
+    const dir = String(root || '');
+    if (!dir.startsWith(os.homedir()) || !fs.existsSync(dir)) return { ok: false, error: '目录不在了' };
+    return { ok: true, path: dir, ...practiceRunner.scanRepo(dir) };
+  });
   ipcMain.handle('practice:setup', (_e, payload = {}) => practiceRunner.setup(payload.track));
   ipcMain.handle('practice:install', (_e, payload = {}) => practiceRunner.install(payload.track, payload.packages));
   ipcMain.handle('practice:terminal', (_e, payload = {}) => practiceRunner.terminal(payload.command));

@@ -128,6 +128,9 @@ contextBridge.exposeInMainWorld('toolbox', {
     install: (payload) => ipcRenderer.invoke('practice:install', payload),
     /** 在共享学习环境目录中运行受控终端命令，适合直接学习 uv */
     terminal: (payload) => ipcRenderer.invoke('practice:terminal', payload),
+    /** 学 GitHub 仓库：克隆 + 扫代码文件 + README */
+    importRepo: (url) => ipcRenderer.invoke('practice:importRepo', url),
+    rescanRepo: (root) => ipcRenderer.invoke('practice:rescanRepo', root),
   },
 
   /** 动效 PPT：导出带进场动画的 .pptx */

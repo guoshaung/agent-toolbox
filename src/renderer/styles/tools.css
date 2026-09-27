@@ -4541,3 +4541,23 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .settings__hotkey:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
 .settings__hotkey.is-bad { border-color: var(--bad); color: var(--bad); }
 .settings__hotkey-tag { margin-left: 6px; font-size: 10px; }
+
+/* ---------- 实践敲码：工具栏放大 + 学 GitHub 仓库 ---------- */
+.practice__bar { padding: 10px 14px; gap: 8px; flex-wrap: wrap; }
+.practice__bar .btn { min-height: 36px; padding: 0 14px; font-size: 13px; font-weight: 600; border-radius: 10px; }
+.practice__bar .btn--primary { padding: 0 16px; box-shadow: 0 4px 14px color-mix(in srgb, var(--accent) 30%, transparent); }
+.practice__bar .practice__icon-btn { min-width: 36px; padding: 0 10px; font-size: 16px; }
+.practice__bar select { height: 36px; max-width: 220px; padding: 0 28px 0 12px; font-size: 13px; border-radius: 10px; }
+.practice__bar-sep { height: 24px; margin: 0 2px; }
+.practice__repo-btn.is-open { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
+.practice__repo-panel { display: flex; flex-direction: column; gap: 8px; padding: 12px 14px; border-bottom: 1px solid var(--line-soft); background: var(--bg-sunken); }
+.practice__repo-row { display: flex; gap: 8px; }
+.practice__repo-input { flex: 1; min-height: 36px; font-family: var(--mono); font-size: 13px; }
+.practice__repo-hint { font-size: 12px; line-height: 1.6; }
+.practice__repo-chips { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: 12px; }
+.practice__repo-chips .btn.is-active { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
+.practice__repo-head { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding: 8px 14px; border-bottom: 1px solid var(--line-soft); background: color-mix(in srgb, var(--accent) 8%, var(--bg-raised)); font-size: 12.5px; }
+.practice__repo-name { font-weight: 700; font-size: 13.5px; }
+.practice__spacer { flex: 1; }
+/* 学习顶部的子页按钮也放大一号 */
+#tool-study .bar--drag .btn--sm { min-height: 34px; padding: 0 14px; font-size: 13.5px; font-weight: 600; border-radius: 10px; }

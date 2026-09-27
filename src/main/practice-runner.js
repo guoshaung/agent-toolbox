@@ -229,7 +229,10 @@ async function run(trackId, code, options = {}) {
   const env = environment();
   const missing = unavailable(trackId, env);
   if (missing) return { ok: false, error: missing, environment: env };
-  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-toolbox-practice-'));
+  // 学 GitHub 仓库时在仓库目录里跑，import 才找得到包；只认家目录下真实存在的目录
+  const repoCwd = String(options.cwd || '');
+  const useRepo = repoCwd && repoCwd.startsWith(os.homedir()) && fs.existsSync(repoCwd) && fs.statSync(repoCwd).isDirectory();
+  const cwd = useRepo ? repoCwd : fs.mkdtempSync(path.join(os.tmpdir(), 'agent-toolbox-practice-'));
   try {
     if (PYTHON_TRACKS.has(trackId)) {
       const interpreter = pythonInterpreter(trackId);
@@ -254,8 +257,32 @@ async function run(trackId, code, options = {}) {
     if (env.matlab) return { ...(await runProcess('matlab', ['-batch', `run(${JSON.stringify(script)})`], '', cwd, options.timeout)), engine: 'matlab' };
     return { ...(await runProcess(commandExists('octave-cli') ? 'octave-cli' : 'octave', ['--quiet', script], '', cwd, options.timeout)), engine: 'octave' };
   } finally {
-    fs.rmSync(cwd, { recursive: true, force: true });
+    if (!useRepo) fs.rmSync(cwd, { recursive: true, force: true });
   }
+}
+
+/** 学 GitHub 仓库：克隆后扫一遍代码文件（浅层、小文件），README 一起带回 */
+const REPO_CODE_EXT = /\.(py|sh|bash|sql|js|mjs|ts|go|rs|c|h|cpp|cc|java|rb|m)$/i;
+const REPO_SKIP = new Set(['.git', 'node_modules', '.venv', 'venv', '__pycache__', 'dist', 'build', '.idea', '.vscode', 'target', 'assets', 'docs', 'data', 'images', 'img']);
+function scanRepo(root) {
+  const files = [];
+  const walk = (dir, depth) => {
+    if (depth > 4 || files.length > 300) return;
+    let entries = [];
+    try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { return; }
+    for (const e of entries) {
+      if (e.name.startsWith('.') || REPO_SKIP.has(e.name)) continue;
+      const full = path.join(dir, e.name);
+      if (e.isDirectory()) walk(full, depth + 1);
+      else if (REPO_CODE_EXT.test(e.name)) {
+        try { const st = fs.statSync(full); if (st.size <= 80 * 1024) files.push({ rel: path.relative(root, full).split(path.sep).join('/'), size: st.size }); } catch { /* 跳过 */ }
+      }
+    }
+  };
+  walk(root, 0);
+  let readme = '';
+  for (const name of ['README.md', 'readme.md', 'README.rst', 'README']) { const f = path.join(root, name); if (fs.existsSync(f)) { try { readme = fs.readFileSync(f, 'utf8').slice(0, 40000); } catch { /* 没 README */ } break; } }
+  return { files, readme };
 }
 
 async function setup(trackId) {
@@ -318,4 +345,4 @@ async function terminal(command) {
   return { ...result, engine: 'learning-terminal', cwd: envDir, environment: environment() };
 }
 
-module.exports = { TRACKS, environment, install, run, setup, terminal, validateCode };
+module.exports = { TRACKS, environment, install, run, setup, terminal, validateCode, scanRepo };
