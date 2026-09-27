@@ -981,3 +981,54 @@ html[data-effect='neon'] .rail__logo { filter: drop-shadow(0 0 10px var(--accent
 .dropzone__sub { font-size: 12px; flex: none; }
 body.is-dropping::after { content: ''; position: fixed; inset: 6px; z-index: 9050; border: 2px dashed color-mix(in srgb, var(--accent) 70%, transparent); border-radius: 18px; pointer-events: none; background: color-mix(in srgb, var(--accent) 6%, transparent); }
 .palette__num { width: 30px; flex: none; font: 10px var(--mono); color: var(--text-faint); border: 0; background: none; text-align: center; }
+
+/* ---------- 「更多」轮盘 ---------- */
+.radial { position: fixed; inset: 0; z-index: 60; -webkit-app-region: no-drag; }
+.radial__backdrop { position: absolute; inset: 0; background: color-mix(in srgb, var(--bg) 62%, transparent); backdrop-filter: blur(4px) saturate(.8); opacity: 0; transition: opacity .25s ease; }
+.radial.is-open .radial__backdrop { opacity: 1; }
+/* 舞台整体从「更多」按钮那个点放大到全屏 */
+.radial__lines, .radial__stage { position: absolute; inset: 0; transform-origin: var(--origin-x, 46px) var(--origin-y, 90%); transform: scale(.35); opacity: 0; transition: transform .38s cubic-bezier(.2,.9,.25,1.05), opacity .22s ease; }
+.radial.is-open .radial__lines, .radial.is-open .radial__stage { transform: scale(1); opacity: 1; }
+.radial__lines { width: 100%; height: 100%; pointer-events: none; overflow: visible; }
+.radial__stage { pointer-events: none; }
+/* 圆环：涟漪扩散 */
+.radial__ring { fill: none; stroke: color-mix(in srgb, var(--accent) 26%, transparent); stroke-width: 1; stroke-dasharray: 3 8; transform-box: fill-box; transform-origin: center; transform: scale(.2); opacity: 0; transition: transform .6s cubic-bezier(.2,.8,.2,1) var(--delay, 0ms), opacity .4s ease var(--delay, 0ms); }
+.radial.is-open .radial__ring { transform: scale(1); opacity: 1; }
+.radial__ring--3 { stroke: color-mix(in srgb, var(--accent-secondary, var(--accent)) 30%, transparent); }
+/* 连线：一笔画出来 */
+.radial__line { stroke: color-mix(in srgb, var(--text-faint) 50%, transparent); stroke-width: 1.2; stroke-dasharray: 1; stroke-dashoffset: 1; transition: stroke-dashoffset .45s ease var(--delay, 0ms); }
+.radial.is-open .radial__line { stroke-dashoffset: 0; }
+.radial__line.is-active { stroke: var(--accent); stroke-width: 1.8; filter: drop-shadow(0 0 4px var(--accent-glow)); }
+.radial__line.is-faint { stroke: color-mix(in srgb, var(--text-faint) 26%, transparent); stroke-width: 1; }
+/* 中心 */
+.radial__hub { position: absolute; left: var(--x); top: var(--y); width: 74px; height: 74px; transform: translate(-50%, -50%); border-radius: 50%; border: 1px solid var(--accent); background: linear-gradient(145deg, var(--accent), color-mix(in srgb, var(--accent) 60%, var(--accent-secondary, var(--accent)))); color: var(--accent-ink, #fff); display: grid; place-items: center; cursor: pointer; pointer-events: auto; font-weight: 700; font-size: 12px; line-height: 1.15; text-align: center; padding: 0 6px; animation: radial-breathe 2.4s ease-in-out infinite; transition: transform .2s; }
+.radial__hub:hover { transform: translate(-50%, -50%) scale(1.06); }
+.radial__hub.has-group { background: linear-gradient(145deg, var(--node-color), color-mix(in srgb, var(--node-color) 55%, #000)); border-color: var(--node-color); }
+.radial__hub-x { font-size: 26px; font-weight: 300; }
+@keyframes radial-breathe {
+  0%, 100% { box-shadow: 0 0 0 6px color-mix(in srgb, var(--accent) 22%, transparent), 0 0 24px color-mix(in srgb, var(--accent) 45%, transparent); }
+  50% { box-shadow: 0 0 0 14px color-mix(in srgb, var(--accent) 8%, transparent), 0 0 44px color-mix(in srgb, var(--accent) 60%, transparent); }
+}
+/* 节点：从圆心弹射到位 */
+.radial__node { position: absolute; left: var(--from-x); top: var(--from-y); width: 56px; height: 56px; transform: translate(-50%, -50%) scale(.3) rotate(-40deg); border-radius: 50%; border: 1px solid var(--line); background: color-mix(in srgb, var(--panel) 92%, transparent); color: var(--text); display: grid; place-items: center; cursor: pointer; pointer-events: auto; opacity: 0; box-shadow: var(--shadow-sm); backdrop-filter: blur(6px); transition: left .5s cubic-bezier(.18,.95,.3,1.18) var(--delay), top .5s cubic-bezier(.18,.95,.3,1.18) var(--delay), transform .5s cubic-bezier(.18,.95,.3,1.18) var(--delay), opacity .25s ease var(--delay), border-color .15s, box-shadow .15s, background .15s; }
+.radial__node.is-in { left: var(--x); top: var(--y); transform: translate(-50%, -50%) scale(1) rotate(0); opacity: 1; }
+.radial__node.is-in:hover { transform: translate(-50%, -50%) scale(1.14); border-color: var(--node-color, var(--accent)); box-shadow: 0 0 0 5px color-mix(in srgb, var(--node-color, var(--accent)) 22%, transparent), 0 10px 30px rgba(0,0,0,.35); z-index: 2; transition-delay: 0ms; }
+.radial__node.is-in:hover .radial__node-icon { transform: scale(1.15); }
+.radial__node.is-active { border-color: var(--node-color, var(--accent)); background: color-mix(in srgb, var(--node-color, var(--accent)) 18%, var(--panel)); box-shadow: 0 0 0 4px color-mix(in srgb, var(--node-color, var(--accent)) 16%, transparent), 0 0 18px color-mix(in srgb, var(--node-color, var(--accent)) 35%, transparent); }
+.radial__node--group { width: 68px; height: 68px; }
+.radial__node--sub { width: 48px; height: 48px; }
+.radial__node-icon { color: var(--node-color, var(--accent)); display: grid; place-items: center; transition: transform .2s; }
+.radial__node-icon .ui-icon { width: 22px; height: 22px; }
+.radial__node--group .radial__node-icon .ui-icon { width: 26px; height: 26px; }
+.radial__node--sub .radial__node-icon .ui-icon { width: 17px; height: 17px; }
+.radial__node-label { position: absolute; top: calc(100% + 5px); left: 50%; transform: translateX(-50%); white-space: nowrap; font-size: 11.5px; color: var(--text-dim); text-shadow: 0 1px 3px var(--bg), 0 0 8px var(--bg); pointer-events: none; }
+.radial__node--group .radial__node-label { font-weight: 700; font-size: 12.5px; color: var(--text); }
+.radial__node--sub .radial__node-label { font-size: 10.5px; }
+.radial__dot { position: absolute; top: 5px; right: 5px; width: 9px; height: 9px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 8px var(--accent); }
+.radial__badges { position: absolute; inset: -7px; pointer-events: none; }
+.radial__pin, .radial__more { position: absolute; width: 21px; height: 21px; border-radius: 50%; border: 1px solid var(--line); background: var(--bg-raised); color: var(--text-faint); font-size: 11px; line-height: 1; display: grid; place-items: center; cursor: pointer; pointer-events: auto; opacity: 0; transform: scale(.6); transition: opacity .15s, transform .15s; }
+.radial__pin { top: 0; left: 0; }
+.radial__more { bottom: 0; right: 0; font-size: 15px; font-weight: 700; }
+.radial__node:hover .radial__pin, .radial__node:hover .radial__more, .radial__pin.is-pinned, .radial__more.is-open { opacity: 1; transform: scale(1); }
+.radial__pin.is-pinned { color: var(--warn); border-color: var(--warn); }
+.radial__more.is-open { color: var(--accent); border-color: var(--accent); }

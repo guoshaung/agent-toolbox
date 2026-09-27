@@ -12,7 +12,7 @@ import { createPresentation } from './presentation.js';
 import { createAutoResearch } from './autoresearch.js';
 import { createZoteroPanel } from './zotero.js';
 
-const SUB_SECTIONS = [
+export const SUB_SECTIONS = [
   { id: 'portal', label: '门户', icon: 'globe' },
   { id: 'academic', label: '学术入口', icon: 'graduation' },
   { id: 'schools', label: '学校访问', icon: 'book' },
@@ -121,6 +121,8 @@ export default {
 
     applyCompact();
     selectSub(SUB_SECTIONS.some((s) => s.id === currentSub) ? currentSub : 'portal');
+    // 「更多」轮盘第三圈直达子页
+    window.addEventListener('toolbox:tool-sub', (e) => { if (e.detail?.tool === 'research' && factories[e.detail.sub]) selectSub(e.detail.sub); });
 
     return { activate, deactivate };
   },

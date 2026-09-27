@@ -6,7 +6,7 @@ import { createNews } from './news.js';
 import { createWatch } from './watch.js';
 import { createBattle } from './battle.js';
 
-const SUB_SECTIONS = [
+export const SUB_SECTIONS = [
   { id: 'timer', label: '专注', icon: 'target' },
   { id: 'games', label: '醒脑', icon: 'zap' },
   { id: 'news', label: '情报', icon: 'scan' },
@@ -81,6 +81,7 @@ export default {
     );
 
     selectSub(SUB_SECTIONS.some((s) => s.id === currentSub) ? currentSub : 'timer');
+    window.addEventListener('toolbox:tool-sub', (e) => { if (e.detail?.tool === 'focus' && SUB_SECTIONS.some((s) => s.id === e.detail.sub)) selectSub(e.detail.sub); });
 
     return {
       deactivate: () => deactivators.forEach((fn) => fn()),

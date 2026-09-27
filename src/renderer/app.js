@@ -12,6 +12,9 @@ import { createSwitcher } from './core/switcher.js';
 import { createPalette } from './core/palette.js';
 import { createDropzone } from './core/dropzone.js';
 import { togglePinned as togglePinnedState, addToRight, removePinned, LEFT_MAX, RIGHT_MAX } from './core/right-rail.js';
+import { createRadialMenu } from './core/radial.js';
+import { SUB_SECTIONS as RESEARCH_SUBS } from './tools/research/index.js';
+import { SUB_SECTIONS as FOCUS_SUBS } from './tools/focus/index.js';
 
 const rail = document.getElementById('rail');
 const stage = document.getElementById('stage');
@@ -150,19 +153,35 @@ const libraryPanel = h('section', { class: 'rail-library', hidden: true },
   h('p', { class: 'rail-library__hint' }, '点星标放到左侧常用区。最多固定 7 个，其他工具仍保留在这里。'),
   libraryBody,
 );
+// 「更多」轮盘：按类别分圈，工具在第二圈，有子页的（科研 / 专注）第三圈
+const WHEEL_GROUPS = [
+  { id: 'learn', label: '学习科研', icon: 'graduation', color: '#3fbf87', tools: ['research', 'study', 'docs', 'terms', 'coach', 'skills', 'typing'] },
+  { id: 'make', label: '写作代码', icon: 'pen', color: '#ff9a6b', tools: ['notebook', 'notes', 'git', 'api', 'netlog', 'webtools'] },
+  { id: 'ai', label: 'AI 伙伴', icon: 'bot', color: '#c9a7ff', tools: ['ask', 'tavern', 'voicebox', 'digital-human', 'avatar-rig', 'voice', 'gesture', 'monologue'] },
+  { id: 'life', label: '生活效率', icon: 'bowl', color: '#f0b93d', tools: ['home', 'tasks', 'focus', 'tidy', 'container', 'eat', 'history', 'video', 'vault'] },
+  { id: 'device', label: '设备外观', icon: 'smartphone', color: '#7aa8ff', tools: ['remote', 'dsh', 'controls', 'dock', 'pet', 'appearance'] },
+];
+{
+  // 登记表里新加的、上面没分组的，自动落到「其他」；没有就不显示这一类
+  const grouped = new Set(WHEEL_GROUPS.flatMap((g) => g.tools));
+  const rest = TOOLS.filter((t) => t.id !== SETTINGS_ID && !grouped.has(t.id)).map((t) => t.id);
+  if (rest.length) WHEEL_GROUPS.push({ id: 'other', label: '其他', icon: 'more', color: '#98a2b3', tools: rest });
+  for (const g of WHEEL_GROUPS) g.tools = g.tools.filter((id) => TOOLS.some((t) => t.id === id));
+}
+const TOOL_SUBS = { research: RESEARCH_SUBS, focus: FOCUS_SUBS };
+let radial = null;
 const moreButton = h('button', {
   class: 'rail__item rail__more',
-  title: '更多工具',
+  title: '更多工具（轮盘）',
   onclick: (event) => {
     event.stopPropagation();
-    setLibraryOpen(libraryPanel.hidden);
+    setLibraryOpen(!radial?.isOpen());
   },
 },
   h('span', { class: 'rail__icon rail__more-icon' }, iconFor('more')),
   h('span', { class: 'rail__label' }, '更多'),
   h('span', { class: 'rail__more-dot' }),
 );
-let libraryHideTimer;
 
 function activate(id) {
   const tool = TOOLS.find((t) => t.id === id);
@@ -219,9 +238,6 @@ function activate(id) {
   const isLibraryTool = id !== SETTINGS_ID && id !== 'tasks' && !pinnedIds.includes(id);
   moreButton.classList.toggle('is-active', isLibraryTool);
   moreButton.classList.toggle('has-current', isLibraryTool);
-  for (const card of libraryPanel.querySelectorAll('.rail-library__card')) {
-    card.classList.toggle('is-current', card.dataset.id === id);
-  }
   setLibraryOpen(false);
   config.set('ui.lastTool', id);
 }
@@ -258,6 +274,7 @@ async function togglePinned(id) {
   await config.set('ui.pinnedTools', pinnedIds);
   await config.set('ui.rightPinnedTools', rightPinnedIds);
   renderRail();
+  radial?.rerender();
 }
 
 function librarySection(title, tools, pinned) {
@@ -328,15 +345,21 @@ function renderRail() {
 
 function setLibraryOpen(open) {
   const next = Boolean(open);
-  clearTimeout(libraryHideTimer);
-  moreButton.classList.toggle('is-open', next);
-  if (next) {
-    libraryPanel.removeAttribute('hidden');
-    requestAnimationFrame(() => libraryPanel.classList.add('is-visible'));
-  } else {
-    libraryPanel.classList.remove('is-visible');
-    libraryHideTimer = setTimeout(() => libraryPanel.setAttribute('hidden', ''), 180);
+  if (!radial) {
+    radial = createRadialMenu({
+      groups: WHEEL_GROUPS, tools: TOOLS,
+      subsOf: (id) => TOOL_SUBS[id] || null,
+      isPinned: (id) => pinnedIds.includes(id) || rightPinnedIds.includes(id),
+      onOpen: (id) => activate(id),
+      onOpenSub: (id, sub) => { activate(id); window.dispatchEvent(new CustomEvent('toolbox:tool-sub', { detail: { tool: id, sub } })); },
+      onTogglePin: (id) => togglePinned(id),
+      getCurrentId: () => currentId,
+      colorOf,
+      onClose: () => moreButton.classList.remove('is-open'),
+    });
   }
+  if (next) radial.open(moreButton); else radial.close();
+  moreButton.classList.toggle('is-open', next);
 }
 
 const dockEdgeHint = h('div', { class: 'dock-edge-hint', title: '把 Edge 标签页或窗口拖到这里' });
@@ -397,7 +420,6 @@ rail.append(
   h('div', { class: 'rail__spacer' }),
   moreButton,
   railButton(TOOLS.find((tool) => tool.id === SETTINGS_ID), 'rail__settings'),
-  libraryPanel,
 );
 document.getElementById('app').appendChild(rightRail);
 renderRail();
@@ -405,12 +427,7 @@ window.toolbox.dock.onStatus(renderDockPin);
 window.toolbox.dock.onError((message) => toast(message, 'bad', 5200));
 window.toolbox.dock.status().then(renderDockPin);
 
-document.addEventListener('pointerdown', (event) => {
-  if (!libraryPanel.hidden && !libraryPanel.contains(event.target) && !moreButton.contains(event.target)) setLibraryOpen(false);
-});
-window.addEventListener('keydown', (event) => {
-  if (event.key === 'Escape') setLibraryOpen(false);
-});
+// 轮盘自己带全屏背板，点背板 / Esc 都会收，收的时候回调 onClose 灭掉「更多」的高亮
 
 // Ctrl+Tab 呼出模块切换器（按住能看见即将切到哪，松开才生效）
 switcher = createSwitcher({
@@ -432,7 +449,7 @@ palette = createPalette({
   tools: TOOLS, activate, config, toast,
   extraActions: [
     { id: 'act:pet', kind: 'action', title: '显示桌宠', hint: '把桌面精灵叫出来', icon: 'bot', keywords: ['pet', '精灵'], run: () => window.toolbox.pet.setEnabled(true) },
-    { id: 'act:library', kind: 'action', title: '更多工具', hint: '打开工具库，钉常用的到左栏', icon: 'more', keywords: ['library', '工具库'], run: () => setLibraryOpen(true) },
+    { id: 'act:library', kind: 'action', title: '更多工具', hint: '打开工具轮盘，钉常用的到左栏', icon: 'more', keywords: ['library', '工具库', '轮盘'], run: () => setLibraryOpen(true) },
     { id: 'act:remote', kind: 'action', title: '手机控制', hint: '扫码把手机连上', icon: 'smartphone', keywords: ['phone', '手机', '精灵'], run: () => activate('remote') },
     { id: 'act:tidy-now', kind: 'action', title: '去归位', hint: '桌面 / 下载 / 主目录散落的东西', icon: 'archive', keywords: ['收纳', '整理', 'tidy'], run: () => activate('tidy') },
     { id: 'act:quit', kind: 'action', title: '退出工具箱', hint: '真的退出（关窗口只是藏起来）', icon: 'close', keywords: ['quit', 'exit', '退出'], run: () => window.toolbox.app?.quit?.() },
