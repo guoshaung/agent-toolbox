@@ -550,6 +550,18 @@ contextBridge.exposeInMainWorld('toolbox', {
     search: (query) => ipcRenderer.invoke('docs:search', query),
   },
 
+  vault: {
+    list: () => ipcRenderer.invoke('vault:list'),
+    save: (entry) => ipcRenderer.invoke('vault:save', entry),
+    remove: (id) => ipcRenderer.invoke('vault:remove', id),
+    reveal: (id) => ipcRenderer.invoke('vault:reveal', id),
+    copy: (id, field) => ipcRenderer.invoke('vault:copy', id, field),
+    parse: (text) => ipcRenderer.invoke('vault:parse', text),
+    generate: (options) => ipcRenderer.invoke('vault:generate', options),
+    strength: (pw) => ipcRenderer.invoke('vault:strength', pw),
+    openFolder: () => ipcRenderer.invoke('vault:openFolder'),
+  },
+
   zotero: {
     detect: () => ipcRenderer.invoke('zotero:detect'),
     snapshot: (force) => ipcRenderer.invoke('zotero:snapshot', force),

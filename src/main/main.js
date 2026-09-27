@@ -51,6 +51,7 @@ const { registerAvatarRigIpc } = require('./avatar-rig-service');
 const { DshService } = require('./dsh-service');
 const { AutoResearchService } = require('./autoresearch-service');
 const { ZoteroService } = require('./zotero');
+const { VaultService } = require('./vault');
 const { TavernService } = require('./tavern-service');
 const { AppControls } = require('./app-controls');
 const { computeBounds, canApplyGesture } = require('./window-gesture');
@@ -1814,10 +1815,13 @@ function registerIpc() {
   // 剪贴板历史：只在内存里留最近 30 条文字（不落盘 —— 剪贴板里常有密码），⌘K 里能搜回来
   const clipHistory = [];
   let clipLast = '';
+  // 密码本复制出来的值：不进历史（⌘K 里能搜到的话等于明文展示）
+  const clipSecrets = new Set();
   setInterval(() => {
     try {
       const text = clipboard.readText();
       if (!text || text === clipLast || text.length > 2000 || /^__agent_toolbox_/.test(text)) return;
+      if (clipSecrets.has(text)) { clipLast = text; return; }
       clipLast = text;
       const idx = clipHistory.findIndex((x) => x.text === text);
       if (idx >= 0) clipHistory.splice(idx, 1);
@@ -1826,6 +1830,18 @@ function registerIpc() {
     } catch { /* 读不到就算 */ }
   }, 1500);
   ipcMain.handle('clip:history', () => clipHistory.map((x) => ({ text: x.text, at: x.at })));
+
+  // ---- 密码本：safeStorage 加密落在 userData/vault.json，明文不进渲染层 ----
+  const vault = new VaultService({ file: path.join(app.getPath('userData'), 'vault.json'), safeStorage, clipboard, markClipboardSecret: (v) => { clipSecrets.add(v); if (clipSecrets.size > 50) clipSecrets.delete(clipSecrets.values().next().value); } });
+  ipcMain.handle('vault:list', () => vault.list());
+  ipcMain.handle('vault:save', (_e, entry) => vault.save(entry || {}));
+  ipcMain.handle('vault:remove', (_e, id) => vault.remove(String(id || '')));
+  ipcMain.handle('vault:reveal', (_e, id) => vault.reveal(String(id || '')));
+  ipcMain.handle('vault:copy', (_e, id, field) => vault.copy(String(id || ''), String(field || '')));
+  ipcMain.handle('vault:parse', (_e, text) => require('./vault').parseDump(text));
+  ipcMain.handle('vault:generate', (_e, options) => ({ password: require('./vault').generatePassword(options || {}) }));
+  ipcMain.handle('vault:strength', (_e, pw) => require('./vault').strength(pw));
+  ipcMain.handle('vault:openFolder', () => shell.showItemInFolder(path.join(app.getPath('userData'), 'vault.json')));
   ipcMain.handle('clip:clear', () => { clipHistory.length = 0; clipLast = ''; return { ok: true }; });
 
   // 学习记录：解释过什么、看懂过哪个项目、读过哪个文件、考了几分 —— 首页给一点进度感

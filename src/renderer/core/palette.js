@@ -57,6 +57,7 @@ export function createPalette({ tools, activate, config, toast, extraActions = [
   let recentFiles = null;                 // 懒加载，打开面板时才去问
   let journal = null;                     // 学习记录，同样懒加载
   let clips = [];                         // 剪贴板历史，打开面板时拉一次
+  let vaultEntries = [];                  // 密码本条目（只有标题 / 网址 / 账号，没有密文）
   let found = [];                         // 在 ~/收纳 / 代码目录里按名字搜到的
   let foundFor = '';
   let searchTimer = 0;
@@ -94,7 +95,9 @@ export function createPalette({ tools, activate, config, toast, extraActions = [
     const foundItems = found.filter((f) => !seen.has(f.path)).map((f) => ({ id: `found:${f.path}`, kind: 'file', title: f.name, hint: `归位后在 ${f.where}`, keywords: [f.path], isDir: f.isDir, run: () => window.toolbox.tidy.reveal(f.path), alt: () => window.toolbox.tidy.open(f.path) }));
     // 剪贴板历史：搜「剪贴板」或直接搜内容里的字；回车复制回去
     const clipItems = clips.map((c, i) => ({ id: `clip:${c.at}:${i}`, kind: 'clip', icon: 'paste', title: c.text.replace(/\s+/g, ' ').trim().slice(0, 90), hint: `复制于 ${new Date(c.at).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })} · 回车复制回剪贴板`, keywords: ['剪贴板', 'clipboard', c.text.slice(0, 200)], run: async () => { await window.toolbox.clipboard.write(c.text); toast?.('已复制回剪贴板', 'good'); } }));
-    return [...toolItems, ...extraActions, ...themeItems, ...effectItems, ...fileItems, ...learnItems, ...journalItems, ...folderItems, ...foundItems, ...clipItems];
+    // 密码本：搜名字 / 网址 / 账号，回车复制密码（没密码就复制 key）；值不经过页面
+    const vaultItems = vaultEntries.map((v) => ({ id: `vault:${v.id}`, kind: 'vault', icon: 'lock', title: `密码本 · ${v.title}`, hint: [v.username, v.url].filter(Boolean).join(' · ') + (v.has?.password ? ' · 回车复制密码' : v.has?.key ? ' · 回车复制 key' : ''), keywords: ['密码', '账号', 'password', 'vault', v.title, v.url, v.username], run: async () => { const field = v.has?.password ? 'password' : v.has?.key ? 'key' : 'username'; const r = await window.toolbox.vault.copy(v.id, field); toast?.(r.ok ? `已复制${{ password: '密码', key: 'key', username: '账号' }[field]}${r.cleared ? `，${r.cleared} 秒后自动清空剪贴板` : ''}` : r.error, r.ok ? 'good' : 'bad'); } }));
+    return [...toolItems, ...extraActions, ...themeItems, ...effectItems, ...vaultItems, ...fileItems, ...learnItems, ...journalItems, ...folderItems, ...foundItems, ...clipItems];
   };
 
   function render() {
@@ -139,6 +142,7 @@ export function createPalette({ tools, activate, config, toast, extraActions = [
     window.toolbox.tidy?.recent?.({ days: 3, limit: 30 }).then((r) => { if (r?.ok) { recentFiles = r.items; const p = r.items[0]?.path || ''; const m = p.match(/^(\/Users\/[^/]+|[A-Za-z]:\\Users\\[^\\]+)/); if (m) recentHome = m[1]; if (open) render(); } }).catch(() => {});
     window.toolbox.learn?.journal?.({ limit: 60 }).then((r) => { if (r?.items) { journal = r.items; if (open) render(); } }).catch(() => {});
     window.toolbox.clipboard?.history?.().then((r) => { if (Array.isArray(r)) { clips = r; if (open) render(); } }).catch(() => {});
+    window.toolbox.vault?.list?.().then((r) => { if (r?.ok) { vaultEntries = r.entries; if (open) render(); } }).catch(() => {});
   }
   function hide() { open = false; root.hidden = true; }
   function toggle() { open ? hide() : show(); }

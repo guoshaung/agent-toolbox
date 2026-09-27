@@ -4491,3 +4491,46 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .zot__tag-coll { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 40%, transparent); }
 .zot__item-actions { display: flex; flex-direction: column; gap: 4px; flex: 0 0 auto; }
 .lib__zotero-btn { font-weight: 800; color: #cc2936; }
+
+/* ---------- 密码本 ---------- */
+.vault__search { width: 260px; }
+.vault__filters { display: inline-flex; gap: 4px; margin-left: 8px; }
+.vault__filters .btn.is-active { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
+.vault__count { font-size: 12px; margin-left: 8px; }
+.vault__spacer { flex: 1; }
+.vault__body { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 16px; padding: 16px 18px; overflow: hidden; }
+.vault__list { min-width: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 7px; padding-right: 4px; }
+.vault__side { overflow-y: auto; display: flex; flex-direction: column; gap: 12px; }
+.vault__empty { padding: 40px 20px; display: flex; flex-direction: column; gap: 8px; align-items: center; text-align: center; font-size: 13px; }
+.vault__empty-title { font-size: 18px; font-weight: 700; }
+.vault__item { display: flex; align-items: flex-start; gap: 10px; padding: 10px 12px; border: 1px solid var(--line-soft); border-radius: 12px; background: var(--panel); cursor: pointer; transition: border-color .15s, box-shadow .15s; }
+.vault__item:hover { border-color: var(--accent); box-shadow: var(--shadow-sm); }
+.vault__item.is-editing { border-color: var(--accent); background: var(--accent-soft); }
+.vault__item-icon { width: 30px; height: 30px; border-radius: 8px; display: grid; place-items: center; background: var(--bg-sunken); color: var(--accent); flex: 0 0 auto; }
+.vault__item-icon .ui-icon { width: 16px; height: 16px; }
+.vault__item-body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.vault__item-title { font-size: 14px; font-weight: 650; display: flex; align-items: center; flex-wrap: wrap; gap: 6px; }
+.vault__item-title .tag { font-size: 10px; padding: 1px 6px; }
+.vault__kind { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 40%, transparent); }
+.vault__item-sub { font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.vault__secrets { margin-top: 4px; display: flex; flex-direction: column; gap: 3px; }
+.vault__secret { font-size: 12px; }
+.vault__secret code { font: 12px/1.4 var(--mono); padding: 1px 6px; border-radius: 5px; background: var(--bg-sunken); user-select: all; word-break: break-all; }
+.vault__secret--notes { white-space: pre-wrap; color: var(--text-dim); }
+.vault__item-actions { display: flex; flex-wrap: wrap; gap: 4px; justify-content: flex-end; max-width: 240px; }
+.vault__card { border: 1px solid var(--line-soft); border-radius: 12px; background: var(--panel); padding: 14px; display: flex; flex-direction: column; gap: 9px; }
+.vault__card--soft { background: var(--bg-sunken); }
+.vault__card-title { font-size: 14px; font-weight: 700; display: flex; align-items: baseline; gap: 8px; }
+.vault__card-sub { font-size: 11.5px; font-weight: 400; }
+.vault__card-hint { font-size: 12px; line-height: 1.6; }
+.vault__dump { resize: vertical; font-size: 12.5px; }
+.vault__row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.vault__field { display: flex; flex-direction: column; gap: 3px; }
+.vault__field-label { display: flex; align-items: center; gap: 6px; font-size: 11.5px; color: var(--text-faint); }
+.vault__field-tools { margin-left: auto; display: flex; align-items: center; gap: 4px; }
+.vault__strength { font-size: 11px; color: var(--text-faint); }
+.vault__strength[data-score="1"], .vault__strength[data-score="2"] { color: var(--bad); }
+.vault__strength[data-score="3"], .vault__strength[data-score="4"] { color: var(--warn); }
+.vault__strength[data-score="5"], .vault__strength[data-score="6"] { color: var(--good); }
+.vault__textarea { resize: vertical; font-size: 13px; }
+@media (max-width: 900px) { .vault__body { grid-template-columns: 1fr; } }
