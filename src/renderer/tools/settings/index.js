@@ -1,4 +1,5 @@
 import { h, toast } from '../../core/ui.js';
+import { acceleratorFromKeyEvent } from '../../core/hotkeys.js';
 import { PROVIDERS } from '../../core/ai.js';
 
 export default {
@@ -414,6 +415,41 @@ export default {
           probeOut,
         ),
 
+        (() => {
+          // 全局快捷键：点输入框、按下组合键就录进去；「关闭」存空串；「默认」恢复
+          const card = h('section', { class: 'card', id: 'settings-hotkeys' }, h('h3', { class: 'card__title' }, '全局快捷键'),
+            h('p', { class: 'faint settings__hint' }, '在任何应用里都生效，所以别和你常用软件的快捷键撞。点输入框，直接按下想用的组合键；被别的软件占着的会标红。'));
+          const body = h('div', {});
+          card.append(body);
+          async function render() {
+            const list = await window.toolbox.hotkeys.list();
+            body.replaceChildren(...list.map((k) => {
+              const field = h('input', { class: `field field--sm settings__hotkey${k.current && !k.registered ? ' is-bad' : ''}`, readonly: true, value: k.currentLabel, placeholder: '按下组合键…', title: k.current || '已关闭' });
+              field.addEventListener('focus', () => { field.value = '按下组合键…'; });
+              field.addEventListener('blur', () => { field.value = k.currentLabel; });
+              field.addEventListener('keydown', async (e) => {
+                if (e.key === 'Escape') { field.blur(); return; }
+                e.preventDefault();
+                const accel = acceleratorFromKeyEvent(e);
+                if (!accel) return;
+                const r = await window.toolbox.hotkeys.set(k.id, accel);
+                toast(r.ok ? (r.error || `已改成 ${accel}`) : r.error, r.ok && !r.error ? 'good' : 'bad', 4000);
+                field.blur(); render();
+              });
+              return h('div', { class: 'settings__row' },
+                h('div', {}, h('div', {}, k.label, k.current && !k.registered ? h('span', { class: 'tag tag--warn settings__hotkey-tag' }, '被占用') : null, !k.current ? h('span', { class: 'tag settings__hotkey-tag' }, '已关闭') : null), h('div', { class: 'faint settings__hint' }, k.hint)),
+                h('div', { class: 'settings__hotkey-tools' },
+                  field,
+                  h('button', { class: 'btn btn--sm btn--ghost', disabled: !k.current, onclick: async () => { await window.toolbox.hotkeys.set(k.id, ''); toast(`${k.label}：已关闭`, 'info'); render(); } }, '关闭'),
+                  h('button', { class: 'btn btn--sm btn--ghost', disabled: k.current === k.default, title: `默认 ${k.defaultLabel}`, onclick: async () => { const r = await window.toolbox.hotkeys.set(k.id, k.default); toast(r.error || `已恢复默认 ${k.defaultLabel}`, r.error ? 'bad' : 'good'); render(); } }, '默认'),
+                ),
+              );
+            }));
+          }
+          render();
+          return card;
+        })(),
+
         h('section', { class: 'card' },
           h('h3', { class: 'card__title' }, '维护'),
           danger('清空纠错历史', '只删本地记录，不影响别的设置', async () => {
@@ -456,7 +492,7 @@ export default {
             '普通设置只存在本机的 userData/config.json；API Key 使用系统安全存储加密。' +
             '需求与设计见仓库里的 docs/SPEC.md，加新工具见 docs/ADD-A-TOOL.md。'),
           h('p', { class: 'faint settings__hint' },
-            '快捷键：⌘K 命令面板 · ⌘⇧L 选中即讲 · ⌘⇧A 叫回窗口 · ⌘⇧M 内心独白 · ⌘⇧E 术语 · Ctrl+Tab 切工具 · Cmd+1…7 切左栏工具 · Cmd+F 页内查找。'),
+            '快捷键：⌘K 命令面板 · ⌘⇧E 术语 · Ctrl+Tab 切工具 · Cmd+1…7 切左栏工具 · Cmd+F 页内查找。叫回窗口 / 选中即讲 / 内心独白 三个全局键在上面「全局快捷键」里改。'),
         ),
       ),
     );

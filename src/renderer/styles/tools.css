@@ -4534,3 +4534,10 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .vault__strength[data-score="5"], .vault__strength[data-score="6"] { color: var(--good); }
 .vault__textarea { resize: vertical; font-size: 13px; }
 @media (max-width: 900px) { .vault__body { grid-template-columns: 1fr; } }
+
+/* ---------- 设置 · 全局快捷键 ---------- */
+.settings__hotkey-tools { display: flex; align-items: center; gap: 6px; flex: 0 0 auto; }
+.settings__hotkey { width: 150px; text-align: center; font-family: var(--mono); cursor: pointer; }
+.settings__hotkey:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.settings__hotkey.is-bad { border-color: var(--bad); color: var(--bad); }
+.settings__hotkey-tag { margin-left: 6px; font-size: 10px; }

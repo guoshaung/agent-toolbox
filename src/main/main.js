@@ -52,6 +52,7 @@ const { DshService } = require('./dsh-service');
 const { AutoResearchService } = require('./autoresearch-service');
 const { ZoteroService } = require('./zotero');
 const { VaultService } = require('./vault');
+const { HOTKEYS, normalizeAccelerator, accelLabel } = require('./hotkeys');
 const { TavernService } = require('./tavern-service');
 const { AppControls } = require('./app-controls');
 const { computeBounds, canApplyGesture } = require('./window-gesture');
@@ -137,12 +138,10 @@ function relayPhoneState(payload) {
     } catch { /* 系统不让发通知就算了 */ }
   }
 }
-const MONOLOGUE_SHORTCUT = 'CommandOrControl+Shift+M';
-// 叫回主窗口。关掉窗口后应用还在后台（桌宠、手机服务都靠它），但没有一个显眼的入口能把窗口叫回来，
-// 于是「叉掉就找不到了」。菜单栏图标 + 这个快捷键 + 点 Dock 图标，三条路都能回来。
-const WAKE_SHORTCUT = 'CommandOrControl+Shift+A';
-// 在任何应用里选中一段代码 / 一句话 → 桌宠弹出四行解释。学代码最常用的一下。
-const EXPLAIN_SHORTCUT = 'CommandOrControl+Shift+L';
+// 叫回主窗口 / 选中即讲 / 内心独白 三个全局快捷键：默认值在 hotkeys.js，用户在设置里改（存 hotkeys.<id>，空串 = 关）。
+// ⌘⇧A 和用户别的软件撞过，所以默认换成了 ⌥⇧A。
+const hotkeyOf = (id) => { const saved = store.get(`hotkeys.${id}`); return saved === undefined ? HOTKEYS[id].def : String(saved || ''); };
+const hotkeyStatus = {};
 
 async function explainSelectionWithPet() {
   const text = await captureSelectedText().catch(() => '');
@@ -161,18 +160,44 @@ function createTray() {
     if (!icon.isEmpty()) icon = icon.resize({ width: 18, height: 18 });
     tray = new Tray(icon);
     tray.setToolTip('Agent 工具箱 —— 点一下叫回窗口');
-    const menu = Menu.buildFromTemplate([
-      { label: '显示工具箱', accelerator: WAKE_SHORTCUT, click: () => ensureMainWindow({ show: true }) },
+    tray.setContextMenu(buildTrayMenu());
+    tray.on('click', () => ensureMainWindow({ show: true }));
+  } catch (error) { console.warn('[tray] 建不出菜单栏图标：', error.message); }
+  return tray;
+}
+
+function buildTrayMenu() {
+  return Menu.buildFromTemplate([
+      { label: '显示工具箱', accelerator: hotkeyOf('wake') || undefined, click: () => ensureMainWindow({ show: true }) },
       { label: '今天', click: () => ensureMainWindow({ show: true }).webContents.send('app:navigate-tool', { id: 'home' }) },
       { label: '去归位（收纳）', click: () => ensureMainWindow({ show: true }).webContents.send('app:navigate-tool', { id: 'tidy' }) },
       { label: '搜一下（⌘K）', click: () => ensureMainWindow({ show: true }).webContents.send('palette:open') },
       { type: 'separator' },
       { label: '退出工具箱', click: () => quitToolbox() },
     ]);
-    tray.setContextMenu(menu);
-    tray.on('click', () => ensureMainWindow({ show: true }));
-  } catch (error) { console.warn('[tray] 建不出菜单栏图标：', error.message); }
-  return tray;
+}
+
+/** 三个可配置的全局快捷键：全部先注销再按当前设置注册，被占用的记下来给设置页显示 */
+function registerHotkeys() {
+  const actions = {
+    wake: () => ensureMainWindow({ show: true }),
+    explain: () => explainSelectionWithPet().catch((e) => console.warn('[explain]', e.message)),
+    monologue: () => { captureSelectedText().then((text) => runMonologue(text)).catch(() => runMonologue('')); },
+  };
+  for (const id of Object.keys(HOTKEYS)) {
+    const prev = hotkeyStatus[id]?.current;
+    if (prev) { try { globalShortcut.unregister(prev); } catch { /* 没注册过 */ } }
+    const accel = hotkeyOf(id);
+    let registered = false;
+    if (accel) { try { registered = globalShortcut.register(accel, actions[id]); } catch (error) { console.warn(`[hotkeys] ${id} 注册失败：`, error.message); } }
+    if (accel && !registered) console.warn(`[hotkeys] ${id} 快捷键被占用：`, accel);
+    hotkeyStatus[id] = { current: accel, registered };
+  }
+  if (tray) { try { tray.setContextMenu(buildTrayMenu()); } catch { /* 托盘没起来 */ } }
+}
+
+function hotkeyList() {
+  return Object.entries(HOTKEYS).map(([id, def]) => ({ id, label: def.label, hint: def.hint, default: def.def, defaultLabel: accelLabel(def.def), current: hotkeyOf(id), currentLabel: accelLabel(hotkeyOf(id)), registered: Boolean(hotkeyStatus[id]?.registered) }));
 }
 let dshService;
 let autoResearch;
@@ -3640,16 +3665,17 @@ app.whenReady().then(async () => {
       .catch((error) => console.warn('[remote] 自动启动失败:', error.message));
   }
   createTray();
-  try {
-    if (!globalShortcut.register(WAKE_SHORTCUT, () => ensureMainWindow({ show: true }))) console.warn('[wake] 快捷键被占用：', WAKE_SHORTCUT);
-    if (!globalShortcut.register(EXPLAIN_SHORTCUT, () => explainSelectionWithPet().catch((e) => console.warn('[explain]', e.message)))) console.warn('[explain] 快捷键被占用：', EXPLAIN_SHORTCUT);
-  } catch (error) { console.warn('[wake] 快捷键注册失败：', error.message); }
-  // 选中文字 → ⌘⇧M → 浮窗给解读
-  try {
-    globalShortcut.register(MONOLOGUE_SHORTCUT, () => {
-      captureSelectedText().then((text) => runMonologue(text)).catch(() => runMonologue(''));
-    });
-  } catch (error) { console.warn('[monologue] 快捷键注册失败：', error.message); }
+  registerHotkeys();
+  ipcMain.handle('hotkeys:list', () => hotkeyList());
+  ipcMain.handle('hotkeys:set', (_e, id, accel) => {
+    if (!HOTKEYS[id]) return { ok: false, error: '没有这个快捷键' };
+    const normalized = normalizeAccelerator(accel);
+    if (normalized === null) return { ok: false, error: '这个组合不合法：至少一个修饰键（⌘ / ⌃ / ⌥ / ⇧）加一个键' };
+    store.set(`hotkeys.${id}`, normalized);
+    registerHotkeys();
+    const status = hotkeyStatus[id];
+    return { ok: true, list: hotkeyList(), registered: status.registered, error: normalized && !status.registered ? '这个组合被别的软件占着，工具箱注册不上，换一个' : '' };
+  });
 
   const termShortcut = registerTermShortcut();
   if (!termShortcut.ok) console.warn('[terms]', termShortcut.error);

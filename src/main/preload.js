@@ -550,6 +550,11 @@ contextBridge.exposeInMainWorld('toolbox', {
     search: (query) => ipcRenderer.invoke('docs:search', query),
   },
 
+  hotkeys: {
+    list: () => ipcRenderer.invoke('hotkeys:list'),
+    set: (id, accel) => ipcRenderer.invoke('hotkeys:set', id, accel),
+  },
+
   vault: {
     list: () => ipcRenderer.invoke('vault:list'),
     save: (entry) => ipcRenderer.invoke('vault:save', entry),
