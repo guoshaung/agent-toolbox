@@ -98,6 +98,16 @@ export default {
           h('p', { class: 'faint settings__hint' }, '与主题正交的质感层：磨砂玻璃让卡片与工具条半透明并模糊背景；极光叠加流动光斑；霓虹开启辉光与发光边框。'),
           effectGrid,
         ),
+        (() => {
+          const card = h('section', { class: 'card', id: 'appearance-fx' }, h('h3', { class: 'card__title' }, '开合动效'),
+            h('p', { class: 'faint settings__hint' }, '关闭工具箱窗口时，整个界面被吸进中心的黑洞（旋转坍缩）；重新打开时从中心展开。只影响主窗口的开与关，不影响日常使用。'));
+          const input = h('input', { type: 'checkbox', class: 'switch__input' });
+          window.toolbox.app.windowFx?.().then((on) => { input.checked = on !== false; }).catch(() => { input.checked = true; });
+          input.addEventListener('change', () => { window.toolbox.app.setWindowFx?.(input.checked); toast(input.checked ? '开合动效已开，关一次窗口试试' : '开合动效已关', 'good'); });
+          card.append(h('div', { class: 'settings__row' }, h('div', {}, h('div', {}, '黑洞坍缩'), h('div', { class: 'faint settings__hint' }, '关窗坍缩、开窗展开')), h('label', { class: 'switch' }, input, h('span', { class: 'switch__track' }))));
+          return card;
+        })(),
+
         h('section', { class: 'card' },
           h('h3', { class: 'card__title' }, '侧栏 logo 与应用图标'),
           h('p', { class: 'faint settings__hint' }, '选择标记样式：侧栏顶部、窗口/任务栏（macOS 上还包括 Dock）图标会一起切换，点击即时生效。'),

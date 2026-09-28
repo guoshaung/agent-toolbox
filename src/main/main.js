@@ -788,6 +788,18 @@ function createWindow(showOnReady = true) {
   };
   mainWindow.on('resize', persistBounds);
   mainWindow.on('move', persistBounds);
+  // 关窗口前先让渲染层放「黑洞坍缩」动效，放完（或 800ms 超时）再真的关。
+  // 吸附模式、或关了动效开关时不拦。
+  let fxClosing = false;
+  mainWindow.on('close', (event) => {
+    if (fxClosing || store.get('ui.windowFx', true) === false || windowDock?.status().active) return;
+    event.preventDefault();
+    fxClosing = true;
+    try { mainWindow.webContents.send('app:collapse'); } catch { /* 页面没了就直接关 */ }
+    const finish = () => { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.close(); };
+    const timer = setTimeout(finish, 800);
+    ipcMain.once('app:collapse-done', () => { clearTimeout(timer); finish(); });
+  });
   // 焦点跑进 webview 时宿主页面的 document.hasFocus() 也是 false，渲染层区分不了
   // 「切到内嵌页面」和「整个应用失焦」。所以由主进程判断整窗失焦，再通知过去关面板。
   mainWindow.on('closed', () => {
@@ -2582,6 +2594,11 @@ function registerIpc() {
     app.quit();
     return { ok: true };
   });
+  // 坍缩动效放完渲染层发这个；真正的一次性监听在窗口 close 里用 ipcMain.once 挂。这里放一个常驻空监听，
+  // 一是让接线静态检查认得这个通道，二是没有进行中的关窗时收到也不报错。
+  ipcMain.on('app:collapse-done', () => {});
+  ipcMain.handle('app:windowFx', () => store.get('ui.windowFx', true) !== false);
+  ipcMain.handle('app:setWindowFx', (_e, on) => { store.set('ui.windowFx', Boolean(on)); return { ok: true }; });
   ipcMain.handle('app:reload', () => { if (mainWindow) mainWindow.reload(); });
   ipcMain.handle('app:openDevTools', () => {
     if (mainWindow) mainWindow.webContents.openDevTools({ mode: 'detach' });

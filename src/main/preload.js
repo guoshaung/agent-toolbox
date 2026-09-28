@@ -684,6 +684,11 @@ contextBridge.exposeInMainWorld('toolbox', {
     reload: () => ipcRenderer.invoke('app:reload'),
     openDevTools: () => ipcRenderer.invoke('app:openDevTools'),
     onNavigateTool: (callback) => ipcRenderer.on('app:navigate-tool', (_event, target) => callback(target)),
+    /** 窗口关闭前先放坍缩动效，放完告诉主进程可以真的关了 */
+    onCollapse: (callback) => ipcRenderer.on('app:collapse', () => callback()),
+    collapseDone: () => ipcRenderer.send('app:collapse-done'),
+    setWindowFx: (on) => ipcRenderer.invoke('app:setWindowFx', on),
+    windowFx: () => ipcRenderer.invoke('app:windowFx'),
     /** 用 PNG data URL 替换窗口/任务栏图标（macOS 上同时换 Dock 图标） */
     setAppIcon: (dataUrl) => ipcRenderer.invoke('app:setAppIcon', dataUrl),
   },

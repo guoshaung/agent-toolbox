@@ -1032,3 +1032,24 @@ body.is-dropping::after { content: ''; position: fixed; inset: 6px; z-index: 905
 .radial__node:hover .radial__pin, .radial__node:hover .radial__more, .radial__pin.is-pinned, .radial__more.is-open { opacity: 1; transform: scale(1); }
 .radial__pin.is-pinned { color: var(--warn); border-color: var(--warn); }
 .radial__more.is-open { color: var(--accent); border-color: var(--accent); }
+
+/* ---------- 开合动效：黑洞坍缩 / 展开 ---------- */
+.blackhole { position: fixed; inset: 0; z-index: 9999; pointer-events: none; display: grid; place-items: center; opacity: 0; }
+.blackhole.is-on { opacity: 1; }
+.blackhole__void { width: 10px; height: 10px; border-radius: 50%; background: radial-gradient(circle at 50% 50%, #000 55%, rgba(0,0,0,0) 72%); box-shadow: 0 0 60px 30px rgba(0,0,0,.6); transform: scale(0); }
+.blackhole__ring { position: absolute; width: 40px; height: 40px; border-radius: 50%; border: 3px solid transparent; border-top-color: var(--accent, #5b8cff); border-right-color: var(--accent-secondary, #c084fc); filter: drop-shadow(0 0 10px var(--accent-glow, rgba(91,140,255,.6))); transform: scale(0) rotate(0deg); opacity: 0; }
+/* 坍缩：界面被吸进中心，旋转 + 缩小到一个点，黑洞和吸积盘涨起来 */
+body.is-collapsing #app { animation: bh-collapse .6s cubic-bezier(.6,.02,.9,.3) forwards; transform-origin: 50% 50%; }
+body.is-collapsing .blackhole__void { animation: bh-void-grow .6s cubic-bezier(.5,.1,.9,.4) forwards; }
+body.is-collapsing .blackhole__ring { animation: bh-ring-grow .6s ease-out forwards; }
+/* 展开：从中心一个点旋转放大回来 */
+body.is-expanding #app { animation: bh-expand .7s cubic-bezier(.16,.84,.3,1) forwards; transform-origin: 50% 50%; }
+body.is-expanding .blackhole__void { animation: bh-void-shrink .5s ease-in forwards; }
+body.is-expanding .blackhole__ring { animation: bh-ring-shrink .6s ease-in forwards; }
+@keyframes bh-collapse { 0% { transform: scale(1) rotate(0); opacity: 1; filter: blur(0); } 70% { opacity: .85; } 100% { transform: scale(.02) rotate(200deg); opacity: 0; filter: blur(3px); } }
+@keyframes bh-expand { 0% { transform: scale(.02) rotate(-200deg); opacity: 0; filter: blur(3px); } 40% { opacity: 1; } 100% { transform: scale(1) rotate(0); opacity: 1; filter: blur(0); } }
+@keyframes bh-void-grow { 0% { transform: scale(0); } 60% { transform: scale(9); } 100% { transform: scale(26); } }
+@keyframes bh-void-shrink { 0% { transform: scale(20); } 100% { transform: scale(0); } }
+@keyframes bh-ring-grow { 0% { transform: scale(0) rotate(0); opacity: 0; } 30% { opacity: 1; } 100% { transform: scale(6) rotate(340deg); opacity: 0; } }
+@keyframes bh-ring-shrink { 0% { transform: scale(6) rotate(340deg); opacity: 0; } 40% { opacity: 1; } 100% { transform: scale(0) rotate(0); opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { body.is-collapsing #app, body.is-expanding #app, .blackhole__void, .blackhole__ring { animation-duration: .01ms !important; } }

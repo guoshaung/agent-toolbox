@@ -2,7 +2,8 @@
 <html lang="zh-CN">
 <head>
   <meta charset="utf-8" />
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data:; media-src 'self' data:; style-src 'self'; script-src 'self'; connect-src 'self'" />
+  <!-- style-src 需要 'unsafe-inline'：KaTeX 用 innerHTML 注入的公式带内联 style（分数高度等），没有它 Chromium 会剥掉这些样式属性、分数会塌成一行 -->
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data:; media-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'" />
   <title>Agent 工具箱</title>
   <link rel="stylesheet" href="styles/base.css" />
   <link rel="stylesheet" href="styles/tools.css" />

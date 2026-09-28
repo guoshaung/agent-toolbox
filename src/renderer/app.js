@@ -564,3 +564,39 @@ window.toolbox.remote.onCommand(async ({ requestId, type, payload }) => {
 });
 
 window.__ctx = ctx; // 方便在 DevTools 里手动调试
+
+// ---- 开合动效：黑洞坍缩（关窗前）/ 展开（打开时）----
+// 关窗时主进程先发 app:collapse，这里把整个界面吸进中心一个黑洞，放完通知主进程真的关。
+// 打开时（页面加载）反着放一遍。开关在「设置 → 外观」。
+{
+  const fx = document.createElement('div');
+  fx.className = 'blackhole';
+  fx.innerHTML = '<div class="blackhole__void"></div><div class="blackhole__ring"></div>';
+  const stage = document.getElementById('app');
+  function play(mode, done) {
+    document.body.classList.remove('is-collapsing', 'is-expanding');
+    if (!fx.isConnected) document.body.appendChild(fx);
+    void fx.offsetWidth;
+    fx.classList.remove('is-on');
+    void fx.offsetWidth;
+    fx.classList.add('is-on');
+    document.body.classList.add(mode === 'collapse' ? 'is-collapsing' : 'is-expanding');
+    const ms = mode === 'collapse' ? 620 : 700;
+    setTimeout(() => {
+      if (mode === 'expand') { document.body.classList.remove('is-expanding'); fx.classList.remove('is-on'); }
+      done && done();
+    }, ms);
+  }
+  window.toolbox.app.windowFx?.().then((on) => {
+    if (on === false) return;
+    // 让首帧先画出来再展开，避免白闪
+    requestAnimationFrame(() => requestAnimationFrame(() => play('expand')));
+  }).catch(() => {});
+  window.toolbox.app.onCollapse?.(() => {
+    window.toolbox.app.windowFx?.().then((on) => {
+      if (on === false) return window.toolbox.app.collapseDone?.();
+      play('collapse', () => window.toolbox.app.collapseDone?.());
+    }).catch(() => window.toolbox.app.collapseDone?.());
+  });
+  void stage;
+}
