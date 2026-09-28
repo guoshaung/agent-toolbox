@@ -52,6 +52,7 @@ const { DshService } = require('./dsh-service');
 const { AutoResearchService } = require('./autoresearch-service');
 const { ZoteroService } = require('./zotero');
 const { VaultService } = require('./vault');
+const { IdeasService } = require('./ideas');
 const { HOTKEYS, normalizeAccelerator, accelLabel } = require('./hotkeys');
 const { GazeService } = require('./gaze');
 const { TavernService } = require('./tavern-service');
@@ -1869,6 +1870,15 @@ function registerIpc() {
   ipcMain.handle('vault:generate', (_e, options) => ({ password: require('./vault').generatePassword(options || {}) }));
   ipcMain.handle('vault:strength', (_e, pw) => require('./vault').strength(pw));
   ipcMain.handle('vault:openFolder', () => shell.showItemInFolder(path.join(app.getPath('userData'), 'vault.json')));
+
+  // ---- 想法 → 提问：写成 md 放进 Obsidian 仓库，能在 Obsidian 打开或开终端对话 ----
+  const ideas = new IdeasService({ store, shell, dialog, getWindow: () => mainWindow, execFileAsync });
+  ipcMain.handle('ideas:status', () => ideas.status());
+  ipcMain.handle('ideas:pickVault', () => ideas.pickVault());
+  ipcMain.handle('ideas:writeQuestion', (_e, payload) => ideas.writeQuestion(payload || {}));
+  ipcMain.handle('ideas:openPath', (_e, p) => ideas.openPath(p));
+  ipcMain.handle('ideas:openInObsidian', (_e, p) => ideas.openInObsidian(p));
+  ipcMain.handle('ideas:openTerminalChat', (_e, payload) => ideas.openTerminalChat(payload || {}));
   ipcMain.handle('clip:clear', () => { clipHistory.length = 0; clipLast = ''; return { ok: true }; });
 
   // 学习记录：解释过什么、看懂过哪个项目、读过哪个文件、考了几分 —— 首页给一点进度感

@@ -1,6 +1,43 @@
 import { h, toast } from '../../core/ui.js';
 import { iconFor } from '../../core/icons.js';
+import { md } from '../../core/md.js';
+import katex from '../../../../node_modules/katex/dist/katex.mjs';
 import { BUCKETS, splitDump, pickFocus, streakOf, findDuplicates, staleTasks, parseAiTasks } from './parse.js';
+
+if (!document.querySelector('link[data-katex]')) {
+  const link = document.createElement('link');
+  link.rel = 'stylesheet'; link.href = '../../node_modules/katex/dist/katex.min.css'; link.dataset.katex = 'true';
+  document.head.appendChild(link);
+}
+
+/** Markdown + LaTeX（$..$ 行内、$$..$$ 独占一行）→ DOM。公式先占位保护，跑完 md() 再回填 katex。 */
+function renderRich(text) {
+  const math = [];
+  const src = String(text || '')
+    .replace(/\$\$([\s\S]+?)\$\$/g, (_, e) => { math.push({ e, display: true }); return `\u0000M${math.length - 1}\u0000`; })
+    .replace(/(?<!\\)\$([^$\n]+?)\$/g, (_, e) => { math.push({ e, display: false }); return `\u0000M${math.length - 1}\u0000`; });
+  const node = md(src);
+  if (!math.length) return node;
+  const walker = document.createTreeWalker(node, NodeFilter.SHOW_TEXT);
+  const targets = [];
+  while (walker.nextNode()) if (walker.currentNode.nodeValue.includes('\u0000')) targets.push(walker.currentNode);
+  for (const t of targets) {
+    const frag = document.createDocumentFragment();
+    t.nodeValue.split(/\u0000M(\d+)\u0000/).forEach((p, i) => {
+      if (i % 2 === 1) {
+        const m = math[Number(p)];
+        const el = h(m.display ? 'div' : 'span', { class: m.display ? 'tk__math-block' : 'tk__math' });
+        try { el.innerHTML = katex.renderToString(m.e, { displayMode: m.display, throwOnError: false, trust: false }); }
+        catch { el.textContent = m.display ? `$$${m.e}$$` : `$${m.e}$`; }
+        frag.append(el);
+      } else if (p) frag.append(document.createTextNode(p));
+    });
+    t.replaceWith(frag);
+  }
+  return node;
+}
+
+const firstLine = (text) => String(text || '').split('\n').map((l) => l.replace(/^#+\s*/, '').trim()).find(Boolean) || '未命名想法';
 
 /**
  * 任务：给懒人整理思绪用的。
@@ -36,9 +73,13 @@ export default {
     let draggingId = null;
     let skipped = new Set();   // 「换一个」跳过的，本次会话内不再当焦点
     let busy = false;
+    let view = config.get('tasks.view', 'tasks');   // tasks | ideas
+    let ideas = (config.get('tasks.ideas', []) || []).filter((x) => x && x.text);
+    let ideaQuery = '';
 
     function persist() { config.set('tasks.items', tasks); }
     function persistNotes() { config.set('tasks.notes', notes); }
+    function persistIdeas() { config.set('tasks.ideas', ideas.slice(0, 500)); }
     const tagColor = (tag) => TAG_COLORS[[...String(tag)].reduce((n, ch) => n + ch.charCodeAt(0), 0) % TAG_COLORS.length];
 
     // ---------- 头：现在就做这个 ----------
@@ -266,20 +307,131 @@ ${text}`);
       } catch (err) { toast(err.message || '模型没回应', 'bad'); } finally { busy = false; render(); }
     }
 
-    function render() { renderHero(); renderBoard(); renderSide(); }
+    // ---------- 想法：贴 AI 分析 / 灵感，公式照排；提问生成 md 给 Obsidian，能开终端对话 ----------
+    const ideaInput = h('textarea', { class: 'field tk__idea-input', rows: 4, placeholder: '把 AI 给的论文分析、你的想法、公式都贴进来，别怕乱。\n支持 Markdown 和 LaTeX：行内 $E=mc^2$，独占一行 $$\\int_0^1 x\\,dx = \\tfrac12$$\n⌘回车存下来' });
+    const ideaList = h('div', { class: 'tk__ideas-list' });
+    const ideaVault = h('span', { class: 'faint tk__idea-vault' });
 
-    root.append(
-      h('div', { class: 'bar tk__bar' }, h('strong', {}, '任务'), h('span', { class: 'faint' }, '倒进来、亮一件、拖一拖'), h('span', { class: 'tk__spacer' }), h('span', { class: 'faint tk__hint' }, '⌘K 里输「+ 事情」也能直接加')),
-      h('div', { class: 'tk__body' },
-        h('div', { class: 'tk__main' },
-          hero,
-          h('section', { class: 'tk__dump-card' }, h('div', { class: 'tk__dump-head' }, h('strong', {}, '倒出来'), h('span', { class: 'faint' }, '回车直接加 · ⇧回车换行 · AI 只在你点的时候才上')), dumpInput, h('div', { class: 'tk__dump-actions' }, dumpPlain, dumpAi, dumpPaste)),
-          board,
-          doneWrap,
+    async function refreshVault() {
+      try { const s = await window.toolbox.ideas.status(); ideaVault.textContent = s.vault ? `提问存到：${s.vault.replace(/^.*\//, '📁 ')}` : '还没选提问文件夹（第一次提问时会让你选 Obsidian 仓库）'; ideaVault.title = s.vault || ''; ideaVault.dataset.clis = (s.clis || []).join(','); ideaVault.dataset.cli = s.defaultCli || ''; }
+      catch { ideaVault.textContent = ''; }
+    }
+
+    function saveIdea() {
+      const text = ideaInput.value.trim();
+      if (!text) return toast('先写点东西', 'info');
+      ideas = [{ id: `idea-${Date.now().toString(36)}`, text, tags: [], at: Date.now() }, ...ideas];
+      persistIdeas();
+      ideaInput.value = '';
+      renderIdeas();
+      toast('记下来了', 'good');
+    }
+
+    function ideaCard(idea) {
+      const preview = h('div', { class: 'tk__idea-preview' }, renderRich(idea.text));
+      const editor = h('textarea', { class: 'field tk__idea-edit', rows: 6, hidden: true }, idea.text);
+      const card = h('article', { class: 'tk__idea-card' },
+        h('div', { class: 'tk__idea-meta' },
+          h('span', { class: 'faint' }, new Date(idea.at).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })),
+          ...(idea.tags || []).map((t) => h('span', { class: 'tk__tag', style: { '--tag-color': tagColor(t) } }, t)),
+          h('span', { class: 'tk__spacer' }),
+          h('button', { class: 'btn btn--xs btn--primary', title: '基于这条想法生成一个提问 md', onclick: () => openAsk(idea) }, '提问'),
+          h('button', { class: 'btn btn--xs btn--ghost', title: '编辑', onclick: () => { const on = editor.hidden; editor.hidden = !on; preview.hidden = on; if (on) editor.focus(); } }, '✎'),
+          h('button', { class: 'btn btn--xs btn--ghost', title: '复制原文', onclick: async () => { await window.toolbox.clipboard.write(idea.text); toast('已复制', 'good'); } }, '⧉'),
+          h('button', { class: 'btn btn--xs btn--ghost', title: '删除', onclick: () => { if (!window.confirm('删掉这条想法？')) return; ideas = ideas.filter((x) => x.id !== idea.id); persistIdeas(); renderIdeas(); } }, '×'),
         ),
-        side,
-      ),
+        preview,
+        editor,
+      );
+      editor.addEventListener('blur', () => { const v = editor.value.trim(); if (v && v !== idea.text) { idea.text = v; persistIdeas(); } editor.hidden = true; preview.hidden = false; preview.replaceChildren(renderRich(idea.text)); });
+      return card;
+    }
+
+    /** 提问面板：写问题 → 生成 md（可带这条想法当上下文）→ Obsidian 打开 / 开终端对话 */
+    function openAsk(idea) {
+      const q = h('textarea', { class: 'field tk__ask-q', rows: 2, placeholder: '想问什么？例如：这个重参数化技巧为什么能让梯度传回去？' });
+      const clis = (ideaVault.dataset.clis || '').split(',').filter(Boolean);
+      const cliSel = h('select', { class: 'field field--sm tk__ask-cli' }, ...(clis.length ? clis : ['(未装编码 agent)']).map((c) => h('option', { value: c }, c)));
+      if (ideaVault.dataset.cli) cliSel.value = ideaVault.dataset.cli;
+      const status = h('div', { class: 'faint tk__ask-status' });
+      let lastFile = '';
+      async function gen() {
+        const question = q.value.trim();
+        if (!question && !idea) return toast('先写下问题', 'info');
+        status.textContent = '生成中…';
+        const r = await window.toolbox.ideas.writeQuestion({ title: question || firstLine(idea.text), question, context: idea ? idea.text : '', tags: idea?.tags || [] });
+        if (!r.ok) { status.textContent = r.error || '生成失败'; return toast(r.error || '生成失败', 'bad'); }
+        lastFile = r.path;
+        status.replaceChildren(
+          h('span', {}, `已生成 ${r.rel}　`),
+          h('button', { class: 'btn btn--xs btn--primary', onclick: () => window.toolbox.ideas.openInObsidian(lastFile) }, '在 Obsidian 打开'),
+          h('button', { class: 'btn btn--xs', disabled: !clis.length, title: clis.length ? '在终端里开一个编码 agent 围绕这个文件对话' : '没装 codex / claude 等 CLI', onclick: async () => { const rr = await window.toolbox.ideas.openTerminalChat({ file: lastFile, cli: cliSel.value }); toast(rr.ok ? `已在终端里用 ${rr.cli} 打开对话` : rr.error, rr.ok ? 'good' : 'bad', 5000); } }, '开终端问'),
+          h('button', { class: 'btn btn--xs btn--ghost', onclick: () => window.toolbox.ideas.openPath(lastFile) }, '打开文件'),
+        );
+        refreshVault();
+      }
+      const panel = h('div', { class: 'tk__ask' },
+        h('div', { class: 'tk__ask-head' }, h('strong', {}, '提问'), h('span', { class: 'faint' }, idea ? '会把这条想法作为上下文写进 md' : ''), h('span', { class: 'tk__spacer' }), h('button', { class: 'btn btn--xs btn--ghost', onclick: () => panel.remove() }, '收起')),
+        q,
+        h('div', { class: 'tk__ask-actions' }, h('button', { class: 'btn btn--sm btn--primary', onclick: gen }, '生成提问 md'), h('span', { class: 'faint' }, '终端用'), cliSel, h('button', { class: 'btn btn--sm btn--ghost', onclick: () => window.toolbox.ideas.pickVault().then(refreshVault) }, '选仓库…')),
+        status,
+      );
+      const existing = ideaList.querySelector('.tk__ask'); if (existing) existing.remove();
+      if (idea) { const cardEl = [...ideaList.children].find((c) => c.contains(document.activeElement)) || ideaList.firstElementChild; ideaList.insertBefore(panel, cardEl?.nextSibling || null); }
+      else ideaList.prepend(panel);
+      q.focus();
+    }
+
+    function renderIdeas() {
+      const list = ideas.filter((x) => !ideaQuery || x.text.toLowerCase().includes(ideaQuery));
+      ideaList.replaceChildren(...(list.length ? list.map(ideaCard) : [h('div', { class: 'tk__ideas-empty faint' }, ideas.length ? '没有匹配的' : '还没有想法。把 AI 的论文分析、你的灵感贴上面，公式会照排，之后能直接提问。')]));
+    }
+
+    function render() {
+      if (view === 'tasks') { renderHero(); renderBoard(); renderSide(); }
+      else { renderIdeas(); refreshVault(); }
+      tasksPane.hidden = view !== 'tasks';
+      ideasPane.hidden = view !== 'ideas';
+      barSub.textContent = view === 'ideas' ? '记想法、贴公式、生成提问' : '倒进来、亮一件、拖一拖';
+      for (const b of viewToggle.children) b.classList.toggle('is-active', b.dataset.view === view);
+    }
+    const barSub = h('span', { class: 'faint tk__bar-sub' });
+
+    const viewToggle = h('div', { class: 'tk__view-toggle' },
+      h('button', { class: 'btn btn--sm', dataset: { view: 'tasks' }, onclick: () => { view = 'tasks'; config.set('tasks.view', view); render(); } }, '任务'),
+      h('button', { class: 'btn btn--sm', dataset: { view: 'ideas' }, onclick: () => { view = 'ideas'; config.set('tasks.view', view); render(); } }, '想法'),
     );
+    const tasksPane = h('div', { class: 'tk__body' },
+      h('div', { class: 'tk__main' },
+        hero,
+        h('section', { class: 'tk__dump-card' }, h('div', { class: 'tk__dump-head' }, h('strong', {}, '倒出来'), h('span', { class: 'faint' }, '回车直接加 · ⇧回车换行 · AI 只在你点的时候才上')), dumpInput, h('div', { class: 'tk__dump-actions' }, dumpPlain, dumpAi, dumpPaste)),
+        board,
+        doneWrap,
+      ),
+      side,
+    );
+    const ideaSearch = h('input', { class: 'field field--sm tk__idea-search', placeholder: '搜想法…', oninput: (e) => { ideaQuery = e.target.value.trim().toLowerCase(); renderIdeas(); } });
+    const ideasPane = h('div', { class: 'tk__ideas', hidden: true },
+      h('section', { class: 'tk__idea-capture' },
+        h('div', { class: 'tk__dump-head' }, h('strong', {}, '记个想法'), h('span', { class: 'faint' }, '贴 AI 分析 / 灵感 / 公式，别怕乱 · ⌘回车存下来')),
+        ideaInput,
+        h('div', { class: 'tk__dump-actions' },
+          h('button', { class: 'btn btn--primary', onclick: saveIdea }, '记下来'),
+          h('button', { class: 'btn btn--ghost', onclick: async () => { const t = await window.toolbox.clipboard.read?.(); if (!t) return toast('剪贴板是空的', 'info'); ideaInput.value = (ideaInput.value ? `${ideaInput.value}\n` : '') + t; ideaInput.focus(); } }, '从剪贴板粘'),
+          h('button', { class: 'btn btn--ghost', title: '不基于某条想法，直接生成一个空白提问 md', onclick: () => openAsk(null) }, '直接提问'),
+          h('span', { class: 'tk__spacer' }),
+          ideaSearch,
+        ),
+        h('div', { class: 'tk__idea-vault-row' }, ideaVault, h('button', { class: 'btn btn--xs btn--ghost', onclick: () => window.toolbox.ideas.pickVault().then(refreshVault) }, '选仓库…')),
+      ),
+      ideaList,
+    );
+    root.append(
+      h('div', { class: 'bar tk__bar' }, h('strong', {}, '任务'), viewToggle, barSub, h('span', { class: 'tk__spacer' }), h('span', { class: 'faint tk__hint' }, '⌘K 里输「+ 事情」也能直接加')),
+      tasksPane,
+      ideasPane,
+    );
+    ideaInput.addEventListener('keydown', (e) => { if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); saveIdea(); } });
     // 回车 = 直接写进下面（本地规则拆，不走模型）；⇧回车换行；⌘回车才叫 AI
     dumpInput.addEventListener('keydown', (e) => {
       if (e.key !== 'Enter' || e.isComposing || e.shiftKey) return;
@@ -287,6 +439,6 @@ ${text}`);
       dump(Boolean(e.metaKey || e.ctrlKey));
     });
     render();
-    return { activate: () => { tasks = (config.get('tasks.items', []) || []).map((t) => ({ ...t, bucket: BUCKETS.some((b) => b.id === t.bucket) ? t.bucket : 'today' })); render(); } };
+    return { activate: () => { tasks = (config.get('tasks.items', []) || []).map((t) => ({ ...t, bucket: BUCKETS.some((b) => b.id === t.bucket) ? t.bucket : 'today' })); ideas = (config.get('tasks.ideas', []) || []).filter((x) => x && x.text); render(); } };
   },
 };

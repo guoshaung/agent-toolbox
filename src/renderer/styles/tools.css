@@ -4682,3 +4682,31 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .ca__topics { display: flex; flex-wrap: wrap; gap: 5px; }
 .ca__mbti-axes { display: flex; flex-wrap: wrap; gap: 10px; font-size: 11px; }
 @media (max-width: 1000px) { .ca__body { grid-template-columns: 1fr; } }
+
+/* ---------- 任务 · 想法视图 ---------- */
+.tk__view-toggle { display: inline-flex; gap: 4px; margin-left: 6px; }
+.tk__view-toggle .btn.is-active { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
+.tk__bar-sub { font-size: 12px; }
+.tk__ideas { flex: 1; min-height: 0; overflow-y: auto; padding: 16px 20px 30px; display: flex; flex-direction: column; gap: 14px; }
+.tk__idea-capture { padding: 14px 16px; border: 1px solid var(--line-soft); border-radius: 14px; background: var(--panel); display: flex; flex-direction: column; gap: 10px; }
+.tk__idea-input { resize: vertical; min-height: 96px; font-size: 14px; line-height: 1.7; }
+.tk__idea-search { width: 180px; }
+.tk__idea-vault-row { display: flex; align-items: center; gap: 8px; }
+.tk__idea-vault { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
+.tk__ideas-list { display: flex; flex-direction: column; gap: 10px; }
+.tk__ideas-empty { padding: 30px 10px; text-align: center; }
+.tk__idea-card { border: 1px solid var(--line-soft); border-radius: 12px; background: var(--panel); padding: 10px 14px; display: flex; flex-direction: column; gap: 6px; }
+.tk__idea-meta { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.tk__idea-preview { font-size: 13.5px; line-height: 1.75; overflow-x: auto; }
+.tk__idea-preview p { margin: 6px 0; }
+.tk__idea-preview h2 { font-size: 15px; margin: 8px 0 4px; }
+.tk__idea-preview code { padding: 1px 5px; border-radius: 4px; background: var(--bg-sunken); font: 12px/1.5 var(--mono); }
+.tk__idea-preview pre { padding: 10px 12px; border-radius: 8px; background: var(--bg-sunken); overflow-x: auto; }
+.tk__math-block { margin: 8px 0; overflow-x: auto; }
+.tk__idea-edit { resize: vertical; font-size: 13px; line-height: 1.6; }
+.tk__ask { border: 1px solid var(--accent); border-radius: 12px; background: var(--accent-soft); padding: 12px 14px; display: flex; flex-direction: column; gap: 8px; }
+.tk__ask-head { display: flex; align-items: center; gap: 8px; }
+.tk__ask-q { resize: vertical; font-size: 13.5px; }
+.tk__ask-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.tk__ask-cli { width: 110px; }
+.tk__ask-status { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: 12.5px; }

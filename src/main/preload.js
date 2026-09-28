@@ -586,6 +586,15 @@ contextBridge.exposeInMainWorld('toolbox', {
     set: (id, accel) => ipcRenderer.invoke('hotkeys:set', id, accel),
   },
 
+  ideas: {
+    status: () => ipcRenderer.invoke('ideas:status'),
+    pickVault: () => ipcRenderer.invoke('ideas:pickVault'),
+    writeQuestion: (payload) => ipcRenderer.invoke('ideas:writeQuestion', payload),
+    openPath: (p) => ipcRenderer.invoke('ideas:openPath', p),
+    openInObsidian: (p) => ipcRenderer.invoke('ideas:openInObsidian', p),
+    openTerminalChat: (payload) => ipcRenderer.invoke('ideas:openTerminalChat', payload),
+  },
+
   vault: {
     list: () => ipcRenderer.invoke('vault:list'),
     save: (entry) => ipcRenderer.invoke('vault:save', entry),
