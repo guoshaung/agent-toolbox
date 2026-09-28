@@ -4640,3 +4640,6 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 @media (max-width: 1000px) { .tk__body { grid-template-columns: 1fr; } .tk__board { grid-template-columns: 1fr; } }
 .pet-gaze__btns { display: flex; gap: 6px; flex: 0 0 auto; }
 .practice__display { display: block; max-width: 100%; max-height: 520px; margin: 10px 0 4px; border-radius: 10px; background: #fff; padding: 8px; }
+.practice__archives { display: flex; flex-direction: column; gap: 4px; }
+.practice__archive { display: flex; align-items: center; gap: 10px; padding: 5px 8px; border-radius: 8px; background: var(--bg-sunken); font-size: 12.5px; }
+.practice__archive-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

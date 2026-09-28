@@ -387,6 +387,39 @@ export function createPracticePanel(ctx) {
     selectCell(focusCell || cells[0], focus);
   }
 
+  /**
+   * 「存档并新建」：现在这份整体收进存档（⋯ 菜单里能找回），然后换一份干净的。
+   * 这才是「清空」的正确含义 —— 写过的东西一律不丢。
+   */
+  function archiveAndReset() {
+    if (!cells.length) return;
+    const snapshot = cells.map((cell) => ({ code: cell.editor.value, title: cell.title, purpose: cell.purpose, reference: String(cell.reference || ''), executionCount: cell.executionCount || 0 }));
+    if (!snapshot.some((s) => s.code.trim())) return toast('这份是空的，不用存', 'info');
+    const archives = config.get('practice.archives', []) || [];
+    const label = repo ? `${repo.name} · ${repo.lessons[lessonIndex]?.label || ''}` : projectId ? `项目 ${projectId}` : `${track.name} · ${currentSample().title}`;
+    archives.unshift({ id: `a_${Date.now().toString(36)}`, at: Date.now(), key: notebookStateKey(), label: label.slice(0, 60), cells: snapshot.slice(0, 40) });
+    config.set('practice.archives', archives.slice(0, 60));
+    cells = [createCell('', { title: '新的一格', purpose: '上一份已经收进存档（右上 ⋯ → 存档）' })];
+    renderNotebook(cells[0], true);
+    persistNotebook();
+    renderArchives();
+    toast(`已存档 ${snapshot.length} 格，换了一份干净的`, 'good');
+  }
+
+  const archiveList = h('div', { class: 'practice__archives' });
+  function renderArchives() {
+    const archives = config.get('practice.archives', []) || [];
+    archiveList.replaceChildren(
+      h('div', { class: 'practice__overflow-row' }, h('span', { class: 'faint' }, `存档（${archives.length}）`), h('span', { class: 'faint' }, '「存档并新建」收起来的都在这，点「找回」替换当前格子')),
+      ...archives.slice(0, 20).map((a) => h('div', { class: 'practice__archive' },
+        h('span', { class: 'practice__archive-label' }, a.label || '未命名'),
+        h('span', { class: 'faint' }, `${a.cells.length} 格 · ${new Date(a.at).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}`),
+        h('button', { class: 'btn btn--xs', onclick: () => { persistNotebook(); cells = a.cells.map((s) => restoreNotebookCell(s)); renderNotebook(cells[0], false); persistNotebook(); toast('找回来了', 'good'); } }, '找回'),
+        h('button', { class: 'btn btn--xs btn--ghost', onclick: () => { config.set('practice.archives', (config.get('practice.archives', []) || []).filter((x) => x.id !== a.id)); renderArchives(); } }, '删'),
+      )),
+    );
+  }
+
   function addCell() {
     const cell = createCell('');
     cells.push(cell);
@@ -777,8 +810,10 @@ export function createPracticePanel(ctx) {
     try {
       const result = await window.toolbox.practice.install({ track: track.id, packages });
       if (!result.ok) {
-        cell.dependencyStatus.textContent = result.error || '安装失败';
-        return toast(result.error || '第三方包安装失败', 'bad', 6000);
+        const notFound = /No solution found|not found in the package registry|No matching distribution/i.test(result.error || '');
+        const msg = notFound ? `pip 仓库里没有「${packages}」这个包。要么是拼写（标准库 abc / os / re 都是小写、不用装），要么包名和模块名不一样（cv2 → opencv-python）。` : (result.error || '安装失败');
+        cell.dependencyStatus.textContent = msg;
+        return toast(msg, 'bad', 7000);
       }
       environment = { ...environment, ...(result.environment || {}) };
       cell.dependencyStatus.textContent = result.message || '依赖已安装，可以运行代码';
@@ -1452,12 +1487,10 @@ export function createPracticePanel(ctx) {
       if (!r.ok) return toast(r.error || '文件读不出来', 'bad');
       snapshots = lessonCells(lesson.rel, r.code || '', lesson.lang);
     }
-    // 存档只认「确实是这一课」的：防抖存盘可能在切课途中把上一份格子存到这个 key 下
-    const prefix = lesson.kind === 'readme' ? 'README 示例' : `${lesson.rel.split('/').pop()} · `;   // 笔记本课的标题也是「文件名 · 」开头
+    // 有存档就用存档：你自己加的格子、改过的代码都在里面，绝不能因为「标题不像」整份扔掉。
+    // 切课途中串 key 的问题已经用 switchingLesson 挡住了。
     const saved = (config.get('practice.notebooks', {}) || {})[notebookStateKey()];
-    // 「来自 xxx · name」是 NameError 时从仓库里搬来的定义格，也属于这一课
-    const usable = Array.isArray(saved) && saved.length && saved.every((s) => String(s.title || '').startsWith(prefix) || String(s.title || '').startsWith('来自 '));
-    cells = usable ? saved.map((s) => restoreNotebookCell(s)) : snapshots.map((s) => createCell(s.code, s));
+    cells = Array.isArray(saved) && saved.length ? saved.map((s) => restoreNotebookCell(s)) : snapshots.map((s) => createCell(s.code, s));
     renderNotebook(cells[0], false);
     updateMeta();
     renderRepoHead();
@@ -1491,10 +1524,13 @@ export function createPracticePanel(ctx) {
       h('button', { class: 'btn btn--sm', title: '清空所有单元格输出和执行编号', onclick: clearOutputs }, '清空输出'),
     ),
     h('div', { class: 'practice__overflow-desc faint' }, description),
+    archiveList,
     terminalPanel,
     workspacePanel,
     projectInfo,
   );
+
+  renderArchives();
 
   const overflowBtn = h('button', {
     class: 'btn btn--sm btn--ghost practice__icon-btn',
@@ -1511,6 +1547,7 @@ export function createPracticePanel(ctx) {
       runAllBtn,
       h('button', { class: 'btn btn--sm practice__icon-btn', title: '在末尾添加单元格', onclick: addCell }, '＋'),
       h('button', { class: 'btn btn--sm practice__icon-btn', title: '删除当前单元格', onclick: removeCell }, '−'),
+      h('button', { class: 'btn btn--sm', title: '把现在这份整体收进存档，然后换一份干净的（写过的东西不丢，⋯ 菜单里能找回）', onclick: archiveAndReset }, '存档并新建'),
       h('span', { class: 'practice__bar-sep' }),
       practiceBtn,
       ghostBtn,

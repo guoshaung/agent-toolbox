@@ -8,9 +8,10 @@ const src = require('node:fs').readFileSync(require('node:path').join(__dirname,
 const harness = new Function(`${src.slice(src.indexOf('function pythonHarness'), src.indexOf('let vizInstance'))}; return pythonHarness;`)();
 
 test('实践敲码：最后一行表达式像 Jupyter 一样显示，graphviz 图变成 dot 标记', () => {
+  const { spawnSync } = require('node:child_process');
   let py = '';
-  try { py = execFileSync('which', ['python3'], { encoding: 'utf8' }).trim(); } catch { /* 没有 python 就跳过 */ }
-  if (!py) return;
+  for (const cand of ['python3', 'python']) { const r = spawnSync(cand, ['-c', 'print(1)'], { encoding: 'utf8' }); if (!r.error && r.status === 0 && r.stdout.trim() === '1') { py = cand; break; } }
+  if (!py) return;   // 没有能跑的 python 就跳过（Windows 打包机上 python3 是商店占位）
   const out = execFileSync(py, ['-'], { input: harness('x = 2', 'y = x * 21\ny'), encoding: 'utf8' });
   assert.match(out, /^42\s*$/m);
   const cls = 'class Digraph:\n    def __init__(self): self.source = "digraph { a -> b }"\n';
