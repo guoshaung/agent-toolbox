@@ -1068,11 +1068,27 @@ body.is-expanding .blackhole__ring { animation: bh-ring-shrink 1.05s ease-in for
 /* 顶栏外链（今日大模型等）的内嵌网页面板：盖满窗口的一层，自带工具条 */
 .webpanel { position: fixed; inset: 0; z-index: 2400; display: flex; flex-direction: column; background: var(--bg); }
 .webpanel[hidden] { display: none !important; }
-.webpanel__bar { flex: 0 0 auto; gap: 6px; padding: 7px 10px; border-bottom: 1px solid var(--line-soft, var(--line)); -webkit-app-region: no-drag; }
+/* 工具条本身可拖动窗口；里面的按钮/输入框不拖。macOS 左侧留出红绿灯安全区 */
+.webpanel__bar { flex: 0 0 auto; gap: 6px; padding: 7px 10px; border-bottom: 1px solid var(--line-soft, var(--line)); -webkit-app-region: drag; }
+.webpanel__bar > button, .webpanel__bar > input { -webkit-app-region: no-drag; }
+.webpanel__macgap { display: none; flex: 0 0 auto; width: 68px; height: 1px; }
+.webpanel.is-mac .webpanel__macgap { display: block; }
 .webpanel__title { flex: 0 0 auto; color: var(--text); font-size: 13px; margin: 0 4px 0 2px; white-space: nowrap; }
 .webpanel__addr { flex: 1; min-width: 0; font-size: 11.5px; color: var(--text-dim); }
-.webpanel__frame { flex: 1; min-height: 0; display: flex; background: #fff; }
+.webpanel__frame { position: relative; flex: 1; min-height: 0; display: flex; background: #fff; }
 .webpanel__frame webview { flex: 1; min-height: 0; }
+
+/* 「少女祈祷中」加载层：和视频学习区同一只，慢加载时盖在网页上 */
+.webpanel__loading { position: absolute; inset: 0; z-index: 5; display: grid; place-content: center; justify-items: center; gap: 8px; pointer-events: none; color: #4c5570; background: rgba(246, 248, 255, .92); transition: opacity .24s ease, visibility .24s ease; }
+.webpanel__loading[hidden] { display: grid !important; opacity: 0; visibility: hidden; }
+.webpanel__loading > strong { color: #3d4565; font: 700 15px/1.3 "PingFang SC", "Microsoft YaHei", sans-serif; letter-spacing: .08em; }
+.webpanel__loading-note { color: #737c98; font-size: 11px; }
+.webpanel__loading-character { position: relative; width: 126px; height: 126px; filter: drop-shadow(0 12px 18px rgba(74, 84, 150, .22)); animation: webpanel-prayer-float 3s ease-in-out infinite; }
+.webpanel__loading-character::before { content: ''; position: absolute; inset: 7px; border: 2px solid rgba(108, 132, 224, .2); border-top-color: #7d91eb; border-right-color: #bb8ce8; border-radius: 50%; animation: webpanel-prayer-spin 1.2s linear infinite; }
+.webpanel__loading-character svg { display: block; width: 100%; height: 100%; }
+@keyframes webpanel-prayer-float { 0%, 100% { transform: translateY(0) rotate(-1deg); } 50% { transform: translateY(-7px) rotate(1deg); } }
+@keyframes webpanel-prayer-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .webpanel__loading-character, .webpanel__loading-character::before { animation: none; } }
 
 /* DSH 控制台内嵌 webview（原先甩去系统浏览器，现在就地展示） */
 .dsh__frame { flex: 1; min-height: 0; display: flex; background: #fff; }
