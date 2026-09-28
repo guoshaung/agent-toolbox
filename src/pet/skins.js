@@ -17,6 +17,11 @@ export const PET_SKINS = [
   { id: 'pirate-red', name: '海盗', note: '二次元 · 三角帽、眼罩', src: 'assets/pirate-red.svg' },
   { id: 'dragon-teal', name: '龙娘', note: '二次元 · 龙角、龙尾', src: 'assets/dragon-teal.svg' },
   { id: 'vampire-violet', name: '吸血鬼', note: '二次元 · 小尖牙、披风', src: 'assets/vampire-violet.svg' },
+  { id: 'witch-purple', name: '尖帽女巫', note: '二次元 · 尖顶帽、扫帚', src: 'assets/witch-purple.svg' },
+  { id: 'panda-hoodie', name: '熊猫兜帽', note: '二次元 · 白兜帽、熊猫耳', src: 'assets/panda-hoodie.svg' },
+  { id: 'idol-star', name: '星之偶像', note: '二次元 · 星星发饰、话筒', src: 'assets/idol-star.svg' },
+  { id: 'samurai-red', name: '武士', note: '二次元 · 红头巾、佩刀', src: 'assets/samurai-red.svg' },
+  { id: 'ghost-mint', name: '幽灵', note: '二次元 · 薄荷发、小幽灵', src: 'assets/ghost-mint.svg' },
 ];
 
 export function resolveSkin(settings) {

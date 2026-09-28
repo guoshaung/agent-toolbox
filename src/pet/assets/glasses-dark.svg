@@ -42,6 +42,10 @@
 <path d="M100 96c3-13 25-13 29 0" stroke="#242638" stroke-width="3.8" fill="none" stroke-linecap="round"/>
 <path d="M129 96l5-4M126 91l3-4" stroke="#242638" stroke-width="2.4" stroke-linecap="round"/>
 <path d="M104 123q11 5 22 0" stroke="#242638" stroke-width="1.4" fill="none" stroke-linecap="round" opacity=".5"/>
+<ellipse cx="65" cy="106" rx="15" ry="0" fill="#ffefe6"><animate attributeName="ry" values="0;0;0;20;0;0" keyTimes="0;0.9;0.93;0.955;0.985;1" dur="5.4s" repeatCount="indefinite"/></ellipse>
+<path d="M52 107q13 7 26 0" stroke="#242638" stroke-width="0" fill="none" stroke-linecap="round"><animate attributeName="stroke-width" values="0;0;0;3.6;0;0" keyTimes="0;0.9;0.93;0.955;0.985;1" dur="5.4s" repeatCount="indefinite"/></path>
+<ellipse cx="115" cy="106" rx="15" ry="0" fill="#ffefe6"><animate attributeName="ry" values="0;0;0;20;0;0" keyTimes="0;0.9;0.93;0.955;0.985;1" dur="5.4s" repeatCount="indefinite"/></ellipse>
+<path d="M102 107q13 7 26 0" stroke="#242638" stroke-width="0" fill="none" stroke-linecap="round"><animate attributeName="stroke-width" values="0;0;0;3.6;0;0" keyTimes="0;0.9;0.93;0.955;0.985;1" dur="5.4s" repeatCount="indefinite"/></path>
 <path d="M54 78q11-6 22-1" stroke="#1c1e30" stroke-width="2" fill="none" stroke-linecap="round" opacity=".85"/><path d="M104 77q11-5 22 1" stroke="#1c1e30" stroke-width="2" fill="none" stroke-linecap="round" opacity=".85"/>
 <path d="M86 132q4 3 8 0" stroke="#c95c74" stroke-width="2" fill="none" stroke-linecap="round"/>
 <path d="M30 94c2-40 28-64 60-64s58 24 60 64c-6-4-11-12-14-24-4 10-10 16-18 18-3-8-6-14-9-22-3 8-6 14-9 22-8-2-14-8-18-18-3 12-8 20-14 24-4-10-8-18-12-24-6 8-12 16-26 24z" fill="url(#glasses-h)"/>

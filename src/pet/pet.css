@@ -71,23 +71,61 @@ textarea { height: 106px; resize: none; font: var(--code-font)/1.52 ui-monospace
 
 /* 待机动作
  *
- * 以前只有 hover 才动一下，不碰它就是一张贴在屏幕上的静图，一点不像「宠物」。
- * 两层分开做，互不打架：图片自己呼吸（3.6s），整个按钮偶尔轻轻跳一下（9s，
- * 大部分时间是静止的，只在末尾动一下）。幅度都压得很小 —— 它常年待在屏幕角上，
- * 晃太大会一直抢注意力。
- */
+ * 分两层，互不打架：
+ *  - 图片自己「呼吸」，一直轻轻缩放（idle-breathe），底噪一样的常动，让它不像贴纸。
+ *  - 整个按钮由 pet.js 的调度器隔几秒随机挑一个「动作」演一遍（跳 / 摇头 / 抖 /
+ *    伸懒腰 / 点头 / 探身），演完把 class 摘掉，回到静止。这样不是同一个循环反复放，
+ *    看着才有活气。眨眼是烘进每个 SVG 里的（SMIL），和皮肤一起动。
+ * 幅度都压得小 —— 它常年待在屏幕角上，晃太大会一直抢注意力。
+ * 另外内置皮肤里已有 SMIL 眨眼；这里只管身体。 */
 @keyframes idle-breathe {
   0%, 100% { transform: scale(1) translateY(0); }
-  50% { transform: scale(1.03) translateY(-1.5px); }
+  50% { transform: scale(1.035) translateY(-1.5px); }
 }
-@keyframes idle-hop {
-  0%, 82%, 100% { transform: translateY(0) rotate(0); }
-  87% { transform: translateY(-5px) rotate(-2.5deg); }
-  92% { transform: translateY(0) rotate(1.5deg); }
-  96% { transform: translateY(-2px) rotate(0); }
+.avatar img { animation: idle-breathe 3.6s ease-in-out infinite; transition: filter .2s; }
+
+/* 每个动作都是「一遍就停」，末态回到原样，好让调度器随时换下一个 */
+@keyframes act-hop {
+  0%, 100% { transform: translateY(0) rotate(0); }
+  30% { transform: translateY(-9px) rotate(-3deg); }
+  55% { transform: translateY(0) rotate(2deg); }
+  72% { transform: translateY(-4px) rotate(-1deg); }
+  88% { transform: translateY(0) rotate(0.5deg); }
 }
-.avatar img { animation: idle-breathe 3.6s ease-in-out infinite; }
-.avatar { animation: idle-hop 9s ease-in-out infinite; }
+@keyframes act-sway {
+  0%, 100% { transform: rotate(0) translateX(0); }
+  25% { transform: rotate(-5deg) translateX(-3px); }
+  50% { transform: rotate(0) translateX(0); }
+  75% { transform: rotate(5deg) translateX(3px); }
+}
+@keyframes act-wobble {
+  0%, 100% { transform: rotate(0); }
+  15% { transform: rotate(-4deg); } 30% { transform: rotate(4deg); }
+  45% { transform: rotate(-3deg); } 60% { transform: rotate(3deg); }
+  75% { transform: rotate(-1.5deg); }
+}
+@keyframes act-stretch {
+  0%, 100% { transform: scaleX(1) scaleY(1) translateY(0); }
+  35% { transform: scaleX(.92) scaleY(1.12) translateY(-4px); }
+  70% { transform: scaleX(1.08) scaleY(.9) translateY(0); }
+}
+@keyframes act-nod {
+  0%, 100% { transform: rotate(0) translateY(0); }
+  30% { transform: rotate(9deg) translateY(1px); }
+  60% { transform: rotate(-3deg) translateY(0); }
+}
+@keyframes act-peek {
+  0%, 100% { transform: translateX(0) rotate(0); }
+  40% { transform: translateX(-8px) rotate(-6deg); }
+  70% { transform: translateX(-8px) rotate(-6deg); }
+}
+.avatar { animation: none; transform-origin: bottom center; }
+.avatar.act-hop { animation: act-hop 1.1s ease-in-out; }
+.avatar.act-sway { animation: act-sway 2s ease-in-out; }
+.avatar.act-wobble { animation: act-wobble 1s ease-in-out; }
+.avatar.act-stretch { animation: act-stretch 1.4s ease-in-out; }
+.avatar.act-nod { animation: act-nod 1s ease-in-out; }
+.avatar.act-peek { animation: act-peek 1.6s ease-in-out; }
 /* 拖动和展开时别再动，否则跟着手一起抖 */
 .avatar:active, .shell.is-expanded .avatar { animation: none; }
 @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }

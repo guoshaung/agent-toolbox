@@ -171,6 +171,31 @@ avatar.addEventListener('click', () => { if (!moved) setExpanded('memory'); });
 // 工具箱窗口叉掉后找不回来 → 双击桌宠叫回来；右键出菜单（打开工具箱 / 今天 / 守望 / 隐藏桌宠…）
 avatar.addEventListener('dblclick', async (e) => { e.preventDefault(); await setExpanded(false); window.toolbox.pet.wake?.(); });
 avatar.addEventListener('contextmenu', (e) => { e.preventDefault(); window.toolbox.pet.menu?.(); });
+
+// ---- 待机调度器：隔几秒随机挑一个身体动作演一遍，偶尔自言自语一句 ----
+// 不是同一个循环反复放，而是「跳 / 摇 / 抖 / 伸懒腰 / 点头 / 探身」里随机抽，
+// 演完摘掉 class 回到静止。只在收起、没拖动、没气泡时演，别抢注意力。
+const IDLE_ACTS = ['act-hop', 'act-sway', 'act-wobble', 'act-stretch', 'act-nod', 'act-peek'];
+const IDLE_LINES = ['……在发呆', '要不要歇会儿？', '记得喝水~', '有代码看不懂就丢给我', '今天也在呀', '双击我能叫回工具箱哦', '（打了个哈欠）', '摸鱼中……'];
+let idleTimer = 0;
+let lastAct = '';
+avatar.addEventListener('animationend', (e) => { if (e.animationName?.startsWith('act-')) avatar.classList.remove(...IDLE_ACTS); });
+function idlePlay() {
+  const busy = expanded || dragging || !phoneBubble.hidden || document.hidden;
+  if (!busy) {
+    // 不连着放同一个，看着更随机
+    let act = IDLE_ACTS[Math.floor(Math.random() * IDLE_ACTS.length)];
+    if (act === lastAct) act = IDLE_ACTS[(IDLE_ACTS.indexOf(act) + 1) % IDLE_ACTS.length];
+    lastAct = act;
+    avatar.classList.remove(...IDLE_ACTS);
+    void avatar.offsetWidth; // 重启动画
+    avatar.classList.add(act);
+    // 大约六分之一的概率顺带冒一句，频率压得很低
+    if (Math.random() < 0.16) phoneSay(IDLE_LINES[Math.floor(Math.random() * IDLE_LINES.length)], { ms: 3200 });
+  }
+  idleTimer = setTimeout(idlePlay, 5000 + Math.random() * 6000);
+}
+idleTimer = setTimeout(idlePlay, 3000 + Math.random() * 3000);
 document.getElementById('collapse').addEventListener('click', () => setExpanded(false));
 document.getElementById('disable').addEventListener('click', async () => {
   await setExpanded(false);
