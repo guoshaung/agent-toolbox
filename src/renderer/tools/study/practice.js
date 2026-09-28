@@ -153,8 +153,9 @@ export function createPracticePanel(ctx) {
 
   function notebookStateKey() { return repo ? `repo:${repo.name}:${repo.lessons[lessonIndex]?.id || 0}` : projectId ? `project:${projectId}` : `${track.id}:${sampleIndex}`; }
 
+  let switchingLesson = false;   // 切课时 key 已换、格子还是旧的，这一小段时间禁止存盘
   function persistNotebook() {
-    if (!cells.length) return;
+    if (!cells.length || switchingLesson) return;
     const notebooks = { ...(config.get('practice.notebooks', {}) || {}) };
     notebooks[notebookStateKey()] = cells.slice(0, 40).map((cell) => ({
       code: cell.editor.value,
@@ -167,6 +168,7 @@ export function createPracticePanel(ctx) {
       result: cell.result ? {
         ok: Boolean(cell.result.ok),
         stdout: String(cell.result.stdout || '').slice(0, 12000),
+        displays: (cell.result.displays || []).slice(0, 4).filter((d) => String(d.data || '').length < 400000),
         stderr: String(cell.result.stderr || '').slice(0, 12000),
         error: String(cell.result.error || '').slice(0, 2000),
         engine: cell.result.engine || '',
@@ -503,8 +505,10 @@ export function createPracticePanel(ctx) {
       const parts = [];
       if (result.stdout) parts.push(result.stdout.trimEnd());
       if (result.stderr) parts.push(`[stderr]\n${result.stderr.trimEnd()}`);
-      if (!parts.length) parts.push(result.ok ? '(程序没有输出)' : (result.error || '(没有输出，检查错误信息)'));
+      const lastLine = cell.editor.value.trim().split('\n').pop() || '';
+      if (!parts.length && !(result.displays || []).length) parts.push(result.ok ? `(程序没有输出)${/^\s*[A-Za-z_]\w*\s*=[^=]/.test(lastLine) ? '\n提示：像 Jupyter 一样，想看某个对象（图、表、值）就把它的名字单独写在最后一行，比如 ' + lastLine.split('=')[0].trim() : ''}` : (result.error || '(没有输出，检查错误信息)'));
       cell.output.textContent = `${parts.join('\n\n')}\n\n[${result.engine || track.runtime}] ${result.duration || 0} ms`;
+      renderDisplays(cell, result.displays);
       cell.result = result;
       if (result.ok) hideDiagnosis(cell);
       else showDiagnosis(cell, diagnosis || unknownDiagnosis(result));
@@ -522,6 +526,14 @@ export function createPracticePanel(ctx) {
         fixes: ['先点上方「准备 uv 环境」确认运行环境可用。', '如果反复出现，重启一次应用再试。'],
       });
     } finally { cell.runBtn.disabled = false; }
+  }
+
+  /** 最后一行表达式的「显示」结果：graphviz / matplotlib / _repr_svg_ 的图片直接贴在输出下面 */
+  function renderDisplays(cell, displays) {
+    for (const d of displays || []) {
+      const src = d.kind === 'svg' ? `data:image/svg+xml;base64,${btoa(unescape(encodeURIComponent(d.data)))}` : `data:image/png;base64,${d.data}`;
+      cell.output.append(h('img', { class: 'practice__display', src, alt: '输出图片' }));
+    }
   }
 
   async function runAllCells() {
@@ -1045,7 +1057,8 @@ export function createPracticePanel(ctx) {
     if (snapshot.result) {
       cell.result = snapshot.result;
       const parts = [snapshot.result.stdout, snapshot.result.stderr ? `[stderr]\n${snapshot.result.stderr}` : ''].filter(Boolean);
-      cell.output.textContent = parts.join('\n\n') || snapshot.result.error || '(程序没有输出)';
+      cell.output.textContent = parts.join('\n\n') || (snapshot.result.displays?.length ? '' : (snapshot.result.error || '(程序没有输出)'));
+      renderDisplays(cell, snapshot.result.displays);
       cell.resultStatus.textContent = snapshot.result.ok ? '运行成功' : '运行失败';
       cell.resultStatus.className = `practice__result-status ${snapshot.result.ok ? 'is-good' : 'is-bad'}`;
     }
@@ -1358,7 +1371,8 @@ export function createPracticePanel(ctx) {
   function buildLessons(scan) {
     const files = orderFiles(scan.files || []);
     const lessons = files.map((f) => ({ id: f.rel, kind: /\.ipynb$/i.test(f.rel) ? 'notebook' : 'file', rel: f.rel, label: `${/\.ipynb$/i.test(f.rel) ? '📓 ' : ''}${f.rel}（${f.size > 1024 ? `${(f.size / 1024).toFixed(1)}KB` : `${f.size}B`}）`, lang: langOf(f.rel) }));
-    const examples = exampleCells(scan.readme || '', scan.name || '');
+    const mainLang = files[0]?.lang || langOf(files[0]?.rel || '') || 'python';
+    const examples = exampleCells(scan.readme || '', scan.name || '', mainLang);
     if (examples.length) lessons.push({ id: '__readme__', kind: 'readme', label: `README 示例（${examples.length} 段）`, lang: examples[0].lang, cells: examples });
     return lessons;
   }
@@ -1413,6 +1427,11 @@ export function createPracticePanel(ctx) {
   async function loadLesson(index, { persist = true } = {}) {
     if (!repo) return;
     if (persist) persistNotebook();   // 用的是切换前的 lessonIndex，存到上一课的 key
+    switchingLesson = true;
+    try { await loadLessonInner(index); } finally { switchingLesson = false; }
+  }
+
+  async function loadLessonInner(index) {
     lessonIndex = Math.max(0, Math.min(index, repo.lessons.length - 1));
     const lesson = repo.lessons[lessonIndex];
     config.set(`practice.repoLesson.${repo.name}`, lessonIndex);

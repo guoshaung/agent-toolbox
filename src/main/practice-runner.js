@@ -236,10 +236,10 @@ async function run(trackId, code, options = {}) {
   try {
     if (PYTHON_TRACKS.has(trackId)) {
       const interpreter = pythonInterpreter(trackId);
-      const source = prelude.trim()
-        ? `import contextlib\nimport io\n_learning_globals = globals()\nwith contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):\n    exec(${JSON.stringify(prelude)}, _learning_globals)\nexec(${JSON.stringify(String(code || ''))}, _learning_globals)\n`
-        : code;
-      return { ...(await runProcess(interpreter, ['-u', '-'], source, cwd, options.timeout)), engine: trackId === 'python' ? 'python3' : interpreter === 'python3' ? 'python3' : `${track.label} · uv .venv` };
+      const source = pythonHarness(prelude, String(code || ''));
+      const ran = await runProcess(interpreter, ['-u', '-'], source, cwd, options.timeout);
+      const { text, displays } = await collectDisplays(ran.stdout);
+      return { ...ran, stdout: text, displays, engine: trackId === 'python' ? 'python3' : interpreter === 'python3' ? 'python3' : `${track.label} · uv .venv` };
     }
     if (SHELL_TRACKS.has(trackId)) {
       const shell = resolveCommand('bash');
@@ -259,6 +259,77 @@ async function run(trackId, code, options = {}) {
   } finally {
     if (!useRepo) fs.rmSync(cwd, { recursive: true, force: true });
   }
+}
+
+/**
+ * 像 Jupyter 一样：最后一行是个表达式就把它的值「显示」出来 ——
+ * graphviz 的图、matplotlib 的图、带 _repr_svg_ / _repr_png_ 的对象都变成图片，其他打 repr。
+ * 图片用标记行塞进 stdout，主进程再抠出来。文件名保持 <string>，报错行号的解析不用改。
+ */
+function pythonHarness(prelude, code) {
+  return [
+    'import ast, sys, base64, contextlib, io',
+    '_g = globals()',
+    `_prelude = ${JSON.stringify(prelude)}`,
+    `_code = ${JSON.stringify(code)}`,
+    'if _prelude.strip():',
+    '    with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):',
+    '        exec(compile(_prelude, "<string>", "exec"), _g)',
+    'def _toolbox_display(v):',
+    '    if v is None: return',
+    '    def emit(kind, data): print("\\n<<toolbox-display:%s:%s>>\\n" % (kind, base64.b64encode(data if isinstance(data, bytes) else str(data).encode("utf-8")).decode("ascii")))',
+    '    src = getattr(v, "source", None)',
+    '    if isinstance(src, str) and type(v).__name__ in ("Digraph", "Graph", "Source"): return emit("dot", src)',
+    '    f = getattr(v, "_repr_svg_", None)',
+    '    if callable(f):',
+    '        try: return emit("svg", f())',
+    '        except Exception: pass',
+    '    f = getattr(v, "_repr_png_", None)',
+    '    if callable(f):',
+    '        try: return emit("png", f())',
+    '        except Exception: pass',
+    '    if hasattr(v, "savefig"):',
+    '        buf = io.BytesIO(); v.savefig(buf, format="png", bbox_inches="tight"); return emit("png", buf.getvalue())',
+    '    print(repr(v))',
+    '_tree = ast.parse(_code)',
+    'if _tree.body and isinstance(_tree.body[-1], ast.Expr):',
+    '    exec(compile(ast.Module(body=_tree.body[:-1], type_ignores=[]), "<string>", "exec"), _g)',
+    '    _toolbox_display(eval(compile(ast.Expression(body=_tree.body[-1].value), "<string>", "eval"), _g))',
+    'else:',
+    '    exec(compile(_tree, "<string>", "exec"), _g)',
+    // matplotlib：没显式 show 也把当前的图交出来
+    'try:',
+    '    import matplotlib.pyplot as _plt',
+    '    for _n in _plt.get_fignums(): _toolbox_display(_plt.figure(_n))',
+    'except Exception: pass',
+    '',
+  ].join('\n');
+}
+
+let vizInstance = null;
+async function renderDot(source) {
+  if (!vizInstance) { const { instance } = require('@viz-js/viz'); vizInstance = await instance(); }
+  return vizInstance.renderString(source, { format: 'svg' });
+}
+
+/** 把 stdout 里的显示标记抠出来：dot 在这里用 viz.js 画成 svg，不需要装 Graphviz 本体 */
+async function collectDisplays(stdout) {
+  const displays = [];
+  const re = /\n?<<toolbox-display:(dot|svg|png):([A-Za-z0-9+/=]*)>>\n?/g;
+  const parts = [];
+  let last = 0; let m;
+  const text = String(stdout || '');
+  while ((m = re.exec(text))) {
+    parts.push(text.slice(last, m.index)); last = m.index + m[0].length;
+    const raw = Buffer.from(m[2], 'base64');
+    try {
+      if (m[1] === 'dot') displays.push({ kind: 'svg', data: await renderDot(raw.toString('utf8')) });
+      else if (m[1] === 'svg') displays.push({ kind: 'svg', data: raw.toString('utf8') });
+      else displays.push({ kind: 'png', data: raw.toString('base64') });
+    } catch (err) { parts.push(`[图片没画出来：${err.message}]\n`); }
+  }
+  parts.push(text.slice(last));
+  return { text: parts.join(''), displays };
 }
 
 /** 学 GitHub 仓库：克隆后扫一遍代码文件（浅层、小文件），README 一起带回 */

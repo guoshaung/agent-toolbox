@@ -103,6 +103,7 @@ export function lessonCells(rel, code, lang) {
 }
 
 /** README 示例 → 格子 */
-export function exampleCells(readme, repoName) {
-  return readmeExamples(readme).map((ex, i) => ({ title: `README 示例 ${i + 1}`, code: ex.code, reference: ex.code, lang: ex.lang, purpose: `${repoName} 的 README 里的用法示例，在仓库目录里跑，import 能直接找到包` }));
+export function exampleCells(readme, repoName, lang = 'python') {
+  // 只留和这一课同语言的块：bash 的 pip / pytest 命令混进 python 课，会被当前置代码塞给后面每一格，整课 SyntaxError
+  return readmeExamples(readme).filter((ex) => ex.lang === lang).map((ex, i) => ({ title: `README 示例 ${i + 1}`, code: ex.code, reference: ex.code, lang: ex.lang, purpose: `${repoName} 的 README 里的用法示例，在仓库目录里跑，import 能直接找到包` }));
 }

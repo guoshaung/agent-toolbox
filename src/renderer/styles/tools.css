@@ -4639,3 +4639,4 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .tk__tags { display: flex; flex-wrap: wrap; gap: 6px; }
 @media (max-width: 1000px) { .tk__body { grid-template-columns: 1fr; } .tk__board { grid-template-columns: 1fr; } }
 .pet-gaze__btns { display: flex; gap: 6px; flex: 0 0 auto; }
+.practice__display { display: block; max-width: 100%; max-height: 520px; margin: 10px 0 4px; border-radius: 10px; background: #fff; padding: 8px; }

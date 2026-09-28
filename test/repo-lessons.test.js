@@ -40,6 +40,7 @@ test('仓库课：一课的格子带标题和参考答案', () => {
   assert.ok(cells.length >= 1);
   assert.match(cells[0].title, /^nn\.py · /);
   assert.equal(cells[0].reference, cells[0].code);
-  const ex = mod.exampleCells('```python\nprint(1)\n```', 'micrograd');
+  const ex = mod.exampleCells('```python\nprint(1)\n```\n```bash\npython -m pytest\n```', 'micrograd');
+  assert.equal(ex.length, 1, 'bash 块不进 python 课');
   assert.equal(ex[0].title, 'README 示例 1');
 });
