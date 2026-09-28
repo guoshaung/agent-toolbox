@@ -110,9 +110,9 @@ export default {
     }
 
     // ---------- 倒出来 ----------
-    const dumpInput = h('textarea', { class: 'field tk__dump', rows: 4, placeholder: '脑子里有什么都倒在这，不用整理：\n改论文第三章，明天回导师邮件，有空学一下 micrograd，紧急：交报销…' });
-    const dumpAi = h('button', { class: 'btn btn--primary', onclick: () => dump(true) }, '✦ AI 帮我理一理');
-    const dumpPlain = h('button', { class: 'btn', title: '不走模型，按行 / 分号拆，「今天 / 明天 / 紧急」这些词会自动识别', onclick: () => dump(false) }, '直接拆');
+    const dumpInput = h('textarea', { class: 'field tk__dump', rows: 3, placeholder: '写一件事，回车就进下面；一次写好几行也行，每行一件。\n例如：明天回导师邮件 / 紧急 交报销 / 有空学一下 micrograd #学习\n想让 AI 把一段乱话整理成条再分轻重，点「AI 帮我理一理」' });
+    const dumpPlain = h('button', { class: 'btn btn--primary', title: '和按回车一样：按行 / 分号拆，「今天 / 明天 / 紧急 / #标签」这些词会自动识别，不走模型', onclick: () => dump(false) }, '加进去（回车）');
+    const dumpAi = h('button', { class: 'btn', title: '让模型把一段乱七八糟的话整理成条、分轻重和主题（⌘回车）', onclick: () => dump(true) }, '✦ AI 帮我理一理');
     const dumpPaste = h('button', { class: 'btn btn--ghost', onclick: async () => { const t = await window.toolbox.clipboard.read?.(); if (!t) return toast('剪贴板是空的', 'info'); dumpInput.value = (dumpInput.value ? `${dumpInput.value}\n` : '') + t; dumpInput.focus(); } }, '从剪贴板粘');
 
     async function dump(useAi) {
@@ -273,14 +273,19 @@ ${text}`);
       h('div', { class: 'tk__body' },
         h('div', { class: 'tk__main' },
           hero,
-          h('section', { class: 'tk__dump-card' }, h('div', { class: 'tk__dump-head' }, h('strong', {}, '倒出来'), h('span', { class: 'faint' }, '想到什么写什么，一段话就行')), dumpInput, h('div', { class: 'tk__dump-actions' }, dumpAi, dumpPlain, dumpPaste)),
+          h('section', { class: 'tk__dump-card' }, h('div', { class: 'tk__dump-head' }, h('strong', {}, '倒出来'), h('span', { class: 'faint' }, '回车直接加 · ⇧回车换行 · AI 只在你点的时候才上')), dumpInput, h('div', { class: 'tk__dump-actions' }, dumpPlain, dumpAi, dumpPaste)),
           board,
           doneWrap,
         ),
         side,
       ),
     );
-    dumpInput.addEventListener('keydown', (e) => { if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); dump(true); } });
+    // 回车 = 直接写进下面（本地规则拆，不走模型）；⇧回车换行；⌘回车才叫 AI
+    dumpInput.addEventListener('keydown', (e) => {
+      if (e.key !== 'Enter' || e.isComposing || e.shiftKey) return;
+      e.preventDefault();
+      dump(Boolean(e.metaKey || e.ctrlKey));
+    });
     render();
     return { activate: () => { tasks = (config.get('tasks.items', []) || []).map((t) => ({ ...t, bucket: BUCKETS.some((b) => b.id === t.bucket) ? t.bucket : 'today' })); render(); } };
   },
