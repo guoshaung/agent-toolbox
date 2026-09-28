@@ -2589,6 +2589,9 @@ function registerIpc() {
 
   ipcMain.handle('app:version', () => app.getVersion());
   ipcMain.handle('app:quit', () => { setImmediate(() => quitToolbox()); return { ok: true }; });
+  // 标题栏右上的最小化 / 关闭。关闭走窗口 close（会放坍缩动效，应用留后台、桌宠还在），不是退出。
+  ipcMain.handle('app:minimize', () => { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.minimize(); return { ok: true }; });
+  ipcMain.handle('app:closeWindow', () => { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.close(); return { ok: true }; });
   ipcMain.handle('app:relaunch', () => {
     app.relaunch();
     app.quit();

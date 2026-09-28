@@ -24,7 +24,11 @@ const dshButton = h('button', { class: 'atelier-banner__dsh', onclick: openDsh, 
 // ⌘K 入口放在横幅上：不知道快捷键的人也能点到
 const paletteButton = h('button', { class: 'atelier-banner__dsh atelier-banner__k', title: '搜工具、换皮肤、找刚建的文件夹（⌘K）', onclick: () => palette?.show() }, '⌘K ', h('span', { class: 'atelier-banner__dsh-state' }, '搜'));
 let palette = null;
-const atelierBanner = h('header', { class: 'atelier-banner', 'aria-label': 'Agent 工具箱装饰标题栏', onclick: (event) => { if (!event.target.closest('button')) openDsh(); } },
+// 右上角窗口控制：最小化 + 关闭。关闭只关窗口（应用留后台、桌宠还在），不是退出。
+const minButton = h('button', { class: 'atelier-banner__winbtn atelier-banner__winbtn--min', title: '最小化', 'aria-label': '最小化', onclick: () => window.toolbox.app.minimize?.() }, h('span', { 'aria-hidden': 'true' }, '\u2013'));
+const closeButton = h('button', { class: 'atelier-banner__winbtn atelier-banner__winbtn--close', title: '关闭窗口（应用留在后台，桌宠还在；双击桌宠可再打开）', 'aria-label': '关闭窗口', onclick: () => window.toolbox.app.closeWindow?.() }, h('span', { 'aria-hidden': 'true' }, '\u00d7'));
+// 整条横幅只用来拖动窗口，不再「点一下开 DSH」—— 之前拖窗口老误触。开 DSH 请点右边的 ◈ 按钮。
+const atelierBanner = h('header', { class: 'atelier-banner', 'aria-label': 'Agent 工具箱标题栏（拖动移动窗口）' },
   h('div', { class: 'atelier-banner__brand' },
     h('span', {}, 'AGENT'),
     h('strong', {}, 'TOOLBOX'),
@@ -33,6 +37,7 @@ const atelierBanner = h('header', { class: 'atelier-banner', 'aria-label': 'Agen
   h('span', { class: 'atelier-banner__caption' }, 'PERSONAL WORKSPACE'),
   paletteButton,
   dshButton,
+  h('div', { class: 'atelier-banner__winctl' }, minButton, closeButton),
 );
 stage.appendChild(atelierBanner);
 
@@ -581,7 +586,7 @@ window.__ctx = ctx; // 方便在 DevTools 里手动调试
     void fx.offsetWidth;
     fx.classList.add('is-on');
     document.body.classList.add(mode === 'collapse' ? 'is-collapsing' : 'is-expanding');
-    const ms = mode === 'collapse' ? 620 : 700;
+    const ms = mode === 'collapse' ? 380 : 1160; // 关窗快、开窗从容，和 base.css 里的动画时长对齐
     setTimeout(() => {
       if (mode === 'expand') { document.body.classList.remove('is-expanding'); fx.classList.remove('is-on'); }
       done && done();

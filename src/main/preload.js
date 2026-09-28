@@ -676,6 +676,9 @@ contextBridge.exposeInMainWorld('toolbox', {
     relaunch: () => ipcRenderer.invoke('app:relaunch'),
     /** 真的退出（关窗口只是藏起来） */
     quit: () => ipcRenderer.invoke('app:quit'),
+    /** 标题栏右上：最小化 / 关闭窗口（关闭不退出，桌宠还在） */
+    minimize: () => ipcRenderer.invoke('app:minimize'),
+    closeWindow: () => ipcRenderer.invoke('app:closeWindow'),
     /** 数据都放在哪 */
     dataPaths: () => ipcRenderer.invoke('app:dataPaths'),
     exportSettings: () => ipcRenderer.invoke('app:exportSettings'),
