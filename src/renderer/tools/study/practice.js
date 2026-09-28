@@ -623,6 +623,26 @@ export function createPracticePanel(ctx) {
     if (diagnosis.prevent) {
       cell.diagExtra.append(h('p', { class: 'practice__diag-prevent' }, `下次避免：${diagnosis.prevent}`));
     }
+    // 缺模块：一键装进学习环境再重跑，不用去下面找那个输入框
+    const missingMod = /ModuleNotFoundError/.test(diagnosis.kind || '') ? (String(cell.result?.stderr || '').match(/No module named '([A-Za-z0-9_.]+)'/) || [])[1] : '';
+    if (missingMod && (track.runtime || '').includes('python3')) {
+      const PIP_NAME = { cv2: 'opencv-python', PIL: 'pillow', sklearn: 'scikit-learn', yaml: 'pyyaml', bs4: 'beautifulsoup4', dotenv: 'python-dotenv', Crypto: 'pycryptodome', skimage: 'scikit-image' };
+      const top = missingMod.split('.')[0];
+      const pkg = PIP_NAME[top] || top;
+      cell.diagExtra.append(h('button', {
+        class: 'btn btn--sm btn--primary practice__diag-find',
+        onclick: async (e) => {
+          e.target.disabled = true; e.target.textContent = `装 ${pkg} 中…`;
+          cell.dependencyInput.value = pkg;
+          await installPackagesFor(cell);
+          hideDiagnosis(cell);
+          await runCell(cell);
+          // 这格是从仓库搬来的定义，装完顺手把它下面那格也跑了
+          const next = cells[cells.indexOf(cell) + 1];
+          if (cell.result?.ok && next && /^来自 /.test(cell.title || '')) await runCell(next);
+        },
+      }, `安装 ${pkg} 到学习环境并重跑`));
+    }
     // 学仓库时的 NameError：这个名字八成定义在仓库别的文件 / 笔记本里，去找来插到前面
     const missing = repo && /NameError/.test(diagnosis.kind || '') ? (String(cell.result?.stderr || '').match(/name '([A-Za-z_]\w*)' is not defined/) || [])[1] : '';
     if (missing) {
@@ -1416,7 +1436,8 @@ export function createPracticePanel(ctx) {
     // 存档只认「确实是这一课」的：防抖存盘可能在切课途中把上一份格子存到这个 key 下
     const prefix = lesson.kind === 'readme' ? 'README 示例' : `${lesson.rel.split('/').pop()} · `;   // 笔记本课的标题也是「文件名 · 」开头
     const saved = (config.get('practice.notebooks', {}) || {})[notebookStateKey()];
-    const usable = Array.isArray(saved) && saved.length && saved.every((s) => String(s.title || '').startsWith(prefix));
+    // 「来自 xxx · name」是 NameError 时从仓库里搬来的定义格，也属于这一课
+    const usable = Array.isArray(saved) && saved.length && saved.every((s) => String(s.title || '').startsWith(prefix) || String(s.title || '').startsWith('来自 '));
     cells = usable ? saved.map((s) => restoreNotebookCell(s)) : snapshots.map((s) => createCell(s.code, s));
     renderNotebook(cells[0], false);
     updateMeta();
