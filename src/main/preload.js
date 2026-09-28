@@ -333,6 +333,9 @@ contextBridge.exposeInMainWorld('toolbox', {
     quickSelection: () => ipcRenderer.invoke('pet:quickSelection'),
     /** 桌宠里叫主窗口切到某个工具 */
     openTool: (id) => ipcRenderer.invoke('pet:openTool', id),
+    /** 主窗口不见了：双击桌宠叫回来；右键弹菜单 */
+    wake: () => ipcRenderer.invoke('pet:wake'),
+    menu: () => ipcRenderer.invoke('pet:menu'),
     /** 守望：在看 / 走神 / 看手机 / 不在 / 眼睛累了，偶尔带一句提醒 */
     onGaze: (callback) => ipcRenderer.on('pet:gaze', (_event, payload) => callback(payload)),
   },

@@ -168,6 +168,9 @@ window.toolbox.pet.onQuick?.(async ({ text } = {}) => {
 
 // 点桌宠默认开记忆栈——这才是现在的主功能，四行解释退到里面的一个按钮。
 avatar.addEventListener('click', () => { if (!moved) setExpanded('memory'); });
+// 工具箱窗口叉掉后找不回来 → 双击桌宠叫回来；右键出菜单（打开工具箱 / 今天 / 守望 / 隐藏桌宠…）
+avatar.addEventListener('dblclick', async (e) => { e.preventDefault(); await setExpanded(false); window.toolbox.pet.wake?.(); });
+avatar.addEventListener('contextmenu', (e) => { e.preventDefault(); window.toolbox.pet.menu?.(); });
 document.getElementById('collapse').addEventListener('click', () => setExpanded(false));
 document.getElementById('disable').addEventListener('click', async () => {
   await setExpanded(false);

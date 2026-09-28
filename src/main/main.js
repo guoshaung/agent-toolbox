@@ -2626,6 +2626,26 @@ function registerIpc() {
   // 同一条路也给面板 / 命令面板用：读当前前台应用里选中的文字，交给桌宠解释
   ipcMain.handle('pet:quickSelection', () => explainSelectionWithPet().then(() => ({ ok: true })));
   ipcMain.handle('pet:openTool', (_e, id) => { ensureMainWindow({ show: true }).webContents.send('app:navigate-tool', { id: String(id || 'home') }); return { ok: true }; });
+  // 主窗口叉掉后只是藏起来，桌宠还在 —— 双击桌宠 / 右键菜单把它叫回来，不用记快捷键
+  ipcMain.handle('pet:wake', () => { ensureMainWindow({ show: true }); return { ok: true }; });
+  ipcMain.handle('pet:menu', () => {
+    const gazeOn = Boolean(store.get('pet.gaze', false));
+    const menu = Menu.buildFromTemplate([
+      { label: '打开工具箱', click: () => ensureMainWindow({ show: true }) },
+      { label: '今天', click: () => ensureMainWindow({ show: true }).webContents.send('app:navigate-tool', { id: 'home' }) },
+      { label: '任务', click: () => ensureMainWindow({ show: true }).webContents.send('app:navigate-tool', { id: 'tasks' }) },
+      { label: '搜一下（⌘K）', click: () => ensureMainWindow({ show: true }).webContents.send('palette:open') },
+      { type: 'separator' },
+      { label: '守望（摄像头看有没有在看屏幕）', type: 'checkbox', checked: gazeOn, click: () => gazeService?.setEnabled(!gazeOn) },
+      { label: '校准视线…', enabled: true, click: () => gazeService?.calibrate() },
+      { type: 'separator' },
+      { label: '桌宠设置', click: () => ensureMainWindow({ show: true }).webContents.send('app:navigate-tool', { id: 'pet' }) },
+      { label: '隐藏桌宠', click: () => { store.set('pet.enabled', false); applyPetSettings(); } },
+      { label: '退出工具箱', click: () => quitToolbox() },
+    ]);
+    if (petWindow && !petWindow.isDestroyed()) menu.popup({ window: petWindow });
+    return { ok: true };
+  });
   ipcMain.handle('pet:setEnabled', (_e, enabled) => {
     store.set('pet.enabled', Boolean(enabled));
     applyPetSettings();
