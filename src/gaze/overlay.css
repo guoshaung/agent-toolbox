@@ -1,0 +1,9 @@
+html, body { margin: 0; width: 100%; height: 100%; background: transparent; overflow: hidden; pointer-events: none; }
+.halo { position: fixed; left: 0; top: 0; width: 0; height: 0; transform: translate(-1000px, -1000px); transition: transform .09s linear, opacity .3s ease; --c: 63,185,138; }
+.halo[hidden] { display: block; opacity: 0; }
+.halo__ring { position: absolute; left: -70px; top: -70px; width: 140px; height: 140px; border-radius: 50%; border: 2px solid rgba(var(--c), .55); background: radial-gradient(circle, rgba(var(--c), .16), rgba(var(--c), .04) 60%, transparent 72%); box-shadow: 0 0 40px rgba(var(--c), .25), inset 0 0 30px rgba(var(--c), .12); animation: breathe 2.2s ease-in-out infinite; }
+.halo__dot { position: absolute; left: -4px; top: -4px; width: 8px; height: 8px; border-radius: 50%; background: rgba(var(--c), .9); box-shadow: 0 0 10px rgba(var(--c), .9); }
+.halo.is-distracted { --c: 223,161,69; }
+.halo.is-tired { --c: 91,140,255; }
+.halo.is-phone, .halo.is-away { --c: 228,106,112; }
+@keyframes breathe { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.08); } }

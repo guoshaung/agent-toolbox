@@ -118,6 +118,15 @@ function phoneSay(text, { busy = false, ms = 4000 } = {}) {
   phoneBubble.hidden = !text;
   if (text && ms) bubbleTimer = setTimeout(() => { phoneBubble.hidden = true; }, ms);
 }
+// ---- 守望：主进程判断你在不在看屏幕，这里点个灯、偶尔说一句 ----
+const gazeDot = document.getElementById('gaze-dot');
+window.toolbox.pet.onGaze?.((p = {}) => {
+  if (p.state === 'off') { gazeDot.hidden = true; return; }
+  gazeDot.hidden = false;
+  gazeDot.className = `gaze-dot is-${p.state || 'looking'}`;
+  gazeDot.title = `守望：${p.label || ''}${p.sinceSec > 3 ? ` ${p.sinceSec} 秒` : ''}`;
+  if (p.say) phoneSay(p.say, { ms: 5000 });
+});
 let dropDepth = 0;
 shell.addEventListener('dragenter', (event) => { event.preventDefault(); dropDepth += 1; shell.classList.add('is-drop'); dropHint.hidden = false; dropHint.textContent = event.altKey ? '看懂它' : '递给手机（按住 ⌥ = 看懂）'; });
 shell.addEventListener('dragover', (event) => { event.preventDefault(); event.dataTransfer.dropEffect = 'copy'; });

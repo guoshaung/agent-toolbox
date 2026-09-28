@@ -53,6 +53,7 @@ const { AutoResearchService } = require('./autoresearch-service');
 const { ZoteroService } = require('./zotero');
 const { VaultService } = require('./vault');
 const { HOTKEYS, normalizeAccelerator, accelLabel } = require('./hotkeys');
+const { GazeService } = require('./gaze');
 const { TavernService } = require('./tavern-service');
 const { AppControls } = require('./app-controls');
 const { computeBounds, canApplyGesture } = require('./window-gesture');
@@ -202,6 +203,7 @@ function hotkeyList() {
 let dshService;
 let autoResearch;
 let zoteroService;
+let gazeService;
 let tavernService;
 let argosService;
 let appControls;
@@ -2360,6 +2362,19 @@ function registerIpc() {
       model: pathToFileURL(unpacked(path.join(root, 'assets', 'models', 'hand_landmarker.task'))).href,
     };
   });
+  // ---- 守望：摄像头看眼睛 → 视线光圈 + 桌宠提醒 ----
+  gazeService = new GazeService({ app, screen, BrowserWindow, store, rootDir: path.join(__dirname, '..', '..'), preload: path.join(__dirname, 'preload.js'), getPetWindow: () => petWindow, log: (m) => console.warn(m) });
+  ipcMain.handle('gaze:paths', () => gazeService.paths());
+  ipcMain.on('gaze:sample', (_e, payload) => gazeService.onSample(payload || {}));
+  ipcMain.handle('gaze:status', () => gazeService.status());
+  ipcMain.handle('gaze:setEnabled', (_e, on) => gazeService.setEnabled(Boolean(on)));
+  ipcMain.handle('gaze:setHalo', (_e, on) => gazeService.setHalo(Boolean(on)));
+  ipcMain.handle('gaze:calibrate', () => gazeService.calibrate());
+  ipcMain.handle('gaze:calibStep', (_e, step) => gazeService.calibStep(step || {}));
+  ipcMain.handle('gaze:clearModel', () => gazeService.clearModel());
+  ipcMain.handle('gaze:cameraStatus', () => ({ system: process.platform === 'darwin' ? systemPreferences.getMediaAccessStatus('camera') : 'n/a' }));
+  if (store.get('pet.gaze', false) && store.get('pet.enabled', false)) setTimeout(() => gazeService.start(), 4000);
+
   ipcMain.handle('gesture:cameraStatus', () => ({
     system: process.platform === 'darwin' ? systemPreferences.getMediaAccessStatus('camera') : 'n/a',
     platform: process.platform,
@@ -3567,7 +3582,7 @@ app.whenReady().then(async () => {
     const isMainWindow = mainWindow && !mainWindow.isDestroyed() && webContents === mainWindow.webContents;
     const isGestureWindow = gestureDesk?.gestureOpen() && webContents === gestureDesk.gestureWindow.webContents;
     // 手势小窗也是我们自己的本地页面；认身份认不出来时按「是不是工具箱自己的 file:// 页」兜底
-    const isOwnPage = /^file:\/\//.test(webContents.getURL() || '') && webContents.getURL().includes('/gesture/');
+    const isOwnPage = /^file:\/\//.test(webContents.getURL() || '') && /\/(gesture|gaze)\//.test(webContents.getURL());
     if (permission === 'media' && (isMainWindow || isGestureWindow || isOwnPage)) return callback(true);
     if (permission === 'media') console.warn('[media] 拒绝了摄像头请求:', webContents.getURL());
     callback(false);
@@ -3575,7 +3590,7 @@ app.whenReady().then(async () => {
   session.defaultSession.setPermissionCheckHandler((webContents, permission) => {
     const isMainWindow = mainWindow && !mainWindow.isDestroyed() && webContents === mainWindow.webContents;
     const isGestureWindow = gestureDesk?.gestureOpen() && webContents === gestureDesk.gestureWindow.webContents;
-    const isOwnPage = /^file:\/\//.test(webContents?.getURL?.() || '') && webContents.getURL().includes('/gesture/');
+    const isOwnPage = /^file:\/\//.test(webContents?.getURL?.() || '') && /\/(gesture|gaze)\//.test(webContents.getURL());
     return permission === 'media' && (isMainWindow || isGestureWindow || isOwnPage);
   });
 
@@ -3774,6 +3789,7 @@ app.on('will-quit', () => {
     }],
     ['DSH', () => dshService?.stop?.()],
     ['自动科研', () => autoResearch?.stopAll?.()],
+    ['守望', () => gazeService?.dispose?.()],
     ['酒馆', () => tavernService?.stop?.()],
     ['Voicebox 外部应用', () => voiceBoxService?.stop?.()],
     ['Voicebox 服务', () => voiceboxService?.stop?.()],

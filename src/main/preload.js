@@ -333,6 +333,8 @@ contextBridge.exposeInMainWorld('toolbox', {
     quickSelection: () => ipcRenderer.invoke('pet:quickSelection'),
     /** 桌宠里叫主窗口切到某个工具 */
     openTool: (id) => ipcRenderer.invoke('pet:openTool', id),
+    /** 守望：在看 / 走神 / 看手机 / 不在 / 眼睛累了，偶尔带一句提醒 */
+    onGaze: (callback) => ipcRenderer.on('pet:gaze', (_event, payload) => callback(payload)),
   },
 
   /** 渲染层未捕获错误 → userData/logs/main-errors.log */
@@ -553,6 +555,25 @@ contextBridge.exposeInMainWorld('toolbox', {
   docs: {
     /** 按名字找官方文档站：查 PyPI / npm / DevDocs */
     search: (query) => ipcRenderer.invoke('docs:search', query),
+  },
+
+  gaze: {
+    /** 后台摄像头页：拿 wasm / 模型路径，把关键点发回主进程 */
+    paths: () => ipcRenderer.invoke('gaze:paths'),
+    sample: (payload) => ipcRenderer.send('gaze:sample', payload),
+    onControl: (callback) => ipcRenderer.on('gaze:control', (_event, cmd) => callback(cmd)),
+    /** 光圈层 */
+    onPoint: (callback) => ipcRenderer.on('gaze:point', (_event, payload) => callback(payload)),
+    /** 校准页 */
+    calibStep: (step) => ipcRenderer.invoke('gaze:calibStep', step),
+    onCalib: (callback) => ipcRenderer.on('gaze:calib', (_event, msg) => callback(msg)),
+    /** 设置页 */
+    status: () => ipcRenderer.invoke('gaze:status'),
+    setEnabled: (on) => ipcRenderer.invoke('gaze:setEnabled', on),
+    setHalo: (on) => ipcRenderer.invoke('gaze:setHalo', on),
+    calibrate: () => ipcRenderer.invoke('gaze:calibrate'),
+    clearModel: () => ipcRenderer.invoke('gaze:clearModel'),
+    cameraStatus: () => ipcRenderer.invoke('gaze:cameraStatus'),
   },
 
   hotkeys: {

@@ -1,0 +1,15 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <title>守望（后台）</title>
+  <!-- MediaPipe 的 wasm 要 eval，这一页不挂 CSP；页面只加载本地文件，窗口本身不显示 -->
+  <script type="importmap">
+    { "imports": { "@mediapipe/tasks-vision": "../../node_modules/@mediapipe/tasks-vision/vision_bundle.mjs" } }
+  </script>
+</head>
+<body style="margin:0;background:#000">
+  <video id="cam" autoplay playsinline muted style="width:1px;height:1px;opacity:0"></video>
+  <script type="module" src="gaze.mjs"></script>
+</body>
+</html>

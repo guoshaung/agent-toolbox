@@ -96,6 +96,36 @@ export default {
           behavior('贴边停靠', '拖动结束后停到最近的屏幕侧边', 'snapToEdge', true),
           behavior('始终置顶', '保持可见；展开知识卡时才占用较大区域', 'alwaysOnTop', true),
         ),
+        (() => {
+          // 守望：摄像头看眼睛。画面不出电脑；开关、校准、光圈都在这
+          const gz = window.toolbox.gaze;
+          const card = h('section', { class: 'card', id: 'pet-gaze' }, h('h3', { class: 'card__title' }, '守望 · 用摄像头看你有没有在看屏幕'),
+            h('p', { class: 'faint settings__hint' }, '本机跑人脸 478 点模型，画面一帧都不出电脑、不落盘、不开预览窗，只有摄像头旁边那个系统绿灯藏不住。桌宠头上一个小灯：绿在看、黄走神、红看手机 / 不在、蓝眼睛累；走神久了它会说一句。'));
+          const body = h('div', {});
+          card.append(body);
+          let timer = 0;
+          async function render() {
+            const s = await gz.status();
+            const cam = await gz.cameraStatus();
+            const fmt = (sec) => (sec >= 3600 ? `${(sec / 3600).toFixed(1)} 小时` : sec >= 60 ? `${Math.round(sec / 60)} 分钟` : `${sec} 秒`);
+            const t = s.today || {};
+            body.replaceChildren(
+              h('div', { class: 'settings__row' }, h('div', {}, h('div', {}, '开启守望'), h('div', { class: 'faint settings__hint' }, s.enabled ? (s.ready ? `摄像头就绪 · 现在：${s.stateLabel || '…'}` : s.cameraError ? `摄像头打不开：${s.cameraError}` : '正在打开摄像头…') : '关着')),
+                h('label', { class: 'switch' }, h('input', { type: 'checkbox', class: 'switch__input', checked: s.enabled, onchange: async (e) => { await gz.setEnabled(e.target.checked); setTimeout(render, 1500); } }), h('span', { class: 'switch__track' }))),
+              h('div', { class: 'settings__row' }, h('div', {}, h('div', {}, '视线光圈'), h('div', { class: 'faint settings__hint' }, s.calibrated ? `已校准（${new Date(s.calibratedAt).toLocaleDateString('zh-CN')}，误差约 ${s.errorPx} 像素）。屏幕上一个光圈跟着你的视线走。` : '还没校准。校准前光圈不会出现。')),
+                h('label', { class: 'switch' }, h('input', { type: 'checkbox', class: 'switch__input', checked: s.haloOn, onchange: (e) => gz.setHalo(e.target.checked) }), h('span', { class: 'switch__track' }))),
+              h('div', { class: 'settings__row' }, h('div', {}, h('div', {}, '校准视线（13 个点，约 40 秒）'), h('div', { class: 'faint settings__hint' }, '换了坐姿、屏幕角度或者觉得光圈偏了就重做一次。摄像头视线估计的极限大约 1.5～3 度，光圈就是那么大，不会精确到某一行字。')),
+                h('div', { class: 'pet-gaze__btns' }, h('button', { class: 'btn btn--sm btn--primary', onclick: async () => { await gz.calibrate(); } }, s.calibrated ? '重新校准' : '开始校准'), s.calibrated ? h('button', { class: 'btn btn--sm btn--ghost', onclick: async () => { await gz.clearModel(); render(); } }, '清掉') : null)),
+              h('div', { class: 'faint settings__hint' }, `今天：在看 ${fmt(t.looking || 0)} · 走神 ${fmt(t.distracted || 0)} · 看手机 ${fmt(t.phone || 0)} · 不在 ${fmt(t.away || 0)} · 眼睛累 ${fmt(t.tired || 0)}`),
+              cam.system && cam.system !== 'granted' && cam.system !== 'n/a' ? h('div', { class: 'faint settings__hint' }, `系统摄像头权限：${cam.system}。第一次开会弹系统询问，选「允许」；拒绝过的话去 系统设置 → 隐私与安全性 → 摄像头 里勾上工具箱。`) : null,
+            );
+          }
+          render();
+          timer = setInterval(() => { if (card.isConnected && card.offsetParent !== null) render(); }, 4000);
+          card.addEventListener('DOMNodeRemoved', () => clearInterval(timer));
+          return card;
+        })(),
+
         h('section', { class: 'card pet-settings__how' },
           h('h3', { class: 'card__title' }, '快捷操作'),
           h('p', { class: 'faint settings__hint' }, '在任何应用里选中一段代码或一句话，按 ⌘⇧L，桌宠直接弹出四行解释 —— 学代码最常用的一下。'),

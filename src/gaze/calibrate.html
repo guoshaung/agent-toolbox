@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self'; script-src 'self'" />
+  <title>校准视线</title>
+  <link rel="stylesheet" href="calibrate.css" />
+</head>
+<body>
+  <div id="intro" class="panel">
+    <h1>校准视线</h1>
+    <p>接下来屏幕上会依次出现 13 个点。每个点亮起时<b>只动眼睛盯着它</b>，头保持现在的位置和距离，等它收缩消失。全程约 40 秒。</p>
+    <p class="faint">坐姿、屏幕角度、离屏幕的距离和平时一样，校准才准。光线别太暗。</p>
+    <div class="row"><button id="start" class="primary">开始</button><button id="cancel">取消（Esc）</button></div>
+    <div id="camstate" class="faint"></div>
+  </div>
+  <div id="stage" hidden>
+    <div id="dot" class="dot"><span class="dot__ring"></span><span class="dot__core"></span></div>
+    <div id="progress" class="progress"></div>
+  </div>
+  <div id="result" class="panel" hidden>
+    <h1 id="result-title">校准完成</h1>
+    <p id="result-text"></p>
+    <div class="row"><button id="done" class="primary">用这个</button><button id="redo">再来一次</button></div>
+  </div>
+  <script src="calibrate.js"></script>
+</body>
+</html>

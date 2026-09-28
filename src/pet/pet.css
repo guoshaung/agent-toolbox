@@ -263,3 +263,10 @@ textarea { height: 106px; resize: none; font: var(--code-font)/1.52 ui-monospace
 .memory .memory__select { width: auto; }
 .memory .memory__session-bar .primary { width: auto; margin-top: 0; font-weight: 500; }
 .memory__filter { white-space: nowrap; }
+
+/* 守望状态灯：绿在看、黄走神、红看手机 / 不在、蓝眼睛累 */
+.gaze-dot { position: absolute; right: 6px; top: 6px; width: 10px; height: 10px; border-radius: 50%; background: #3fb98a; box-shadow: 0 0 8px #3fb98a; pointer-events: none; transition: background .3s, box-shadow .3s; }
+.gaze-dot.is-distracted { background: #dfa145; box-shadow: 0 0 8px #dfa145; animation: gaze-pulse 1s ease-in-out infinite; }
+.gaze-dot.is-tired { background: #5b8cff; box-shadow: 0 0 8px #5b8cff; }
+.gaze-dot.is-phone, .gaze-dot.is-away { background: #e46a70; box-shadow: 0 0 8px #e46a70; animation: gaze-pulse 1s ease-in-out infinite; }
+@keyframes gaze-pulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.5); } }

@@ -4638,3 +4638,4 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .tk__sug { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 8px 10px; border-radius: 9px; background: var(--bg-sunken); }
 .tk__tags { display: flex; flex-wrap: wrap; gap: 6px; }
 @media (max-width: 1000px) { .tk__body { grid-template-columns: 1fr; } .tk__board { grid-template-columns: 1fr; } }
+.pet-gaze__btns { display: flex; gap: 6px; flex: 0 0 auto; }
