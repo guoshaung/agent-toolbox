@@ -30,13 +30,18 @@ test('视线：岭回归能把虹膜偏移学成屏幕坐标', () => {
       samples.push({ x: f.vec, y: [gx, gy] });
     }
   }
-  const W = fitRidge(samples, 1e-4);
-  assert.ok(W);
+  const W = fitRidge(samples, 0.5);
+  assert.ok(W && W.W && W.mu && W.sigma);
   const probe = featuresFrom(fakeLandmarks({ irisDx: 0.015, irisDy: -0.0075 }), identity);
   const [px, py] = predict(W, probe.vec);
   assert.ok(Math.abs(px - 0.75) < 0.08, `px=${px}`);
   assert.ok(Math.abs(py - 0.25) < 0.08, `py=${py}`);
   assert.ok(residual(W, samples) < 0.05);
+  // 边缘也够得到：看最右边时预测不该缩回中间
+  const edge = featuresFrom(fakeLandmarks({ irisDx: 0.03, irisDy: 0 }), identity);
+  assert.ok(predict(W, edge.vec)[0] > 0.92, `edge=${predict(W, edge.vec)[0]}`);
+  // 旧存档的裸 W 也还能用
+  assert.ok(Array.isArray(predict(W.W, probe.vec)));
   assert.equal(fitRidge(samples.slice(0, 3)), null, '样本太少不拟合');
 });
 

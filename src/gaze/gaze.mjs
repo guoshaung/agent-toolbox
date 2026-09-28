@@ -5,7 +5,7 @@ import { FaceLandmarker, FilesetResolver } from '@mediapipe/tasks-vision';
  * 这个窗口永远不显示；画面一帧都不出电脑，也不落盘。
  */
 const NEEDED = [468, 473, 33, 133, 362, 263, 159, 145, 386, 374, 1, 152, 10];
-const FPS = 12;
+const FPS = 10;
 const video = document.getElementById('cam');
 let landmarker = null;
 let stream = null;
@@ -24,7 +24,8 @@ async function start() {
       baseOptions: { modelAssetPath: paths.model, delegate: 'GPU' },
       runningMode: 'VIDEO', numFaces: 1, outputFacialTransformationMatrixes: true, outputFaceBlendshapes: false,
     });
-    stream = await navigator.mediaDevices.getUserMedia({ video: { width: { ideal: 640 }, height: { ideal: 480 }, facingMode: 'user', frameRate: { ideal: 15 } }, audio: false });
+    // 720p：虹膜在图上的像素翻倍，视线抖动小一半；模型内部会自己裁脸和眼睛区域再算
+    stream = await navigator.mediaDevices.getUserMedia({ video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: 'user', frameRate: { ideal: 15 } }, audio: false });
     video.srcObject = stream;
     await video.play();
     report({ ready: true });

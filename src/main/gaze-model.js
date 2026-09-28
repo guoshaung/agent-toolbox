@@ -83,27 +83,43 @@ function solve(A, B) {   // 高斯消元解 A·W = B（A 方阵）
   return M.map((row) => row.slice(n));
 }
 
-/** samples: [{ x: featureVec, y: [sx, sy] }] → 权重矩阵 W（p × 2），预测 = x · W */
-function fitRidge(samples, lambda = 1e-3) {
+/**
+ * samples: [{ x: featureVec, y: [sx, sy] }] → { W, mu, sigma }。
+ * 特征先按列标准化再做岭回归：虹膜偏移这种数值只有 ±0.05 的特征，不标准化的话正则一压
+ * 系数就被压扁，预测整体缩向屏幕中间 —— 用户看到的就是「往右看光圈到不了右边」。
+ */
+function fitRidge(samples, lambda = 0.5) {
   if (!samples || samples.length < 8) return null;
-  const X = samples.map((s) => s.x); const Y = samples.map((s) => s.y);
+  const p = samples[0].x.length;
+  const mu = new Array(p).fill(0); const sigma = new Array(p).fill(1);
+  for (let j = 1; j < p; j += 1) {
+    let s = 0; for (const smp of samples) s += smp.x[j]; mu[j] = s / samples.length;
+    let v = 0; for (const smp of samples) v += (smp.x[j] - mu[j]) ** 2; sigma[j] = Math.sqrt(v / samples.length) || 1;
+  }
+  const X = samples.map((s) => standardize(s.x, mu, sigma)); const Y = samples.map((s) => s.y);
   const XtX = transposeMul(X, X); const XtY = transposeMul(X, Y);
   for (let i = 1; i < XtX.length; i += 1) XtX[i][i] += lambda;   // 截距不正则
-  return solve(XtX, XtY);
+  return { W: solve(XtX, XtY), mu, sigma };
 }
 
-function predict(W, x) {
-  if (!W || !x) return null;
+function standardize(x, mu, sigma) { return x.map((v, j) => (j === 0 || !mu ? v : (v - mu[j]) / (sigma[j] || 1))); }
+
+/** model 可以是 { W, mu, sigma }，也兼容旧的裸 W */
+function predict(model, x) {
+  if (!model || !x) return null;
+  const W = Array.isArray(model) ? model : model.W;
+  const z = Array.isArray(model) ? x : standardize(x, model.mu, model.sigma);
+  if (!W) return null;
   let sx = 0; let sy = 0;
-  for (let i = 0; i < x.length && i < W.length; i += 1) { sx += x[i] * W[i][0]; sy += x[i] * W[i][1]; }
+  for (let i = 0; i < z.length && i < W.length; i += 1) { sx += z[i] * W[i][0]; sy += z[i] * W[i][1]; }
   return [sx, sy];
 }
 
 /** 校准点的残差：平均离目标多少（屏幕归一坐标） */
-function residual(W, samples) {
-  if (!W || !samples?.length) return null;
+function residual(model, samples) {
+  if (!model || !samples?.length) return null;
   let sum = 0;
-  for (const s of samples) { const p = predict(W, s.x); sum += Math.hypot(p[0] - s.y[0], p[1] - s.y[1]); }
+  for (const s of samples) { const p = predict(model, s.x); sum += Math.hypot(p[0] - s.y[0], p[1] - s.y[1]); }
   return sum / samples.length;
 }
 

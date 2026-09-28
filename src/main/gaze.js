@@ -50,6 +50,7 @@ class GazeService {
   }
 
   _loadModel() { const m = this.store.get('pet.gazeModel'); return m && Array.isArray(m.W) ? m : null; }
+  _predictor() { const m = this.model; return m ? (m.mu ? { W: m.W, mu: m.mu, sigma: m.sigma } : m.W) : null; }
 
   paths() {
     const unpacked = (p) => p.replace(/app\.asar([\/\\])/, 'app.asar.unpacked$1');
@@ -140,7 +141,7 @@ class GazeService {
 
     let gaze = null;
     if (feat && this.model?.W) {
-      const raw = predict(this.model.W, feat.vec);
+      const raw = predict(this._predictor(), feat.vec);
       gaze = [this.fx.filter(raw[0], t), this.fy.filter(raw[1], t)];
     } else { this.fx.reset(); this.fy.reset(); }
 
@@ -231,12 +232,12 @@ class GazeService {
     if (step.type === 'cancel' || step.type === 'close') { const win = this.calibWin; this.calib = null; this.calibWin = null; if (win && !win.isDestroyed()) win.close(); this.fx.reset(); this.fy.reset(); return { ok: true }; }
     if (step.type === 'finish') {
       const samples = this.calib.samples;
-      const W = fitRidge(samples, 1e-3);
-      if (!W) return { ok: false, error: `只收到 ${samples.length} 个样本，摄像头没看清脸。光线亮一点、离屏幕 50～70 厘米再试。`, samples: samples.length };
-      const res = residual(W, samples);
+      const fitted = fitRidge(samples, 0.5);
+      if (!fitted) return { ok: false, error: `只收到 ${samples.length} 个样本，摄像头没看清脸。光线亮一点、离屏幕 50～70 厘米再试。`, samples: samples.length };
+      const res = residual(fitted, samples);
       const b = this.calib.display.bounds;
       const errorPx = Math.round(res * Math.hypot(b.width, b.height) / Math.SQRT2);
-      this.model = { W, errorPx, at: Date.now(), samples: samples.length, displayId: this.calib.display.id };
+      this.model = { W: fitted.W, mu: fitted.mu, sigma: fitted.sigma, errorPx, at: Date.now(), samples: samples.length, displayId: this.calib.display.id, res: '720p' };
       this.store.set('pet.gazeModel', this.model);
       this.fx.reset(); this.fy.reset();
       return { ok: true, samples: samples.length, errorPx };
