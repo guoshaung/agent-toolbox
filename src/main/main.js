@@ -7,7 +7,7 @@ const { promisify } = require('node:util');
 const QRCode = require('qrcode');
 const { pathToFileURL } = require('node:url');
 const {
-  app, BrowserWindow, ipcMain, session, shell, dialog, clipboard, nativeTheme, safeStorage, screen,
+  app, BrowserWindow, ipcMain, session, shell, dialog, clipboard, nativeTheme, safeStorage, screen, desktopCapturer,
   nativeImage, globalShortcut,
   systemPreferences,
   Notification, Tray, Menu,
@@ -3400,6 +3400,18 @@ function registerIpc() {
   /** 圈选截图（dataURL PNG）→ 本地 OCR，只识别不翻译，返回 { ok, text | error }。
    *  普通翻译由渲染层的 local-first TranslationManager 处理。 */
   ipcMain.handle('lit:snipOcr', (_e, dataUrl) => ocr.ocrImage(app.getPath('userData'), dataUrl));
+
+  // 聊天分析：读一次前台窗口（优先微信）给渲染层截图 + OCR。只挑一个源 id，画面在渲染层抓、不落盘。
+  ipcMain.handle('chat:pickWindow', async () => {
+    try {
+      const sources = await desktopCapturer.getSources({ types: ['window'], thumbnailSize: { width: 0, height: 0 } });
+      const usable = sources.filter((s) => s.name && !/Agent 工具箱|Agent Toolbox|聊天分析/.test(s.name));
+      const wechat = usable.find((s) => /微信|WeChat|Weixin/i.test(s.name));
+      const pick = wechat || usable[0];
+      if (!pick) return { ok: false, error: '没找到可读的窗口。macOS 需要在「系统设置 → 隐私与安全性 → 屏幕录制」里勾上工具箱并重启。' };
+      return { ok: true, id: pick.id, name: pick.name };
+    } catch (err) { return { ok: false, error: `拿窗口列表失败：${err.message}` }; }
+  });
 
   ipcMain.handle('lit:list', () => {
     try {

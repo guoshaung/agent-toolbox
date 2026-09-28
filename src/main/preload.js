@@ -38,6 +38,8 @@ contextBridge.exposeInMainWorld('toolbox', {
   },
 
   chat: {
+    /** 聊天分析：读一次前台窗口（优先微信），返回可截图的源 id */
+    pickWindow: () => ipcRenderer.invoke('chat:pickWindow'),
     /** 可用的 AI 来源列表：{ codex: 'Codex', ... } */
     sources: () => ipcRenderer.invoke('chat:sources'),
     /** 每个来源最近一段本地会话的轻量概览。 */
