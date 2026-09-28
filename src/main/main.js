@@ -47,6 +47,7 @@ const practiceRunner = require('./practice-runner');
 const edgeCookies = require('./edge-cookies');
 const { RemoteControl } = require('./remote-control');
 const { registerContainerIpc, seedContainer, syncContainerLiterature, containerRoot } = require('./container-storage');
+const { registerStudyLazy } = require('./study-lazy');
 const { registerAvatarRigIpc } = require('./avatar-rig-service');
 const { DshService } = require('./dsh-service');
 const { AutoResearchService } = require('./autoresearch-service');
@@ -591,6 +592,7 @@ function credentialPath(scope = 'default') {
   if (scope === 'quiz') return 'study.quiz.keyEncrypted';
   if (scope === 'image') return 'image.api.keyEncrypted';
   return 'ai.api.keyEncrypted';
+  if (scope === 'vibe') return 'study.vibe.keyEncrypted';
 }
 
 function readApiKey(scope = 'default') {
@@ -1835,7 +1837,7 @@ async function callQuizApi({ messages, temperature = 0.2, timeout = 120000 }) {
   });
 }
 
-const API_KEY_PATHS = new Set(['ai.api.key', 'ai.api.keyEncrypted', 'study.quiz.keyEncrypted', 'research.translation.keyEncrypted', 'image.api.key', 'image.api.keyEncrypted']);
+const API_KEY_PATHS = new Set(['ai.api.key', 'ai.api.keyEncrypted', 'study.quiz.keyEncrypted', 'study.vibe.keyEncrypted', 'research.translation.keyEncrypted', 'image.api.key', 'image.api.keyEncrypted']);
 
 function registerIpc() {
   // 证书例外：按域名放行，不做全局关闭
@@ -1854,6 +1856,11 @@ function registerIpc() {
   registerContainerIpc(ipcMain, { shell, getUserDataPath: () => app.getPath('userData') });
   // 剪贴板历史：只在内存里留最近 30 条文字（不落盘 —— 剪贴板里常有密码），⌘K 里能搜回来
   const clipHistory = [];
+  // 懒人学习：Obsidian 仓库 / 弱模型陪练 / 书架下载 / 终端选择题
+  registerStudyLazy(ipcMain, {
+    store, readApiKey, performCompatibleRequest, containerRoot, hookContainerDownloads, dialog, shell,
+    getUserDataPath: () => app.getPath('userData'), getMainWindow: () => mainWindow,
+  });
   let clipLast = '';
   // 密码本复制出来的值：不进历史（⌘K 里能搜到的话等于明文展示）
   const clipSecrets = new Set();

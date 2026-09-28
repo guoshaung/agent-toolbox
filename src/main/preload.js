@@ -229,6 +229,9 @@ contextBridge.exposeInMainWorld('toolbox', {
     translate: (payload) => ipcRenderer.invoke('ai:translate', payload),
     /** 学习出题专用 Qwen 通道，使用独立安全凭据，不影响其他工具 */
     quiz: (payload) => ipcRenderer.invoke('ai:quiz', payload),
+    /** 懒人模式 vibe 陪练专用弱模型通道（默认本地 Ollama，Key 可不填） */
+    vibe: (payload) => ipcRenderer.invoke('ai:vibe', payload),
+    vibeModels: () => ipcRenderer.invoke('ai:vibeModels'),
     credentialStatus: (scope) => ipcRenderer.invoke('ai:credentialStatus', scope),
     saveCredential: (key, scope) => ipcRenderer.invoke('ai:saveCredential', key, scope),
     clearCredential: (scope) => ipcRenderer.invoke('ai:clearCredential', scope),
@@ -593,6 +596,20 @@ contextBridge.exposeInMainWorld('toolbox', {
     openPath: (p) => ipcRenderer.invoke('ideas:openPath', p),
     openInObsidian: (p) => ipcRenderer.invoke('ideas:openInObsidian', p),
     openTerminalChat: (payload) => ipcRenderer.invoke('ideas:openTerminalChat', payload),
+  },
+
+  /** 懒人学习：Obsidian 笔记进出、书架、终端题库、学习项目落容器 */
+  study: {
+    vaultStatus: () => ipcRenderer.invoke('study:vaultStatus'),
+    chooseVault: () => ipcRenderer.invoke('study:chooseVault'),
+    vaultNotes: (opts) => ipcRenderer.invoke('study:vaultNotes', opts),
+    vaultRead: (rel) => ipcRenderer.invoke('study:vaultRead', rel),
+    vaultWriteCard: (card) => ipcRenderer.invoke('study:vaultWriteCard', card),
+    openInObsidian: (rel) => ipcRenderer.invoke('study:openInObsidian', rel),
+    shelfInfo: () => ipcRenderer.invoke('study:shelfInfo'),
+    exportQuiz: (payload) => ipcRenderer.invoke('study:exportQuiz', payload),
+    runQuizInTerminal: (launcher) => ipcRenderer.invoke('study:runQuizInTerminal', launcher),
+    saveProject: (payload) => ipcRenderer.invoke('study:saveProject', payload),
   },
 
   vault: {

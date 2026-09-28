@@ -6,8 +6,10 @@ import { diffLines, verdict } from './recite.js';
 import { createQuizPanel } from './quiz.js';
 import { PageScraper, buildKnowledgePrompt, buildSiteDiscoveryPrompt } from './scrape.js';
 import { createPracticePanel } from './practice.js';
+import { createLazyPanel } from './lazy.js';
 
 const VIEWS = [
+  { id: 'lazy', label: '懒人模式' },
   { id: 'practice', label: '实践敲码' },
   { id: 'templates', label: '模板背诵' },
   { id: 'quiz', label: 'AI 出题' },
@@ -25,13 +27,14 @@ export default {
 
     let moduleId = config.get('study.lastModule', MODULES[0].id);
     let templateId = null;
-    // 记住上次停在哪个子页，切回来还是那一页。首次进来默认「实践敲码」。
-    let view = config.get('study.view', 'practice');
-    if (!VIEWS.some((v) => v.id === view)) view = 'practice';
+    // 记住上次停在哪个子页，切回来还是那一页。首次进来默认「懒人模式」——不用翻，它一口一口喂。
+    let view = config.get('study.view', 'lazy');
+    if (!VIEWS.some((v) => v.id === view)) view = 'lazy';
 
     const scraper = new PageScraper(document.getElementById('bridge-host'));
 
     const practice = createPracticePanel(ctx);
+    const lazy = createLazyPanel(ctx);
 
     // ---------- 数据：内置 + 用户自己加的 ----------
     const userTemplates = () => config.get('study.userTemplates') || [];
@@ -60,7 +63,8 @@ export default {
 
     function renderModules() {
       moduleList.textContent = '';
-      for (const mod of MODULES) {
+      // 只有场景题、没有模板的模块（设计模式·会用）不在背诵侧栏里占位，它活在懒人模式里
+      for (const mod of MODULES.filter((m) => (m.templates || []).length || userTemplates().some((t) => t.moduleId === m.id))) {
         const count = templatesOf(mod.id).length;
         moduleList.append(h('button', {
           class: `study__module${mod.id === moduleId ? ' is-active' : ''}`,
@@ -520,8 +524,15 @@ export default {
     }
 
     function renderMain() {
-      studySide.classList.toggle('is-practice-hidden', view === 'practice');
-      main.classList.toggle('study__main--practice', view === 'practice');
+      const wide = view === 'practice' || view === 'lazy';
+      studySide.classList.toggle('is-practice-hidden', wide);
+      main.classList.toggle('study__main--practice', wide);
+      if (view === 'lazy') {
+        main.textContent = '';
+        main.append(lazy.el);
+        lazy.activate();
+        return;
+      }
       if (view === 'practice') {
         main.textContent = '';
         main.append(practice.el);

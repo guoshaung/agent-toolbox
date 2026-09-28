@@ -1,4 +1,8 @@
 import { h, toast } from '../../core/ui.js';
+import { openWebPanel } from '../../core/webpanel.js';
+
+// 书架：放书的地方。内嵌浏览器里下载的文件、拖进来的 PDF / EPUB 都落这儿。
+const SHELF = '书架';
 
 const GROUP_LABELS = new Set(['文档', '图片', '视频', '音频', '代码', '数据', '压缩包', '其他']);
 const GROUP_ICONS = { 文档: '▤', 图片: '▧', 视频: '▶', 音频: '♫', 代码: '</>', 数据: '⌗', 压缩包: '◌', 其他: '•' };
@@ -108,10 +112,13 @@ export default {
       const visible = visibleItems();
       countLabel.textContent = `${visible.length}${visible.length === items.length ? '' : ` / ${items.length}`} 项`;
       if (!visible.length) {
+        const onShelf = currentPath === SHELF;
         list.append(h('div', { class: 'container__empty' },
-          h('div', { class: 'container__empty-icon' }, '⌂'),
-          h('strong', {}, searchInput.value ? '没有匹配内容' : '容器还是空的'),
-          h('p', { class: 'faint' }, searchInput.value ? '换个关键词试试。' : '把工具箱产生的学习资料放进这里，右键即可整理；外部 Finder 可以直接访问这个目录。'),
+          h('div', { class: 'container__empty-icon' }, onShelf ? '📚' : '⌂'),
+          h('strong', {}, searchInput.value ? '没有匹配内容' : onShelf ? '书架还是空的' : '容器还是空的'),
+          h('p', { class: 'faint' }, searchInput.value ? '换个关键词试试。' : onShelf
+            ? '把 PDF / EPUB 直接拖到这里；或点上面「书架浏览」在工具箱里打开任何网站，下载的文件会自动落进书架。'
+            : '把工具箱产生的学习资料放进这里，右键即可整理；外部 Finder 可以直接访问这个目录。'),
         ));
         return;
       }
@@ -229,6 +236,12 @@ export default {
         // 探测和状态是异步的，先把列表画出来别让人等
         probeRunnables().then(syncRunStatus);
       } finally { busy = false; }
+    }
+
+    async function openShelf() {
+      // 没有就建一个；建过了 mkdir 会返回「已存在」，无视它直接进
+      await window.toolbox.container.mkdir({ relPath: '', name: SHELF });
+      await refresh(SHELF);
     }
 
     async function makeFolder() {
@@ -469,6 +482,9 @@ export default {
     root.append(
       h('div', { class: 'bar bar--drag container__bar' }, h('strong', {}, '容器'), h('span', { class: 'faint' }, '工具箱本地资料空间'), h('span', { style: { flex: 1 } }), h('button', { class: 'btn btn--sm', onclick: () => window.toolbox.container.open().then((r) => r.ok ? toast('已在 Finder 中打开容器', 'good') : toast(r.error, 'bad')) }, '在 Finder 中打开')),
       h('div', { class: 'container__toolbar' },
+        // 书架放最左上：一键进书架；「书架浏览」开内嵌浏览器，里面下载的东西直接落书架
+        h('button', { class: 'btn btn--sm btn--primary', title: '书架：放书的地方，PDF / EPUB 拖进来或从内嵌浏览器下载', onclick: openShelf }, '📚 书架'),
+        h('button', { class: 'btn btn--sm', title: '在工具箱里打开一个网站，下载会直接落进书架', onclick: () => openWebPanel({ url: 'https://www.google.com', title: '书架浏览 · 下载会落进书架', partition: 'persist:shelf' }) }, '🌐 书架浏览'),
         breadcrumb,
         searchInput,
         newFolderInput,
