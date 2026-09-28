@@ -9,6 +9,14 @@ export const PET_SKINS = [
   { id: 'fox-miko', name: '狐耳巫女', note: '二次元 · 橙发白尖耳、大尾巴', src: 'assets/fox-miko.svg' },
   { id: 'magical-violet', name: '紫发魔法少女', note: '二次元 · 双团子、星星魔杖', src: 'assets/magical-violet.svg' },
   { id: 'mecha-silver', name: '银发机娘', note: '二次元 · 耳机、瞄准环', src: 'assets/mecha-silver.svg' },
+  { id: 'shark-hoodie', name: '鲨鱼连帽', note: '二次元 · 蓝白连帽衫、鳍和尾巴', src: 'assets/shark-hoodie.svg' },
+  { id: 'imp-red', name: '小恶魔', note: '二次元 · 红角、蝠翼、尖尾', src: 'assets/imp-red.svg' },
+  { id: 'angel-white', name: '天使', note: '二次元 · 光环、白翼', src: 'assets/angel-white.svg' },
+  { id: 'maid-black', name: '女仆', note: '二次元 · 黑裙白头饰', src: 'assets/maid-black.svg' },
+  { id: 'detective-brown', name: '侦探', note: '二次元 · 猎鹿帽、放大镜', src: 'assets/detective-brown.svg' },
+  { id: 'pirate-red', name: '海盗', note: '二次元 · 三角帽、眼罩', src: 'assets/pirate-red.svg' },
+  { id: 'dragon-teal', name: '龙娘', note: '二次元 · 龙角、龙尾', src: 'assets/dragon-teal.svg' },
+  { id: 'vampire-violet', name: '吸血鬼', note: '二次元 · 小尖牙、披风', src: 'assets/vampire-violet.svg' },
 ];
 
 export function resolveSkin(settings) {
