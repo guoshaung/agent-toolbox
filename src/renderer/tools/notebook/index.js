@@ -7,6 +7,7 @@ import { createFileTree } from './filetree.js';
 import { renderCallGraph } from './callgraph.js';
 import { htmlToMarkdown, markdownToHtml } from './markdown.js';
 import { SLASH_COMMANDS, filterCommands, outlineToTree } from './slash.js';
+import { createVim } from './vim.js';
 
 const MAX_CHARS = 400_000;
 // 深色主题都压在 14:1 对比度、背景亮度不到 1%（约等于纯黑配亮白）。
@@ -256,6 +257,9 @@ function createNotebookTool({ id, title, icon, hint, boundMode }) {
           closeCompletion();
           return;
         }
+        // Vim：普通 / 可视模式下 vim 先处理并吞掉；插入模式放行给下面原来的编辑逻辑
+        if (vim && vim.isOn() && vim.mode() !== 'insert' && vim.handle(e)) { syncStatus(); return; }
+        if (vim && vim.isOn() && e.key === 'Escape' && vim.handle(e)) { syncStatus(); return; }
         // Tab 插入两个空格而不是把焦点丢出去 —— 写代码的基本功
         if (e.key !== 'Tab') return;
         e.preventDefault();
@@ -977,6 +981,27 @@ function createNotebookTool({ id, title, icon, hint, boundMode }) {
         if (editing) editor.focus();
       },
     }, '编辑');
+
+    // Vim 模式：普通 / 插入 / 可视，模式显示在底部状态栏。只在代码工具里给。
+    const vimBadge = h('span', { class: 'nb__vim-badge', hidden: true });
+    const vim = editorMode === 'code' ? createVim(editor, { onMode: (mode) => {
+      const label = { normal: 'NORMAL', insert: 'INSERT', visual: 'VISUAL' }[mode];
+      vimBadge.hidden = !label;
+      if (label) { vimBadge.textContent = `VIM · ${label}`; vimBadge.dataset.mode = mode; }
+    } }) : null;
+    const vimToggle = h('button', {
+      class: 'btn btn--sm nb__glass',
+      title: 'Vim 模式：h j k l 移动、i 插入、Esc 回普通、dd 删行、v 选择、y 复制、p 粘贴、u 撤销',
+      onclick: () => {
+        if (!vim) return;
+        const next = !vim.isOn();
+        vim.setEnabled(next);
+        config.set('notebook.vim', next);
+        vimToggle.classList.toggle('btn--primary', next);
+        vimToggle.textContent = next ? 'Vim · 开' : 'Vim';
+        if (next && !editing) { editing = true; setMode(); }
+      },
+    }, 'Vim');
 
     function syncEditorMode() {
       const markdown = editorMode === 'markdown';
@@ -1990,6 +2015,7 @@ function createNotebookTool({ id, title, icon, hint, boundMode }) {
     const codeControls = h('span', { class: 'nb__code-controls' },
       langSelect,
       editToggle,
+      vimToggle,
       h('span', { class: 'subbar__sep' }),
       symbolInput,
       h('button', { class: 'btn btn--icon', title: '上一处 (Shift+Enter)', onclick: () => step(-1) }, '‹'),
@@ -2002,6 +2028,7 @@ function createNotebookTool({ id, title, icon, hint, boundMode }) {
     const statusLang = h('span', { class: 'nb__status-item' }, '');
     const statusInfo = h('span', { class: 'nb__status-item' }, '');
     const statusBar = h('div', { class: 'nb__status' },
+      vimBadge,
       h('span', { class: 'nb__status-left' }, statusInfo),
       h('span', { style: { flex: 1 } }),
       statusLang, statusPos,
@@ -2153,6 +2180,7 @@ function createNotebookTool({ id, title, icon, hint, boundMode }) {
       newFileModal,
     );
 
+    if (vim && config.get('notebook.vim', false)) { vim.setEnabled(true); vimToggle.classList.add('btn--primary'); vimToggle.textContent = 'Vim · 开'; editing = true; }
     applyPaneWidths();
     syncEditorMode();
     applyEditorAppearance();
