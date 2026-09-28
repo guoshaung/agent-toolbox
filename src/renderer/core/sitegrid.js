@@ -130,52 +130,72 @@ export function createSiteGrid(root, {
     return icon;
   }
 
+  // 铺一张站点卡片。抽出来是为了分组渲染时能复用。
+  function buildCard(site) {
+    const custom = !presets.includes(site);
+    const card = h('div', {
+      class: `research__card${detachable ? ' research__card--detachable' : ''}`,
+      title: detachable ? '点击打开；拖出此卡片可生成悬浮球，双击悬浮球展开' : '',
+      draggable: detachable,
+      onclick: () => { if (!draggingSite) openSite(site); },
+      onmouseenter: () => prewarm(site),   // 悬停即预热，点开更快
+    },
+      custom && h('button', {
+        class: 'research__card-del', title: '移除这个站点',
+        onclick: async (e) => {
+          e.stopPropagation();
+          const list = (config.get(configKey) || []).filter((x) => x.url !== site.url);
+          await config.set(configKey, list);
+          renderGrid();
+        },
+      }, '×'),
+      siteIcon(site),
+      h('div', { class: 'research__name' }, site.name),
+      h('div', { class: 'research__desc faint' }, site.desc || new URL(site.url).host),
+    );
+    grid.appendChild(card);
+    if (detachable) {
+      let dragTimer;
+      card.addEventListener('dragstart', (event) => {
+        draggingSite = true;
+        card.classList.add('is-dragging');
+        event.dataTransfer?.setData('text/plain', site.url);
+        if (event.dataTransfer) event.dataTransfer.effectAllowed = 'copy';
+      });
+      card.addEventListener('dragend', async () => {
+        card.classList.remove('is-dragging');
+        clearTimeout(dragTimer);
+        dragTimer = setTimeout(() => { draggingSite = false; }, 80);
+        try {
+          const result = await window.toolbox.site.float(site);
+          if (result?.ok) toast(`${site.name} 已变成悬浮球，双击它展开`, 'good', 4200);
+        } catch (err) {
+          toast(`悬浮球创建失败：${err.message}`, 'bad');
+        }
+      });
+    }
+  }
+
   function renderGrid() {
     grid.textContent = '';
-    for (const site of allSites().filter(matchesCategory)) {
-      const custom = !presets.includes(site);
-      grid.appendChild(
-      h('div', {
-        class: `research__card${detachable ? ' research__card--detachable' : ''}`,
-        title: detachable ? '点击打开；拖出此卡片可生成悬浮球，双击悬浮球展开' : '',
-        draggable: detachable,
-        onclick: () => { if (!draggingSite) openSite(site); },
-      },
-          custom && h('button', {
-            class: 'research__card-del', title: '移除这个站点',
-            onclick: async (e) => {
-              e.stopPropagation();
-              const list = (config.get(configKey) || []).filter((x) => x.url !== site.url);
-              await config.set(configKey, list);
-              renderGrid();
-            },
-          }, '×'),
-          siteIcon(site),
-          h('div', { class: 'research__name' }, site.name),
-          h('div', { class: 'research__desc faint' }, site.desc || new URL(site.url).host),
-        ),
-      );
-      if (detachable) {
-        const card = grid.lastElementChild;
-        let dragTimer;
-        card.addEventListener('dragstart', (event) => {
-          draggingSite = true;
-          card.classList.add('is-dragging');
-          event.dataTransfer?.setData('text/plain', site.url);
-          if (event.dataTransfer) event.dataTransfer.effectAllowed = 'copy';
-        });
-        card.addEventListener('dragend', async () => {
-          card.classList.remove('is-dragging');
-          clearTimeout(dragTimer);
-          dragTimer = setTimeout(() => { draggingSite = false; }, 80);
-          try {
-            const result = await window.toolbox.site.float(site);
-            if (result?.ok) toast(`${site.name} 已变成悬浮球，双击它展开`, 'good', 4200);
-          } catch (err) {
-            toast(`悬浮球创建失败：${err.message}`, 'bad');
-          }
-        });
+    const sites = allSites();
+    // 分了组、又在「全部」时：按板块一段段铺，段与段之间有标题分隔，不再堆成一坨。
+    // 选了某个分类，就只铺那一类（老的筛选行为）。
+    if (categories.length && activeCategory === 'all') {
+      const known = new Set(categories.map((c) => c.id));
+      for (const cat of categories) {
+        const inCat = sites.filter((s) => s.category === cat.id);
+        if (!inCat.length) continue;
+        grid.appendChild(h('div', { class: 'sitegrid__group' }, h('span', { class: 'sitegrid__group-label' }, cat.label)));
+        inCat.forEach(buildCard);
       }
+      const rest = sites.filter((s) => !known.has(s.category));
+      if (rest.length) {
+        grid.appendChild(h('div', { class: 'sitegrid__group' }, h('span', { class: 'sitegrid__group-label' }, '➕ 我加的')));
+        rest.forEach(buildCard);
+      }
+    } else {
+      sites.filter(matchesCategory).forEach(buildCard);
     }
     // 加自定义站点的卡片
     const nameInput = h('input', { class: 'field field--sm', placeholder: '名称' });
@@ -363,38 +383,63 @@ export function createSiteGrid(root, {
     errorPane.removeAttribute('hidden');
   }
 
+  /**
+   * 建好这个站点的常驻 webview 并开始加载（若还没建）。
+   * 只负责「有」，不负责「显示」——activeUrl / 显隐都交给 openSite。
+   * 这样就能在鼠标悬停时先偷偷预热：真点进去时页面往往已经加载好了。
+   */
+  function ensureView(site) {
+    let view = views.get(site.url);
+    if (view) return view;
+    // allowpopups 不能省：图书馆/数据库的链接大多是 target="_blank"。
+    // 不开这个属性，window.open 在到达主进程的处理器之前就被拦死，
+    // 结果是点了完全没反应 —— 连转发都不会发生。
+    // 开了之后主进程仍然 deny 真弹窗，只把 URL 转回来，由下面的监听原地导航：
+    // 同一个 webview、同一个 session，学校的登录态才带得过去。
+    view = h('webview', { partition, src: site.url, allowpopups: true });
+    view.addEventListener('did-navigate', (e) => { if (activeUrl === site.url) address.value = e.url; });
+    view.addEventListener('did-navigate-in-page', (e) => { if (activeUrl === site.url) address.value = e.url; });
+    // 在线工具站都是干净的 SPA，不套「拆登录墙」脚本：它会改写 html/body 的滚动和选中，SPA 容易白屏
+    if (bypass) view.addEventListener('dom-ready', () => injectBypass(view));
+    view.addEventListener('did-start-loading', () => showLoading(view, site.url));
+    // 有些站点（知网就是典型）对内嵌浏览器直接返回 418 之类的空响应：
+    // 不触发 did-fail-load，但页面是空的。不检查就又是一片白屏。
+    view.addEventListener('did-finish-load', () => {
+      if (activeUrl !== site.url) return;
+      hideLoading();
+      setTimeout(() => checkBlank(view, site.url), 1400);   // 留点时间给前端渲染
+    });
+    view.addEventListener('did-fail-load', (e) => {
+      hideLoading();
+      if (e.errorCode === -3) return;                 // -3 是主动取消的导航，不是故障
+      if (!e.isMainFrame && e.isMainFrame !== undefined) return;   // 子框架失败不弹整页错误
+      if (activeUrl !== site.url) return;
+      showError(view, e);
+    });
+    syncEdgeCookiesFor(site.url);
+    views.set(site.url, view);
+    viewHost.appendChild(view);
+    return view;
+  }
+
+  // 悬停预热：鼠标停在卡片上就后台起 webview 开始拉页面。
+  // 每个站点只预热一次，且限个数——别一划过整排就同时开十几个 webview 吃内存。
+  const prewarmed = new Set();
+  let prewarmCount = 0;
+  function prewarm(site) {
+    if (prewarmed.has(site.url) || views.has(site.url)) return;
+    if (prewarmCount >= 6) return;                    // 上限：最多后台预热 6 个
+    prewarmed.add(site.url);
+    prewarmCount += 1;
+    ensureView(site);
+    // 预热的 webview 先不显示，挂在 viewHost 里但整个 viewHost 此刻是 hidden 的
+    const v = views.get(site.url);
+    if (v) v.style.display = 'none';
+  }
+
   function openSite(site) {
     activeUrl = site.url;
-    if (!views.has(site.url)) {
-      // allowpopups 不能省：图书馆/数据库的链接大多是 target="_blank"。
-      // 不开这个属性，window.open 在到达主进程的处理器之前就被拦死，
-      // 结果是点了完全没反应 —— 连转发都不会发生。
-      // 开了之后主进程仍然 deny 真弹窗，只把 URL 转回来，由下面的监听原地导航：
-      // 同一个 webview、同一个 session，学校的登录态才带得过去。
-      const view = h('webview', { partition, src: site.url, allowpopups: true });
-      view.addEventListener('did-navigate', (e) => { if (activeUrl === site.url) address.value = e.url; });
-      view.addEventListener('did-navigate-in-page', (e) => { if (activeUrl === site.url) address.value = e.url; });
-      // 在线工具站都是干净的 SPA，不套「拆登录墙」脚本：它会改写 html/body 的滚动和选中，SPA 容易白屏
-      if (bypass) view.addEventListener('dom-ready', () => injectBypass(view));
-      view.addEventListener('did-start-loading', () => showLoading(view, site.url));
-      // 有些站点（知网就是典型）对内嵌浏览器直接返回 418 之类的空响应：
-      // 不触发 did-fail-load，但页面是空的。不检查就又是一片白屏。
-      view.addEventListener('did-finish-load', () => {
-        if (activeUrl !== site.url) return;
-        hideLoading();
-        setTimeout(() => checkBlank(view, site.url), 1400);   // 留点时间给前端渲染
-      });
-      view.addEventListener('did-fail-load', (e) => {
-        hideLoading();
-        if (e.errorCode === -3) return;                 // -3 是主动取消的导航，不是故障
-        if (!e.isMainFrame && e.isMainFrame !== undefined) return;   // 子框架失败不弹整页错误
-        if (activeUrl !== site.url) return;
-        showError(view, e);
-      });
-      syncEdgeCookiesFor(site.url);
-      views.set(site.url, view);
-      viewHost.appendChild(view);
-    }
+    ensureView(site);
     hideError();
     for (const [url, view] of views) view.style.display = url === site.url ? 'flex' : 'none';
     address.value = site.url;
