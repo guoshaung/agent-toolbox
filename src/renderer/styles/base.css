@@ -1064,3 +1064,17 @@ body.is-expanding .blackhole__ring { animation: bh-ring-shrink 1.05s ease-in for
 .atelier-banner__winbtn--min:hover { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
 .atelier-banner__winbtn--close:hover { border-color: var(--bad); color: #fff; background: var(--bad); }
 .atelier-banner__winbtn:active { transform: none; }
+
+/* 顶栏外链（今日大模型等）的内嵌网页面板：盖满窗口的一层，自带工具条 */
+.webpanel { position: fixed; inset: 0; z-index: 2400; display: flex; flex-direction: column; background: var(--bg); }
+.webpanel[hidden] { display: none !important; }
+.webpanel__bar { flex: 0 0 auto; gap: 6px; padding: 7px 10px; border-bottom: 1px solid var(--line-soft, var(--line)); -webkit-app-region: no-drag; }
+.webpanel__title { flex: 0 0 auto; color: var(--text); font-size: 13px; margin: 0 4px 0 2px; white-space: nowrap; }
+.webpanel__addr { flex: 1; min-width: 0; font-size: 11.5px; color: var(--text-dim); }
+.webpanel__frame { flex: 1; min-height: 0; display: flex; background: #fff; }
+.webpanel__frame webview { flex: 1; min-height: 0; }
+
+/* DSH 控制台内嵌 webview（原先甩去系统浏览器，现在就地展示） */
+.dsh__frame { flex: 1; min-height: 0; display: flex; background: #fff; }
+.dsh__frame webview { flex: 1; min-height: 0; }
+.dsh__external-panel { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; padding: 24px; text-align: center; background: var(--bg-sunken); color: var(--text); }

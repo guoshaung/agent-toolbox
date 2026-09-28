@@ -13,6 +13,7 @@ import { createPalette } from './core/palette.js';
 import { createDropzone } from './core/dropzone.js';
 import { togglePinned as togglePinnedState, addToRight, removePinned, LEFT_MAX, RIGHT_MAX } from './core/right-rail.js';
 import { createRadialMenu } from './core/radial.js';
+import { openWebPanel } from './core/webpanel.js';
 import { SUB_SECTIONS as RESEARCH_SUBS } from './tools/research/index.js';
 import { SUB_SECTIONS as FOCUS_SUBS } from './tools/focus/index.js';
 import { SUB_SECTIONS as GAME_SUBS } from './tools/game/index.js';
@@ -24,8 +25,8 @@ const dshBannerState = h('span', { class: 'atelier-banner__dsh-state' }, 'DSH We
 const dshButton = h('button', { class: 'atelier-banner__dsh', onclick: openDsh, title: '打开内置 DeepSeek Harness' }, '◈ ', dshBannerState);
 // ⌘K 入口放在横幅上：不知道快捷键的人也能点到
 const paletteButton = h('button', { class: 'atelier-banner__dsh atelier-banner__k', title: '搜工具、换皮肤、找刚建的文件夹（⌘K）', onclick: () => palette?.show() }, '⌘K ', h('span', { class: 'atelier-banner__dsh-state' }, '搜'));
-// 顶栏快捷入口：今日大模型（用系统浏览器打开）
-const aiModelButton = h('button', { class: 'atelier-banner__dsh atelier-banner__aimodel', title: '今日大模型 · 打开 bilibili AI Model World', onclick: () => window.toolbox.shell.openExternal('https://www.bilibili.com/toy/ai-model-world') }, '🌐 ', h('span', { class: 'atelier-banner__dsh-state' }, '今日大模型'));
+// 顶栏快捷入口：今日大模型 —— 直接在工具箱里开一层内嵌网页，不再甩去系统浏览器
+const aiModelButton = h('button', { class: 'atelier-banner__dsh atelier-banner__aimodel', title: '今日大模型 · 在工具箱内打开 AI Model World', onclick: () => openWebPanel({ url: 'https://www.bilibili.com/toy/ai-model-world', title: '今日大模型', partition: 'persist:aimodel' }) }, '🌐 ', h('span', { class: 'atelier-banner__dsh-state' }, '今日大模型'));
 let palette = null;
 // 右上角窗口控制：最小化 + 关闭。关闭只关窗口（应用留后台、桌宠还在），不是退出。
 const minButton = h('button', { class: 'atelier-banner__winbtn atelier-banner__winbtn--min', title: '最小化', 'aria-label': '最小化', onclick: () => window.toolbox.app.minimize?.() }, h('span', { 'aria-hidden': 'true' }, '\u2013'));

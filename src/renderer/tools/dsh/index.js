@@ -1,4 +1,5 @@
 import { h, toast } from '../../core/ui.js';
+import { iconFor } from '../../core/icons.js';
 
 export default {
   id: 'dsh',
@@ -7,45 +8,57 @@ export default {
   hint: 'DeepSeek Harness 内置 Web 控制台',
 
   create(root) {
-    const status = h('span', { class: 'faint dsh__status' }, '正在连接 DSH…');
+    const status = h('span', { class: 'tag dsh__status tag--warn' }, '正在连接 DSH…');
+    let view = null;          // DSH 的 URL 带一次性 token，只能装一次，之后靠 reload 走无 token 地址
     let currentUrl = '';
-    const view = h('div', { class: 'dsh__external-panel' },
-      h('strong', {}, 'DSH Web 在系统浏览器中运行'),
-      h('span', { class: 'faint' }, '启动后点击“在浏览器打开”；关闭浏览器不会停止本地 DSH 服务。'),
+
+    const frame = h('div', { class: 'dsh__frame' });
+    const placeholder = h('div', { class: 'dsh__external-panel' },
+      h('strong', {}, 'DSH Web 控制台'),
+      h('span', { class: 'faint' }, '点「启动 DSH」，就地在工具箱里打开，不用切浏览器。'),
     );
-    const openExternal = h('button', { class: 'btn btn--sm', onclick: () => currentUrl && window.toolbox.shell.openExternal(currentUrl) }, '在浏览器打开');
-    const reloadPlugins = h('button', {
-      class: 'btn btn--sm',
-      title: '在系统浏览器中重新打开 DSH',
-      onclick: () => currentUrl && window.toolbox.shell.openExternal(currentUrl),
-    }, '重新打开');
-    const start = h('button', { class: 'btn btn--sm btn--primary', onclick: startDsh }, '启动 DSH');
+    frame.append(placeholder);
+
+    function mountView(url) {
+      // 只创建一次：token 是一次性的，重复用原始带 token 地址会 401
+      currentUrl = url;
+      if (view) return;
+      view = h('webview', { partition: 'persist:dsh', src: url, allowpopups: true });
+      view.addEventListener('did-navigate', (e) => { currentUrl = e.url; });
+      view.addEventListener('did-navigate-in-page', (e) => { currentUrl = e.url; });
+      placeholder.remove();
+      frame.append(view);
+    }
 
     function applyState(state) {
       const running = state?.status === 'running';
-      if (running) currentUrl = state.url;
-      status.textContent = running ? `DSH Web 已运行 · ${state.url}` : state?.status === 'installing' ? '正在下载 DSH 启动命令…' : state?.status === 'starting' ? '正在启动 DSH Web…' : state?.error || 'DSH 尚未启动';
+      status.textContent = running ? 'DSH Web 已运行' : state?.status === 'installing' ? '正在下载 DSH 启动命令…' : state?.status === 'starting' ? '正在启动 DSH Web…' : state?.error || 'DSH 尚未启动';
       status.className = `tag dsh__status ${running ? 'tag--good' : state?.status === 'error' ? 'tag--bad' : 'tag--warn'}`;
       start.disabled = running || state?.status === 'installing' || state?.status === 'starting';
+      reload.disabled = !running;
       openExternal.disabled = !running;
-      // token 是一次性的；浏览器只在用户点击按钮时打开启动地址。
+      if (running && state.url) mountView(state.url);
     }
 
     async function startDsh() {
       start.disabled = true;
       const result = await window.toolbox.dsh.start();
       applyState(result);
-      if (!result.ok) toast(result.error || 'DSH 启动失败', 'bad', 6000);
-      else if (result.url) window.toolbox.shell.openExternal(result.url);
+      if (!result.ok && result.error) toast(result.error, 'bad', 6000);
     }
+
+    const start = h('button', { class: 'btn btn--sm btn--primary', onclick: startDsh }, '启动 DSH');
+    // reload 走 webview 当前地址（登录后已是无 token 地址），不要碰原始 token 链接
+    const reload = h('button', { class: 'btn btn--icon', title: '刷新控制台', disabled: true, onclick: () => view?.reload() }, iconFor('refresh'));
+    const openExternal = h('button', { class: 'btn btn--sm btn--ghost', title: '改用系统浏览器打开', disabled: true, onclick: () => (view?.getURL() || currentUrl) && window.toolbox.shell.openExternal(view?.getURL() || currentUrl) }, iconFor('external'), ' 浏览器');
+
     window.toolbox.dsh.onStatus(applyState);
     window.toolbox.dsh.status().then(applyState);
+
     root.append(
-      h('div', { class: 'bar bar--drag dsh__bar' }, h('strong', {}, 'DeepSeek Harness'), status, h('span', { style: { flex: 1 } }), start, reloadPlugins, openExternal),
-      view,
+      h('div', { class: 'bar bar--drag dsh__bar' }, h('strong', {}, 'DeepSeek Harness'), status, h('span', { style: { flex: 1 } }), start, reload, openExternal),
+      frame,
     );
-    window.toolbox.dsh.onStatus(applyState);
-    window.toolbox.dsh.status().then(applyState);
     return { activate: startDsh };
   },
 };
