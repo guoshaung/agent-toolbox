@@ -15,6 +15,7 @@ import { togglePinned as togglePinnedState, addToRight, removePinned, LEFT_MAX, 
 import { createRadialMenu } from './core/radial.js';
 import { SUB_SECTIONS as RESEARCH_SUBS } from './tools/research/index.js';
 import { SUB_SECTIONS as FOCUS_SUBS } from './tools/focus/index.js';
+import { SUB_SECTIONS as GAME_SUBS } from './tools/game/index.js';
 
 const rail = document.getElementById('rail');
 const stage = document.getElementById('stage');
@@ -23,6 +24,8 @@ const dshBannerState = h('span', { class: 'atelier-banner__dsh-state' }, 'DSH We
 const dshButton = h('button', { class: 'atelier-banner__dsh', onclick: openDsh, title: '打开内置 DeepSeek Harness' }, '◈ ', dshBannerState);
 // ⌘K 入口放在横幅上：不知道快捷键的人也能点到
 const paletteButton = h('button', { class: 'atelier-banner__dsh atelier-banner__k', title: '搜工具、换皮肤、找刚建的文件夹（⌘K）', onclick: () => palette?.show() }, '⌘K ', h('span', { class: 'atelier-banner__dsh-state' }, '搜'));
+// 顶栏快捷入口：今日大模型（用系统浏览器打开）
+const aiModelButton = h('button', { class: 'atelier-banner__dsh atelier-banner__aimodel', title: '今日大模型 · 打开 bilibili AI Model World', onclick: () => window.toolbox.shell.openExternal('https://www.bilibili.com/toy/ai-model-world') }, '🌐 ', h('span', { class: 'atelier-banner__dsh-state' }, '今日大模型'));
 let palette = null;
 // 右上角窗口控制：最小化 + 关闭。关闭只关窗口（应用留后台、桌宠还在），不是退出。
 const minButton = h('button', { class: 'atelier-banner__winbtn atelier-banner__winbtn--min', title: '最小化', 'aria-label': '最小化', onclick: () => window.toolbox.app.minimize?.() }, h('span', { 'aria-hidden': 'true' }, '\u2013'));
@@ -35,6 +38,7 @@ const atelierBanner = h('header', { class: 'atelier-banner', 'aria-label': 'Agen
   ),
   h('div', { class: 'atelier-banner__bow', 'aria-hidden': 'true' }),
   h('span', { class: 'atelier-banner__caption' }, 'PERSONAL WORKSPACE'),
+  aiModelButton,
   paletteButton,
   dshButton,
   h('div', { class: 'atelier-banner__winctl' }, minButton, closeButton),
@@ -163,7 +167,7 @@ const WHEEL_GROUPS = [
   { id: 'learn', label: '学习科研', icon: 'graduation', color: '#3fbf87', tools: ['research', 'study', 'docs', 'terms', 'coach', 'skills', 'typing'] },
   { id: 'make', label: '写作代码', icon: 'pen', color: '#ff9a6b', tools: ['notebook', 'notes', 'git', 'api', 'netlog', 'webtools'] },
   { id: 'ai', label: 'AI 伙伴', icon: 'bot', color: '#c9a7ff', tools: ['ask', 'tavern', 'voicebox', 'digital-human', 'avatar-rig', 'voice', 'gesture', 'monologue'] },
-  { id: 'life', label: '生活效率', icon: 'bowl', color: '#f0b93d', tools: ['home', 'tasks', 'focus', 'tidy', 'container', 'eat', 'history', 'video', 'vault'] },
+  { id: 'life', label: '生活效率', icon: 'bowl', color: '#f0b93d', tools: ['home', 'tasks', 'focus', 'game', 'tidy', 'container', 'eat', 'history', 'video', 'vault'] },
   { id: 'device', label: '设备外观', icon: 'smartphone', color: '#7aa8ff', tools: ['remote', 'dsh', 'controls', 'dock', 'pet', 'appearance'] },
 ];
 {
@@ -173,7 +177,7 @@ const WHEEL_GROUPS = [
   if (rest.length) WHEEL_GROUPS.push({ id: 'other', label: '其他', icon: 'more', color: '#98a2b3', tools: rest });
   for (const g of WHEEL_GROUPS) g.tools = g.tools.filter((id) => TOOLS.some((t) => t.id === id));
 }
-const TOOL_SUBS = { research: RESEARCH_SUBS, focus: FOCUS_SUBS };
+const TOOL_SUBS = { research: RESEARCH_SUBS, focus: FOCUS_SUBS, game: GAME_SUBS };
 let radial = null;
 const moreButton = h('button', {
   class: 'rail__item rail__more',
