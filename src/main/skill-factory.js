@@ -7,14 +7,24 @@ const path = require('node:path');
 const SKILL_FILE = 'SKILL.md';
 const MAX_SKILL_BYTES = 512 * 1024;
 
-function skillRoots({ homeDir = os.homedir(), projectDir = process.cwd() } = {}) {
-  return [
-    { id: 'project-cursor', label: '当前项目 · .cursor/skills', path: path.join(projectDir, '.cursor', 'skills') },
-    { id: 'project-agents', label: '当前项目 · .agents/skills', path: path.join(projectDir, '.agents', 'skills') },
+/**
+ * 可装 Skill 的目录。个人目录在前、已经存在的排最前；「当前项目」只在 cwd 真是个项目时才给 ——
+ * 打包后的 App 从访达启动 cwd 是 /，以前会生成 /.cursor/skills 这种鬼路径排在第一个，一键安装直接 ENOENT。
+ */
+function skillRoots({ homeDir = os.homedir(), projectDir = process.cwd(), exists = (p) => fs.existsSync(p) } = {}) {
+  const personal = [
+    { id: 'personal-claude', label: '个人目录 · ~/.claude/skills（Claude Code）', path: path.join(homeDir, '.claude', 'skills') },
+    { id: 'personal-codex', label: '个人目录 · ~/.codex/skills', path: path.join(homeDir, '.codex', 'skills') },
     { id: 'personal-cursor', label: '个人目录 · ~/.cursor/skills', path: path.join(homeDir, '.cursor', 'skills') },
     { id: 'personal-agents', label: '个人目录 · ~/.agents/skills', path: path.join(homeDir, '.agents', 'skills') },
-    { id: 'personal-codex', label: '个人目录 · ~/.codex/skills', path: path.join(homeDir, '.codex', 'skills') },
   ];
+  const isProject = projectDir && projectDir !== '/' && path.resolve(projectDir) !== path.resolve(homeDir) && !projectDir.startsWith('/Applications') && exists(projectDir);
+  const project = isProject ? [
+    { id: 'project-cursor', label: '当前项目 · .cursor/skills', path: path.join(projectDir, '.cursor', 'skills') },
+    { id: 'project-agents', label: '当前项目 · .agents/skills', path: path.join(projectDir, '.agents', 'skills') },
+  ] : [];
+  const ranked = personal.map((t) => ({ ...t, exists: exists(t.path) })).sort((a, b) => Number(b.exists) - Number(a.exists));
+  return [...ranked, ...project];
 }
 
 function sanitizeSkillName(value) {

@@ -65,7 +65,7 @@ export default {
     // ---------- 模型配置提示：酒馆设置存在它自己的 localStorage，
     // 不能从外部安全写入，这里只给可复制的连接信息 + 跳转 AI 设置。 ----------
     const copy = (text, label) => () => {
-      navigator.clipboard.writeText(text).then(() => toast(`${label}已复制`, 'good')).catch(() => toast('复制失败', 'bad'));
+      window.toolbox.clipboard.write(text).then(() => toast(`${label}已复制`, 'good')).catch(() => toast('复制失败', 'bad'));
     };
     const setupHint = h('div', { class: 'tavern__hint' },
       h('strong', {}, '首次使用：接入免费模型（Agnes）'),

@@ -203,7 +203,7 @@ export default {
     }
     async function copyCurl(entry) {
       const curl = await window.toolbox.http.toCurl(toRequest(entry), {});
-      await navigator.clipboard.writeText(curl);
+      await window.toolbox.clipboard.write(curl);
       toast('curl 已复制', 'good', 1400);
     }
 

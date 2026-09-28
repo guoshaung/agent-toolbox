@@ -138,7 +138,7 @@ export default {
               if (!r.ok) return toast(r.error || '没写出来', 'bad');
               const box = h('section', { class: 'card' }, h('div', { class: 'home__head' }, h('h3', { class: 'card__title' }, `本周小结${r.cached ? '（这周写过的）' : ''}`), h('div', { class: 'home__quick' },
                 h('button', { class: 'btn btn--sm', onclick: async () => { const f = await window.toolbox.learn.weekly({ fresh: true }); if (f.ok) box.replaceChild(md(f.markdown), box.lastChild); } }, '重写'),
-                h('button', { class: 'btn btn--sm', onclick: () => navigator.clipboard.writeText(r.markdown).then(() => toast('已复制', 'good')) }, '复制'),
+                h('button', { class: 'btn btn--sm', onclick: () => window.toolbox.clipboard.write(r.markdown).then(() => toast('已复制', 'good')) }, '复制'),
                 h('button', { class: 'btn btn--sm', onclick: () => box.remove() }, '收起'))), md(r.markdown));
               body.querySelector('.home__grid')?.before(box);
             } }, '本周小结'),

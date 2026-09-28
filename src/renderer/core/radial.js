@@ -14,11 +14,11 @@ import { iconFor } from './icons.js';
  * 背板挡在前面才收得掉。
  */
 
-const RING = [0, 150, 290, 430];     // 各层半径（窗口够大时），0 是中心
+const RING = [0, 160, 320, 470];     // 各层半径（窗口够大时），0 是中心
 const NODE = 56;
-const STEP2 = 17;                    // 第二圈相邻工具的角距
-const STEP3 = 11;                    // 第三圈相邻子页的角距
-const ZIGZAG = 50;                   // 第三圈内外交错的径向距离
+const STEP2 = 24;                    // 第二圈相邻工具的角距（原来 17 挤成一团）
+const STEP3 = 15;                    // 第三圈相邻子页的角距
+const ZIGZAG = 62;                   // 第三圈内外交错的径向距离
 
 /** 以锚点为圆心、给定半径的圆，哪段角度落在视口里。返回 [from, to]（度，0 = 右，负 = 上）。 */
 export function fitArc({ x, y, radius, width, height, pad = NODE / 2 + 8 }) {
@@ -103,7 +103,8 @@ export function createRadialMenu({ groups, tools, subsOf, isPinned, onOpen, onOp
     const width = window.innerWidth; const height = window.innerHeight;
     center = { x: railWidth + (width - railWidth) / 2, y: height / 2 + 8 };
     const room = Math.min(center.x - railWidth, width - center.x, center.y, height - center.y) - NODE * 0.8;
-    scale = Math.max(.45, Math.min(1, room / (RING[3] + ZIGZAG)));
+    // 第三圈允许比窗口略大一点点（节点贴边也看得见），不然半径被压得太小
+    scale = Math.max(.5, Math.min(1, (room + 40) / (RING[3] + ZIGZAG)));
     svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
     svg.setAttribute('width', width); svg.setAttribute('height', height);
   }

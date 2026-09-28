@@ -422,7 +422,8 @@ export default {
           } finally { install.disabled = false; }
         } }, '装到目录');
         const copy = h('button', { class: 'btn btn--sm btn--ghost', onclick: async () => {
-          await navigator.clipboard.writeText(fav.files['SKILL.md']);
+          // navigator.clipboard 在沙箱页里没权限，静默失败；走主进程的剪贴板
+          await window.toolbox.clipboard.write(fav.files['SKILL.md']);
           toast('SKILL.md 已复制', 'good', 1500);
         } }, '复制 SKILL.md');
         const view = h('details', { class: 'skills__fav-view' },

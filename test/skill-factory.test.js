@@ -63,3 +63,13 @@ test('writeSkill：raw 原样写入，附属文件一起落盘，路径不许往
   assert.throws(() => writeSkill({ directory: dir, name: 'evil', description: 'x', content: md, raw: true, overwrite: true, files: { '../escape.md': 'x' } }), /不合法/);
   assert.throws(() => writeSkill({ directory: dir, name: 'noraw', description: 'x', content: 'no frontmatter', raw: true }), /frontmatter/);
 });
+
+test('Skill 目录：从访达启动 cwd 是 / 时不出鬼路径，已存在的个人目录排前面，含 ~/.claude/skills', () => {
+  const { skillRoots } = require('../src/main/skill-factory');
+  const roots = skillRoots({ homeDir: '/h', projectDir: '/', exists: (p) => p === '/h/.codex/skills' });
+  assert.ok(roots.every((r) => r.path.startsWith('/h/')), roots.map((r) => r.path).join(','));
+  assert.equal(roots[0].path, '/h/.codex/skills');
+  assert.ok(roots.some((r) => r.path === '/h/.claude/skills'));
+  const withProject = skillRoots({ homeDir: '/h', projectDir: '/h/proj', exists: () => true });
+  assert.ok(withProject.some((r) => r.id === 'project-cursor'));
+});

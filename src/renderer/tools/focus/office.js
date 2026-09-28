@@ -193,7 +193,7 @@ export function createOffice(ctx) {
         h('button', {
           class: 'btn btn--sm btn--ghost', title: '复制这段输出',
           onclick: async () => {
-            await navigator.clipboard.writeText(body.textContent || '');
+            await window.toolbox.clipboard.write(body.textContent || '');
             toast('已复制', 'good');
           },
         }, '复制'),

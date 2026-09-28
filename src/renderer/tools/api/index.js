@@ -119,7 +119,7 @@ export default {
         },
       }, label)));
     const copyRespBtn = h('button', { class: 'btn btn--sm btn--ghost', onclick: () => {
-      navigator.clipboard.writeText(respBody.hidden ? respHeaders.textContent : respBody.textContent);
+      window.toolbox.clipboard.write(respBody.hidden ? respHeaders.textContent : respBody.textContent);
       toast('已复制', 'good', 1200);
     } }, '复制');
 
@@ -174,7 +174,7 @@ export default {
 
     const curlOutBtn = h('button', { class: 'btn btn--sm btn--ghost', onclick: async () => {
       const curl = await window.toolbox.http.toCurl(current, vars);
-      await navigator.clipboard.writeText(curl);
+      await window.toolbox.clipboard.write(curl);
       toast('curl 已复制，可以直接粘进终端', 'good', 2200);
     } }, '复制成 curl');
 
