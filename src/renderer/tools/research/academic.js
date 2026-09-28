@@ -13,6 +13,12 @@ const ACADEMIC_SITES = [
   { name: 'PubMed', url: 'https://pubmed.ncbi.nlm.nih.gov/', desc: '医学 / 生物医学', emoji: '🧬' },
   { name: 'Crossref', url: 'https://search.crossref.org/', desc: 'DOI / 出版物检索', emoji: '🔗' },
   { name: 'CORE', url: 'https://core.ac.uk/', desc: '开放获取论文', emoji: '🟢' },
+  // 论文之间的「直接联系」——引用关系图谱 / 相关论文发现，几家比较权威的
+  { name: 'Connected Papers', url: 'https://www.connectedpapers.com/', desc: '一篇论文→相关论文关系图谱', emoji: '🕸️' },
+  { name: 'Research Rabbit', url: 'https://www.researchrabbit.ai/', desc: '引用网络 + 文献推荐', emoji: '🐇' },
+  { name: 'Litmaps', url: 'https://www.litmaps.com/', desc: '交互式引文地图', emoji: '🗺️' },
+  { name: 'Inciteful', url: 'https://inciteful.xyz/', desc: '引文网络分析 / 找关键论文', emoji: '🔬' },
+  { name: 'scite', url: 'https://scite.ai/', desc: '引用语境（支持/反驳）', emoji: '💬' },
 ];
 
 export function createAcademic(root, ctx) {
