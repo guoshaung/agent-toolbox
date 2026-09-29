@@ -647,6 +647,31 @@ contextBridge.exposeInMainWorld('toolbox', {
     generate: (options) => ipcRenderer.invoke('vault:generate', options),
     strength: (pw) => ipcRenderer.invoke('vault:strength', pw),
     openFolder: () => ipcRenderer.invoke('vault:openFolder'),
+    pinStatus: () => ipcRenderer.invoke('vault:pinStatus'),
+    setPin: (pin) => ipcRenderer.invoke('vault:setPin', pin),
+    changePin: (oldPin, newPin) => ipcRenderer.invoke('vault:changePin', oldPin, newPin),
+    removePin: (pin) => ipcRenderer.invoke('vault:removePin', pin),
+    unlock: (pin) => ipcRenderer.invoke('vault:unlock', pin),
+    lock: () => ipcRenderer.invoke('vault:lock'),
+    useAsAiKey: (id, scope) => ipcRenderer.invoke('vault:useAsAiKey', id, scope),
+    /** 把 CC Switch（~/.cc-switch）里各家 API 配置搬进密码本；明文只在主进程过一下 */
+    importCcSwitch: (opts) => ipcRenderer.invoke('vault:importCcSwitch', opts),
+    // [portable-vault] 口令加密备份（换电脑带走）/ 从 .env 文件导入；口令只往主进程送，不落盘
+    exportPortable: (opts) => ipcRenderer.invoke('vault:exportPortable', opts),
+    importPortable: (opts) => ipcRenderer.invoke('vault:importPortable', opts),
+    importEnv: (opts) => ipcRenderer.invoke('vault:importEnv', opts),
+  },
+
+  flylab: {
+    status: () => ipcRenderer.invoke('flylab:status'),
+    cameras: () => ipcRenderer.invoke('flylab:cameras'),
+    run: (cfg) => ipcRenderer.invoke('flylab:run', cfg),
+    cancel: () => ipcRenderer.invoke('flylab:cancel'),
+    list: () => ipcRenderer.invoke('flylab:list'),
+    readVideo: (p) => ipcRenderer.invoke('flylab:readVideo', p),
+    openFolder: () => ipcRenderer.invoke('flylab:openFolder'),
+    remove: (p) => ipcRenderer.invoke('flylab:remove', p),
+    onProgress: (callback) => ipcRenderer.on('flylab:progress', (_event, state) => callback(state)),
   },
 
   zotero: {

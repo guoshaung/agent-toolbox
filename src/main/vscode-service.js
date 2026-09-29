@@ -69,7 +69,15 @@ class VscodeService {
     try { const r = await fetch(`http://127.0.0.1:${PORT}/healthz`, { signal: AbortSignal.timeout(1500) }); return r.ok; } catch { return false; }
   }
 
-  async start({ folder } = {}) {
+  /** 同一时刻只允许一个 start 在跑：工具打开时会被叫两次（create 里 setNbMode + 外面的 activate），
+   *  不去重就会起两个 code-server，第二个 EADDRINUSE 退出，还把第一个的「已就绪」盖成「出错」。 */
+  start(opts = {}) {
+    if (this.starting) return this.starting;
+    this.starting = this._start(opts).finally(() => { this.starting = null; });
+    return this.starting;
+  }
+
+  async _start({ folder } = {}) {
     const target = folder || this.folder();
     try { fs.mkdirSync(target, { recursive: true }); } catch { /* 让 code-server 自己报 */ }
     if (this.state.status === 'running' && this.child && await this.healthy()) { this.emit({ folder: target, url: this.urlFor(target) }); return { ok: true, ...this.state }; }
@@ -90,9 +98,14 @@ class VscodeService {
       const WATCHDOG = 'BIN="$1"; shift; "$BIN" "$@" & CS=$!; while kill -0 "$AT_PID" 2>/dev/null && kill -0 $CS 2>/dev/null; do sleep 1; done; if kill -0 $CS 2>/dev/null; then kill -TERM $CS 2>/dev/null; wait $CS; exit 0; fi; wait $CS; exit $?';
       this.child = spawn('/bin/sh', ['-c', WATCHDOG, 'sh', bin, ...args], { env: { ...process.env, HOME, AT_PID: String(process.pid) }, stdio: ['ignore', 'pipe', 'pipe'], detached: true });
     } catch (err) { this.emit({ status: 'error', error: err.message }); return { ok: false, error: err.message }; }
-    this.child.stdout.on('data', (d) => { this.pushLog(d); });
-    this.child.stderr.on('data', (d) => { this.pushLog(d); });
-    this.child.on('exit', (code) => { this.child = null; if (this.state.status !== 'idle') this.emit({ status: code ? 'error' : 'idle', error: code ? `code-server 退出了（${code}）` : '' }); });
+    const child = this.child;
+    child.stdout.on('data', (d) => { this.pushLog(d); });
+    child.stderr.on('data', (d) => { this.pushLog(d); });
+    child.on('exit', (code) => {
+      if (this.child !== child) return;          // 已经被 stop()/重启换掉的老进程，别动现在的状态
+      this.child = null;
+      if (this.state.status !== 'idle') this.emit({ status: code ? 'error' : 'idle', error: code ? `code-server 退出了（${code}）` : '' });
+    });
     for (let i = 0; i < 60; i += 1) {         // 最多等 30 秒
       await new Promise((r) => setTimeout(r, 500));
       if (!this.child) break;

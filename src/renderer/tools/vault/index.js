@@ -27,12 +27,89 @@ export default {
     let kindFilter = config.get('vault.filter', 'all');
     let editing = null;          // { id? , ...fields } 正在编辑的
     let revealed = new Map();    // id -> 解出来的条目（点过「显示」）
+    let pin = { hasPin: false, unlocked: true };   // 保险箱门的状态
 
     const list = h('div', { class: 'vault__list' });
     const side = h('div', { class: 'vault__side' });
+    const gate = h('div', { class: 'vault__gate' });
+    const bodyWrap = h('div', { class: 'vault__body' }, list, side);
     const searchInput = h('input', { class: 'field vault__search', placeholder: '搜名字 / 网址 / 账号 / 标签', oninput: (e) => { query = e.target.value.trim().toLowerCase(); renderList(); } });
     const filterBar = h('div', { class: 'vault__filters' });
     const countLabel = h('span', { class: 'faint vault__count' });
+    const lockBtn = h('button', { class: 'btn btn--sm btn--ghost', title: '锁上保险箱 / 设置密码', onclick: onLockButton }, '🔒');
+    const barActions = h('span', { class: 'vault__bar-actions' },
+      h('button', { class: 'btn btn--sm btn--primary', onclick: () => startEdit(null) }, '＋ 新增'),
+      h('button', { class: 'btn btn--sm btn--ghost', title: '密文文件在哪（备份用）', onclick: () => api.openFolder() }, '文件位置'),
+      // 把 CC Switch（~/.cc-switch）里各家 API 的名称 / 地址 / key 搬进来。明文不经过渲染层，主进程读完直接加密存。
+      h('button', { class: 'btn btn--sm btn--ghost', title: '读取 CC Switch 的本地数据库，把各家 API 配置（名称 / 地址 / key）导入密码本；同名的跳过', onclick: async (ev) => {
+        const btn = ev.currentTarget; btn.disabled = true; btn.textContent = '导入中…';
+        try {
+          const r = await api.importCcSwitch();
+          if (!r.ok) return toast(r.error || '导入失败', 'bad', 6000);
+          const why = (r.skipped || []).map((s) => `${s.name}（${s.app}）：${s.reason}`).join('；');
+          toast(`从 CC Switch 导入 ${r.imported} 条${r.skipped?.length ? `，跳过 ${r.skipped.length} 条：${why}` : ''}`, r.imported ? 'good' : 'info', 9000);
+          await refresh();
+        } finally { btn.disabled = false; btn.textContent = '从 CC Switch 导入'; }
+      } }, '从 CC Switch 导入'),
+      // [portable-vault] 口令加密备份：钥匙串加密的 vault.json 换电脑打不开，这个用口令，带到哪都能开
+      h('button', { class: 'btn btn--sm btn--ghost', title: '把全部条目用一个口令加密成一个文件，换电脑后用「导入加密备份」+ 同一口令恢复。口令不保存，忘了就没了', onclick: async (ev) => {
+        const passphrase = await askPassphrase('导出加密备份', '给这个备份文件设一个口令（建议一句话，中文也行），换电脑导入时要输同一个。');
+        if (passphrase == null) return;
+        const btn = ev.currentTarget; btn.disabled = true;
+        try {
+          const r = await api.exportPortable({ passphrase });
+          if (r.canceled) return;
+          if (!r.ok) return toast(r.error || '导出失败', 'bad', 6000);
+          toast(`已加密导出 ${r.count} 条 → ${r.file}`, 'good', 9000);
+        } finally { btn.disabled = false; }
+      } }, '导出加密备份'),
+      h('button', { class: 'btn btn--sm btn--ghost', title: '读一个「导出加密备份」生成的文件，输当时的口令，条目并进密码本；标题 / 账号 / 类型都相同的跳过', onclick: async (ev) => {
+        const passphrase = await askPassphrase('导入加密备份', '输入导出时设的口令。');
+        if (passphrase == null) return;
+        const btn = ev.currentTarget; btn.disabled = true;
+        try {
+          const r = await api.importPortable({ passphrase });
+          if (r.canceled) return;
+          if (!r.ok) return toast(r.error || '导入失败', 'bad', 6000);
+          toast(`导入 ${r.imported} 条，跳过 ${r.skipped} 条重复`, r.imported ? 'good' : 'info', 8000);
+          await refresh();
+        } finally { btn.disabled = false; }
+      } }, '导入加密备份'),
+      h('button', { class: 'btn btn--sm btn--ghost', title: '选一个或多个 .env 文件：整个文件存成一条备注，其中像密钥的变量（KEY / SECRET / TOKEN / PASSWORD / WEBHOOK）各存一条 API Key', onclick: async (ev) => {
+        const btn = ev.currentTarget; btn.disabled = true;
+        try {
+          const r = await api.importEnv({});
+          if (r.canceled) return;
+          const bad = (r.results || []).filter((x) => !x.ok).map((x) => x.error).join('；');
+          if (bad) toast(bad, 'bad', 8000);
+          toast(`从 .env 导入 ${r.imported} 条，跳过 ${r.skipped} 条重复`, r.imported ? 'good' : 'info', 8000);
+          await refresh();
+        } finally { btn.disabled = false; }
+      } }, '导入 .env'),
+      lockBtn,
+    );
+
+    // [portable-vault] 口令输入框：Electron 里没有 window.prompt，自己画一个；值只交给主进程，不留在页面
+    function askPassphrase(title, hint) {
+      return new Promise((resolve) => {
+        const input = h('input', { class: 'field', type: 'password', placeholder: '口令', autocomplete: 'off', style: 'width:100%' });
+        const showBtn = h('button', { class: 'btn btn--sm btn--ghost', onclick: (e) => { e.preventDefault(); input.type = input.type === 'password' ? 'text' : 'password'; } }, '显示');
+        const overlay = h('div', { style: 'position:fixed;inset:0;z-index:60;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.35)' });
+        const done = (v) => { overlay.remove(); resolve(v); };
+        overlay.append(h('div', { class: 'vault__pin', style: 'min-width:320px;max-width:420px' },
+          h('div', { class: 'vault__pin-title' }, title),
+          h('p', { class: 'faint', style: 'margin:6px 0 10px' }, hint),
+          h('div', { style: 'display:flex;gap:6px;align-items:center' }, input, showBtn),
+          h('div', { style: 'display:flex;gap:8px;justify-content:flex-end;margin-top:10px' },
+            h('button', { class: 'btn btn--sm btn--ghost', onclick: () => done(null) }, '取消'),
+            h('button', { class: 'btn btn--sm btn--primary', onclick: () => { const v = input.value; if (!v.trim()) return toast('口令不能为空', 'info'); done(v); } }, '确定'),
+          ),
+        ));
+        input.onkeydown = (e) => { if (e.key === 'Enter') { const v = input.value; if (v.trim()) done(v); } if (e.key === 'Escape') done(null); };
+        root.append(overlay);
+        input.focus();
+      });
+    }
 
     root.append(
       h('div', { class: 'bar bar--drag' },

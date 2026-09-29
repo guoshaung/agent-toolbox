@@ -1892,6 +1892,61 @@ function registerIpc() {
   ipcMain.handle('vault:generate', (_e, options) => ({ password: require('./vault').generatePassword(options || {}) }));
   ipcMain.handle('vault:strength', (_e, pw) => require('./vault').strength(pw));
   ipcMain.handle('vault:openFolder', () => shell.showItemInFolder(path.join(app.getPath('userData'), 'vault.json')));
+  // 从 CC Switch 搬 API 配置：锁着时不给导（导进去也看不见），明文只在主进程过一下就 safeStorage 加密
+  ipcMain.handle('vault:importCcSwitch', (_e, opts) => {
+    const st = vault.pinStatus();
+    if (st.hasPin && !st.unlocked) return { ok: false, code: 'locked', error: '保险箱锁着，先输 6 位密码。' };
+    return require('./vault-import').importCcSwitch(vault, opts || {});
+  });
+  // 保险箱 PIN：只是访问门，密文仍由 safeStorage 加密
+  ipcMain.handle('vault:pinStatus', () => vault.pinStatus());
+  ipcMain.handle('vault:setPin', (_e, pin) => vault.setPin(String(pin || '')));
+  ipcMain.handle('vault:changePin', (_e, oldPin, newPin) => vault.changePin(String(oldPin || ''), String(newPin || '')));
+  ipcMain.handle('vault:removePin', (_e, pin) => vault.removePin(String(pin || '')));
+  ipcMain.handle('vault:unlock', (_e, pin) => vault.unlock(String(pin || '')));
+  ipcMain.handle('vault:lock', () => vault.lock());
+  // [portable-vault] 口令加密的便携备份：和这台电脑的钥匙串无关，换机器带走用；.env 文件一键装进密码本
+  ipcMain.handle('vault:exportPortable', async (_e, opts = {}) => {
+    let file = opts.file ? String(opts.file) : '';
+    if (!file) {
+      const r = await dialog.showSaveDialog({ title: '导出加密备份', defaultPath: path.join(app.getPath('documents'), 'agent-toolbox-vault.enc.json'), filters: [{ name: '加密备份', extensions: ['json'] }] });
+      if (r.canceled || !r.filePath) return { ok: false, canceled: true };
+      file = r.filePath;
+    }
+    return require('./vault-portable').packVault(vault, String(opts.passphrase || ''), file);
+  });
+  ipcMain.handle('vault:importPortable', async (_e, opts = {}) => {
+    let file = opts.file ? String(opts.file) : '';
+    if (!file) {
+      const r = await dialog.showOpenDialog({ title: '导入加密备份', properties: ['openFile'], filters: [{ name: '加密备份', extensions: ['json'] }] });
+      if (r.canceled || !r.filePaths[0]) return { ok: false, canceled: true };
+      file = r.filePaths[0];
+    }
+    return require('./vault-portable').unpackToVault(vault, String(opts.passphrase || ''), file);
+  });
+  ipcMain.handle('vault:importEnv', async (_e, opts = {}) => {
+    let files = Array.isArray(opts.files) ? opts.files.map(String) : (opts.file ? [String(opts.file)] : []);
+    if (!files.length) {
+      const r = await dialog.showOpenDialog({ title: '导入 .env 文件', properties: ['openFile', 'multiSelections', 'showHiddenFiles'] });
+      if (r.canceled || !r.filePaths.length) return { ok: false, canceled: true };
+      files = r.filePaths;
+    }
+    const tags = Array.isArray(opts.tags) ? opts.tags : [];
+    const results = files.map((f) => require('./vault-portable').importEnvToVault(vault, f, { tags }));
+    return { ok: results.every((x) => x.ok), results, imported: results.reduce((n, x) => n + (x.imported || 0), 0), skipped: results.reduce((n, x) => n + (x.skipped || 0), 0) };
+  });
+  // 把某条 key 填进 AI 配置：明文不回渲染层，主进程直接 safeStorage 存好
+  ipcMain.handle('vault:useAsAiKey', (_e, id, scope = 'default') => {
+    const got = vault.keyOf(String(id || ''));
+    if (!got.ok) return got;
+    const s = String(scope || 'default');
+    const saved = saveApiKey(got.key, s);
+    if (!saved.ok) return saved;
+    // 默认作用域（蒸馏/补全/快速解释都用它）顺便看看 Base URL、模型名配没配全
+    if (s !== 'default') return { ok: true, scope: s, needsConfig: false, missing: [] };
+    const cfg = validateCompatibleConfig({ baseUrl: store.get('ai.api.baseUrl', ''), model: store.get('ai.api.model', ''), hasKey: true });
+    return { ok: true, scope: s, needsConfig: !cfg.ok, missing: cfg.ok ? [] : cfg.missing };
+  });
 
   // ---- 想法 → 提问：写成 md 放进 Obsidian 仓库，能在 Obsidian 打开或开终端对话 ----
   const ideas = new IdeasService({ store, shell, dialog, getWindow: () => mainWindow, execFileAsync });
