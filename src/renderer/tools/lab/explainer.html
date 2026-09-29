@@ -1,0 +1,226 @@
+<title>机器人学小抄</title>
+<style>
+  /* 布局：一列竖排的大"场景卡"，像绘本一页一页往下翻；再接一张机器结构图和一张记分板。 */
+  :root{
+    --bg:#f4f7fb; --card:#ffffff; --ink:#1f2937; --soft:#5b6b7f; --line:#e2e8f2;
+    --sky:#2f7ad6; --grass:#27a567; --sun:#f2a63b; --berry:#e0555f; --grape:#7c5cd6;
+    --shadow:0 10px 30px rgba(31,58,102,.10);
+    --fdisplay:"Baloo 2",system-ui,sans-serif; --fbody:"Noto Sans SC",system-ui,sans-serif;
+  }
+  @media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+    --bg:#0f1622; --card:#18212f; --ink:#eaf0f8; --soft:#9fb0c4; --line:#28303f;
+    --shadow:0 12px 34px rgba(0,0,0,.4); color-scheme:dark;
+  }}
+  :root[data-theme="dark"]{
+    --bg:#0f1622; --card:#18212f; --ink:#eaf0f8; --soft:#9fb0c4; --line:#28303f;
+    --shadow:0 12px 34px rgba(0,0,0,.4); color-scheme:dark;
+  }
+  *{box-sizing:border-box}
+  body{background:var(--bg);color:var(--ink);font-family:var(--fbody);line-height:1.6;margin:0}
+  .wrap{max-width:820px;margin:0 auto;padding-block:28px;padding-left:16px;padding-right:16px}
+  .hero{text-align:center;padding-block:14px 6px}
+  .hero h1{font-family:var(--fdisplay);font-weight:800;font-size:clamp(30px,7vw,52px);margin:.1em 0;text-wrap:balance;letter-spacing:.5px}
+  .hero p{color:var(--soft);font-size:clamp(15px,2.4vw,18px);margin:.2em auto;max-width:34em}
+  .kicker{font-family:var(--fdisplay);font-weight:700;color:var(--sky);letter-spacing:2px;text-transform:uppercase;font-size:13px}
+  .scenes{display:flex;flex-direction:column;gap:16px;margin-top:22px}
+  .scene{background:var(--card);border:1px solid var(--line);border-radius:22px;box-shadow:var(--shadow);
+    padding:20px 22px;display:grid;grid-template-columns:96px 1fr;gap:18px;align-items:center}
+  .scene .pic{font-size:60px;line-height:1;text-align:center;filter:drop-shadow(0 4px 8px rgba(0,0,0,.12))}
+  .scene .num{font-family:var(--fdisplay);font-weight:800;font-size:14px;color:#fff;
+    width:30px;height:30px;border-radius:50%;display:grid;place-items:center;margin-bottom:6px}
+  .scene h2{font-family:var(--fdisplay);font-weight:700;font-size:clamp(19px,3.4vw,24px);margin:0 0 4px}
+  .scene p{margin:0;color:var(--soft);font-size:clamp(14px,2.3vw,16px)}
+  .scene .real{margin-top:8px;font-size:12.5px;color:var(--ink);opacity:.75}
+  .scene .real code{background:color-mix(in srgb,var(--sky) 12%,transparent);padding:1px 6px;border-radius:6px;font-size:12px}
+  @media(max-width:460px){.scene{grid-template-columns:1fr;text-align:center}.scene .num{margin:0 auto 6px}}
+  .c1 .num{background:var(--sky)} .c2 .num{background:var(--grass)} .c3 .num{background:var(--sun)}
+  .c4 .num{background:var(--berry)} .c5 .num{background:var(--grape)} .c6 .num{background:var(--sky)}
+  h3.sec{font-family:var(--fdisplay);font-weight:800;font-size:clamp(22px,4vw,30px);text-align:center;margin:40px 0 6px}
+  .sub{text-align:center;color:var(--soft);margin:0 0 18px;font-size:15px}
+  .diagram{background:var(--card);border:1px solid var(--line);border-radius:22px;box-shadow:var(--shadow);padding:12px}
+  .diagram svg{width:100%;height:auto;display:block}
+  .board{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+  @media(max-width:460px){.board{grid-template-columns:1fr}}
+  .player{background:var(--card);border:1px solid var(--line);border-radius:22px;box-shadow:var(--shadow);padding:18px 20px;text-align:center}
+  .player .face{font-size:52px}
+  .player h4{font-family:var(--fdisplay);font-weight:700;margin:6px 0 2px;font-size:20px}
+  .player .tag{font-size:13px;color:var(--soft)}
+  .player .score{font-family:var(--fdisplay);font-weight:800;font-size:40px;margin:8px 0 2px}
+  .player.a .score{color:var(--berry)} .player.b .score{color:var(--grass)}
+  .player .metric{font-size:13px;color:var(--soft)}
+  .note{background:color-mix(in srgb,var(--sun) 14%,var(--card));border:1px solid color-mix(in srgb,var(--sun) 30%,var(--line));
+    border-radius:16px;padding:14px 18px;margin-top:14px;font-size:14px;color:var(--ink)}
+  .legend{background:var(--card);border:1px solid var(--line);border-radius:22px;box-shadow:var(--shadow);padding:6px 6px}
+  .legend table{width:100%;border-collapse:collapse;font-size:14px}
+  .legend td{padding:11px 14px;border-bottom:1px solid var(--line);vertical-align:top}
+  .legend tr:last-child td{border-bottom:none}
+  .legend td:first-child{font-family:var(--fdisplay);font-weight:700;white-space:nowrap;color:var(--sky)}
+  .legend code{font-size:12.5px;background:color-mix(in srgb,var(--sky) 10%,transparent);padding:1px 5px;border-radius:5px}
+  footer{text-align:center;color:var(--soft);font-size:12.5px;margin-top:30px;padding-bottom:10px}
+</style>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@500;700;800&family=Noto+Sans+SC:wght@400;500;700&display=swap">
+
+<div class="wrap">
+  <div class="hero">
+    <div class="kicker">一个真实实验 · 讲给谁都懂</div>
+    <h1>机器人学小抄</h1>
+    <p>电脑里有一堆"做作业的录像"。我们让一个机器人看录像、总结一张小抄，再看看：<b>有小抄</b>的机器人，会不会比<b>没小抄</b>的做得更好、更省力？</p>
+  </div>
+
+  <div class="scenes">
+    <div class="scene c1">
+      <div class="pic">🎬</div>
+      <div>
+        <div class="num">1</div>
+        <h2>先翻出好多"做作业录像"</h2>
+        <p>以前机器人做过成千上万次网页，每一步都被录了下来。</p>
+        <div class="real">真实：从数据库 <code>agent_os_messages</code> 拉了 <b>20 段</b> 真实开发录像（dev_agent 的历史轨迹）。</div>
+      </div>
+    </div>
+
+    <div class="scene c2">
+      <div class="pic">🧑‍🏫</div>
+      <div>
+        <div class="num">2</div>
+        <h2>让聪明助手总结成一张小抄</h2>
+        <p>它看完 20 段录像，写下"这样做才对"的窍门：文件放哪、别忘了什么。</p>
+        <div class="real">真实：大模型读 20 段轨迹里"写了哪些文件"，蒸馏出 <code>SKILL.md</code>——页面放 <code>src/pages/&lt;名&gt;/index.vue</code>、tabBar 页要留底部安全距离等。</div>
+      </div>
+    </div>
+
+    <div class="scene c3">
+      <div class="pic">🔒</div>
+      <div>
+        <div class="num">3</div>
+        <h2>把小抄封起来，不许再改</h2>
+        <p>盖个火漆印。之后不管谁做题，小抄都一模一样，才公平。</p>
+        <div class="real">真实：SKILL.md 冻结，记 <code>sha256</code> 和"来源 20 个 session"到 manifest，跑完实验也不改。</div>
+      </div>
+    </div>
+
+    <div class="scene c4">
+      <div class="pic">👦🆚🤖</div>
+      <div>
+        <div class="num">4</div>
+        <h2>两个一样的机器人，一个有小抄一个没有</h2>
+        <p>小明（没小抄）和小红（有小抄）长得一模一样，只差手里那张纸。</p>
+        <div class="real">真实：本地库建两个 agent <code>page_writer_a</code>（无 Skill）/ <code>page_writer_b</code>（有 Skill），提示词、工具、模型全相同。</div>
+      </div>
+    </div>
+
+    <div class="scene c5">
+      <div class="pic">🏗️</div>
+      <div>
+        <div class="num">5</div>
+        <h2>它俩做同样的 10 道新题</h2>
+        <p>每道题：给一块搭好一半的积木底板，让它把缺的那一页搭出来。</p>
+        <div class="real">真实：把脚手架种进各自的 work_dir，让它生成 10 个 uniapp 页面（首页、我的、统计…），每题各做 3 遍。</div>
+      </div>
+    </div>
+
+    <div class="scene c6">
+      <div class="pic">🏆</div>
+      <div>
+        <div class="num">6</div>
+        <h2>裁判数一数：谁做对得多、谁更省力</h2>
+        <p>不靠感觉打分，只看：那一页搭出来没有、搭得对不对、用了多少力气。</p>
+        <div class="real">真实：<code>judge.py</code> 只看产物文件（存在 / 含 &lt;template&gt;&lt;script&gt; / 复用组件 / 底部安全距离），再比 PASS 率和 token。</div>
+      </div>
+    </div>
+  </div>
+
+  <h3 class="sec">这台"机器"长什么样</h3>
+  <p class="sub">给大人看：整套东西全在这台电脑上跑，一点没连公司的服务器。</p>
+  <div class="diagram">
+    <svg viewBox="0 0 800 340" role="img" aria-label="系统架构图">
+      <defs>
+        <style>
+          .box{fill:var(--card);stroke:var(--line);stroke-width:1.5;rx:12}
+          .t{font-family:var(--fbody);font-size:13px;fill:var(--ink)}
+          .tb{font-family:var(--fdisplay);font-weight:700;font-size:14px;fill:var(--ink)}
+          .ts{font-family:var(--fbody);font-size:11px;fill:var(--soft)}
+          .flow{stroke:var(--sky);stroke-width:2;fill:none;marker-end:url(#ar)}
+          .flow2{stroke:var(--grass);stroke-width:2;fill:none;marker-end:url(#ar2)}
+        </style>
+        <marker id="ar" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 Z" fill="var(--sky)"/></marker>
+        <marker id="ar2" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto"><path d="M0,0 L7,3 L0,6 Z" fill="var(--grass)"/></marker>
+      </defs>
+      <!-- 顶部：人看的 -->
+      <rect class="box" x="24" y="20" width="150" height="54" rx="12"/>
+      <text class="tb" x="99" y="42" text-anchor="middle">🧑‍💻 代码 (VS Code)</text>
+      <text class="ts" x="99" y="60" text-anchor="middle">在 toolbox 里打开容器</text>
+      <!-- gateway -->
+      <rect class="box" x="325" y="20" width="150" height="54" rx="12"/>
+      <text class="tb" x="400" y="42" text-anchor="middle">🚪 门卫</text>
+      <text class="ts" x="400" y="60" text-anchor="middle">gateway + channels</text>
+      <!-- provider -->
+      <rect class="box" x="625" y="20" width="150" height="54" rx="12"/>
+      <text class="tb" x="700" y="42" text-anchor="middle">🌐 翻译官</text>
+      <text class="ts" x="700" y="60" text-anchor="middle">自写 provider</text>
+      <!-- 大脑 -->
+      <rect class="box" x="625" y="132" width="150" height="54" rx="12"/>
+      <text class="tb" x="700" y="154" text-anchor="middle">🧠 大脑</text>
+      <text class="ts" x="700" y="172" text-anchor="middle">火山方舟 deepseek</text>
+      <!-- 记忆库 -->
+      <rect class="box" x="325" y="132" width="150" height="54" rx="12"/>
+      <text class="tb" x="400" y="154" text-anchor="middle">📚 记忆库</text>
+      <text class="ts" x="400" y="172" text-anchor="middle">MySQL + Redis (本地)</text>
+      <!-- 积木底板 -->
+      <rect class="box" x="24" y="132" width="150" height="54" rx="12"/>
+      <text class="tb" x="99" y="154" text-anchor="middle">🧩 积木底板</text>
+      <text class="ts" x="99" y="172" text-anchor="middle">本地脚手架</text>
+      <!-- 两个机器人 -->
+      <rect class="box" x="150" y="250" width="200" height="64" rx="12"/>
+      <text class="tb" x="250" y="276" text-anchor="middle">👦 小明 = page_writer_a</text>
+      <text class="ts" x="250" y="296" text-anchor="middle">没小抄</text>
+      <rect class="box" x="450" y="250" width="200" height="64" rx="12"/>
+      <text class="tb" x="550" y="276" text-anchor="middle">🤖 小红 = page_writer_b</text>
+      <text class="ts" x="550" y="296" text-anchor="middle">有小抄 SKILL.md</text>
+      <!-- 箭头 -->
+      <path class="flow" d="M174,47 L323,47"/>
+      <path class="flow" d="M475,47 L623,47"/>
+      <path class="flow" d="M700,74 L700,130"/>
+      <path class="flow" d="M625,159 L477,159"/>
+      <path class="flow2" d="M250,186 L250,248"/>
+      <path class="flow2" d="M550,186 L550,248"/>
+      <path class="flow2" d="M174,159 L323,159" stroke-dasharray="4 3"/>
+      <text class="ts" x="250" y="336" text-anchor="middle">同样的题、同样的底板，只差手里那张小抄</text>
+    </svg>
+  </div>
+
+  <h3 class="sec">记分板</h3>
+  <p class="sub">先给你看一道题的试跑；完整 10 道题正在电脑里做，做完自动把分数填进来。</p>
+  <div class="board">
+    <div class="player a">
+      <div class="face">👦</div>
+      <h4>小明</h4>
+      <div class="tag">没有小抄 · page_writer_a</div>
+      <div class="score" data-fill="a-pass">1 / 1</div>
+      <div class="metric" data-fill="a-metric">首页做对了 · 用了约 17400 字节的答卷</div>
+    </div>
+    <div class="player b">
+      <div class="face">🤖</div>
+      <h4>小红</h4>
+      <div class="tag">有小抄 · page_writer_b</div>
+      <div class="score" data-fill="b-pass">1 / 1</div>
+      <div class="metric" data-fill="b-metric">首页也做对了 · 答卷差不多大</div>
+    </div>
+  </div>
+  <div class="note" data-fill="headline">🔬 试跑（1 道题各 1 遍）：两个都把首页搭对了。真正要看的是 <b>10 道题各 3 遍</b> 里——有小抄的会不会把原本做错的题救回来（FAIL→PASS）、会不会更省力。这批正在跑，稍后更新。</div>
+
+  <h3 class="sec">大人版对照表</h3>
+  <p class="sub">同一件事，绘本里的说法 ↔ 系统里的真名。</p>
+  <div class="legend">
+    <table>
+      <tr><td>做作业录像</td><td>真实历史轨迹：数据库 <code>agent_os_messages</code> 里每一步的消息与工具调用（含 token 用量）。</td></tr>
+      <tr><td>小抄</td><td>蒸馏出的 <code>SKILL.md</code>，从 20 段轨迹"写了哪些文件"归纳，冻结后记 <code>sha256</code>。</td></tr>
+      <tr><td>两个机器人</td><td><code>page_writer_a</code> / <code>page_writer_b</code>，提示词/工具/模型完全一样，只有 B 的技能目录里多一份 SKILL.md。</td></tr>
+      <tr><td>积木底板</td><td>本地脚手架：从一个真实生成的 app 剥出的 uniapp 骨架，替代原本要连公司后端拉的模板。</td></tr>
+      <tr><td>做题</td><td>WebSocket 发一条"生成某页面"的任务，agent 在自己的 work_dir 里写代码。</td></tr>
+      <tr><td>裁判</td><td><code>judge.py</code> 只看产物文件：目标页面在不在、含不含 <code>&lt;template&gt;/&lt;script&gt;</code>、有没有复用组件、tabBar 页留没留底部安全距离。确定性判分，不用 AI 打分。</td></tr>
+      <tr><td>大脑</td><td>自写的 <code>OpenAICompatProvider</code> 直连火山方舟 deepseek，替掉了公司 kuafu SDK 的 Redis 路由，一点没连生产。</td></tr>
+    </table>
+  </div>
+
+  <footer>agentworld-suite · experiments/skill_distill · 全程在本机复刻，不连公司服务器</footer>
+</div>
