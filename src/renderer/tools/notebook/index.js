@@ -1,4 +1,5 @@
 import { h, toast, debounce } from '../../core/ui.js';
+import { createVscodePanel } from './vscode.js';
 import { LANGUAGES, guessLanguage } from './tokenize.js';
 import { analyze, rankedSymbols, KIND_LABEL } from './analyze.js';
 import { KnowledgeGraph, graphFacts, EDGE_LABEL } from './graph.js';
@@ -2159,9 +2160,21 @@ function createNotebookTool({ id, title, icon, hint, boundMode }) {
 
     nbBody.append(sideEl, splitSide, mainEl, splitDetail, detailEl);
 
-    root.append(
+    // ---- VS Code 模式：整个「代码」换成内嵌 code-server；这里的经典编辑器收进一个壳里，随时能切回 ----
+    const vscodePanel = createVscodePanel(ctx, { onClassic: () => setNbMode('classic') });
+    const classicWrap = h('div', { class: 'nb__classic', style: { display: 'flex', flexDirection: 'column', flex: '1', minHeight: '0' } });
+    let nbMode = config.get('notebook.mode', 'vscode');
+    const modeBtn = h('button', { class: 'btn btn--sm btn--primary', title: '切到内嵌的 VS Code', onclick: () => setNbMode('vscode') }, 'VS Code');
+    function setNbMode(m) {
+      nbMode = m; config.set('notebook.mode', m);
+      classicWrap.hidden = m === 'vscode'; vscodePanel.el.hidden = m !== 'vscode';
+      if (m === 'vscode') vscodePanel.activate();
+    }
+    root.append(classicWrap, vscodePanel.el);
+    classicWrap.append(
       h('div', { class: 'bar bar--drag nb__bar' },
         h('strong', {}, title),
+        modeBtn,
         snippetSelect,
         h('button', { class: 'btn btn--icon', title: '打开项目文件夹', onclick: () => openFolder() }, '📂'),
         h('button', { class: 'btn btn--icon', title: '新片段', onclick: () => newSnippet() }, '＋'),
@@ -2293,7 +2306,8 @@ function createNotebookTool({ id, title, icon, hint, boundMode }) {
       }
     });
 
-    return { activate: () => setTimeout(() => (editing ? editor : symbolInput).focus(), 30) };
+    setNbMode(nbMode);
+    return { activate: () => { if (nbMode === 'vscode') vscodePanel.activate(); else setTimeout(() => (editing ? editor : symbolInput).focus(), 30); } };
   },
  };
 }

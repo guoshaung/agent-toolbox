@@ -48,6 +48,7 @@ const edgeCookies = require('./edge-cookies');
 const { RemoteControl } = require('./remote-control');
 const { registerContainerIpc, seedContainer, syncContainerLiterature, containerRoot } = require('./container-storage');
 const { registerStudyLazy } = require('./study-lazy');
+const { registerVscodeIpc } = require('./vscode-service');
 const { registerAvatarRigIpc } = require('./avatar-rig-service');
 const { DshService } = require('./dsh-service');
 const { AutoResearchService } = require('./autoresearch-service');
@@ -1861,6 +1862,8 @@ function registerIpc() {
     store, readApiKey, performCompatibleRequest, containerRoot, hookContainerDownloads, dialog, shell,
     getUserDataPath: () => app.getPath('userData'), getMainWindow: () => mainWindow,
   });
+  // 「代码」里内嵌的 VS Code（本地 code-server）；默认工作区 = 容器
+  registerVscodeIpc(ipcMain, { getUserDataPath: () => app.getPath('userData'), defaultFolder: () => containerRoot(() => app.getPath('userData')), getMainWindow: () => mainWindow });
   let clipLast = '';
   // 密码本复制出来的值：不进历史（⌘K 里能搜到的话等于明文展示）
   const clipSecrets = new Set();

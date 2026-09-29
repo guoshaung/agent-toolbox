@@ -618,6 +618,16 @@ contextBridge.exposeInMainWorld('toolbox', {
     saveProject: (payload) => ipcRenderer.invoke('study:saveProject', payload),
   },
 
+  /** 内嵌 VS Code（本地 code-server）：状态 / 启停 / 选工作区 / 安装 */
+  vscode: {
+    status: () => ipcRenderer.invoke('vscode:status'),
+    start: (opts) => ipcRenderer.invoke('vscode:start', opts),
+    stop: () => ipcRenderer.invoke('vscode:stop'),
+    chooseFolder: () => ipcRenderer.invoke('vscode:chooseFolder'),
+    install: (method) => ipcRenderer.invoke('vscode:install', method),
+    onStatus: (callback) => { const handler = (_event, state) => callback(state); ipcRenderer.on('vscode:status', handler); return () => ipcRenderer.removeListener('vscode:status', handler); },
+  },
+
   /** 论文接力：容器/论文/<项目>/ 下的文件读写（能建新文件和子目录） */
   paper: {
     root: () => ipcRenderer.invoke('paper:root'),
