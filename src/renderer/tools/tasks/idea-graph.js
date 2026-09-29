@@ -10,8 +10,10 @@ import { h, toast } from '../../core/ui.js';
  * 数据存 config：tasks.ideaGraph = { nodes:[{ n, ideaId, x, y }], links:[{ a, b, label }], next }
  * 颜色存在想法自己身上：idea.color = 预设 id
  */
+// 默认「自动」：每条按它在列表里的位置轮换一个渐变，不用你手动点；🎨 里选了就固定；「无」= 明确不上色
 export const IDEA_GRADIENTS = [
-  { id: '', name: '无', css: '' },
+  { id: '', name: '自动（按顺序换色）', css: '' },
+  { id: 'none', name: '无', css: '' },
   { id: 'blue', name: '蓝紫', css: 'linear-gradient(135deg, rgba(91,140,255,.34), rgba(180,140,255,.22))' },
   { id: 'teal', name: '青绿', css: 'linear-gradient(135deg, rgba(63,185,138,.32), rgba(79,195,239,.2))' },
   { id: 'sunset', name: '橙粉', css: 'linear-gradient(135deg, rgba(240,163,58,.34), rgba(255,127,176,.22))' },
@@ -22,6 +24,7 @@ export const IDEA_GRADIENTS = [
   { id: 'violet', name: '紫', css: 'linear-gradient(135deg, rgba(180,140,255,.34), rgba(110,71,196,.22))' },
 ];
 export const gradientCss = (id) => IDEA_GRADIENTS.find((g) => g.id === id)?.css || '';
+const AUTO_IDS = IDEA_GRADIENTS.filter((g) => g.css).map((g) => g.id);
 const NODE_STROKE = { blue: '#5b8cff', teal: '#3fb98a', sunset: '#f0a33a', gold: '#dfa145', rose: '#e5645f', mint: '#6fe0c8', slate: '#8a9bb5', violet: '#b48cff' };
 
 const CSS = `
@@ -33,6 +36,8 @@ const CSS = `
 .tk__idea-card.has-color { border-color:transparent; }
 .tk__idea-num { display:inline-flex; align-items:center; justify-content:center; min-width:24px; height:22px; padding:0 7px; border-radius:999px; background:var(--accent); color:#fff; font:700 11.5px/1 var(--mono); letter-spacing:.3px; box-shadow:0 2px 8px rgba(0,0,0,.25); }
 .tk__idea-grip { color:var(--text-faint); font-size:13px; cursor:grab; user-select:none; padding:0 2px; }
+.tk__color-btn { width:24px; height:24px; border-radius:50%; border:2px solid rgba(255,255,255,.35); background:var(--bg-sunken); cursor:pointer; padding:0; font-size:12px; box-shadow:0 1px 4px rgba(0,0,0,.3); }
+.tk__color-btn:hover { border-color:#fff; transform:scale(1.08); }
 .tk__color-pop { position:absolute; z-index:30; display:flex; gap:6px; padding:8px; border:1px solid var(--line); border-radius:10px; background:var(--panel); box-shadow:0 10px 30px rgba(0,0,0,.35); }
 .tk__color-pop button { width:26px; height:26px; border-radius:8px; border:1px solid var(--line); cursor:pointer; padding:0; background:var(--bg-sunken); }
 .tk__color-pop button.is-on { outline:2px solid var(--accent); }
@@ -107,6 +112,15 @@ export function createIdeaGraph({ config, getIdeas, persistIdeas, rerenderIdeas 
   }
 
   function nodeFor(ideaId) { return g.nodes.find((n) => n.ideaId === ideaId) || null; }
+  /** 这条想法实际用哪个渐变：明确选了就用选的；'none' 不上色；没选就按它在列表里的位置轮换 */
+  function colorIdOf(idea) {
+    if (!idea) return '';
+    if (idea.color === 'none') return '';
+    if (idea.color) return idea.color;
+    // 按创建先后排名，而不是按列表位置：新想法插在最前面时，老想法的颜色不会跟着全变
+    const rank = (getIdeas() || []).filter((i) => (i.at || 0) < (idea.at || 0)).length;
+    return AUTO_IDS[rank % AUTO_IDS.length];
+  }
   function ideaOf(node) { return (getIdeas() || []).find((i) => i.id === node.ideaId) || null; }
 
   // ---------- 画 ----------
@@ -138,7 +152,7 @@ export function createIdeaGraph({ config, getIdeas, persistIdeas, rerenderIdeas 
       const w = Math.max(70, 34 + text.length * 11.5 + 18);
       const gEl = svgEl('g', { class: `ig__node${srcN === n.n ? ' is-src' : ''}`, transform: `translate(${n.x},${n.y})` });
       const rect = svgEl('rect', { x: -w / 2, y: -15, width: w, height: 30, rx: 15 });
-      const stroke = NODE_STROKE[idea?.color]; if (stroke) rect.setAttribute('stroke', stroke);
+      const stroke = NODE_STROKE[colorIdOf(idea)]; if (stroke) rect.setAttribute('stroke', stroke);
       const pill = svgEl('rect', { x: -w / 2 + 4, y: -11, width: 26, height: 22, rx: 11, fill: stroke || 'var(--accent)' });
       const num = svgEl('text', { class: 'ig__n', x: -w / 2 + 17, y: 4, 'text-anchor': 'middle' }); num.textContent = `#${n.n}`;
       const t = svgEl('text', { class: 'ig__t', x: -w / 2 + 36, y: 4 }); t.textContent = text;
@@ -182,7 +196,8 @@ export function createIdeaGraph({ config, getIdeas, persistIdeas, rerenderIdeas 
   let ghost = null;
   function attachCard(card, idea, metaRow) {
     card.dataset.ideaId = idea.id;
-    const css = gradientCss(idea.color);
+    const colorId = colorIdOf(idea);
+    const css = gradientCss(colorId);
     if (css) { card.style.background = `${css}, var(--panel)`; card.classList.add('has-color'); }
     card.draggable = true;
     card.addEventListener('dragstart', (e) => {
@@ -197,7 +212,8 @@ export function createIdeaGraph({ config, getIdeas, persistIdeas, rerenderIdeas 
     const node = nodeFor(idea.id);
     const badge = node ? h('span', { class: 'tk__idea-num', title: '在关系图里的编号，点一下定位', onclick: () => { toggle(true); srcN = null; draw(); } }, `#${node.n}`) : null;
     const grip = h('span', { class: 'tk__idea-grip', title: '按住拖到右边关系图里，会拖出一个编号' }, '⠿');
-    const colorBtn = h('button', { class: 'btn btn--xs btn--ghost', title: '背景颜色', onclick: (e) => openColorPop(e.currentTarget, idea) }, '🎨');
+    // 一个带当前颜色的圆色块，一眼看得见；点开换色
+    const colorBtn = h('button', { class: 'tk__color-btn', title: `背景颜色（现在：${IDEA_GRADIENTS.find((x) => x.id === (idea.color || ''))?.name || '自动'}），点一下换`, style: css ? { background: css } : {}, onclick: (e) => openColorPop(e.currentTarget, idea) }, css ? '' : '🎨');
     metaRow.prepend(grip, ...(badge ? [badge] : []));
     // 放在「提问」前面
     const primary = metaRow.querySelector('.btn--primary');
@@ -209,7 +225,7 @@ export function createIdeaGraph({ config, getIdeas, persistIdeas, rerenderIdeas 
     const pop = h('div', { class: 'tk__color-pop' }, ...IDEA_GRADIENTS.map((gr) => h('button', {
       class: gr.id === (idea.color || '') ? 'is-on' : '', title: gr.name, style: gr.css ? { background: gr.css } : {},
       onclick: () => { idea.color = gr.id; persistIdeas(); pop.remove(); rerenderIdeas(); draw(); },
-    }, gr.id ? '' : '∅')));
+    }, gr.id === '' ? 'A' : gr.id === 'none' ? '∅' : '')));
     const r = anchor.getBoundingClientRect();
     pop.style.left = `${Math.max(8, r.left - 200)}px`; pop.style.top = `${r.bottom + 6}px`; pop.style.position = 'fixed';
     document.body.append(pop);
