@@ -16,7 +16,6 @@ import { createRadialMenu } from './core/radial.js';
 import { openWebPanel } from './core/webpanel.js';
 import { SUB_SECTIONS as RESEARCH_SUBS } from './tools/research/index.js';
 import { SUB_SECTIONS as FOCUS_SUBS } from './tools/focus/index.js';
-import { SUB_SECTIONS as GAME_SUBS } from './tools/game/index.js';
 
 const rail = document.getElementById('rail');
 const stage = document.getElementById('stage');
@@ -168,7 +167,7 @@ const WHEEL_GROUPS = [
   { id: 'learn', label: '学习科研', icon: 'graduation', color: '#3fbf87', tools: ['research', 'study', 'docs', 'terms', 'coach', 'skills', 'typing'] },
   { id: 'make', label: '写作代码', icon: 'pen', color: '#ff9a6b', tools: ['notebook', 'notes', 'git', 'api', 'netlog', 'webtools'] },
   { id: 'ai', label: 'AI 伙伴', icon: 'bot', color: '#c9a7ff', tools: ['ask', 'tavern', 'voicebox', 'digital-human', 'avatar-rig', 'voice', 'gesture', 'monologue'] },
-  { id: 'life', label: '生活效率', icon: 'bowl', color: '#f0b93d', tools: ['home', 'tasks', 'focus', 'game', 'tidy', 'container', 'eat', 'history', 'video', 'vault'] },
+  { id: 'life', label: '生活效率', icon: 'bowl', color: '#f0b93d', tools: ['home', 'tasks', 'focus', 'tidy', 'container', 'eat', 'history', 'video', 'vault'] },
   { id: 'device', label: '设备外观', icon: 'smartphone', color: '#7aa8ff', tools: ['remote', 'dsh', 'controls', 'dock', 'pet', 'appearance'] },
 ];
 {
@@ -178,7 +177,7 @@ const WHEEL_GROUPS = [
   if (rest.length) WHEEL_GROUPS.push({ id: 'other', label: '其他', icon: 'more', color: '#98a2b3', tools: rest });
   for (const g of WHEEL_GROUPS) g.tools = g.tools.filter((id) => TOOLS.some((t) => t.id === id));
 }
-const TOOL_SUBS = { research: RESEARCH_SUBS, focus: FOCUS_SUBS, game: GAME_SUBS };
+const TOOL_SUBS = { research: RESEARCH_SUBS, focus: FOCUS_SUBS };
 let radial = null;
 const moreButton = h('button', {
   class: 'rail__item rail__more',
