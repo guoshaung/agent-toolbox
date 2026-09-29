@@ -1,5 +1,6 @@
 import { h } from './ui.js';
 import { iconFor } from './icons.js';
+import { explainWebview } from './page-explain.js';
 
 /**
  * 顶栏的「今日大模型」这类外链，以前一律甩去系统浏览器；现在直接在工具箱里开一层
@@ -66,6 +67,7 @@ function ensurePanel() {
     class: 'btn btn--sm btn--ghost', title: '用系统浏览器打开',
     onclick: () => { const u = currentView?.getURL?.() || currentUrl; if (u) window.toolbox.shell.openExternal(u); },
   }, iconFor('external'), ' 浏览器');
+  const explain = h('button', { class: 'btn btn--sm btn--primary', title: '一键讲这页：干了什么 / 创新点 / 差别（先选中一段就只讲那段）', onclick: () => { if (currentView) explainWebview(currentView); } }, '⚡ 讲这篇');
   titleEl = h('strong', { class: 'webpanel__title' }, '');
   addressEl = h('input', { class: 'field mono webpanel__addr', readonly: true, title: '当前地址' });
   // macOS 上工具条左侧留一条可拖动安全区，避开原生红绿灯按钮
@@ -79,7 +81,7 @@ function ensurePanel() {
   );
   frame.append(loader);
   panel = h('div', { class: 'webpanel', hidden: true },
-    h('div', { class: 'bar webpanel__bar' }, macGap, close, back, fwd, reload, titleEl, addressEl, ext),
+    h('div', { class: 'bar webpanel__bar' }, macGap, close, back, fwd, reload, explain, titleEl, addressEl, ext),
     frame,
   );
   if (window.toolbox?.platform === 'darwin') panel.classList.add('is-mac');

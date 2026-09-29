@@ -164,6 +164,66 @@ function registerStudyLazy(ipcMain, {
       return { ok: true, dir, count, rel: `${PROJECT_DIR}/${safeName(name)}` };
     } catch (err) { return { ok: false, error: err.message }; }
   });
+
+  // ---- 6) 流式对话：给「⚡ 讲这篇」用，逐字往渲染层推，快 ----
+  // 模型顺序：出题专用 Qwen（有 Key 就用，快）→ 全局自定义 API。都没有就返回 no-stream，渲染层自己退到网页版。
+  const streams = new Map();   // id -> AbortController
+  ipcMain.handle('ai:stream', async (event, { id, messages, temperature = 0.3, timeout = 120000 } = {}) => {
+    const cands = [];
+    const quizKey = readApiKey('quiz');
+    if (quizKey) cands.push({ baseUrl: store.get('study.quiz.baseUrl', 'https://dashscope.aliyuncs.com/compatible-mode/v1'), model: store.get('study.quiz.model', 'qwen3.5-flash'), key: quizKey });
+    const mainKey = readApiKey('default');
+    if (store.get('ai.provider', 'deepseek-web') === 'openai-api' && mainKey) cands.push({ baseUrl: store.get('ai.api.baseUrl', ''), model: store.get('ai.api.model', ''), key: mainKey });
+    const c = cands.find((x) => buildCompatibleEndpoints(x.baseUrl) && String(x.model).trim());
+    if (!c) return { ok: false, code: 'no-stream', error: '没有可流式的 API 模型' };
+    const ep = buildCompatibleEndpoints(c.baseUrl);
+    const ctl = new AbortController(); streams.set(id, ctl);
+    const timer = setTimeout(() => ctl.abort(), Math.min(Number(timeout) || 120000, 300000));
+    const send = (p) => { try { if (!event.sender.isDestroyed()) event.sender.send('ai:stream:chunk', { id, ...p }); } catch { /* 窗口没了 */ } };
+    (async () => {
+      try {
+        const res = await fetch(ep.chat, { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${c.key}` }, body: JSON.stringify({ model: String(c.model).trim(), messages, temperature, stream: true }), signal: ctl.signal });
+        if (!res.ok) { send({ error: `${res.status} ${(await res.text()).split(c.key).join('[已隐藏]').slice(0, 200)}`, done: true }); return; }
+        const reader = res.body.getReader(); const dec = new TextDecoder(); let buf = '';
+        for (;;) {
+          const { value, done } = await reader.read(); if (done) break;
+          buf += dec.decode(value, { stream: true });
+          let nl;
+          while ((nl = buf.indexOf('\n')) >= 0) {
+            const line = buf.slice(0, nl).trim(); buf = buf.slice(nl + 1);
+            if (!line.startsWith('data:')) continue;
+            const data = line.slice(5).trim();
+            if (data === '[DONE]') continue;
+            try { const j = JSON.parse(data); const t = j?.choices?.[0]?.delta?.content; if (t) send({ text: t }); } catch { /* 半截 JSON，下一行再来 */ }
+          }
+        }
+        send({ done: true });
+      } catch (err) {
+        send({ error: err.name === 'AbortError' ? '已停止 / 超时' : err.message, done: true });
+      } finally { clearTimeout(timer); streams.delete(id); }
+    })();
+    return { ok: true, model: c.model };
+  });
+  ipcMain.handle('ai:streamStop', (_e, id) => { streams.get(id)?.abort(); streams.delete(id); return { ok: true }; });
+
+  // ---- 7) 抓页面文字：渲染层的 webview.executeJavaScript 只看得到顶层 frame，
+  //         很多站（B 站的小玩具、各种内嵌阅读器）正文在 iframe 里。这里走主进程把所有 frame 都扫一遍。 ----
+  const GRAB = `(() => { try { const s = String((window.getSelection && window.getSelection()) || '').trim(); const t = document.body ? document.body.innerText : ''; return { sel: s.slice(0, 12000), text: String(t || '').replace(/\\n{3,}/g, '\\n\\n').slice(0, 14000), title: document.title || '', url: location.href, top: window === window.top }; } catch (e) { return { sel: '', text: '', title: '', url: '', top: false }; } })()`;
+  ipcMain.handle('study:grabPage', async (_e, webContentsId) => {
+    const { webContents } = require('electron');
+    const wc = webContents.fromId(Number(webContentsId));
+    if (!wc || wc.isDestroyed()) return { ok: false, error: '页面不在了' };
+    const frames = wc.mainFrame ? wc.mainFrame.framesInSubtree : [];
+    const parts = [];
+    for (const fr of frames.slice(0, 12)) {
+      try { parts.push(await fr.executeJavaScript(GRAB, false)); } catch { /* 跨域或没准备好的 frame 跳过 */ }
+    }
+    const top = parts.find((p) => p && p.top) || parts[0] || {};
+    const sel = parts.map((p) => p?.sel || '').find(Boolean) || '';
+    // 顶层文字在前，子 frame 的接在后面；同一段别重复
+    const seen = new Set(); const text = parts.map((p) => p?.text || '').filter((t) => t && !seen.has(t) && seen.add(t)).join('\n\n').slice(0, 16000);
+    return { ok: true, page: { sel, text, title: top.title || wc.getTitle(), url: top.url || wc.getURL(), frames: parts.length } };
+  });
 }
 
 module.exports = { registerStudyLazy, SHELF, CARD_DIR, STUDY_DIR, PROJECT_DIR };

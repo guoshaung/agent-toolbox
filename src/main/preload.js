@@ -232,6 +232,10 @@ contextBridge.exposeInMainWorld('toolbox', {
     /** 懒人模式 vibe 陪练专用弱模型通道（默认本地 Ollama，Key 可不填） */
     vibe: (payload) => ipcRenderer.invoke('ai:vibe', payload),
     vibeModels: () => ipcRenderer.invoke('ai:vibeModels'),
+    /** 流式对话（「⚡ 讲这篇」用）：chunk 通过 onStreamChunk 逐段推回来；返回 ok:false code:'no-stream' 表示没配可流式的 API */
+    stream: (payload) => ipcRenderer.invoke('ai:stream', payload),
+    streamStop: (id) => ipcRenderer.invoke('ai:streamStop', id),
+    onStreamChunk: (callback) => { const handler = (_event, payload) => callback(payload); ipcRenderer.on('ai:stream:chunk', handler); return () => ipcRenderer.removeListener('ai:stream:chunk', handler); },
     credentialStatus: (scope) => ipcRenderer.invoke('ai:credentialStatus', scope),
     saveCredential: (key, scope) => ipcRenderer.invoke('ai:saveCredential', key, scope),
     clearCredential: (scope) => ipcRenderer.invoke('ai:clearCredential', scope),
@@ -606,6 +610,8 @@ contextBridge.exposeInMainWorld('toolbox', {
     vaultRead: (rel) => ipcRenderer.invoke('study:vaultRead', rel),
     vaultWriteCard: (card) => ipcRenderer.invoke('study:vaultWriteCard', card),
     openInObsidian: (rel) => ipcRenderer.invoke('study:openInObsidian', rel),
+    /** 把一个 webview 里所有 frame 的文字抓出来（「⚡ 讲这篇」用），传 webview.getWebContentsId() */
+    grabPage: (webContentsId) => ipcRenderer.invoke('study:grabPage', webContentsId),
     shelfInfo: () => ipcRenderer.invoke('study:shelfInfo'),
     exportQuiz: (payload) => ipcRenderer.invoke('study:exportQuiz', payload),
     runQuizInTerminal: (launcher) => ipcRenderer.invoke('study:runQuizInTerminal', launcher),

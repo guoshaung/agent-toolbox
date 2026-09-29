@@ -35,6 +35,8 @@ export class AI {
   constructor({ config, bridge }) {
     this.config = config;
     this.bridge = bridge;
+    // 全局只有一份 AI。像「⚡ 讲这篇」这种挂在 webview 工具条上的东西拿不到 ctx，从这里取
+    AI.current = this;
   }
 
   get provider() {

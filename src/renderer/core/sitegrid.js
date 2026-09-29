@@ -1,5 +1,6 @@
 import { h, toast } from './ui.js';
 import { iconFor, iconLabel } from './icons.js';
+import { explainWebview } from './page-explain.js';
 
 /**
  * 通用「站点格子铺 + 内嵌浏览」组件：科研门户 / 醒脑网页游戏 / 情报热榜共用。
@@ -74,8 +75,13 @@ export function createSiteGrid(root, {
     readonly: true,
     title: '当前地址（只读，点右边按钮用系统浏览器打开）',
   });
+  // ⚡ 讲这篇：终端风格浮层，流式讲当前页（或选中的那段）：干了什么 / 创新点 / 差别 / 值不值得读
+  const explainBtn = h('button', {
+    class: 'btn btn--sm btn--primary', title: '一键讲这页：干了什么 / 创新点 / 和已有工作差在哪（先选中一段就只讲那段）',
+    onclick: () => { const v = views.get(activeUrl); if (v) explainWebview(v); },
+  }, '⚡ 讲这篇');
   const viewBar = h('div', { class: 'bar research__viewbar', hidden: true },
-    backBtn, navBack, navFwd, navReload, syncEdgeBtn, address,
+    backBtn, navBack, navFwd, navReload, syncEdgeBtn, explainBtn, address,
     h('button', {
       class: 'btn btn--sm btn--ghost', title: '用系统浏览器打开',
       onclick: () => activeUrl && window.toolbox.shell.openExternal(address.value || activeUrl),
