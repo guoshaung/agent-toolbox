@@ -1,4 +1,5 @@
 import { h, toast } from '../../core/ui.js';
+import { hero } from './theme.js';
 
 /**
  * 创新图谱：把文献库里每篇论文的「创新点」抽出来，再按知识图谱串起来看。
@@ -277,7 +278,7 @@ ${lines}`;
     stage.replaceChildren();
     const data = buildGraphData();
     if (!data) {
-      hint.replaceChildren(h('div', {}, h('b', {}, '还没有创新点'), h('br'), '左边勾几篇论文，点「提取选中」；或直接「全部提取」。', h('br'), h('span', { class: 'faint' }, '每篇 3-6 个创新点，抽完自动串成图。')));
+      hint.replaceChildren(hero({ title: '创新图谱', text: '左边勾几篇论文，点「提取选中」；或直接「全部提取」。每篇抽 3-6 个创新点，抽完自动分簇、连上关系，串成一张图。', seed: 5 }));
       stage.append(hint); return;
     }
     if (view === 'read') { renderRead(data); return; }

@@ -13,6 +13,7 @@ import { createAutoResearch } from './autoresearch.js';
 import { createZoteroPanel } from './zotero.js';
 import { createInnovation } from './innovation.js';
 import { createPaper } from './paper.js';
+import { applyResearchTheme } from './theme.js';
 
 export const SUB_SECTIONS = [
   { id: 'portal', label: '门户', icon: 'globe' },
@@ -125,6 +126,7 @@ export default {
       body,
     );
 
+    applyResearchTheme(root);     // 学术皮：衬线、纸感、刊头徽记、次要文字提亮
     applyCompact();
     selectSub(SUB_SECTIONS.some((s) => s.id === currentSub) ? currentSub : 'portal');
     // 「更多」轮盘第三圈直达子页

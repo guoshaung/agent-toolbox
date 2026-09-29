@@ -1,4 +1,5 @@
 import { h, toast } from '../../core/ui.js';
+import { masthead, hero, ornamentSvg } from './theme.js';
 
 /**
  * 论文接力：AI 不一口气写整篇，而是在一个项目文件夹里按板块接力。
@@ -37,32 +38,33 @@ const STEPS = [
 const CHAPTER_TITLE = { abstract: 'Abstract', intro: 'Introduction', methods: 'Methods', 'results-ch': 'Results', discussion: 'Discussion', conclusion: 'Conclusion' };
 
 const CSS = `
-.pp { display:grid; grid-template-columns: 260px 1fr; flex:1; min-height:0; }
-.pp__side { border-right:1px solid var(--line-soft, var(--line)); display:flex; flex-direction:column; min-height:0; }
-.pp__proj { padding:10px; display:flex; flex-direction:column; gap:6px; border-bottom:1px solid var(--line-soft, var(--line)); }
-.pp__steps { overflow:auto; flex:1; padding:6px 0; }
-.pp__group { padding:8px 12px 2px; font-size:10.5px; color:var(--text-faint); letter-spacing:.4px; }
-.pp__step { display:flex; align-items:center; gap:8px; width:100%; text-align:left; border:0; background:transparent; color:var(--text); padding:7px 12px; cursor:pointer; font-size:12.5px; }
-.pp__step:hover { background:color-mix(in srgb, var(--accent) 8%, transparent); }
-.pp__step.is-on { background:color-mix(in srgb, var(--accent) 16%, transparent); }
-.pp__dot { width:8px; height:8px; border-radius:50%; background:var(--line); flex:0 0 auto; }
-.pp__dot.is-done { background:var(--good, #3fb98a); }
-.pp__dot.is-stale { background:var(--warn, #dfa145); }
-.pp__step small { margin-left:auto; color:var(--text-faint); font-size:10.5px; }
-.pp__main { display:flex; flex-direction:column; min-height:0; overflow:auto; padding:14px 18px 24px; gap:12px; }
-.pp__head { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
-.pp__head h2 { margin:0; font-size:17px; }
-.pp__needs { display:flex; gap:6px; flex-wrap:wrap; font-size:11.5px; }
-.pp__need { padding:2px 8px; border-radius:999px; border:1px solid var(--line); color:var(--text-dim); }
-.pp__need.is-ok { border-color:rgba(63,185,138,.5); color:var(--good, #3fb98a); }
-.pp__need.is-missing { border-color:rgba(229,100,95,.5); color:var(--bad, #e5645f); }
-.pp__input { min-height:96px; font-size:12.5px; }
-.pp__out { min-height:340px; font:12.5px/1.6 ui-monospace, Menlo, monospace; white-space:pre-wrap; }
+.pp { display:grid; grid-template-columns: 272px 1fr; flex:1; min-height:0; }
+.pp__side { border-right:1px solid rgba(214,190,140,.22); display:flex; flex-direction:column; min-height:0; background: linear-gradient(180deg, rgba(214,190,140,.05), transparent 30%); }
+.pp__proj { padding:14px 14px 10px; display:flex; flex-direction:column; gap:6px; border-bottom:1px solid rgba(214,190,140,.22); }
+.pp__proj-title { font-family:var(--serif); font-size:15px; color:var(--ink); letter-spacing:.02em; }
+.pp__steps { overflow:auto; flex:1; padding:6px 0 14px; }
+.pp__group { padding:12px 16px 4px; font-family:var(--font); font-size:10px; color:var(--gold); letter-spacing:.3em; text-transform:uppercase; }
+.pp__step { display:flex; align-items:center; gap:10px; width:100%; text-align:left; border:0; border-left:2px solid transparent; background:transparent; color:var(--ink-dim); padding:7px 16px; cursor:pointer; font-family:var(--serif); font-size:13.5px; }
+.pp__step:hover { color:var(--ink); background:rgba(255,255,255,.035); }
+.pp__step.is-on { color:var(--ink); background:var(--gold-soft); border-left-color:var(--gold); }
+.pp__dot { width:8px; height:8px; border-radius:50%; background:rgba(255,255,255,.14); flex:0 0 auto; box-shadow:0 0 0 2px rgba(255,255,255,.05); }
+.pp__dot.is-done { background:var(--gold); box-shadow:0 0 8px rgba(214,190,140,.6); }
+.pp__dot.is-stale { background:var(--warn, #dfa145); box-shadow:0 0 8px rgba(223,161,69,.6); }
+.pp__step small { margin-left:auto; color:var(--ink-faint); font-family:var(--font); font-size:10.5px; }
+.pp__main { display:flex; flex-direction:column; min-height:0; overflow:auto; padding:18px 28px 32px; gap:12px; max-width:1040px; }
+.pp__needs { display:flex; gap:6px; flex-wrap:wrap; align-items:center; font-size:12px; color:var(--ink-dim); }
+.pp__need { padding:2px 9px; border-radius:999px; border:1px solid rgba(255,255,255,.14); color:var(--ink-dim); font-family:var(--font); font-size:11.5px; }
+.pp__need.is-ok { border-color:rgba(214,190,140,.55); color:#f0e4c8; background:var(--gold-soft); }
+.pp__need.is-missing { border-color:rgba(229,100,95,.55); color:#ff9c96; }
+.pp__input { min-height:96px; font-family:var(--serif) !important; font-size:13.5px; line-height:1.7; color:var(--ink); background:rgba(255,255,255,.04); border-color:rgba(255,255,255,.12); }
+.pp__input::placeholder { color:var(--ink-faint); font-style:italic; }
+.pp__out { min-height:380px; white-space:pre-wrap; }
 .pp__row { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
-.pp__trace { font-size:11.5px; color:var(--text-faint); white-space:pre-wrap; border-left:2px solid var(--line); padding-left:8px; }
-.pp__picker { max-height:180px; overflow:auto; border:1px solid var(--line); border-radius:10px; padding:6px 8px; font-size:12px; display:flex; flex-direction:column; gap:3px; }
-.pp__picker label { display:flex; gap:6px; align-items:flex-start; cursor:pointer; }
-.pp__stale { padding:8px 10px; border-radius:8px; background:rgba(223,161,69,.12); border:1px solid rgba(223,161,69,.4); font-size:12px; }
+.pp__trace { font-family:var(--font); font-size:11.5px; color:var(--ink-dim); white-space:pre-wrap; border-left:2px solid var(--gold); padding:2px 0 2px 10px; }
+.pp__picker { max-height:180px; overflow:auto; border:1px solid rgba(255,255,255,.12); border-radius:10px; padding:8px 10px; font-size:12.5px; display:flex; flex-direction:column; gap:4px; color:var(--ink); background:rgba(255,255,255,.03); }
+.pp__picker label { display:flex; gap:8px; align-items:flex-start; cursor:pointer; }
+.pp__stale { padding:8px 12px; border-radius:8px; background:rgba(223,161,69,.12); border:1px solid rgba(223,161,69,.45); font-size:12.5px; color:#f3dcb0; }
+.pp__file { font-family:var(--font); font-size:11px; color:var(--gold); letter-spacing:.06em; }
 `;
 
 const now = () => new Date().toLocaleString('zh-CN', { hour12: false });
@@ -148,12 +150,14 @@ export function createPaper(root, ctx) {
   const main = h('div', { class: 'pp__main' });
   async function renderMain() {
     main.replaceChildren();
-    if (!project) { main.append(h('div', { class: 'empty' }, h('b', {}, '先建一个论文项目'), h('br'), '一个项目 = 容器/论文/ 下的一个文件夹。每一步 AI 只读它需要的几个文件、写出一个文件，谁基于谁都记在文件头里。', h('br'), h('br'), h('button', { class: 'btn btn--primary', onclick: newProject }, '＋ 新建项目'))); return; }
+    if (!project) { main.append(hero({ title: '论文接力', text: '一个项目就是一个文件夹。每一步 AI 只读它需要的几份材料、写出一个文件；谁基于谁、第几版、哪个模型写的，都记在文件头里。改了题目，从哪一章接着改也看得见。', seed: 3, children: [h('button', { class: 'btn btn--primary', style: { marginTop: '14px' }, onclick: newProject }, '＋ 新建论文项目')] })); return; }
     const step = STEPS.find((s) => s.id === stepId) || STEPS[0];
+    const stepIndex = STEPS.indexOf(step) + 1;
     const latest = latestOf(step);
     const needs = h('div', { class: 'pp__needs' }, h('span', { class: 'faint' }, '这一步会读：'), ...(step.needs.length ? step.needs.map((n) => { const r = resolveNeed(n); return h('span', { class: `pp__need ${r ? 'is-ok' : 'is-missing'}`, title: r || '还没有这个文件' }, r || n); }) : [h('span', { class: 'faint' }, '只读你的材料')]));
     const input = h('textarea', { class: 'field pp__input', placeholder: step.input });
-    const out = h('textarea', { class: 'field pp__out', placeholder: latest ? '' : '还没写。点「让 AI 写这一步」。' , spellcheck: false });
+    // 正文编辑区做成一张手稿纸：米白底、墨色字、衬线 —— 读起来像稿子，而且再也不会被深色底吃掉
+    const out = h('textarea', { class: 'field pp__out rs-sheet', placeholder: latest ? '' : '还没写。点「让 AI 写这一步」，稿子会出现在这张纸上；你也可以直接在纸上改。', spellcheck: false });
     const trace = h('div', { class: 'pp__trace' });
     let currentRel = latest?.rel || null;
     if (latest) { const r = await fsx.read(P(latest.rel)); if (r.ok) { const m = r.content.match(/^<!--([\s\S]*?)-->\n?/); trace.textContent = m ? m[1].trim() : ''; out.value = r.content; } }
@@ -164,13 +168,13 @@ export function createPaper(root, ctx) {
     const staleBox = latest && isStale(step) ? h('div', { class: 'pp__stale' }, '⚠ 上游文件比这份新（比如改了 question.md）。建议点「续改」重写一版，文件头会记下它基于的是新版。') : null;
     // Element.append 不像 h() 那样跳过 null，会渲染成字面 "null"，先滤掉
     main.append(...[
-      h('div', { class: 'pp__head' }, h('h2', {}, step.title), h('span', { class: 'tag' }, step.versioned ? `${step.file}_vN.md` : step.file), latest ? h('span', { class: 'faint' }, `当前 ${latest.rel}`) : null, h('span', { style: { flex: 1 } }), h('span', { class: 'faint' }, `AI：${ai.describe()}`)),
+      masthead({ kicker: `Paper Relay · ${step.group} · ${String(stepIndex).padStart(2, '0')} / ${STEPS.length}`, title: step.title, sub: `${project} · ${latest ? `当前 ${latest.rel}` : (step.versioned ? `${step.file}_vN.md` : step.file)} · ${ai.describe()}` }),
       needs, staleBox,
       step.local ? null : input, picker,
       h('div', { class: 'pp__row' }, genBtn, saveBtn, latest ? h('button', { class: 'btn btn--ghost', onclick: () => { window.toolbox.clipboard.write(out.value); toast('已复制', 'good'); } }, '复制') : null,
         step.id === 'assemble' && latest ? h('button', { class: 'btn', title: '写进 Obsidian 仓库的 论文/ 文件夹', onclick: async () => { const r = await window.toolbox.study.vaultWriteCard({ title: project, body: out.value.replace(/^<!--[\s\S]*?-->\n?/, ''), concept: project, module: '论文', tags: ['论文'], dir: '论文' }); if (!r.ok && /仓库/.test(r.error)) { const c = await window.toolbox.study.chooseVault(); if (c.ok) return toast('仓库选好了，再点一次', 'info'); } toast(r.ok ? `已写进 Obsidian：${r.rel}` : r.error, r.ok ? 'good' : 'bad', 5000); } }, '🟣 存到 Obsidian') : null,
         h('span', { style: { flex: 1 } }), h('button', { class: 'btn btn--ghost', onclick: async () => { const r = await fsx.root(); if (r.ok) window.toolbox.ideas.openPath(`${r.abs}/${project}`); } }, '打开文件夹')),
-      trace, out,
+      trace, h('div', { html: ornamentSvg() }), out,
     ].filter(Boolean));
   }
 
@@ -248,7 +252,7 @@ export function createPaper(root, ctx) {
   async function refresh() { await scan(); renderSteps(); await renderMain(); }
 
   root.append(h('div', { class: 'pp' },
-    h('div', { class: 'pp__side' }, h('div', { class: 'pp__proj' }, h('div', { class: 'faint' }, '论文项目（容器/论文/）'), projSel, h('button', { class: 'btn btn--sm', onclick: newProject }, '＋ 新建项目')), stepsEl),
+    h('div', { class: 'pp__side' }, h('div', { class: 'pp__proj' }, h('div', { class: 'pp__proj-title' }, '论文项目'), h('div', { class: 'pp__file' }, '容器 / 论文 /'), projSel, h('button', { class: 'btn btn--sm', onclick: newProject }, '＋ 新建项目')), stepsEl),
     main));
   loadProjects().then(refresh);
   return { activate: refresh, refresh };
