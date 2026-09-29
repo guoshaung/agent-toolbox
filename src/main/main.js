@@ -2600,8 +2600,12 @@ function registerIpc() {
   ipcMain.handle('app:minimize', () => { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.minimize(); return { ok: true }; });
   ipcMain.handle('app:closeWindow', () => { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.close(); return { ok: true }; });
   ipcMain.handle('app:relaunch', () => {
-    app.relaunch();
-    app.quit();
+    // 把自己的 pid 带给新实例：新实例先等这个进程真的退了再去拿单实例锁。
+    // 不然退出收尾（杀子进程、关 socket，最多 3 秒）还没走完，新实例已经起来、
+    // 拿锁失败就自己退了 —— 看起来就是「双击 logo 只关闭不重启」。
+    const args = process.argv.slice(1).filter((a) => !a.startsWith('--relaunch-from='));
+    app.relaunch({ args: [...args, `--relaunch-from=${process.pid}`] });
+    quitToolbox();
     return { ok: true };
   });
   // 坍缩动效放完渲染层发这个；真正的一次性监听在窗口 close 里用 ipcMain.once 挂。这里放一个常驻空监听，
@@ -3625,6 +3629,16 @@ function logMainError(kind, error) {
 process.on('unhandledRejection', (reason) => logMainError('unhandledRejection', reason));
 // 渲染层（主窗口 / 桌宠 / 浮窗）的未捕获错误也送到同一份日志，排查时不用开 DevTools
 ipcMain.on('log:renderer', (event, payload = {}) => {
+// 双击 logo 重启带过来的：老实例还在收尾，先等它退干净（最多 8 秒），再拿锁
+const relaunchFrom = Number((process.argv.find((a) => a.startsWith('--relaunch-from=')) || '').split('=')[1] || 0);
+if (relaunchFrom && relaunchFrom !== process.pid) {
+  const deadline = Date.now() + 8000;
+  const tick = new Int32Array(new SharedArrayBuffer(4));
+  while (Date.now() < deadline) {
+    try { process.kill(relaunchFrom, 0); } catch { break; }      // 抛错 = 进程已经不在了
+    Atomics.wait(tick, 0, 0, 100);
+  }
+}
   const where = (() => { try { return new URL(event.sender.getURL()).pathname.split('/').slice(-2).join('/'); } catch { return '?'; } })();
   logMainError(`renderer(${where}) ${String(payload.kind || 'error')}`, `${String(payload.message || '').slice(0, 500)}\n${String(payload.stack || '').slice(0, 1500)}`);
 });
