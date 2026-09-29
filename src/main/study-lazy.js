@@ -206,6 +206,8 @@ function registerStudyLazy(ipcMain, {
   });
   ipcMain.handle('ai:streamStop', (_e, id) => { streams.get(id)?.abort(); streams.delete(id); return { ok: true }; });
 
+  registerPaperFs(ipcMain, { containerRoot, getUserDataPath });
+
   // ---- 7) 抓页面文字：渲染层的 webview.executeJavaScript 只看得到顶层 frame，
   //         很多站（B 站的小玩具、各种内嵌阅读器）正文在 iframe 里。这里走主进程把所有 frame 都扫一遍。 ----
   const GRAB = `(() => { try { const s = String((window.getSelection && window.getSelection()) || '').trim(); const t = document.body ? document.body.innerText : ''; return { sel: s.slice(0, 12000), text: String(t || '').replace(/\\n{3,}/g, '\\n\\n').slice(0, 14000), title: document.title || '', url: location.href, top: window === window.top }; } catch (e) { return { sel: '', text: '', title: '', url: '', top: false }; } })()`;
@@ -226,4 +228,35 @@ function registerStudyLazy(ipcMain, {
   });
 }
 
-module.exports = { registerStudyLazy, SHELF, CARD_DIR, STUDY_DIR, PROJECT_DIR };
+/**
+ * 论文接力的文件层：项目住在 容器/论文/<项目>/ 下。
+ * container:writeFile 只能改已有文件（它的路径守卫先 realpath 目标），建不了新文件和 drafts/ 子目录，
+ * 所以这里单独给一套：mkdir -p / 读 / 写（自动建父目录）/ 列目录（带 mtime，用来判断上游文件比下游新）。
+ * 所有路径都钉死在容器根目录下面，带 .. 的一律拒绝。
+ */
+function registerPaperFs(ipcMain, { containerRoot, getUserDataPath }) {
+  const PAPER_DIR = '论文';
+  const resolveInside = (rel) => {
+    const root = path.resolve(containerRoot(getUserDataPath));
+    const abs = path.resolve(root, PAPER_DIR, String(rel || ''));
+    if (abs !== path.join(root, PAPER_DIR) && !abs.startsWith(path.join(root, PAPER_DIR) + path.sep)) throw new Error('路径跑出论文目录了');
+    return abs;
+  };
+  const relOf = (abs) => path.relative(path.join(path.resolve(containerRoot(getUserDataPath)), PAPER_DIR), abs).split(path.sep).join('/');
+  ipcMain.handle('paper:mkdirp', (_e, rel) => { try { fs.mkdirSync(resolveInside(rel), { recursive: true }); return { ok: true }; } catch (err) { return { ok: false, error: err.message }; } });
+  ipcMain.handle('paper:read', (_e, rel) => { try { return { ok: true, content: fs.readFileSync(resolveInside(rel), 'utf8').slice(0, 400000) }; } catch (err) { return { ok: false, error: err.code === 'ENOENT' ? '文件不存在' : err.message }; } });
+  ipcMain.handle('paper:write', (_e, { rel, content } = {}) => {
+    try { const abs = resolveInside(rel); fs.mkdirSync(path.dirname(abs), { recursive: true }); fs.writeFileSync(abs, String(content ?? ''), 'utf8'); return { ok: true, rel: relOf(abs), abs }; }
+    catch (err) { return { ok: false, error: err.message }; }
+  });
+  ipcMain.handle('paper:list', (_e, rel) => {
+    try {
+      const abs = resolveInside(rel); if (!fs.existsSync(abs)) return { ok: true, items: [] };
+      const items = fs.readdirSync(abs, { withFileTypes: true }).filter((d) => !d.name.startsWith('.')).map((d) => { const st = fs.statSync(path.join(abs, d.name)); return { name: d.name, isDir: d.isDirectory(), mtime: st.mtimeMs, size: st.size }; });
+      return { ok: true, items, abs };
+    } catch (err) { return { ok: false, error: err.message }; }
+  });
+  ipcMain.handle('paper:root', () => ({ ok: true, abs: path.join(path.resolve(containerRoot(getUserDataPath)), PAPER_DIR), rel: PAPER_DIR }));
+}
+
+module.exports = { registerStudyLazy, registerPaperFs, SHELF, CARD_DIR, STUDY_DIR, PROJECT_DIR };

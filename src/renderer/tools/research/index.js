@@ -12,6 +12,7 @@ import { createPresentation } from './presentation.js';
 import { createAutoResearch } from './autoresearch.js';
 import { createZoteroPanel } from './zotero.js';
 import { createInnovation } from './innovation.js';
+import { createPaper } from './paper.js';
 
 export const SUB_SECTIONS = [
   { id: 'portal', label: '门户', icon: 'globe' },
@@ -24,6 +25,7 @@ export const SUB_SECTIONS = [
   { id: 'presentation', label: 'PPT演示', icon: 'book' },
   { id: 'library', label: '文献库', icon: 'archive' },
   { id: 'innovation', label: '创新图谱', icon: 'branch' },
+  { id: 'paper', label: '论文', icon: 'pen' },
   { id: 'zotero', label: 'Zotero', icon: 'book' },
   { id: 'autoresearch', label: '自动科研', icon: 'bot' },
 ];
@@ -72,6 +74,7 @@ export default {
       autoresearch: createAutoResearch,
       zotero: createZoteroPanel,
       innovation: createInnovation,
+      paper: createPaper,
     };
 
     function selectSub(id) {

@@ -613,6 +613,15 @@ contextBridge.exposeInMainWorld('toolbox', {
     /** 把一个 webview 里所有 frame 的文字抓出来（「⚡ 讲这篇」用），传 webview.getWebContentsId() */
     grabPage: (webContentsId) => ipcRenderer.invoke('study:grabPage', webContentsId),
     shelfInfo: () => ipcRenderer.invoke('study:shelfInfo'),
+  /** 论文接力：容器/论文/<项目>/ 下的文件读写（能建新文件和子目录） */
+  paper: {
+    root: () => ipcRenderer.invoke('paper:root'),
+    mkdirp: (rel) => ipcRenderer.invoke('paper:mkdirp', rel),
+    read: (rel) => ipcRenderer.invoke('paper:read', rel),
+    write: (payload) => ipcRenderer.invoke('paper:write', payload),
+    list: (rel) => ipcRenderer.invoke('paper:list', rel),
+  },
+
     exportQuiz: (payload) => ipcRenderer.invoke('study:exportQuiz', payload),
     runQuizInTerminal: (launcher) => ipcRenderer.invoke('study:runQuizInTerminal', launcher),
     saveProject: (payload) => ipcRenderer.invoke('study:saveProject', payload),
