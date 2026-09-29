@@ -117,18 +117,106 @@ function strength(pw) {
   return { score, label: score <= 2 ? '弱' : score <= 4 ? '一般' : '强' };
 }
 
+// ---------- 保险箱 PIN（只是访问门，不是加密密钥） ----------
+// 真正的密文永远由 safeStorage（系统钥匙串）加密。PIN 只挡住「用你解锁的电脑的人一眼看到里面」，
+// 所以拿 scrypt 存个加盐哈希、连错就冷却，够用；绝不拿 6 位数字去派生加密密钥（531441 种，秒破）。
+const PIN_RE = /^\d{6}$/;
+
+function hashPin(pin, salt) {
+  const s = salt || crypto.randomBytes(16).toString('hex');
+  const hash = crypto.scryptSync(String(pin), s, 32, { N: 16384, r: 8, p: 1 }).toString('hex');
+  return { salt: s, hash };
+}
+
+/** 定长比较，别因为耗时差异漏 PIN */
+function pinMatches(pin, record) {
+  if (!record || !record.hash || !record.salt) return false;
+  try {
+    const got = crypto.scryptSync(String(pin), record.salt, 32, { N: 16384, r: 8, p: 1 });
+    const want = Buffer.from(record.hash, 'hex');
+    return got.length === want.length && crypto.timingSafeEqual(got, want);
+  } catch { return false; }
+}
+
 // ---------- 主进程服务 ----------
 
 class VaultService {
-  constructor({ file, safeStorage, clipboard, markClipboardSecret }) {
+  constructor({ file, safeStorage, clipboard, markClipboardSecret, store }) {
     this.file = file;
     this.safeStorage = safeStorage;
     this.clipboard = clipboard;
     this.markClipboardSecret = markClipboardSecret || (() => {});
+    this.store = store || { get: () => undefined, set: () => {} };
     this.clearTimer = null;
+    this.unlocked = false;   // 内存态：重启应用就要重新输 PIN
+    this.fails = 0;
   }
 
   available() { return Boolean(this.safeStorage?.isEncryptionAvailable?.()); }
+
+  // ---------- PIN 门 ----------
+  _pinRecord() { const r = this.store.get('vault.pin'); return r && r.hash && r.salt ? r : null; }
+  _lockedUntil() { return Number(this.store.get('vault.lockedUntil', 0)) || 0; }
+
+  /** 有没有设 PIN、开着没、还要冷却多久 */
+  pinStatus() {
+    const hasPin = Boolean(this._pinRecord());
+    const cooldown = Math.max(0, this._lockedUntil() - Date.now());
+    return { ok: true, hasPin, unlocked: hasPin ? this.unlocked : true, cooldownMs: cooldown };
+  }
+
+  /** 需要解锁才能看内容：没设 PIN 视作常开 */
+  _gate() {
+    if (!this._pinRecord()) return null;
+    if (!this.unlocked) return { ok: false, code: 'locked', error: '保险箱锁着，先输 6 位密码。' };
+    return null;
+  }
+
+  setPin(pin) {
+    if (this._pinRecord()) return { ok: false, error: '已经设过密码了，用「改密码」。' };
+    if (!PIN_RE.test(String(pin || ''))) return { ok: false, error: '密码要正好 6 位数字。' };
+    this.store.set('vault.pin', hashPin(pin));
+    this.unlocked = true; this.fails = 0;
+    return { ok: true, ...this.pinStatus() };
+  }
+
+  changePin(oldPin, newPin) {
+    const rec = this._pinRecord();
+    if (!rec) return this.setPin(newPin);
+    if (!pinMatches(oldPin, rec)) return { ok: false, error: '原密码不对。' };
+    if (!PIN_RE.test(String(newPin || ''))) return { ok: false, error: '新密码要正好 6 位数字。' };
+    this.store.set('vault.pin', hashPin(newPin));
+    this.unlocked = true; this.fails = 0;
+    return { ok: true, ...this.pinStatus() };
+  }
+
+  removePin(pin) {
+    const rec = this._pinRecord();
+    if (!rec) return { ok: true };
+    if (!pinMatches(pin, rec)) return { ok: false, error: '密码不对，不能取消。' };
+    this.store.set('vault.pin', undefined);
+    this.store.set('vault.lockedUntil', undefined);
+    this.unlocked = true; this.fails = 0;
+    return { ok: true, ...this.pinStatus() };
+  }
+
+  unlock(pin) {
+    const rec = this._pinRecord();
+    if (!rec) { this.unlocked = true; return { ok: true, ...this.pinStatus() }; }
+    const cooldown = this._lockedUntil() - Date.now();
+    if (cooldown > 0) return { ok: false, code: 'cooldown', error: `连错太多次，${Math.ceil(cooldown / 1000)} 秒后再试。`, cooldownMs: cooldown };
+    if (!pinMatches(pin, rec)) {
+      this.fails += 1;
+      // 连错 5 次冷却 30 秒，之后每错一次翻倍（封顶 5 分钟）
+      if (this.fails >= 5) this.store.set('vault.lockedUntil', Date.now() + Math.min(300000, 30000 * 2 ** (this.fails - 5)));
+      return { ok: false, code: 'wrong', error: '密码不对。', fails: this.fails };
+    }
+    this.unlocked = true; this.fails = 0;
+    this.store.set('vault.lockedUntil', undefined);
+    return { ok: true, ...this.pinStatus() };
+  }
+
+  lock() { this.unlocked = false; return { ok: true, ...this.pinStatus() }; }
 
   _read() {
     try { const data = JSON.parse(fs.readFileSync(this.file, 'utf8')); return Array.isArray(data.entries) ? data : { entries: [] }; } catch { return { entries: [] }; }
@@ -187,14 +275,27 @@ class VaultService {
 
   /** 点「显示」才解密一次，整条给渲染层 */
   reveal(id) {
+    const gate = this._gate(); if (gate) return gate;
     if (!this.available()) return { ok: false, error: '系统安全存储不可用' };
     const e = this._read().entries.find((x) => x.id === id);
     if (!e) return { ok: false, error: '没有这条' };
     return { ok: true, entry: { id: e.id, title: e.title, url: e.url, username: e.username, kind: e.kind, tags: e.tags || [], ...this._decrypt(e.secret) } };
   }
 
+  /** 把某条的 key 明文交给主进程（写进 AI 配置用）；不回渲染层。需要先解锁。 */
+  keyOf(id) {
+    const gate = this._gate(); if (gate) return gate;
+    if (!this.available()) return { ok: false, error: '系统安全存储不可用' };
+    const e = this._read().entries.find((x) => x.id === id);
+    if (!e) return { ok: false, error: '没有这条' };
+    const key = String(this._decrypt(e.secret).key || '').trim();
+    if (!key) return { ok: false, error: '这条没有 key' };
+    return { ok: true, key, title: e.title, url: e.url };
+  }
+
   /** 复制某个字段：值不回渲染层。40 秒后剪贴板还是这个值就清掉。 */
   copy(id, field) {
+    if (SECRET_FIELDS.includes(field)) { const gate = this._gate(); if (gate) return gate; }
     const data = this._read();
     const e = data.entries.find((x) => x.id === id);
     if (!e) return { ok: false, error: '没有这条' };
@@ -216,4 +317,4 @@ class VaultService {
   count() { return this._read().entries.length; }
 }
 
-module.exports = { VaultService, parseDump, autoTitle, guessKind, generatePassword, strength, hostOf, KINDS, SECRET_FIELDS };
+module.exports = { VaultService, parseDump, autoTitle, guessKind, generatePassword, strength, hostOf, hashPin, pinMatches, PIN_RE, KINDS, SECRET_FIELDS };

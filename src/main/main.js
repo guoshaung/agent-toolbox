@@ -1894,7 +1894,7 @@ function registerIpc() {
   ipcMain.handle('clip:history', () => clipHistory.map((x) => ({ text: x.text, at: x.at })));
 
   // ---- 密码本：safeStorage 加密落在 userData/vault.json，明文不进渲染层 ----
-  const vault = new VaultService({ file: path.join(app.getPath('userData'), 'vault.json'), safeStorage, clipboard, markClipboardSecret: (v) => { clipSecrets.add(v); if (clipSecrets.size > 50) clipSecrets.delete(clipSecrets.values().next().value); } });
+  const vault = new VaultService({ file: path.join(app.getPath('userData'), 'vault.json'), safeStorage, clipboard, store, markClipboardSecret: (v) => { clipSecrets.add(v); if (clipSecrets.size > 50) clipSecrets.delete(clipSecrets.values().next().value); } });
   ipcMain.handle('vault:list', () => vault.list());
   ipcMain.handle('vault:save', (_e, entry) => vault.save(entry || {}));
   ipcMain.handle('vault:remove', (_e, id) => vault.remove(String(id || '')));
