@@ -2,6 +2,10 @@
 // Follow electron-updater's GitHub/NSIS flow. The library owns version
 // comparison, download verification and installation; this module owns consent.
 const { app, dialog, shell } = require('electron');
+const path = require('path');
+const { spawn, execFile } = require('child_process');
+const { promisify } = require('util');
+const macUpdate = require('./mac-self-update');
 
 const RELEASES_PAGE = 'https://github.com/guoshaung/agent-toolbox/releases/latest';
 const CHECK_DELAY_MS = 8000;
@@ -47,18 +51,57 @@ async function promptInstall(info) {
   if (response === 0) autoUpdater.quitAndInstall();
 }
 
+let getMainWindow = () => null;
+
+/**
+ * mac：electron-updater 装不了没签名的包，自己下 zip 换 .app。
+ * 进度打在 Dock 图标上；下好了问一句就重启。
+ */
+async function macSelfUpdate(version) {
+  const win = getMainWindow();
+  const dir = path.join(app.getPath('temp'), `agent-toolbox-update-${version}`);
+  const url = macUpdate.assetUrl(version);
+  log('mac self-update from', url);
+  try {
+    const newApp = await macUpdate.downloadAndExtract({
+      url, dir, execFile: promisify(execFile),
+      onProgress: (frac) => { try { win?.setProgressBar(frac >= 0 ? frac : 2); } catch { /* 窗口没了 */ } },
+    });
+    try { win?.setProgressBar(-1); } catch { /* ignore */ }
+    const { response } = await dialog.showMessageBox({
+      type: 'info', title: '更新已下载', message: `${version} 下好了`,
+      detail: '点「现在重启」会退出、换上新版本、再自动打开。', buttons: ['现在重启', '下次再说'], defaultId: 0, cancelId: 1,
+    });
+    if (response !== 0) return;
+    const target = macUpdate.bundlePathFromExe(app.getPath('exe'));
+    macUpdate.launchSwap({ pid: process.pid, target, newApp, dir, spawn });
+    setTimeout(() => app.quit(), 200);
+  } catch (err) {
+    try { win?.setProgressBar(-1); } catch { /* ignore */ }
+    log('mac self-update failed:', err.message);
+    const { response } = await dialog.showMessageBox({
+      type: 'warning', title: '自动更新没成功', message: err.message,
+      detail: '连不上 GitHub 的话，去发布页手动下载 dmg 装一次也行。', buttons: ['打开发布页', '算了'], defaultId: 0, cancelId: 1,
+    });
+    if (response === 0) await shell.openExternal(RELEASES_PAGE);
+  }
+}
+
 async function promptDownload(info) {
+  const mac = process.platform === 'darwin';
   const { response } = await dialog.showMessageBox({
     type: 'info',
     title: '有新版本',
     message: `Agent 工具箱 ${info.version} 可以更新了`,
-    detail: `你现在用的是 ${app.getVersion()}。\n\n下载完成后会在下次退出时自动装上。`,
-    buttons: ['下载', '打开发布页自己下', '这次不用'],
+    detail: `你现在用的是 ${app.getVersion()}。\n\n${mac ? '会直接下载并替换应用，进度显示在 Dock 图标上；下好后重启一下就是新版。' : '下载完成后会在下次退出时自动装上。'}`,
+    buttons: [mac ? '下载并重启' : '下载', '打开发布页自己下', '这次不用'],
     defaultId: 0,
     cancelId: 2,
   });
   if (response === 1) { await shell.openExternal(RELEASES_PAGE); return; }
-  if (response === 0) await autoUpdater.downloadUpdate();
+  if (response !== 0) return;
+  if (mac) await macSelfUpdate(info.version);
+  else await autoUpdater.downloadUpdate();
 }
 
 async function check({ silent = true } = {}) {
@@ -111,7 +154,8 @@ function stopAutoCheck() {
   timer = null;
 }
 
-function registerUpdaterIpc(ipcMain) {
+function registerUpdaterIpc(ipcMain, { getWindow } = {}) {
+  if (typeof getWindow === 'function') getMainWindow = getWindow;
   ipcMain.handle('update:check', () => check({ silent: false }));
   ipcMain.handle('update:current', () => ({
     version: app.getVersion(),

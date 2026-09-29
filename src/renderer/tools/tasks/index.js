@@ -331,8 +331,10 @@ ${text}`);
     }
 
     function ideaCard(idea) {
-      const preview = h('div', { class: 'tk__idea-preview' }, renderRich(idea.text));
+      const preview = h('div', { class: 'tk__idea-preview', title: '双击直接改' }, renderRich(idea.text));
       const editor = h('textarea', { class: 'field tk__idea-edit', rows: 6, hidden: true }, idea.text);
+      // 双击正文 = 进入编辑（和右上角 ✎ 一样），改完点别处自动存
+      preview.addEventListener('dblclick', () => { editor.hidden = false; preview.hidden = true; editor.focus(); });
       const metaRow = h('div', { class: 'tk__idea-meta' },
           h('span', { class: 'faint' }, new Date(idea.at).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })),
           ...(idea.tags || []).map((t) => h('span', { class: 'tk__tag', style: { '--tag-color': tagColor(t) } }, t)),

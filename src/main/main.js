@@ -1847,7 +1847,7 @@ function registerIpc() {
   registerBiblioIpc(ipcMain, { dialog, getWindow: () => mainWindow, clipboard });
   registerDocSearchIpc(ipcMain);
   registerShelfIpc(ipcMain, { dialog, getWindow: () => mainWindow });
-  registerUpdaterIpc(ipcMain);
+  registerUpdaterIpc(ipcMain, { getWindow: () => mainWindow });   // mac 自更新要把下载进度打到 Dock 图标上
   // 渲染层启动时把真实工具表推过来，手机端按这个生成按钮
   ipcMain.handle('remote:setTools', (_e, list) => { remoteControl?.setTools(list); return { ok: true }; });
 
