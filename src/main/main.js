@@ -1864,6 +1864,18 @@ function registerIpc() {
   });
   // 「代码」里内嵌的 VS Code（本地 code-server）；默认工作区 = 容器
   registerVscodeIpc(ipcMain, { getUserDataPath: () => app.getPath('userData'), defaultFolder: () => containerRoot(() => app.getPath('userData')), getMainWindow: () => mainWindow });
+
+  // 果蝇观察箱：preload 已公开这些通道；主进程必须同步注册，避免运行时无 handler。
+  const { FlyLabService } = require('./flylab');
+  const flylab = new FlyLabService({ getWindow: () => mainWindow });
+  ipcMain.handle('flylab:status', () => flylab.status());
+  ipcMain.handle('flylab:cameras', () => flylab.cameras());
+  ipcMain.handle('flylab:run', (_e, cfg) => flylab.run(cfg || {}));
+  ipcMain.handle('flylab:cancel', () => flylab.cancel());
+  ipcMain.handle('flylab:list', () => flylab.list());
+  ipcMain.handle('flylab:readVideo', (_e, p) => flylab.readVideo(p));
+  ipcMain.handle('flylab:openFolder', () => flylab.openFolder());
+  ipcMain.handle('flylab:remove', (_e, p) => flylab.remove(p));
   let clipLast = '';
   // 密码本复制出来的值：不进历史（⌘K 里能搜到的话等于明文展示）
   const clipSecrets = new Set();
