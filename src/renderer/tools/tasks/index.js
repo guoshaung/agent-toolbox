@@ -1,4 +1,5 @@
 import { h, toast } from '../../core/ui.js';
+import { createIdeaGraph } from './idea-graph.js';
 import { iconFor } from '../../core/icons.js';
 import { md } from '../../core/md.js';
 import katex from '../../../../node_modules/katex/dist/katex.mjs';
@@ -308,6 +309,8 @@ ${text}`);
     }
 
     // ---------- 想法：贴 AI 分析 / 灵感，公式照排；提问生成 md 给 Obsidian，能开终端对话 ----------
+    // 关系图：从卡片拖出编号 → 右侧图里连线；卡片自己选渐变背景
+    const ideaGraph = createIdeaGraph({ config, getIdeas: () => ideas, persistIdeas: () => persistIdeas(), rerenderIdeas: () => renderIdeas() });
     const ideaInput = h('textarea', { class: 'field tk__idea-input', rows: 4, placeholder: '把 AI 给的论文分析、你的想法、公式都贴进来，别怕乱。\n支持 Markdown 和 LaTeX：行内 $E=mc^2$，独占一行 $$\\int_0^1 x\\,dx = \\tfrac12$$\n⌘回车存下来' });
     const ideaList = h('div', { class: 'tk__ideas-list' });
     const ideaVault = h('span', { class: 'faint tk__idea-vault' });
@@ -330,19 +333,17 @@ ${text}`);
     function ideaCard(idea) {
       const preview = h('div', { class: 'tk__idea-preview' }, renderRich(idea.text));
       const editor = h('textarea', { class: 'field tk__idea-edit', rows: 6, hidden: true }, idea.text);
-      const card = h('article', { class: 'tk__idea-card' },
-        h('div', { class: 'tk__idea-meta' },
+      const metaRow = h('div', { class: 'tk__idea-meta' },
           h('span', { class: 'faint' }, new Date(idea.at).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })),
           ...(idea.tags || []).map((t) => h('span', { class: 'tk__tag', style: { '--tag-color': tagColor(t) } }, t)),
           h('span', { class: 'tk__spacer' }),
           h('button', { class: 'btn btn--xs btn--primary', title: '基于这条想法生成一个提问 md', onclick: () => openAsk(idea) }, '提问'),
           h('button', { class: 'btn btn--xs btn--ghost', title: '编辑', onclick: () => { const on = editor.hidden; editor.hidden = !on; preview.hidden = on; if (on) editor.focus(); } }, '✎'),
           h('button', { class: 'btn btn--xs btn--ghost', title: '复制原文', onclick: async () => { await window.toolbox.clipboard.write(idea.text); toast('已复制', 'good'); } }, '⧉'),
-          h('button', { class: 'btn btn--xs btn--ghost', title: '删除', onclick: () => { if (!window.confirm('删掉这条想法？')) return; ideas = ideas.filter((x) => x.id !== idea.id); persistIdeas(); renderIdeas(); } }, '×'),
-        ),
-        preview,
-        editor,
+          h('button', { class: 'btn btn--xs btn--ghost', title: '删除', onclick: () => { if (!window.confirm('删掉这条想法？')) return; ideas = ideas.filter((x) => x.id !== idea.id); persistIdeas(); renderIdeas(); ideaGraph.draw(); } }, '×'),
       );
+      const card = h('article', { class: 'tk__idea-card' }, metaRow, preview, editor);
+      ideaGraph.attachCard(card, idea, metaRow);
       editor.addEventListener('blur', () => { const v = editor.value.trim(); if (v && v !== idea.text) { idea.text = v; persistIdeas(); } editor.hidden = true; preview.hidden = false; preview.replaceChildren(renderRich(idea.text)); });
       return card;
     }
@@ -419,6 +420,7 @@ ${text}`);
           h('button', { class: 'btn btn--primary', onclick: saveIdea }, '记下来'),
           h('button', { class: 'btn btn--ghost', onclick: async () => { const t = await window.toolbox.clipboard.read?.(); if (!t) return toast('剪贴板是空的', 'info'); ideaInput.value = (ideaInput.value ? `${ideaInput.value}\n` : '') + t; ideaInput.focus(); } }, '从剪贴板粘'),
           h('button', { class: 'btn btn--ghost', title: '不基于某条想法，直接生成一个空白提问 md', onclick: () => openAsk(null) }, '直接提问'),
+          h('button', { class: 'btn btn--ghost', title: '右侧打开关系图：把想法拖进去、自己连线', onclick: () => ideaGraph.toggle() }, '🕸 关系图'),
           h('span', { class: 'tk__spacer' }),
           ideaSearch,
         ),
@@ -426,6 +428,10 @@ ${text}`);
       ),
       ideaList,
     );
+    // 左边（记录 + 列表）一列，右边关系图一列；关系图收起时就是原来的单列
+    const ideasLeft = h('div', { class: 'tk__ideas-left' }, ...ideasPane.children);
+    ideasPane.append(ideasLeft, ideaGraph.panel);
+    ideaGraph.mount(ideasPane);
     root.append(
       h('div', { class: 'bar tk__bar' }, h('strong', {}, '任务'), viewToggle, barSub, h('span', { class: 'tk__spacer' }), h('span', { class: 'faint tk__hint' }, '⌘K 里输「+ 事情」也能直接加')),
       tasksPane,
