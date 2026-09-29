@@ -20,10 +20,12 @@ function assetUrl(version, arch = process.arch) {
 
 /** 从可执行文件路径推出 .app 包路径：…/Foo.app/Contents/MacOS/Foo → …/Foo.app */
 function bundlePathFromExe(exe) {
-  const p = path.resolve(String(exe));
+  // 这是 mac 专用逻辑，但测试会在 Windows CI 上跑：path.resolve 会把分隔符换成反斜杠，
+  // 所以固定用 posix 语义，别看当前平台
+  const p = String(exe).replace(/\\/g, '/');
   const idx = p.indexOf('.app/Contents/');
   if (idx >= 0) return p.slice(0, idx + 4);
-  return path.dirname(path.dirname(path.dirname(p)));
+  return path.posix.dirname(path.posix.dirname(path.posix.dirname(p)));
 }
 
 /** 等 pid 退出 → 换包 → 去掉隔离标记 → 重新打开。写成脚本是因为换包时本进程必须已经退出。 */
