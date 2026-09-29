@@ -2160,19 +2160,28 @@ function createNotebookTool({ id, title, icon, hint, boundMode }) {
 
     nbBody.append(sideEl, splitSide, mainEl, splitDetail, detailEl);
 
-    // ---- VS Code 模式：整个「代码」换成内嵌 code-server；这里的经典编辑器收进一个壳里，随时能切回 ----
-    const vscodePanel = createVscodePanel(ctx, { onClassic: () => setNbMode('classic') });
+    // ---- VS Code 只属于「代码」；「笔记」始终保留原来的 Markdown 编辑器 ----
+    // 两个工具复用这份编辑器实现，但不能复用编辑器模式，否则代码切到 VS Code
+    // 会把笔记也一起切走。
+    const supportsVscode = boundMode === 'code';
+    const vscodePanel = supportsVscode ? createVscodePanel(ctx, { onClassic: () => setNbMode('classic') }) : null;
     const classicWrap = h('div', { class: 'nb__classic', style: { display: 'flex', flexDirection: 'column', flex: '1', minHeight: '0' } });
     // 注意别用 notebook.mode —— 那个键老代码已经在用（frame 之类），撞上就永远进不了 VS Code
-    let nbMode = config.get('notebook.editorMode', 'vscode');
+    let nbMode = supportsVscode ? config.get('notebook.editorMode', 'vscode') : 'classic';
     if (nbMode !== 'vscode' && nbMode !== 'classic') nbMode = 'vscode';
-    const modeBtn = h('button', { class: 'btn btn--sm btn--primary', title: '切到内嵌的 VS Code', onclick: () => setNbMode('vscode') }, 'VS Code');
+    const modeBtn = supportsVscode ? h('button', { class: 'btn btn--sm btn--primary', title: '切到内嵌的 VS Code', onclick: () => setNbMode('vscode') }, 'VS Code') : null;
     function setNbMode(m) {
-      nbMode = m; config.set('notebook.editorMode', m);
-      classicWrap.hidden = m === 'vscode'; vscodePanel.el.hidden = m !== 'vscode';
-      if (m === 'vscode') vscodePanel.activate();
+      if (!supportsVscode) m = 'classic';
+      nbMode = m;
+      if (supportsVscode) config.set('notebook.editorMode', m);
+      classicWrap.hidden = supportsVscode && m === 'vscode';
+      if (vscodePanel) {
+        vscodePanel.el.hidden = m !== 'vscode';
+        if (m === 'vscode') vscodePanel.activate();
+      }
     }
-    root.append(classicWrap, vscodePanel.el);
+    root.append(classicWrap);
+    if (vscodePanel) root.append(vscodePanel.el);
     classicWrap.append(
       h('div', { class: 'bar bar--drag nb__bar' },
         h('strong', {}, title),
@@ -2309,7 +2318,7 @@ function createNotebookTool({ id, title, icon, hint, boundMode }) {
     });
 
     setNbMode(nbMode);
-    return { activate: () => { if (nbMode === 'vscode') vscodePanel.activate(); else setTimeout(() => (editing ? editor : symbolInput).focus(), 30); } };
+    return { activate: () => { if (vscodePanel && nbMode === 'vscode') vscodePanel.activate(); else setTimeout(() => (editing ? editor : symbolInput).focus(), 30); } };
   },
  };
 }
