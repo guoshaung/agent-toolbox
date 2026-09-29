@@ -11,6 +11,7 @@ import { createDrafter } from './drafter.js';
 import { createPresentation } from './presentation.js';
 import { createAutoResearch } from './autoresearch.js';
 import { createZoteroPanel } from './zotero.js';
+import { createInnovation } from './innovation.js';
 
 export const SUB_SECTIONS = [
   { id: 'portal', label: '门户', icon: 'globe' },
@@ -22,6 +23,7 @@ export const SUB_SECTIONS = [
   { id: 'drafter', label: '示意图', icon: 'pen' },
   { id: 'presentation', label: 'PPT演示', icon: 'book' },
   { id: 'library', label: '文献库', icon: 'archive' },
+  { id: 'innovation', label: '创新图谱', icon: 'branch' },
   { id: 'zotero', label: 'Zotero', icon: 'book' },
   { id: 'autoresearch', label: '自动科研', icon: 'bot' },
 ];
@@ -69,6 +71,7 @@ export default {
       schools: createSchools,
       autoresearch: createAutoResearch,
       zotero: createZoteroPanel,
+      innovation: createInnovation,
     };
 
     function selectSub(id) {

@@ -69,15 +69,16 @@ function registerStudyLazy(ipcMain, {
     if (!abs) return { ok: false, error: '路径不在仓库里' };
     try { return { ok: true, content: fs.readFileSync(abs, 'utf8').slice(0, 60000) }; } catch (err) { return { ok: false, error: err.message }; }
   });
-  ipcMain.handle('study:vaultWriteCard', (_e, { title, body, tags = [], concept = '', module: mod = '' } = {}) => {
+  // dir 可选：默认写进 学习卡片/；创新图谱之类想单独一个文件夹就传一个（只取文件夹名，不许带路径）
+  ipcMain.handle('study:vaultWriteCard', (_e, { title, body, tags = [], concept = '', module: mod = '', dir: sub = '' } = {}) => {
     const v = vault();
     if (!v || !fs.existsSync(v)) return { ok: false, error: '还没选 Obsidian 仓库' };
-    const dir = path.join(v, CARD_DIR);
+    const dir = path.join(v, safeName(sub) === 'untitled' ? CARD_DIR : safeName(sub));
     try { fs.mkdirSync(dir, { recursive: true }); } catch (err) { return { ok: false, error: err.message }; }
     const file = path.join(dir, `${safeName(title)}.md`);
     const stamp = new Date();
     const iso = new Date(stamp.getTime() - stamp.getTimezoneOffset() * 60000).toISOString().slice(0, 16).replace('T', ' ');
-    const fm = ['---', `title: "${safeName(title).replace(/"/g, "'")}"`, `concept: "${String(concept).replace(/"/g, "'")}"`, `module: "${String(mod).replace(/"/g, "'")}"`, `tags: [${['学习卡片', ...tags].map((t) => `"${String(t).replace(/"/g, "'")}"`).join(', ')}]`, `learned: ${iso}`, '---', ''].join('\n');
+    const fm = ['---', `title: "${safeName(title).replace(/"/g, "'")}"`, `concept: "${String(concept).replace(/"/g, "'")}"`, `module: "${String(mod).replace(/"/g, "'")}"`, `tags: [${[...new Set([sub ? safeName(sub) : '学习卡片', ...tags])].map((t) => `"${String(t).replace(/"/g, "'")}"`).join(', ')}]`, `learned: ${iso}`, '---', ''].join('\n');
     try { fs.writeFileSync(file, fm + String(body || '') + '\n', 'utf8'); } catch (err) { return { ok: false, error: err.message }; }
     return { ok: true, path: file, rel: path.relative(v, file).split(path.sep).join('/') };
   });
