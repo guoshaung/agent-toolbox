@@ -2163,10 +2163,12 @@ function createNotebookTool({ id, title, icon, hint, boundMode }) {
     // ---- VS Code 模式：整个「代码」换成内嵌 code-server；这里的经典编辑器收进一个壳里，随时能切回 ----
     const vscodePanel = createVscodePanel(ctx, { onClassic: () => setNbMode('classic') });
     const classicWrap = h('div', { class: 'nb__classic', style: { display: 'flex', flexDirection: 'column', flex: '1', minHeight: '0' } });
-    let nbMode = config.get('notebook.mode', 'vscode');
+    // 注意别用 notebook.mode —— 那个键老代码已经在用（frame 之类），撞上就永远进不了 VS Code
+    let nbMode = config.get('notebook.editorMode', 'vscode');
+    if (nbMode !== 'vscode' && nbMode !== 'classic') nbMode = 'vscode';
     const modeBtn = h('button', { class: 'btn btn--sm btn--primary', title: '切到内嵌的 VS Code', onclick: () => setNbMode('vscode') }, 'VS Code');
     function setNbMode(m) {
-      nbMode = m; config.set('notebook.mode', m);
+      nbMode = m; config.set('notebook.editorMode', m);
       classicWrap.hidden = m === 'vscode'; vscodePanel.el.hidden = m !== 'vscode';
       if (m === 'vscode') vscodePanel.activate();
     }
