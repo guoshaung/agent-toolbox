@@ -17,6 +17,8 @@ contextBridge.exposeInMainWorld('toolbox', {
   files: {
     saveTextSupportsCopyOnly: true,
     exportBundleSupportsCopyOnly: true,
+    saveBinarySupportsCopyOnly: true,
+    saveBinary: (payload) => ipcRenderer.invoke('files:saveBinary', payload),
     exportBundle: (payload) => ipcRenderer.invoke('files:exportBundle', payload),
     /** 打开选图对话框，返回 { path, name, mime, base64 } 或 null（用户取消） */
     pickImage: () => ipcRenderer.invoke('files:pickImage'),

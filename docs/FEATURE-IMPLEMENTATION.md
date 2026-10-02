@@ -29,3 +29,5 @@
 至少完成规格中可复现的验收样例和必要错误边界。带 UI 的功能还需浏览器交互检查；浏览器中注入 IPC 模拟桥的结果必须注明为渲染层验证。Electron 原生 IPC、文件对话框和打包适配应独立记录，不能混为已经验证。网络或外部运行时功能应另测依赖与失败状态。
 
 运行 `npm run check` 以及各功能测试。现有 committed-import 检查读取 HEAD，因此还需在提交后跑导入检查。跨功能合并测试只能在隔离集成分支执行，不能把多个功能一起提交到单功能分支。
+
+单文件二进制副本使用 `files.saveBinarySupportsCopyOnly === true` / `files.saveBinary({copyOnly:true,defaultName,base64,sha256})`。限10MiB（含空文件），主进程验证规范Base64及SHA-256后打开保存对话框，忽略renderer任意target/path；独占wx创建不覆盖已有文件。普通写入失败按文件身份清理本次新副本，身份改变/清理失败返回partialPath供人工核对；不保证断电/崩溃事务。二进制按原字节写出，不转UTF-8。此接口适用于分片重组超过目录接口每文件2MiB的单个副本；目录接口容量保持不变。
