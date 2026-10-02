@@ -175,10 +175,11 @@ test('cancel/edit stale asynchronous jobs cannot overwrite newer source or permi
   const ui = await mount({ processor: async (data, p, opts) => { calls++; await gate; opts.onProgress({ processed: 1, total: 3 }); return run(SAMPLE); } }); ui.setSource(); ui.button('生成新的处理结果').click(); ui.edit('源数据', 'a\nnew'); assert.equal(ui.button('生成新的处理结果').disabled, true); ui.button('生成新的处理结果').click(); assert.equal(calls, 1); resolve(); await ui.waitDone(); assert.equal(ui.field('源数据').value, 'a\nnew'); assert.equal(ui.button('预览 JSON 数据副本'), undefined); assert.equal(ui.text().includes('已处理 1/3'), false); ui.button('解析字段').click(); assert.match(ui.text(), /已解析 1 行、1 列/); ui.lifecycle.destroy();
 });
 test('hidden/deactivated cancel in-flight processing; destroy removes events and ignores later callback', async () => {
+  const completedResult = await run(); // Finish real crypto before testing the independently gated UI callback.
   for (const mode of ['hidden', 'deactivate', 'destroy']) {
-    let resolve; const gate = new Promise(r => { resolve = r; }); const ui = await mount({ processor: async () => { await gate; return run(); } }); ui.setSource(); ui.button('生成新的处理结果').click();
+    let resolve; const gate = new Promise(r => { resolve = r; }); const ui = await mount({ processor: async () => { await gate; return completedResult; } }); ui.setSource(); ui.button('生成新的处理结果').click();
     if (mode === 'hidden') { ui.document.hidden = true; ui.document.events.get('visibilitychange')(); } else if (mode === 'deactivate') ui.lifecycle.deactivate(); else ui.lifecycle.destroy();
-    resolve(); await new Promise(r => setTimeout(r, 10));
+    resolve(); await gate; await new Promise(resolve => setImmediate(resolve)); // Drain the released callback, without assuming crypto finishes within 10ms.
     if (mode === 'destroy') { assert.equal(ui.root.children.length, 0); assert.equal(ui.document.events.size, 0); } else { ui.document.hidden = false; ui.lifecycle.activate(); assert.equal(ui.button('预览 JSON 数据副本'), undefined); assert.equal(ui.button('生成新的处理结果').disabled, false); ui.lifecycle.destroy(); }
   }
 });
