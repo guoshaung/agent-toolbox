@@ -4,7 +4,7 @@
 
 ## 当前状态
 
-已提交功能 PR **61/200**：学习 23/60、工具 26/100、娱乐 12/40。其余 139 项尚未交付功能 PR，其中 L003、L027、T096、T097 正在实现。目标仍在进行，不因本表记录一次进度而结束。
+已提交功能 PR **66/200**：学习 25/60、工具 29/100、娱乐 12/40。其余 134 项尚未交付功能 PR，其中 L028、T098、E030、T012 正在实现。目标仍在进行，不因本表记录一次进度而结束。
 
 | 编号 | 功能 | 独立 PR | 状态 | 定向测试 |
 |---|---|---|---|---|
@@ -47,11 +47,11 @@
 | T010 | 层级数据扁平化映射 | [#51](https://github.com/guoshaung/agent-toolbox/pull/51) | 已推送，待合并 | 28 项通过 |
 | L032 | 双人文献筛选校准 | [#52](https://github.com/guoshaung/agent-toolbox/pull/52) | 已推送，待合并 | 8 项通过 |
 | E026 | 真心话大冒险 | [#53](https://github.com/guoshaung/agent-toolbox/pull/53) | 已推送，待合并 | 26 项通过 |
-| L016 | TCP丢包时序 | [#54](https://github.com/guoshaung/agent-toolbox/pull/54) | 已推送，待合并 | 15 项通过 |
+| L016 | TCP 丢包时序 | [#54](https://github.com/guoshaung/agent-toolbox/pull/54) | 已推送，待合并 | 15 项通过 |
 | T084 | 订阅续费成本比较 | [#55](https://github.com/guoshaung/agent-toolbox/pull/55) | 已推送，待合并 | 29 项通过 |
 | T086 | 单位约束计算台 | [#56](https://github.com/guoshaung/agent-toolbox/pull/56) | 已推送，待合并 | 8 项通过 |
 | E027 | 估价竞猜 | [#57](https://github.com/guoshaung/agent-toolbox/pull/57) | 已推送，待合并 | 27 项通过 |
-| L017 | HTTP缓存决策台 | [#58](https://github.com/guoshaung/agent-toolbox/pull/58) | 已推送，待合并 | 15 项通过 |
+| L017 | HTTP 缓存决策台 | [#58](https://github.com/guoshaung/agent-toolbox/pull/58) | 已推送，待合并 | 15 项通过 |
 | L018 | 事务隔离沙盘 | [#59](https://github.com/guoshaung/agent-toolbox/pull/59) | 已推送，待合并 | 21 项通过 |
 | T090 | 计划工时与容量核算 | [#60](https://github.com/guoshaung/agent-toolbox/pull/60) | 已推送，待合并 | 8 项通过 |
 | T089 | 尺寸摆放试算 | [#61](https://github.com/guoshaung/agent-toolbox/pull/61) | 已推送，待合并 | 27 项通过 |
@@ -69,12 +69,17 @@
 | T095 | 浏览器书签整理迁移 | [#73](https://github.com/guoshaung/agent-toolbox/pull/73) | 已推送，待合并 | 22 项通过 |
 | L026 | 资源生命周期审计 | [#74](https://github.com/guoshaung/agent-toolbox/pull/74) | 已推送，待合并 | 20 项通过 |
 | L001 | 概念关系建模 | [#75](https://github.com/guoshaung/agent-toolbox/pull/75) | 已推送，待合并 | 9 项通过 |
+| L003 | 反例边界工坊 | [#76](https://github.com/guoshaung/agent-toolbox/pull/76) | 已推送，待合并 | 9 项通过 |
+| L027 | 数据契约反例训练 | [#77](https://github.com/guoshaung/agent-toolbox/pull/77) | 已推送，待合并 | 20 项通过 |
+| T007 | XML 数据查询台 | [#78](https://github.com/guoshaung/agent-toolbox/pull/78) | 已推送，待合并 | 10 项通过 |
+| T096 | 日历事件迁移校验 | [#79](https://github.com/guoshaung/agent-toolbox/pull/79) | 已推送，待合并 | 29 项通过 |
+| T097 | 个人数据导出包盘点 | [#80](https://github.com/guoshaung/agent-toolbox/pull/80) | 已推送，待合并 | 23 项通过 |
 
 公共入口、发现与惰性加载、分类搜索、收藏最近使用及安全副本写入：[基础 PR #14](https://github.com/guoshaung/agent-toolbox/pull/14)。原仓库当前账号只有读权限，因此功能分支推送到 nightofknife 的 fork，PR 指向 guoshaung/agent-toolbox 的 main。先合入基础后再合入功能，避免入口缺失；不自动合并。
 
 ## 验收证据边界
 
-六十一项功能的定向测试均通过；隔离集成分支按项目原有 CI 模式运行全量检查：1543 项中 1533 通过、10 跳过、0 失败。本机普通模式中，现有 Git Bash `source /dev/stdin` 用例因 `/dev/stdin: No such file or directory` 失败；该代码未在功能 PR 中修改，CI 跳过不等于已修复。基础PR #14另修正既有加密备份测试的随机误报：将易出现在Base64随机密文中的两字符口令标记改为完整测试明文标记，保留解密恢复及错误口令检查，不改变备份运行代码。
+六十六项功能的定向测试均通过；隔离集成分支按项目原有 CI 模式运行全量检查：1634 项中 1624 通过、10 跳过、0 失败。本机普通模式中，现有 Git Bash `source /dev/stdin` 用例因 `/dev/stdin: No such file or directory` 失败；该代码未在功能 PR 中修改，CI 跳过不等于已修复。基础PR #14另修正既有加密备份测试的随机误报：将易出现在Base64随机密文中的两字符口令标记改为完整测试明文标记，保留解密恢复及错误口令检查，不改变备份运行代码。
 
 真实浏览器已完成 T002 五行清洗与 T038 三组配色／候选／报告检查，浏览器保存桥是替身。独立隐藏 Electron 33.4.11 窗口使用生产 preload、功能目录服务和实际 `wx` 写入器，完成以下流程：
 
@@ -152,8 +157,14 @@
 - L026：两分支只未释放支漏，5状态违规后继续合法Release不误报终态泄漏；九条完整路径过滤不影响导出。
 - L001：依赖1循环→包含0循环，源变旧引文保留失效，真实选区重绑定2/2、版本草稿及摘要独立核对；图像检查调整双向标签。
 
+- L003：四样本 C2 单条件区分正负；相反标签同向量冲突后旧解清除，空条件阻止计算，版本草稿/报告实际落盘。
+- L027：年龄130预测通过→揭示失败保留误判；规则上限150新修订再次通过，24轮/修订预算及4个报告副本。
+- T007：真实 XML/XPath 引擎商品 B/C、count3、sum40、属性/命名空间/UTF-8文件，拒 Chromium 部分错误文档，网络0、JSON实际2840字节。
+- T096：完整 UID/RRULE/EXDATE/VTIMEZONE 往返；确认仅相同整事件3→2保留冲突、撤销3；UTC↔上海与5份ICS/1份报告落盘。
+- T097：真实ZIP/目录2文件、推测账号/照片2类别、声明/文件大小98字节；stored JSON实际抽检92字节并核CRC，报告无个人值，未压缩内容核验范围明确、网络0。
+
 默认主题补查：L031/L032/T086改用真实背景/边框变量，Electron加载生产样式后核对输入计算颜色。汉诺塔无效移动测试改用已支持的注入时钟，避免真实时间1ms差造成偶发失败，未改变游戏计时。
 
-Electron 烟测的配置存储和保存目标是测试夹具，未操作原生保存对话框，不构成完整主应用、打包、macOS、触屏硬件或辅助技术验收。后续功能需各自验证，不能直接沿用上述六十一项通过结论。
+Electron 烟测的配置存储和保存目标是测试夹具，未操作原生保存对话框，不构成完整主应用、打包、macOS、触屏硬件或辅助技术验收。后续功能需各自验证，不能直接沿用上述六十六项通过结论。
 
 完整规格见 [设计方案](FEATURE-EXPANSION-200.md)，代码接口和交付要求见 [实施约定](FEATURE-IMPLEMENTATION.md)。
