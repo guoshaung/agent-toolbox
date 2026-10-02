@@ -16,8 +16,9 @@ export function parseReview(raw){
  if(records.length<2||records[0].fields.map(v=>v.trim()).join(',')!=='id,title,decision')throw Error('CSV须有id,title,decision三列及至少一条记录，顺序固定。');
  const ids=new Set();return records.slice(1).map(r=>{if(r.fields.length!==3)throw Error(`CSV第${r.line}行必须有3列。`);const id=text(r.fields[0],80,'文献ID'),title=text(r.fields[1],500,'文献标题'),decision=decisionMap.get(r.fields[2].trim().toLowerCase());if(/[\r\n]/u.test(id)||ids.has(id))throw Error(`文献ID ${id}重复或含换行。`);ids.add(id);if(!decision)throw Error(`第${r.line}行判定须为include/exclude或纳入/排除。`);return{id,title,decision,line:r.line};});
 }
+export const validateRules=rules=>text(rules,4000,'纳排规则');
 export function compareReviews(rules,a,b){
- const ruleText=text(rules,4000,'纳排规则'),byA=new Map(a.map(row=>[row.id,row])),byB=new Map(b.map(row=>[row.id,row]));
+ const ruleText=validateRules(rules),byA=new Map(a.map(row=>[row.id,row])),byB=new Map(b.map(row=>[row.id,row]));
  const missingA=b.filter(row=>!byA.has(row.id)).map(row=>row.id),missingB=a.filter(row=>!byB.has(row.id)).map(row=>row.id),titleMismatch=a.filter(row=>byB.has(row.id)&&byB.get(row.id).title!==row.title).map(row=>({id:row.id,titleA:row.title,titleB:byB.get(row.id).title}));
  const aligned=!missingA.length&&!missingB.length&&!titleMismatch.length;
  const base={feature:'L032',schemaVersion:1,rules:ruleText,reviewerA:a,reviewerB:b,alignment:{aligned,missingA,missingB,titleMismatch},statistics:null,conflicts:[],pairs:[]};if(!aligned)return base;

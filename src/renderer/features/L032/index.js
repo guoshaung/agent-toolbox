@@ -1,5 +1,5 @@
 import { h } from '../../core/ui.js';
-import { LIMITS, parseReview, compareReviews, reportMarkdown, exampleCSV } from './model.mjs';
+import { LIMITS, parseReview, compareReviews, validateRules, reportMarkdown, exampleCSV } from './model.mjs';
 export default {
  id:'L032',
  create(root){
@@ -19,8 +19,8 @@ export default {
    if(phase==='done'){renderResult();return;}
    const who=phase,area=h('textarea',{rows:10,maxlength:String(LIMITS.characters),'aria-label':`评审 ${who} CSV`}),file=h('input',{type:'file',accept:'.csv,text/csv','aria-label':`评审 ${who} CSV文件`});
    const sample=h('button',{onclick:()=>{area.value=exampleCSV;message('已载入四条演示判定；实际筛选请独立导入自己的结果。');}},`载入评审 ${who} 演示CSV`);
-   const submit=h('button',{onclick:()=>{if(busy)return;try{if(!rules.value.trim()||rules.value.length>4000)throw Error('请先填写最多4000字符的共同规则。');const rows=parseReview(area.value);submitted.push(rows);area.value='';file.value='';rules.disabled=true;
-     if(who==='A'){phase='handoff';render();message('A已提交，判定暂不展示。');}else{result=compareReviews(rules.value,submitted[0],submitted[1]);phase='done';render();message(result.alignment.aligned?'两份已对齐并计算，全部判定现在揭晓。':'条目未对齐，指标未计算；请核对问题后重新开始。');}
+   const submit=h('button',{onclick:()=>{if(busy)return;try{validateRules(rules.value);const rows=parseReview(area.value),next=who==='B'?compareReviews(rules.value,submitted[0],rows):null;submitted.push(rows);area.value='';file.value='';rules.disabled=true;
+     if(who==='A'){phase='handoff';render();message('A已提交，判定暂不展示。');}else{result=next;phase='done';render();message(result.alignment.aligned?'两份已对齐并计算，全部判定现在揭晓。':'条目未对齐，指标未计算；请核对问题后重新开始。');}
     }catch(error){message(error.message);}}},`提交评审 ${who} 并隐藏输入`);
    file.addEventListener('change',async()=>{const selected=file.files?.[0];if(!selected||busy)return;const ticket=epoch;busy=true;area.disabled=sample.disabled=submit.disabled=file.disabled=true;
     try{if(selected.size>LIMITS.bytes)throw Error('每份CSV文件最多1MiB。');const text=new TextDecoder('utf-8',{fatal:true}).decode(await selected.arrayBuffer());parseReview(text);if(!alive||ticket!==epoch)return;area.value=text;message('CSV校验通过，请检查自己的输入再提交；尚未提交不会揭晓。');}
