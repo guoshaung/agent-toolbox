@@ -31,3 +31,5 @@
 运行 `npm run check` 以及各功能测试。现有 committed-import 检查读取 HEAD，因此还需在提交后跑导入检查。跨功能合并测试只能在隔离集成分支执行，不能把多个功能一起提交到单功能分支。
 
 单文件二进制副本使用 `files.saveBinarySupportsCopyOnly === true` / `files.saveBinary({copyOnly:true,defaultName,base64,sha256})`。限10MiB（含空文件），主进程验证规范Base64及SHA-256后打开保存对话框，忽略renderer任意target/path；独占wx创建不覆盖已有文件。普通写入失败按文件身份清理本次新副本，身份改变/清理失败返回partialPath供人工核对；不保证断电/崩溃事务。二进制按原字节写出，不转UTF-8。此接口适用于分片重组超过目录接口每文件2MiB的单个副本；目录接口容量保持不变。
+
+二进制接口验证：5项专属测试通过，隐藏Electron33.4.11生产preload/IPC/写入器实际保存5242880字节并逐字节及独立SHA核对，重复目标拒绝、坏摘要在对话框前拒绝。证据为隔离集成 `work/electron-smoke-1790970182457/result.json`；目标由测试对话框响应指定，未驱动系统对话框。
