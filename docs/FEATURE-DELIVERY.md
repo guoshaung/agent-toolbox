@@ -4,7 +4,7 @@
 
 ## 当前状态
 
-已提交功能 PR **17/200**：学习 5/60、工具 8/100、娱乐 4/40。其余 183 项尚未交付功能 PR，其中 L021、T003、T082、E021 正在独立 worktree 实现。目标仍在进行，不因本表记录一次进度而结束。
+已提交功能 PR **21/200**：学习 6/60、工具 10/100、娱乐 5/40。其余 179 项尚未交付功能 PR，其中 L022、T008、T087、E023 正在独立 worktree 实现。目标仍在进行，不因本表记录一次进度而结束。
 
 | 编号 | 功能 | 独立 PR | 状态 | 定向测试 |
 |---|---|---|---|---|
@@ -25,12 +25,16 @@
 | E007 | 猜颜色密码 | [#29](https://github.com/guoshaung/agent-toolbox/pull/29) | 已推送，待合并 | 20 项通过 |
 | L051 | 信心校准分析 | [#30](https://github.com/guoshaung/agent-toolbox/pull/30) | 已推送，待合并 | 7 项通过 |
 | T004 | 正则抽取规则工坊 | [#31](https://github.com/guoshaung/agent-toolbox/pull/31) | 已推送，待合并 | 20 项通过 |
+| T082 | 日期工作日计算 | [#32](https://github.com/guoshaung/agent-toolbox/pull/32) | 已推送，待合并 | 6 项通过 |
+| L021 | 失败输入缩减器 | [#33](https://github.com/guoshaung/agent-toolbox/pull/33) | 已推送，待合并 | 15 项通过 |
+| E021 | 禁词描述 | [#34](https://github.com/guoshaung/agent-toolbox/pull/34) | 已推送，待合并 | 23 项通过 |
+| T003 | 两份数据集对账 | [#35](https://github.com/guoshaung/agent-toolbox/pull/35) | 已推送，待合并 | 23 项通过 |
 
 公共入口、发现与惰性加载、分类搜索、收藏最近使用及安全副本写入：[基础 PR #14](https://github.com/guoshaung/agent-toolbox/pull/14)。原仓库当前账号只有读权限，因此功能分支推送到 nightofknife 的 fork，PR 指向 guoshaung/agent-toolbox 的 main。先合入基础后再合入功能，避免入口缺失；不自动合并。
 
 ## 验收证据边界
 
-十七项功能的定向测试均通过；隔离集成分支按项目原有 CI 模式运行全量检查：746 项中 736 通过、10 跳过、0 失败。本机普通模式中，现有 Git Bash `source /dev/stdin` 用例因 `/dev/stdin: No such file or directory` 失败；该代码未在功能 PR 中修改，CI 跳过不等于已修复。
+二十一项功能的定向测试均通过；隔离集成分支按项目原有 CI 模式运行全量检查：813 项中 803 通过、10 跳过、0 失败。本机普通模式中，现有 Git Bash `source /dev/stdin` 用例因 `/dev/stdin: No such file or directory` 失败；该代码未在功能 PR 中修改，CI 跳过不等于已修复。
 
 真实浏览器已完成 T002 五行清洗与 T038 三组配色／候选／报告检查，浏览器保存桥是替身。独立隐藏 Electron 33.4.11 窗口使用生产 preload、功能目录服务和实际 `wx` 写入器，完成以下流程：
 
@@ -52,6 +56,11 @@
 - L051：两条样例分数0.5且不画图；五条分数0.232，空箱为null，SVG四个非空点。
 - T004：与主应用相同 CSP 下，file:// module Worker 在1秒超时终止后恢复；样例两条匹配及准确[8,18)偏移。
 
-Electron 烟测的配置存储和保存目标是测试夹具，未操作原生保存对话框，不构成完整主应用、打包、macOS、触屏硬件或辅助技术验收。后续功能需各自验证，不能直接沿用上述十七项通过结论。
+- T082：周三休假区间4工作日，向后4工作日推算至6月8日。
+- L021：15次尝试缩减至[2,7]，逐元素删除证明1-minimal。
+- E021：两轮7张不同卡，红队0分、蓝队2分，暂停遮题与完整报告。
+- T003：示例新增1、移除1、修改1，修改路径/name保留。
+
+Electron 烟测的配置存储和保存目标是测试夹具，未操作原生保存对话框，不构成完整主应用、打包、macOS、触屏硬件或辅助技术验收。后续功能需各自验证，不能直接沿用上述二十一项通过结论。
 
 完整规格见 [设计方案](FEATURE-EXPANSION-200.md)，代码接口和交付要求见 [实施约定](FEATURE-IMPLEMENTATION.md)。
