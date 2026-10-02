@@ -1,0 +1,1 @@
+{"id":"T056","category":"工具","group":"开发转换与生成","title":"数据库结构差异草案","description":"离线比较有限 SQLite 建表与索引 DDL，标记危险变化并预览注释草案副本。"}
