@@ -1,0 +1,7 @@
+{
+  "id": "L016",
+  "category": "学习",
+  "group": "计算机原理交互实验",
+  "title": "TCP 丢包时序",
+  "description": "用固定窗口与累计ACK逐tick查看丢包、越序缓冲和超时重传。"
+}
