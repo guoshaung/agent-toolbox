@@ -32,7 +32,7 @@ export default {
     }
     function render() {
       memberHost.replaceChildren(...participants.map(person => {
-        const input = h('input', { class: 'field', value: person.name, maxlength: 60, 'aria-label': `姓名 ${person.id}`, oninput: () => { person.name = input.value; invalidate(); } });
+        const input = h('input', { class: 'field', value: person.name, maxlength: 60, 'aria-label': `姓名 ${person.id}`, oninput: () => { person.name = input.value; invalidate(); }, onchange: render });
         return h('div', { style: { display: 'flex', gap: '8px', padding: '5px 0' } }, input,
           h('button', { class: 'btn', disabled: participants.length <= 2, onclick: () => {
             if (expenses.some(expense => expense.paidBy === person.id)) { status.textContent = '该成员是某项费用的付款人，请先重新指定付款人。'; return; }
