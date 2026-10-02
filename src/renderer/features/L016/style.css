@@ -1,0 +1,25 @@
+.feature-l016 { max-width: 1180px; margin: 0 auto; padding: 20px; }
+.feature-l016 h2 { margin-top: 0; }
+.feature-l016 h3 { margin: 20px 0 10px; }
+.feature-l016 p, .feature-l016 li { line-height: 1.6; }
+.feature-l016 .l016-fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; }
+.feature-l016 .l016-fields label span { display: block; margin-bottom: 6px; }
+.feature-l016 .l016-fields input { width: 100%; }
+.feature-l016 .l016-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; margin: 14px 0; }
+.feature-l016 .l016-columns { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+.feature-l016 .l016-state { border: 1px solid var(--border, #d5dbe4); border-radius: 8px; padding: 12px; }
+.feature-l016 .l016-state h4 { margin: 0 0 12px; }
+.feature-l016 .l016-scroll { overflow-x: auto; border: 1px solid var(--border, #d5dbe4); border-radius: 8px; margin: 12px 0; }
+.feature-l016 table { width: 100%; border-collapse: collapse; text-align: left; }
+.feature-l016 caption { text-align: left; padding: 10px; font-size: 12px; color: var(--text-muted, #677487); }
+.feature-l016 th, .feature-l016 td { padding: 9px 12px; border-top: 1px solid var(--border, #d5dbe4); white-space: nowrap; }
+.feature-l016 .l016-notice, .feature-l016 .l016-storage { padding: 8px 0; white-space: pre-wrap; }
+.feature-l016 .is-error, .feature-l016 .l016-warning, .feature-l016 .l016-storage { color: var(--danger, #ba3e43); }
+.feature-l016 .l016-summary { background: var(--bg-elevated, #edf2f9); padding: 16px; border-left: 4px solid var(--accent, #477bc5); font-size: 17px; font-weight: 600; }
+.feature-l016 .l016-timeline-scroll { overflow-x: auto; }
+.feature-l016 .l016-timeline { min-width: 720px; border: 1px solid var(--border, #d5dbe4); border-radius: 8px; }
+.feature-l016 .l016-lane { display: grid; grid-template-columns: 110px 1fr 1.2fr 1fr; gap: 14px; align-items: start; padding: 10px; border-bottom: 1px solid var(--border, #d5dbe4); }
+.feature-l016 .l016-lane p { margin: 4px 0; font-size: 13px; }
+.feature-l016 .l016-lane-head, .feature-l016 .l016-lane.is-selected { background: var(--bg-elevated, #edf2f9); }
+.feature-l016 details { border-bottom: 1px solid var(--border, #d5dbe4); padding: 8px 0 16px; }
+@media (max-width: 850px) { .feature-l016 { padding: 12px; } .feature-l016 .l016-columns { grid-template-columns: 1fr; } }
