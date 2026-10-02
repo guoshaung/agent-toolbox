@@ -31,6 +31,9 @@ contextBridge.exposeInMainWorld('toolbox', {
 
   features: {
     list: () => ipcRenderer.invoke('features:list'),
+    callHostSupported: true,
+    callHost: (id, operation, payload) => ipcRenderer.invoke('features:hostCall', id, operation, payload),
+    cancelHost: (id, jobId) => ipcRenderer.invoke('features:hostCancel', id, jobId),
   },
 
   /** 本机 AI 派发台：列出装了哪些 agent、把任务直接交出去 */

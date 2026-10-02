@@ -2839,6 +2839,7 @@ function registerIpc() {
   });
 
   ipcMain.handle('features:list', () => require('./feature-catalog').listFeatures(path.join(__dirname, '..', 'renderer', 'features')));
+  require('./feature-host').registerHostIpc(ipcMain, { featureRoot: path.join(__dirname, '..', 'renderer', 'features') });
   require('./feature-bundle').registerBundleIpc(ipcMain, { dialog, getWindow: () => mainWindow, getDownloads: () => app.getPath('downloads') });
   require('./feature-binary').registerBinaryIpc(ipcMain, { dialog, getWindow: () => mainWindow, getDownloads: () => app.getPath('downloads') });
 
