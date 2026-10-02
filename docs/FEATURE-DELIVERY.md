@@ -4,7 +4,7 @@
 
 ## 当前状态
 
-已提交功能 PR **13/200**：学习 3/60、工具 7/100、娱乐 3/40。其余 187 项尚未交付功能 PR，其中 L012、L051、T004、E007 正在独立 worktree 实现。目标仍在进行，不因本表记录一次进度而结束。
+已提交功能 PR **17/200**：学习 5/60、工具 8/100、娱乐 4/40。其余 183 项尚未交付功能 PR，其中 L021、T003、T082、E021 正在独立 worktree 实现。目标仍在进行，不因本表记录一次进度而结束。
 
 | 编号 | 功能 | 独立 PR | 状态 | 定向测试 |
 |---|---|---|---|---|
@@ -21,12 +21,16 @@
 | T006 | 日志事件时间线 | [#25](https://github.com/guoshaung/agent-toolbox/pull/25) | 已推送，待合并 | 21 项通过 |
 | E006 | 汉诺塔 | [#26](https://github.com/guoshaung/agent-toolbox/pull/26) | 已推送，待合并 | 19 项通过 |
 | T100 | 剪贴板内容分享净化 | [#27](https://github.com/guoshaung/agent-toolbox/pull/27) | 已推送，待合并 | 8 项通过 |
+| L012 | 缓存命中实验 | [#28](https://github.com/guoshaung/agent-toolbox/pull/28) | 已推送，待合并 | 12 项通过 |
+| E007 | 猜颜色密码 | [#29](https://github.com/guoshaung/agent-toolbox/pull/29) | 已推送，待合并 | 20 项通过 |
+| L051 | 信心校准分析 | [#30](https://github.com/guoshaung/agent-toolbox/pull/30) | 已推送，待合并 | 7 项通过 |
+| T004 | 正则抽取规则工坊 | [#31](https://github.com/guoshaung/agent-toolbox/pull/31) | 已推送，待合并 | 20 项通过 |
 
 公共入口、发现与惰性加载、分类搜索、收藏最近使用及安全副本写入：[基础 PR #14](https://github.com/guoshaung/agent-toolbox/pull/14)。原仓库当前账号只有读权限，因此功能分支推送到 nightofknife 的 fork，PR 指向 guoshaung/agent-toolbox 的 main。先合入基础后再合入功能，避免入口缺失；不自动合并。
 
 ## 验收证据边界
 
-十三项功能的定向测试均通过；隔离集成分支按项目原有 CI 模式运行全量检查：687 项中 677 通过、10 跳过、0 失败。本机普通模式中，现有 Git Bash `source /dev/stdin` 用例因 `/dev/stdin: No such file or directory` 失败；该代码未在功能 PR 中修改，CI 跳过不等于已修复。
+十七项功能的定向测试均通过；隔离集成分支按项目原有 CI 模式运行全量检查：746 项中 736 通过、10 跳过、0 失败。本机普通模式中，现有 Git Bash `source /dev/stdin` 用例因 `/dev/stdin: No such file or directory` 失败；该代码未在功能 PR 中修改，CI 跳过不等于已修复。
 
 真实浏览器已完成 T002 五行清洗与 T038 三组配色／候选／报告检查，浏览器保存桥是替身。独立隐藏 Electron 33.4.11 窗口使用生产 preload、功能目录服务和实际 `wx` 写入器，完成以下流程：
 
@@ -43,7 +47,11 @@
 - T006：两日志 4 事件 / 1 未解析行 / 1 同刻组，归 UTC 后保留同刻来源顺序。
 - E006：四层汉诺塔实际点击 15 步通关，暂停恢复及成绩文件。
 - T100：URL 删除 utm_source、保留 order_id 与 hash；复制结果经 IPC 测试接收器捕获，未改系统剪贴板。
+- L012：同块 miss/hit/hit、2/3 命中；LRU 第4/5步分别替换块2/0。
+- E007：指定局号2293，ADAA反馈1/1，AABC第二轮通关，未完成DOM不含答案。
+- L051：两条样例分数0.5且不画图；五条分数0.232，空箱为null，SVG四个非空点。
+- T004：与主应用相同 CSP 下，file:// module Worker 在1秒超时终止后恢复；样例两条匹配及准确[8,18)偏移。
 
-Electron 烟测的配置存储和保存目标是测试夹具，未操作原生保存对话框，不构成完整主应用、打包、macOS、触屏硬件或辅助技术验收。后续功能需各自验证，不能直接沿用上述十三项通过结论。
+Electron 烟测的配置存储和保存目标是测试夹具，未操作原生保存对话框，不构成完整主应用、打包、macOS、触屏硬件或辅助技术验收。后续功能需各自验证，不能直接沿用上述十七项通过结论。
 
 完整规格见 [设计方案](FEATURE-EXPANSION-200.md)，代码接口和交付要求见 [实施约定](FEATURE-IMPLEMENTATION.md)。
