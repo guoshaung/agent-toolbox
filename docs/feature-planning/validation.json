@@ -1,0 +1,80 @@
+{
+  "total": 200,
+  "categoryCounts": {
+    "学习": 60,
+    "工具": 100,
+    "娱乐": 40
+  },
+  "groupCount": 20,
+  "uniqueIds": 200,
+  "uniqueNames": 200,
+  "modeCounts": {
+    "本地": 179,
+    "AI可选": 11,
+    "外部运行时": 10
+  },
+  "priorityCounts": {
+    "P0": 90,
+    "P1": 89,
+    "P2": 21
+  },
+  "complexityCounts": {
+    "M": 141,
+    "S": 49,
+    "L": 10
+  },
+  "networkNeeds": {
+    "运行无需联网": 182,
+    "取决于可选AI供应商": 11,
+    "访问用户指定目标": 7
+  },
+  "exactDuplicateFields": {
+    "name": [],
+    "input": [],
+    "output": [],
+    "acceptance": []
+  },
+  "waves": [
+    {
+      "wave": 1,
+      "counts": {
+        "学习": 12,
+        "工具": 20,
+        "娱乐": 8
+      }
+    },
+    {
+      "wave": 2,
+      "counts": {
+        "学习": 12,
+        "工具": 20,
+        "娱乐": 8
+      }
+    },
+    {
+      "wave": 3,
+      "counts": {
+        "学习": 12,
+        "工具": 20,
+        "娱乐": 8
+      }
+    },
+    {
+      "wave": 4,
+      "counts": {
+        "学习": 12,
+        "工具": 20,
+        "娱乐": 8
+      }
+    },
+    {
+      "wave": 5,
+      "counts": {
+        "学习": 12,
+        "工具": 20,
+        "娱乐": 8
+      }
+    }
+  ],
+  "validationBoundary": "结构和计数检查，不证明语义去重、实现可行性或运行可用性"
+}
