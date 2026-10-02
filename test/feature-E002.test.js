@@ -386,3 +386,20 @@ test('malformed persisted records are ignored rather than becoming replay action
   assert.ok(ui.root.textContent.includes('还没有完整对局'));
   ui.lifecycle.destroy();
 });
+
+test('score storage bounds best records and reports the native canceled field', async () => {
+  const best = [];
+  for (let width = 5; width <= 30 && best.length < 110; width++) {
+    for (let height = 5; height <= 24 && best.length < 110; height++) {
+      best.push({ width, height, mines: 1, seed: 'bounded', firstIndex: 0, outcome: 'won', moves: 1, elapsedMs: 1000 });
+    }
+  }
+  const exports = [];
+  const toolbox = { files: { saveTextSupportsCopyOnly: true, async saveText(args) { exports.push(args); return { ok: false, canceled: true }; } } };
+  const ui = await mount({ recent: [], best }, { toolbox });
+  ui.button('导出成绩').click();
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(JSON.parse(exports[0].content).best.length, 100);
+  assert.ok(ui.root.textContent.includes('已取消导出'));
+  ui.lifecycle.destroy();
+});

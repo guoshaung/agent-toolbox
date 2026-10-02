@@ -17,7 +17,7 @@ function readScores(ctx) {
     stored = ctx.config?.get ? ctx.config.get(STORAGE_KEY, null) : JSON.parse(localStorage.getItem(LOCAL_KEY) || 'null');
   } catch { note = '暂时无法读取成绩，本局仍可正常游玩。'; }
   const recent = Array.isArray(stored?.recent) ? stored.recent.filter(validScore).slice(0, 20) : [];
-  const best = Array.isArray(stored?.best) ? stored.best.filter((s) => validScore(s) && s.outcome === 'won') : [];
+  const best = Array.isArray(stored?.best) ? stored.best.filter((s) => validScore(s) && s.outcome === 'won').slice(-100) : [];
   return { recent, best, note };
 }
 
@@ -175,7 +175,7 @@ export default {
       scores.recent = [entry, ...scores.recent].slice(0, 20);
       if (entry.outcome === 'won') {
         const previous = bestScore(scores.best, entry);
-        if (!previous || entry.elapsedMs < previous.elapsedMs) scores.best = [...scores.best.filter((s) => scoreKey(s) !== scoreKey(entry)), entry];
+        if (!previous || entry.elapsedMs < previous.elapsedMs) scores.best = [...scores.best.filter((s) => scoreKey(s) !== scoreKey(entry)), entry].slice(-100);
       }
       const snapshot = { version: 1, recent: [...scores.recent], best: [...scores.best] };
       // Preserve ordering when several quick rounds finish before an IPC write completes.
@@ -251,7 +251,7 @@ export default {
       try {
         if (window.toolbox?.files?.saveTextSupportsCopyOnly && window.toolbox.files.saveText) {
           const result = await window.toolbox.files.saveText({ content: text, extension: 'json', defaultName: '扫雷成绩.json', copyOnly: true });
-          if (!destroyed) storageNote.textContent = result?.ok ? '成绩已导出到你选择的新文件。' : result?.cancelled ? '已取消导出。' : result?.error || '未导出成绩。';
+          if (!destroyed) storageNote.textContent = result?.ok ? '成绩已导出到你选择的新文件。' : result?.canceled ? '已取消导出。' : result?.error || '未导出成绩。';
         } else {
           const url = URL.createObjectURL(new Blob([text], { type: 'application/json' }));
           const revokeTimer = setTimeout(() => { URL.revokeObjectURL(url); downloadUrls.delete(url); }, 1000);
