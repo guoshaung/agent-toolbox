@@ -99,7 +99,7 @@ export default {
         const order = ways.map((line, way) => ({ line, way })).filter(({ line }) => line.valid).sort((a, b) => a.line.lastAccess - b.line.lastAccess).map(({ way }) => way);
         return ways.map((line, way) => h('tr', { class: set === frame.set && way === frame.way ? 'is-current' : '' }, [set, way, line.valid ? '有效' : '空', line.tag ?? '·', line.block ?? '·', line.valid ? `${line.block * result.config.blockSize}–${line.block * result.config.blockSize + result.config.blockSize - 1}` : '·', line.lastAccess ?? '·', line.valid ? order.length === 1 ? '唯一有效路' : way === order[0] ? 'LRU' : 'MRU' : '·'].map((cell) => h('td', {}, String(cell)))));
       });
-      output.replaceChildren(
+      output.replaceChildren(...[
         h('div', { class: 'l012-summary' }, `${result.config.setCount}组×${result.config.ways}路 · 块${result.config.blockSize}B · 容量${result.config.capacityBytes}B · 命中 ${rate(result)}`),
         h('div', { class: 'l012-actions' }, h('button', { class: 'btn', disabled: cursor === 0, onclick: () => { pause(); move(cursor - 1); } }, '上一次访问'), h('button', { class: 'btn', onclick: play }, interval === null ? '自动播放' : '暂停'), h('button', { class: 'btn', disabled: cursor === result.total - 1, onclick: () => { pause(); move(cursor + 1); } }, '下一次访问'), range),
         h('div', { class: `l012-access ${frame.hit ? 'is-hit' : 'is-miss'}` }, h('strong', {}, `第${frame.step}次：地址${frame.address} → ${frame.hit ? 'hit 命中' : 'miss 未命中'}`), h('p', {}, `块${frame.block}（字节${frame.blockRange[0]}–${frame.blockRange[1]}） → 组${frame.set} · 标签${frame.tag} · 偏移${frame.offset} · 路${frame.way}`), h('p', {}, frame.reason), h('p', {}, `截至本次：命中${frame.hits}/${frame.step}，未命中${frame.misses}；${frame.evicted ? `替换块${frame.evicted.block}，其上次访问是第${frame.evicted.lastAccess}次` : '本次没有替换有效块'}`)),
@@ -107,9 +107,9 @@ export default {
         table(['组', '路', '有效位', '标签', '块号', '字节范围', '上次访问', '访问次序'], rows, `第${frame.step}次访问${before ? '前' : '后'}的全缓存；描边为本次选中的路，LRU是本组最久未访问的有效路`),
         table(['跳转', '字节地址', '块', '组', '标签', '偏移', '路', '命中', '替换块'], result.frames.map((row) => h('tr', { class: row.step === frame.step ? 'is-current' : '' }, h('td', {}, h('button', { onclick: () => { pause(); move(row.step - 1); }, 'aria-label': `跳转第${row.step}次` }, String(row.step))), [row.address, row.block, row.set, row.tag, row.offset, row.way, row.hit ? 'hit' : 'miss', row.evicted?.block ?? '无'].map((cell) => h('td', {}, String(cell))))), '完整访问轨迹：点击次序可以复核填充和替换'),
         h('button', { class: 'btn', onclick: compare }, '比较相同容量的两种映射'),
-        comparison ? table(['方式', '组×路', '容量', '命中', '未命中'], [comparison.direct, comparison.twoWay].map((row) => h('tr', {}, [row.config.ways === 1 ? '直接映射' : '两路LRU', `${row.config.setCount}×${row.config.ways}`, `${row.config.capacityBytes}B`, rate(row), row.misses].map((cell) => h('td', {}, String(cell))))), '相同块大小、相同总行数/容量、相同地址序列、各自冷缓存；命中差异不保证对所有序列成立') : document.createDocumentFragment(),
+        comparison ? table(['方式', '组×路', '容量', '命中', '未命中'], [comparison.direct, comparison.twoWay].map((row) => h('tr', {}, [row.config.ways === 1 ? '直接映射' : '两路LRU', `${row.config.setCount}×${row.config.ways}`, `${row.config.capacityBytes}B`, rate(row), row.misses].map((cell) => h('td', {}, String(cell))))), '相同块大小、相同总行数/容量、相同地址序列、各自冷缓存；命中差异不保证对所有序列成立') : null,
         h('div', { class: 'l012-actions' }, h('button', { class: 'btn', onclick: () => exportReport('json') }, '导出完整 JSON'), h('button', { class: 'btn', onclick: () => exportReport('md') }, '导出轨迹 Markdown')),
-      );
+      ].filter(node => node !== null));
     }
     root.replaceChildren(h('link', { rel: 'stylesheet', href: new URL('./style.css', import.meta.url).href }), h('h2', {}, '缓存命中实验'), h('p', {}, '把字节地址映射到缓存块，观察一次命中如何改变下一次LRU替换。'), notice, storageNotice, h('details', {}, h('summary', {}, '模型规则与保存范围'), Object.values(POLICY).map((rule) => h('p', {}, rule)), h('p', {}, '全局配置只保存≤64KiB的输入和查看位置，不保存轨迹；恢复重新计算。JSON导出完整前后状态和比较结果。')), editor, output);
     renderEditor(); renderOutput();
