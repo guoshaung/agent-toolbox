@@ -4,7 +4,7 @@
 
 ## 当前状态
 
-已提交功能 PR **26/200**：学习 7/60、工具 13/100、娱乐 6/40。其余 174 项尚未交付功能 PR，其中 L023、T009、T088、E024 正在独立 worktree 实现。目标仍在进行，不因本表记录一次进度而结束。
+已提交功能 PR **28/200**：学习 8/60、工具 14/100、娱乐 6/40。其余 172 项尚未交付功能 PR，其中 L013、T009、L033、E024 正在独立 worktree 实现。目标仍在进行，不因本表记录一次进度而结束。
 
 | 编号 | 功能 | 独立 PR | 状态 | 定向测试 |
 |---|---|---|---|---|
@@ -34,12 +34,14 @@
 | T085 | 用电成本情景计算 | [#38](https://github.com/guoshaung/agent-toolbox/pull/38) | 已推送，待合并 | 7 项通过 |
 | E023 | 动作猜词 | [#39](https://github.com/guoshaung/agent-toolbox/pull/39) | 已推送，待合并 | 24 项通过 |
 | T008 | 数据字段字典生成 | [#40](https://github.com/guoshaung/agent-toolbox/pull/40) | 已推送，待合并 | 22 项通过 |
+| T088 | 行李重量预算 | [#41](https://github.com/guoshaung/agent-toolbox/pull/41) | 已推送，待合并 | 7 项通过 |
+| L023 | 分支覆盖探索 | [#42](https://github.com/guoshaung/agent-toolbox/pull/42) | 已推送，待合并 | 15 项通过 |
 
 公共入口、发现与惰性加载、分类搜索、收藏最近使用及安全副本写入：[基础 PR #14](https://github.com/guoshaung/agent-toolbox/pull/14)。原仓库当前账号只有读权限，因此功能分支推送到 nightofknife 的 fork，PR 指向 guoshaung/agent-toolbox 的 main。先合入基础后再合入功能，避免入口缺失；不自动合并。
 
 ## 验收证据边界
 
-二十六项功能的定向测试均通过；隔离集成分支按项目原有 CI 模式运行全量检查：888 项中 878 通过、10 跳过、0 失败。本机普通模式中，现有 Git Bash `source /dev/stdin` 用例因 `/dev/stdin: No such file or directory` 失败；该代码未在功能 PR 中修改，CI 跳过不等于已修复。
+二十八项功能的定向测试均通过；隔离集成分支按项目原有 CI 模式运行全量检查：910 项中 900 通过、10 跳过、0 失败。本机普通模式中，现有 Git Bash `source /dev/stdin` 用例因 `/dev/stdin: No such file or directory` 失败；该代码未在功能 PR 中修改，CI 跳过不等于已修复。
 
 真实浏览器已完成 T002 五行清洗与 T038 三组配色／候选／报告检查，浏览器保存桥是替身。独立隐藏 Electron 33.4.11 窗口使用生产 preload、功能目录服务和实际 `wx` 写入器，完成以下流程：
 
@@ -73,6 +75,9 @@
 - E023：150题中的局号demo两轮6唯一题，红1分、蓝2分并完整导出。
 - T008：10行score数字8/null2，20%空值率，人工说明保留到报告。
 
-Electron 烟测的配置存储和保存目标是测试夹具，未操作原生保存对话框，不构成完整主应用、打包、macOS、触屏硬件或辅助技术验收。后续功能需各自验证，不能直接沿用上述二十六项通过结论。
+- T088：超重1kg→移走2kg后余量1kg，未分配仍2kg；JSON恢复重算保持草案。
+- L023：x=1分支50%，手动添加x=-1后100%，T2路径D1:false。
+
+Electron 烟测的配置存储和保存目标是测试夹具，未操作原生保存对话框，不构成完整主应用、打包、macOS、触屏硬件或辅助技术验收。后续功能需各自验证，不能直接沿用上述二十八项通过结论。
 
 完整规格见 [设计方案](FEATURE-EXPANSION-200.md)，代码接口和交付要求见 [实施约定](FEATURE-IMPLEMENTATION.md)。
