@@ -2839,6 +2839,7 @@ function registerIpc() {
   });
 
   ipcMain.handle('features:list', () => require('./feature-catalog').listFeatures(path.join(__dirname, '..', 'renderer', 'features')));
+  require('./feature-bundle').registerBundleIpc(ipcMain, { dialog, getWindow: () => mainWindow, getDownloads: () => app.getPath('downloads') });
 
   ipcMain.handle('files:pickText', async (_event, payload = {}) => {
     const result = await dialog.showOpenDialog(mainWindow, {
