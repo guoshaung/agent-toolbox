@@ -1,0 +1,7 @@
+{
+  "id": "L017",
+  "category": "学习",
+  "group": "计算机原理交互实验",
+  "title": "HTTP 缓存决策台",
+  "description": "逐步判断已有缓存的新鲜度、ETag验证和304/200后的body与元数据。"
+}
