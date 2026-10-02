@@ -19,7 +19,7 @@ test('disk limits and theoretical minimum are exact for all supported sizes', as
 
 test('only the top disk moves and invalid attempts never alter state or start the clock', async () => {
   const { Hanoi } = await modelPromise;
-  const game = new Hanoi(4);
+  const game = new Hanoi(4, { now: () => 100 });
   const initial = game.getView();
   assert.equal(game.move(1, 2).reason, 'emptySource');
   assert.equal(game.move(0, 0).reason, 'sameTower');
