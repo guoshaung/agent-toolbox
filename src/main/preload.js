@@ -15,6 +15,7 @@ contextBridge.exposeInMainWorld('toolbox', {
   },
 
   files: {
+    saveTextSupportsCopyOnly: true,
     /** 打开选图对话框，返回 { path, name, mime, base64 } 或 null（用户取消） */
     pickImage: () => ipcRenderer.invoke('files:pickImage'),
     pickText: (payload) => ipcRenderer.invoke('files:pickText', payload),
@@ -22,6 +23,10 @@ contextBridge.exposeInMainWorld('toolbox', {
     pickPetSkin: () => ipcRenderer.invoke('files:pickPetSkin'),
     saveImage: (payload) => ipcRenderer.invoke('files:saveImage', payload),
     saveText: (payload) => ipcRenderer.invoke('files:saveText', payload),
+  },
+
+  features: {
+    list: () => ipcRenderer.invoke('features:list'),
   },
 
   /** 本机 AI 派发台：列出装了哪些 agent、把任务直接交出去 */
