@@ -1,5 +1,5 @@
 import { h } from '../../core/ui.js';
-import { buildReport, createSession, reportMarkdown, restoreSession, sampleExercise, submitReason, updateReflection } from './model.mjs';
+import { buildReport, createSession, prepareStoredState, reportMarkdown, restoreSession, sampleExercise, submitReason, updateReflection, validateStoredState } from './model.mjs';
 
 const STORAGE_KEY = 'features.L002.state';
 const lines = (value) => String(value || '').split('\n').map((line) => line.trim()).filter(Boolean);
@@ -22,6 +22,7 @@ export default {
     let initialNotice = '';
     if (saved) {
       try {
+        validateStoredState(saved);
         // A partially edited draft is retained only if its shape can render safely.
         if (saved.draft && typeof saved.draft.title === 'string' && typeof saved.draft.problem === 'string' && Array.isArray(saved.draft.premises) && Array.isArray(saved.draft.steps) && saved.draft.steps.length > 0 && saved.draft.steps.length <= 20 && saved.draft.steps.every((step) => step && ['title', 'prompt', 'answer', 'reason'].every((key) => typeof step[key] === 'string') && Array.isArray(step.premises))) draft = copy(saved.draft);
         if (saved.session) session = restoreSession(saved.session);
@@ -34,6 +35,7 @@ export default {
       }
     }
     const notice = h('div', { class: 'l002-notice', role: 'status', 'aria-live': 'polite' }, initialNotice);
+    const storageNotice = h('div', { class: 'l002-storage-notice', role: 'status', 'aria-live': 'polite' });
     const body = h('div', { class: 'l002-body' });
     const style = h('link', { rel: 'stylesheet', href: new URL('./style.css', import.meta.url).href });
 
@@ -46,7 +48,14 @@ export default {
       if (timer) clearTimeout(timer);
       timer = null;
       if (!ctx.config?.set) return;
-      const state = copy({ draft, session, currentStep, view, reasonDraft, selectedPremises });
+      let state;
+      try {
+        state = prepareStoredState({ draft, session, currentStep, view, reasonDraft, selectedPremises });
+      } catch (error) {
+        storageNotice.textContent = `${error.message} 当前内容未更新到本机配置，关闭后可能只恢复之前保存的记录。请完成全部步骤后导出完整记录，或缩减例题；切走和关闭不会保存超限内容。`;
+        return;
+      }
+      storageNotice.textContent = '';
       try {
         Promise.resolve(ctx.config.set(STORAGE_KEY, state)).catch((error) => message(`当前记录仍在页面中，但本机保存失败：${error.message}`, true));
       } catch (error) { message(`当前记录仍在页面中，但本机保存失败：${error.message}`, true); }
@@ -150,7 +159,7 @@ export default {
             selectedPremises = [];
             persist();
             render();
-            message('原始依据已锁定保存。现在可对照参考内容，并另写反思。');
+            message('原始依据已锁定在当前练习中。现在可对照参考内容，并另写反思。');
           } catch (error) { message(error.message, true); }
         } }, '提交依据，解封本步');
         task.append(h('label', { class: 'l002-field' }, h('span', {}, '自己的依据'), explanation), pool, unlock, h('p', { class: 'faint' }, '参考结果和理由尚未解封。提交后的原始依据不再改写；下一步须先完成本步。'));
@@ -174,8 +183,8 @@ export default {
       if (view === 'editor') renderEditor();
       else renderPractice();
     }
-    root.append(style, h('header', { class: 'l002-header' }, h('div', {}, h('h2', {}, '例题步骤解封'), h('p', { class: 'faint' }, '主动学习与理解 · 本地保存 · 无需 AI')),
-      h('div', { class: 'l002-row' }, h('button', { class: 'btn', onclick: () => { view = 'practice'; persist(); render(); } }, '练习与记录'), h('button', { class: 'btn', onclick: () => { view = 'editor'; persist(); render(); } }, '编辑例题'))), notice, body);
+    root.append(style, h('header', { class: 'l002-header' }, h('div', {}, h('h2', {}, '例题步骤解封'), h('p', { class: 'faint' }, '主动学习与理解 · 本机保存上限 64KiB · 无需 AI')),
+      h('div', { class: 'l002-row' }, h('button', { class: 'btn', onclick: () => { view = 'practice'; persist(); render(); } }, '练习与记录'), h('button', { class: 'btn', onclick: () => { view = 'editor'; persist(); render(); } }, '编辑例题'))), notice, storageNotice, body);
     render();
     return {
       activate() { if (!destroyed) render(); },

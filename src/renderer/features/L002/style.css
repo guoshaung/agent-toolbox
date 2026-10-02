@@ -8,6 +8,8 @@
 .feature-l002 .l002-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 .feature-l002 .l002-notice { min-height: 22px; padding: 9px 24px; color: var(--good); line-height: 1.6; }
 .feature-l002 .l002-notice.is-error { color: var(--bad); }
+.feature-l002 .l002-storage-notice { padding: 0 24px 10px; color: var(--warn); line-height: 1.65; }
+.feature-l002 .l002-storage-notice:empty { display: none; }
 .feature-l002 .l002-body { overflow-y: auto; padding: 6px 24px 30px; min-height: 0; flex: 1; }
 .feature-l002 .l002-body > * { max-width: 1040px; margin-left: auto; margin-right: auto; }
 .feature-l002 .l002-welcome { padding: 40px 0; }

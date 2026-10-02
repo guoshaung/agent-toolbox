@@ -68,6 +68,24 @@ test('L002 自定义单步无前提例题可完成，编辑源对象不改变练
   assert.equal(buildReport(complete).records[0].referenceReason, '或运算只需至少一项为真。');
 });
 
+test('L002 配置状态带版本，UTF-8 64KiB 精确边界与中文超限均按字节校验', async () => {
+  const { STATE_MAX_BYTES, prepareStoredState, validateStoredState } = await loadModel();
+  const encoder = new TextEncoder();
+  const overhead = encoder.encode(JSON.stringify({ payload: '', schemaVersion: 1 })).byteLength;
+  const exact = prepareStoredState({ payload: 'a'.repeat(STATE_MAX_BYTES - overhead) });
+  assert.equal(exact.schemaVersion, 1);
+  assert.equal(encoder.encode(JSON.stringify(exact)).byteLength, STATE_MAX_BYTES);
+  assert.equal(validateStoredState(exact), exact);
+  assert.throws(() => prepareStoredState({ payload: `${exact.payload}a` }), /64KiB/);
+  const chinese = { payload: '汉'.repeat(22000), schemaVersion: 1 };
+  assert.ok(JSON.stringify(chinese).length < STATE_MAX_BYTES);
+  assert.ok(encoder.encode(JSON.stringify(chinese)).byteLength > STATE_MAX_BYTES);
+  assert.throws(() => prepareStoredState(chinese), /64KiB/);
+  assert.throws(() => validateStoredState(chinese), /64KiB/);
+  assert.throws(() => validateStoredState({ payload: '旧状态' }), /版本不支持/);
+  assert.throws(() => validateStoredState({ schemaVersion: 2 }), /版本不支持/);
+});
+
 // Minimal DOM contract: execute real component events without Electron or a browser.
 // This verifies gating and file payloads; it is not layout or live-client validation.
 class NodeStub {
@@ -163,4 +181,53 @@ test('L002 UI：结构化编辑器创建自定义例题，未合导出基础层�
   await button(root, '导出 JSON 原始记录').fire('click');
   assert.ok(root.textContent.includes('目标已存在'));
   assert.equal(button(root, '导出 JSON 原始记录').disabled, false);
+});
+
+test('L002 UI：大练习不写全局配置，警告不被进度覆盖但仍可完整导出', async (t) => {
+  const oldDocument = global.document; const oldWindow = global.window;
+  global.document = { createElement: (tag) => new NodeStub(tag), createTextNode: (value) => new NodeStub('', value) };
+  const stored = new Map(); const writes = []; const exported = [];
+  global.window = { toolbox: { files: { saveTextSupportsCopyOnly: true, saveText: async (payload) => { exported.push(payload); return { ok: true, path: 'large.json' }; } } } };
+  t.after(() => { global.document = oldDocument; global.window = oldWindow; });
+  const config = { get: (key) => stored.get(key), set: async (key, value) => { writes.push(value); stored.set(key, value); } };
+  const { default: feature } = await import('../src/renderer/features/L002/index.js');
+  const root = new NodeStub('div'); const handle = feature.create(root, { config });
+  t.after(() => handle.destroy());
+  await button(root, '开始三步示例').fire('click');
+  for (let index = 0; index < 3; index += 1) {
+    const textarea = walk(root).find((node) => node.attributes['aria-label'] === '自己的依据');
+    textarea.value = '汉'.repeat(10000); await textarea.fire('input');
+    await button(root, '提交依据，解封本步').fire('click');
+    if (index < 2) await button(root, '进入下一步').fire('click');
+  }
+  assert.ok(root.textContent.includes('当前内容未更新到本机配置'));
+  assert.ok(root.textContent.includes('请完成全部步骤后导出完整记录'));
+  assert.ok(root.textContent.includes('原始依据已锁定在当前练习中'));
+  assert.ok(stored.get('features.L002.state').session.records.length < 3);
+  assert.ok(writes.every((state) => state.schemaVersion === 1 && new TextEncoder().encode(JSON.stringify(state)).byteLength <= 65536));
+  const writeCount = writes.length;
+  handle.deactivate();
+  assert.equal(writes.length, writeCount);
+  await button(root, '导出 JSON 原始记录').fire('click');
+  assert.equal(JSON.parse(exported[0].content).records.length, 3);
+  assert.ok(new TextEncoder().encode(exported[0].content).byteLength > 65536);
+  assert.ok(root.textContent.includes('当前内容未更新到本机配置'));
+});
+
+test('L002 UI：版本缺失与超限的保存状态拒绝恢复', async (t) => {
+  const oldDocument = global.document; const oldWindow = global.window;
+  global.document = { createElement: (tag) => new NodeStub(tag), createTextNode: (value) => new NodeStub('', value) };
+  global.window = {};
+  t.after(() => { global.document = oldDocument; global.window = oldWindow; });
+  const { default: feature } = await import('../src/renderer/features/L002/index.js');
+  const { createSession, sampleExercise } = await loadModel();
+  const legacy = { draft: sampleExercise(), session: createSession(sampleExercise()) };
+  for (const [saved, expected] of [[legacy, '版本不支持'], [{ ...legacy, schemaVersion: 1, reasonDraft: '汉'.repeat(30000) }, '64KiB 本机保存上限']]) {
+    const root = new NodeStub('div');
+    const handle = feature.create(root, { config: { get: () => saved } });
+    assert.ok(root.textContent.includes(expected));
+    assert.ok(button(root, '开始三步示例'));
+    assert.ok(!walk(root).some((node) => node.attributes['aria-label'] === '自己的依据'));
+    handle.destroy();
+  }
 });

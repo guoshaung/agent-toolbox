@@ -1,4 +1,23 @@
 const LIMITS = { steps: 20, premises: 40, text: 10000, premise: 300 };
+export const STATE_SCHEMA_VERSION = 1;
+export const STATE_MAX_BYTES = 64 * 1024;
+
+function checkStateSize(state) {
+  const serialized = JSON.stringify(state);
+  if (new TextEncoder().encode(serialized).byteLength > STATE_MAX_BYTES) throw new Error('状态超过 64KiB 本机保存上限。');
+  return serialized;
+}
+
+export function prepareStoredState(state) {
+  const payload = { ...state, schemaVersion: STATE_SCHEMA_VERSION };
+  return JSON.parse(checkStateSize(payload));
+}
+
+export function validateStoredState(state) {
+  if (!state || typeof state !== 'object' || Array.isArray(state) || state.schemaVersion !== STATE_SCHEMA_VERSION) throw new Error('保存状态版本不支持，需要 schemaVersion:1。');
+  checkStateSize(state);
+  return state;
+}
 
 function text(value, label, { optional = false, max = LIMITS.text } = {}) {
   if (typeof value !== 'string') throw new Error(`${label}需要文本。`);
