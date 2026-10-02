@@ -28,6 +28,7 @@ export default{
       if(!alive||busy)return;
       try{
         const options={weekdays:week.filter(entry=>entry.box.checked).map(entry=>entry.day),holidays:parseHolidays(holidays.value),includeStart:includeStart.checked,includeEnd:includeEnd.checked};
+        if(mode.value==='shift'&&!amount.value.trim())throw Error('请填写推算工作日数，可明确输入0。');
         report=mode.value==='range'?countRange(start.value,end.value,options):shiftWorkdays(start.value,Number(amount.value),options);
         page=0;saveButton.disabled=false;
         status.textContent=report.mode==='range'?'共 '+report.totalDays+' 个计入日期，'+report.workingDays+' 个工作日，排除 '+report.excludedDays+' 日。':'推算结果 '+report.resultDate+'；经过 '+report.totalDays+' 自然日、'+report.workingDays+' 工作日。';
