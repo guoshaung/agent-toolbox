@@ -53,7 +53,7 @@ export async function importLayout(text, hooks = {}) {
 }
 export const escapeXML = value => String(value).replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;').replaceAll("'", '&apos;');
 export function layoutSVG(report) {
-  const view = report.view, fontSize = Math.max(5, Math.ceil(view.width / 65));
+  const view = report.view, fontSize = Math.max(5, Math.ceil(Math.max(view.width / 65, view.height / 32)));
   const rect = (x, y, width, height, fill, stroke, extra = '') => `<rect x="${x}" y="${y}" width="${width}" height="${height}" fill="${fill}" stroke="${stroke}" stroke-width="2" vector-effect="non-scaling-stroke" ${extra}/>`;
   return `<?xml version="1.0" encoding="UTF-8"?>\n<svg xmlns="http://www.w3.org/2000/svg" viewBox="${view.minX} ${view.minY} ${view.width} ${view.height}" width="1200" height="800" preserveAspectRatio="xMidYMid meet" role="img"><title>二维矩形摆放（厘米输入，绘图坐标单位毫米）</title><desc>${escapeXML(ASSUMPTIONS.scope)}。原点左上，x向右，y向下。</desc><metadata>${escapeXML(JSON.stringify(report))}</metadata>${rect(0, 0, report.room.widthMm, report.room.heightMm, '#edf2f7', '#475569')}<g font-family="sans-serif" font-size="${fontSize}"><text x="0" y="${-fontSize / 2}" fill="#111827">房间 ${formatCm(report.room.widthMm)}×${formatCm(report.room.heightMm)}cm；原点(0,0)</text>${report.rects.map(item => `<g><title>${escapeXML(item.id + ' ' + item.name)}</title>${rect(item.xMm, item.yMm, item.widthMm, item.heightMm, item.outOfBounds || item.overlaps.length ? '#fb923c' : '#93c5fd', '#1e3a8a', 'fill-opacity="0.55"')}<text x="${item.xMm + fontSize / 3}" y="${item.yMm + fontSize}" fill="#111827">${escapeXML(item.id + ' ' + item.name)}</text></g>`).join('')}</g></svg>\n`;
 }
