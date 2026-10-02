@@ -1,0 +1,38 @@
+import { h } from '../../core/ui.js';
+import { inspectProject, selectedInventory, exampleFiles } from './model.mjs';
+export default {id:'T057',create(root){
+ let alive=true,active=false,busy=false,nativePending=false,epoch=0,job=null,files=[],report=null,preview=null,page=0;const bindings=[];
+ const on=(node,event,fn)=>{node.addEventListener(event,fn);bindings.push([node,event,fn]);return node;},say=s=>{if(alive)status.textContent=s;};
+ const status=h('p',{role:'status','aria-live':'polite'},'选择含package.json及node_modules的本地项目目录。只盘点实际所选范围。'),folder=h('input',{type:'file',multiple:true,webkitdirectory:true,'aria-label':'选择 Node 项目目录'}),scope=h('div'),results=h('div'),previews=h('div');
+ const button=(label,fn,tracked=true)=>{const node=h('button',{type:'button',class:'btn'},label),callback=()=>{if(alive&&active&&!busy)fn();};if(tracked)on(node,'click',callback);else node.addEventListener('click',callback);return node;};
+ const demo=button('载入三依赖合成示例',()=>{files=exampleFiles();folder.value='';invalidate('合成示例已载入；许可正文是示意文本，不是真实许可文件。');});
+ const range=button('预览项目读取范围',()=>{try{const plan=selectedInventory(files);scope.replaceChildren(h('pre',{'aria-label':'所选依赖范围'},JSON.stringify({selected:files.length,rootManifest:'package.json',installedManifestPaths:plan.manifests,licenseFileScope:'各包根目录标准LICENSE/LICENCE/COPYING/NOTICE(.txt/.md)及明确SEE LICENSE IN单文件名，解析声明后只读。'},null,2)));say(`所选传统安装位置${plan.manifests.length}个，尚未读取正文。`);}catch(e){scope.replaceChildren();say(`范围无效：${e.message}`);}});
+ const run=button('盘点完整所选许可证',async()=>{invalidate();const own=++epoch;busy=true;job=new AbortController();update();try{const next=await inspectProject(files,{signal:job.signal,onPackage:p=>{if(alive&&own===epoch)say(`已完成${p.done}/${p.total}安装位置。`);}});if(!alive||own!==epoch)return;report=next;page=0;render();say(`清单完成：${next.summary.occurrences}安装位置、${next.summary.unknown}许可未知；全部声明仍需人工核对。`);}catch(e){if(alive&&own===epoch)say(`盘点失败：${e.message}`);}finally{if(alive){busy=false;job=null;update();}}});
+ const json=button('预览完整 JSON 清单',()=>show('json')),md=button('预览完整 Markdown 清单',()=>show('md'));
+ const save=button('保存已预览清单新副本',async()=>{const api=window.toolbox?.files;if(!preview)return;if(api?.saveTextSupportsCopyOnly!==true||typeof api.saveText!=='function'){say('缺少文本新副本保护接口，已阻止保存。');return;}const own=epoch,chosen=preview;busy=true;nativePending=true;update();try{const r=await api.saveText({...chosen,copyOnly:true});if(!alive||own!==epoch||preview!==chosen)return;say(r?.ok===true?'许可证清单新副本保存成功。':r?.canceled===true?'保存已取消，预览保留。':'保存失败；已有文件不会覆盖，预览保留。');}catch{if(alive&&own===epoch)say('保存失败，预览保留。');}finally{if(alive){busy=false;nativePending=false;update();}}});
+ const cancel=on(h('button',{type:'button',class:'btn'},'取消当前盘点'),'click',()=>{if(alive&&active&&busy&&!nativePending){epoch++;job?.abort();report=preview=null;render();say('已取消，没有部分许可证清单。');}});
+ const clear=button('清空项目集合和清单',()=>{files=[];folder.value='';invalidate('文件集合和所有清单已清空。');});
+ function invalidate(message='项目文件选择改变，旧清单已失效。'){epoch++;job?.abort();report=preview=null;scope.replaceChildren();render();say(message);}
+ function update(){if(!alive)return;for(const node of[folder,demo,range,run,clear])node.disabled=!active||busy;json.disabled=md.disabled=!active||busy||!report;save.disabled=!active||busy||!preview;cancel.disabled=!active||!busy||nativePending;}
+ function render(){
+  results.replaceChildren();previews.replaceChildren();
+  if(report){
+   const pages=Math.max(1,Math.ceil(report.packages.length/50));page=Math.min(page,pages-1);
+   const prev=button('上一页',()=>{page--;render();},false),next=button('下一页',()=>{page++;render();},false);
+   prev.disabled=page===0;next.disabled=page===pages-1;
+   const rows=report.packages.slice(page*50,(page+1)*50).map(p=>{
+    const documents=p.licenseDocuments.map(d=>`${d.kind}: ${d.path} (${d.bytes}B SHA:${d.sha256})`).join('\n');
+    const cells=[`${p.name||'名称未知'} / ${p.version||'版本未知'}`,p.manifestPath,p.licenseDeclared||'无支持的声明',p.licenseStatus,documents||'所选范围没有许可文本',p.issues.join('\n')];
+    return h('tr',{},cells.map(value=>h('td',{},value)));
+   });
+   const heading=h('thead',{},h('tr',{},['包 / 版本','来源路径','声明原文','状态','许可/通知文件与摘要','待核对项'].map(s=>h('th',{},s))));
+   results.append(h('p',{},`安装位置${report.summary.occurrences} · 未知${report.summary.unknown} · 仅文本未归类${report.summary.textOnly} · 声明未验证${report.summary.declaredUnverified} · 根声明未选中${report.summary.unselectedRootDeclarations} · 第${page+1}/${pages}页（导出全部）`),h('div',{class:'t057-row'},prev,next),h('table',{},heading,h('tbody',{},rows)),h('p',{},report.limitations),h('pre',{'aria-label':'完整依赖许可证清单'},JSON.stringify(report,null,2)));
+  }
+  update();
+ }
+ function show(extension){const body=JSON.stringify(report,null,2),fence='`'.repeat(Math.max(3,...[...body.matchAll(/`+/g)].map(m=>m[0].length+1)));const content=extension==='json'?body+'\n':'# 项目依赖许可证清单\n\n'+report.limitations+'\n\n'+fence+'json\n'+body.replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;')+'\n'+fence+'\n';preview={content,extension,defaultName:`T057-license-inventory.${extension}`};const text=h('textarea',{rows:12,readonly:true,'aria-label':'完整导出预览'});text.value=content;previews.replaceChildren(h('p',{},`拟创建${preview.defaultName}，含包/声明/请求版本及相对路径和SHA，不含许可正文。声明可能含私人仓库地址，请核对分享范围。`),text);update();say('完整许可证清单已预览，核对后保存新副本。');}
+ on(folder,'change',()=>{if(alive&&active&&!busy){files=Array.from(folder.files||[]);invalidate(`已明确选择${files.length}文件，尚未盘点。`);}});
+ const hide=()=>{if(alive&&document.hidden){epoch++;job?.abort();preview=null;previews.replaceChildren();update();}};document.addEventListener('visibilitychange',hide);
+ root.replaceChildren(h('section',{class:'t057'},h('style',{},'.t057{display:grid;gap:12px;max-width:1200px;margin:auto}.t057 label{display:grid;gap:6px}.t057 input,.t057 textarea,.t057 pre{padding:10px;background:var(--bg-raised);color:var(--text);border:1px solid var(--line);max-width:100%;box-sizing:border-box}.t057 pre{white-space:pre-wrap;overflow-wrap:anywhere;max-height:440px;overflow:auto}.t057 table{width:100%;table-layout:fixed;border-collapse:collapse}.t057 th,.t057 td{padding:6px;text-align:left;border-bottom:1px solid var(--line);white-space:pre-wrap;overflow-wrap:anywhere}.t057-row{display:flex;gap:8px;flex-wrap:wrap}'),h('h2',{},'项目依赖许可证清单'),h('p',{},'许可证声明与文件存在情况逐个安装位置记录，不推断法律适用或内容一致性。NOTICE单独列出，不当作许可。'),status,h('label',{},'项目根目录：需要实际选中node_modules，扁平文件不能关联',folder),h('div',{class:'t057-row'},demo,range,run,cancel,clear),scope,results,h('div',{class:'t057-row'},json,md),previews,save,h('p',{},'最多1000所选文件/200传统安装位置，package.json≤64KiB，许可文件≤1MiB、读取总≤8MiB，超限整份拒绝。缺所选许可标未知/待核对，不表示磁盘不存在。根四类声明不执行解析或安装；PNPM store、workspace链接、PnP等不在本MVP解析域。没有自动草稿、网络或脚本执行。')));
+ update();return{activate(){if(alive){active=true;update();}},deactivate(){if(alive){active=false;epoch++;job?.abort();preview=null;previews.replaceChildren();update();}},destroy(){if(!alive)return;alive=false;active=false;epoch++;job?.abort();for(const[n,t,f]of bindings)n.removeEventListener(t,f);document.removeEventListener('visibilitychange',hide);files=[];report=preview=null;root.replaceChildren();}};
+}};
