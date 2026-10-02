@@ -107,7 +107,7 @@ export default {
         table(['组', '路', '有效位', '标签', '块号', '字节范围', '上次访问', '访问次序'], rows, `第${frame.step}次访问${before ? '前' : '后'}的全缓存；描边为本次选中的路，LRU是本组最久未访问的有效路`),
         table(['跳转', '字节地址', '块', '组', '标签', '偏移', '路', '命中', '替换块'], result.frames.map((row) => h('tr', { class: row.step === frame.step ? 'is-current' : '' }, h('td', {}, h('button', { onclick: () => { pause(); move(row.step - 1); }, 'aria-label': `跳转第${row.step}次` }, String(row.step))), [row.address, row.block, row.set, row.tag, row.offset, row.way, row.hit ? 'hit' : 'miss', row.evicted?.block ?? '无'].map((cell) => h('td', {}, String(cell))))), '完整访问轨迹：点击次序可以复核填充和替换'),
         h('button', { class: 'btn', onclick: compare }, '比较相同容量的两种映射'),
-        comparison ? table(['方式', '组×路', '容量', '命中', '未命中'], [comparison.direct, comparison.twoWay].map((row) => h('tr', {}, [row.config.ways === 1 ? '直接映射' : '两路LRU', `${row.config.setCount}×${row.config.ways}`, `${row.config.capacityBytes}B`, rate(row), row.misses].map((cell) => h('td', {}, String(cell))))), '相同块大小、相同总行数/容量、相同地址序列、各自冷缓存；命中差异不保证对所有序列成立') : null,
+        comparison ? table(['方式', '组×路', '容量', '命中', '未命中'], [comparison.direct, comparison.twoWay].map((row) => h('tr', {}, [row.config.ways === 1 ? '直接映射' : '两路LRU', `${row.config.setCount}×${row.config.ways}`, `${row.config.capacityBytes}B`, rate(row), row.misses].map((cell) => h('td', {}, String(cell))))), '相同块大小、相同总行数/容量、相同地址序列、各自冷缓存；命中差异不保证对所有序列成立') : document.createDocumentFragment(),
         h('div', { class: 'l012-actions' }, h('button', { class: 'btn', onclick: () => exportReport('json') }, '导出完整 JSON'), h('button', { class: 'btn', onclick: () => exportReport('md') }, '导出轨迹 Markdown')),
       );
     }
