@@ -17,6 +17,7 @@ export function cleanUrl(original, options = {}) {
   const trim = options.trim !== false, includeClickIds = options.clickIds === true;
   const source = trim ? original.trim() : original;
   if (!source || /\s/u.test(source)) throw Error('URL 不能为空或包含空白字符；请核对输入与首尾修剪规则。');
+  if (!/^https?:\/\//iu.test(source) || source.includes('\\')) throw Error('请输入带 // 的完整 HTTP / HTTPS URL，路径使用正斜杠。');
   let parsed;
   try { parsed = new URL(source); } catch { throw Error('请输入完整 HTTP 或 HTTPS URL。'); }
   if (!['http:', 'https:'].includes(parsed.protocol)) throw Error('仅支持 HTTP / HTTPS URL。');
