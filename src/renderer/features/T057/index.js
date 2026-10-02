@@ -14,7 +14,22 @@ export default {id:'T057',create(root){
  const clear=button('清空项目集合和清单',()=>{files=[];folder.value='';invalidate('文件集合和所有清单已清空。');});
  function invalidate(message='项目文件选择改变，旧清单已失效。'){epoch++;job?.abort();report=preview=null;scope.replaceChildren();render();say(message);}
  function update(){if(!alive)return;for(const node of[folder,demo,range,run,clear])node.disabled=!active||busy;json.disabled=md.disabled=!active||busy||!report;save.disabled=!active||busy||!preview;cancel.disabled=!active||!busy||nativePending;}
- function render(){results.replaceChildren();previews.replaceChildren();if(report){const pages=Math.max(1,Math.ceil(report.packages.length/50));page=Math.min(page,pages-1);const prev=button('上一页',()=>{page--;render();},false),next=button('下一页',()=>{page++;render();},false);prev.disabled=page===0;next.disabled=page===pages-1;results.append(h('p',{},`安装位置${report.summary.occurrences} · 未知${report.summary.unknown} · 仅文本未归类${report.summary.textOnly} · 声明未验证${report.summary.declaredUnverified} · 根声明未选中${report.summary.unselectedRootDeclarations} · 第${page+1}/${pages}页（导出全部）`),h('div',{class:'t057-row'},prev,next),h('table',{},h('thead',{},h('tr',{},['包 / 版本','来源路径','声明原文','状态','许可/通知文件与摘要','待核对项'].map(s=>h('th',{},s)))),h('tbody',{},report.packages.slice(page*50,(page+1)*50).map(p=>h('tr',{},h('td',{},`${p.name||'名称未知'} / ${p.version||'版本未知'}`),h('td',{},p.manifestPath),h('td',{},p.licenseDeclared||'无支持的声明'),h('td',{},p.licenseStatus),h('td',{},p.licenseDocuments.map(d=>`${d.kind}: ${d.path} (${d.bytes}B SHA:${d.sha256})`).join('\n')||'所选范围没有许可文本'),h('td',{},p.issues.join('\n'))))),h('p',{},report.limitations),h('pre',{'aria-label':'完整依赖许可证清单'},JSON.stringify(report,null,2)));}update();}
+ function render(){
+  results.replaceChildren();previews.replaceChildren();
+  if(report){
+   const pages=Math.max(1,Math.ceil(report.packages.length/50));page=Math.min(page,pages-1);
+   const prev=button('上一页',()=>{page--;render();},false),next=button('下一页',()=>{page++;render();},false);
+   prev.disabled=page===0;next.disabled=page===pages-1;
+   const rows=report.packages.slice(page*50,(page+1)*50).map(p=>{
+    const documents=p.licenseDocuments.map(d=>`${d.kind}: ${d.path} (${d.bytes}B SHA:${d.sha256})`).join('\n');
+    const cells=[`${p.name||'名称未知'} / ${p.version||'版本未知'}`,p.manifestPath,p.licenseDeclared||'无支持的声明',p.licenseStatus,documents||'所选范围没有许可文本',p.issues.join('\n')];
+    return h('tr',{},cells.map(value=>h('td',{},value)));
+   });
+   const heading=h('thead',{},h('tr',{},['包 / 版本','来源路径','声明原文','状态','许可/通知文件与摘要','待核对项'].map(s=>h('th',{},s))));
+   results.append(h('p',{},`安装位置${report.summary.occurrences} · 未知${report.summary.unknown} · 仅文本未归类${report.summary.textOnly} · 声明未验证${report.summary.declaredUnverified} · 根声明未选中${report.summary.unselectedRootDeclarations} · 第${page+1}/${pages}页（导出全部）`),h('div',{class:'t057-row'},prev,next),h('table',{},heading,h('tbody',{},rows)),h('p',{},report.limitations),h('pre',{'aria-label':'完整依赖许可证清单'},JSON.stringify(report,null,2)));
+  }
+  update();
+ }
  function show(extension){const body=JSON.stringify(report,null,2),fence='`'.repeat(Math.max(3,...[...body.matchAll(/`+/g)].map(m=>m[0].length+1)));const content=extension==='json'?body+'\n':'# 项目依赖许可证清单\n\n'+report.limitations+'\n\n'+fence+'json\n'+body.replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;')+'\n'+fence+'\n';preview={content,extension,defaultName:`T057-license-inventory.${extension}`};const text=h('textarea',{rows:12,readonly:true,'aria-label':'完整导出预览'});text.value=content;previews.replaceChildren(h('p',{},`拟创建${preview.defaultName}，含包/声明/请求版本及相对路径和SHA，不含许可正文。声明可能含私人仓库地址，请核对分享范围。`),text);update();say('完整许可证清单已预览，核对后保存新副本。');}
  on(folder,'change',()=>{if(alive&&active&&!busy){files=Array.from(folder.files||[]);invalidate(`已明确选择${files.length}文件，尚未盘点。`);}});
  const hide=()=>{if(alive&&document.hidden){epoch++;job?.abort();preview=null;previews.replaceChildren();update();}};document.addEventListener('visibilitychange',hide);
