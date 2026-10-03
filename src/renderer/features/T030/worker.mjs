@@ -1,0 +1,2 @@
+import{inspect,build}from'./model.mjs';
+self.onmessage=async e=>{try{const p=e.data,key=Object.keys(p||{}).sort().join('|');if(p?.op==='inspect'&&key==='bytes|name|op')self.postMessage({ok:true,result:await inspect(p.bytes,p.name)});else if(p?.op==='build'&&key==='bytes|name|op|settings'){const result=await build(p.bytes,p.name,p.settings);self.postMessage({ok:true,result},[result.bytes.buffer]);}else throw Error('仅固定PDF拼页检查/生成操作');}catch(error){self.postMessage({ok:false,error:String(error.message).slice(0,480)});}finally{self.close();}};
