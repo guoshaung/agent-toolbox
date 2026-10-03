@@ -2838,6 +2838,11 @@ function registerIpc() {
     };
   });
 
+  ipcMain.handle('features:list', () => require('./feature-catalog').listFeatures(path.join(__dirname, '..', 'renderer', 'features')));
+  require('./feature-host').registerHostIpc(ipcMain, { featureRoot: path.join(__dirname, '..', 'renderer', 'features') });
+  require('./feature-bundle').registerBundleIpc(ipcMain, { dialog, getWindow: () => mainWindow, getDownloads: () => app.getPath('downloads') });
+  require('./feature-binary').registerBinaryIpc(ipcMain, { dialog, getWindow: () => mainWindow, getDownloads: () => app.getPath('downloads') });
+
   ipcMain.handle('files:pickText', async (_event, payload = {}) => {
     const result = await dialog.showOpenDialog(mainWindow, {
       title: payload.title || '打开学习文件',
@@ -2879,8 +2884,7 @@ function registerIpc() {
       filters: [{ name: extension.toUpperCase(), extensions: [extension] }],
     });
     if (result.canceled || !result.filePath) return { ok: false, canceled: true };
-    fs.writeFileSync(result.filePath, content, 'utf8');
-    return { ok: true, path: result.filePath, size: Buffer.byteLength(content) };
+    return require('./text-export').writeText(result.filePath, content, payload.copyOnly === true);
   });
 
   ipcMain.handle('files:pickPetSkin', async () => {
