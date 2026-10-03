@@ -2312,6 +2312,10 @@ function registerIpc() {
     appControls.setEnabled(Boolean(enabled));
     return appControls.register(globalShortcut);
   });
+  ipcMain.handle('appControls:setAltTabEnabled', (_e, enabled) => {
+    appControls.setAltTabEnabled(Boolean(enabled));
+    return appControls.register(globalShortcut);
+  });
   ipcMain.handle('appControls:closeForeground', () => appControls.closeForeground());
   ipcMain.handle('appControls:cycleWindows', () => appControls.cycleWindows());
 
@@ -3825,6 +3829,9 @@ app.whenReady().then(async () => {
   voiceboxService = new VoiceboxService({ getUserDataPath: () => app.getPath('userData'), getWindow: () => mainWindow });
   appControls = new AppControls({
     store,
+    app,
+    BrowserWindow,
+    screen,
     // ⌘/Ctrl+Shift+Q 一键退出工具箱：走和点叉号同一条路（销毁全部窗口再退），
     // 这样 Windows 上不会留在后台。
     onQuitSelf: () => quitToolbox(),
@@ -3935,6 +3942,7 @@ app.on('will-quit', () => {
     ['工具架子进程', () => stopAllShelfApps()],
     ['更新检查', () => stopAutoCheck()],
     ['全局快捷键', () => globalShortcut.unregisterAll()],
+    ['Alt+Tab 图标切换器', () => appControls?.dispose?.()],
     ['手机控制', () => remoteControl?.stop?.()],
     ['Argos', () => argosService?.destroy?.()],
     ['未完成的手机请求', () => {
