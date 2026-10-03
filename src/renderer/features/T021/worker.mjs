@@ -1,0 +1,2 @@
+import {loadSources,build} from './model.mjs';
+self.onmessage=async({data})=>{try{let result;if(data?.op==='inspect'){const loaded=await loadSources(data.sources);result={sources:loaded.sources};}else if(data?.op==='build')result=await build(data.sources,data.plan);else throw Error('未知操作');self.postMessage({ok:true,result});}catch(e){self.postMessage({ok:false,error:String(e.message).slice(0,2000)});}finally{self.close();}};
