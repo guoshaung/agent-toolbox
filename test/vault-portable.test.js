@@ -56,17 +56,19 @@ test('.env → 条目：整文件一条备注 + 每个密钥变量一条 API Key
 
 test('导出加密备份再导入另一台电脑的密码本：条目原样回来，重复的跳过', () => {
   const a = makeVault(tmpDir());
-  a.save({ title: 'github', username: 'me', password: 'p1', tags: ['dev'] });
+  // A two-character ASCII fragment can occur by chance in random Base64 ciphertext.
+  const password = '测试专用明文口令-不得出现在加密备份JSON中-p1';
+  a.save({ title: 'github', username: 'me', password, tags: ['dev'] });
   a.save({ key: 'sk-abcdefghijklmnopqrstuvwxyz1234', url: 'https://api.openai.com' });
   const file = path.join(tmpDir(), 'backup.enc.json');
   const r = P.packVault(a, '口令', file);
   assert.equal(r.ok, true); assert.equal(r.count, 2);
-  assert.ok(!fs.readFileSync(file, 'utf8').includes('p1'));
+  assert.ok(!fs.readFileSync(file, 'utf8').includes(password));
   const b = makeVault(tmpDir());
   const imp = P.unpackToVault(b, '口令', file);
   assert.deepEqual([imp.imported, imp.skipped, imp.total], [2, 0, 2]);
   const got = b.list().entries.find((e) => e.title === 'github');
-  assert.equal(b.reveal(got.id).entry.password, 'p1');
+  assert.equal(b.reveal(got.id).entry.password, password);
   const again = P.unpackToVault(b, '口令', file);
   assert.deepEqual([again.imported, again.skipped], [0, 2]);
   assert.match(P.unpackToVault(b, '错的', file).error, /口令不对/);
