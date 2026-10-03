@@ -21,8 +21,8 @@ test('默认禁用：不注册全局快捷键，状态标记未启用', () => {
   const status = controls.status();
   assert.equal(status.supported, true);
   assert.equal(status.enabled, false);
-  assert.equal(status.shortcuts.close, 'Ctrl+Q');
-  assert.equal(status.shortcuts.cycle, 'Ctrl+~');
+  assert.equal(status.shortcuts.close, 'Alt+Q');
+  assert.equal(status.shortcuts.cycle, 'Alt+~');
 });
 
 test('setEnabled 持久化开关并反映到状态', () => {
@@ -142,7 +142,7 @@ test('窗口循环：同一进程只有单窗口时跳过', async () => {
   const controls = createControls({ ownPid: 4242 });
   controls.run = async (command) => {
     if (command === 'foreground') return { handle: 'a', pid: 9001, title: 'A' };
-    return { windows: [{ handle: 'a', pid: 9001, title: 'A' }] };
+    return { foreground: { handle: 'a', pid: 9001, title: 'A' }, windows: [{ handle: 'a', pid: 9001, title: 'A' }] };
   };
   const result = await controls.cycleWindows();
   assert.equal(result.ok, false);
@@ -154,7 +154,7 @@ test('窗口循环：排除工具箱自身窗口', async () => {
   controls.run = async (command, args) => {
     if (command === 'foreground') return { handle: 'a', pid: 9002, title: 'A' };
     if (command === 'activate') return { ok: true };
-    return { windows: [
+    return { foreground: { handle: 'a', pid: 9002, title: 'A' }, windows: [
       { handle: 'self', pid: 4242, title: 'Agent 工具箱' },
       { handle: 'a', pid: 9002, title: 'A' },
       { handle: 'b', pid: 9002, title: 'B' },
@@ -178,7 +178,7 @@ test('窗口循环：同一进程多窗口时依次切到下一个，回绕回�
       foregroundIndex = handles.indexOf(args[0]);
       return { ok: true };
     }
-    return { windows: handles.map((handle) => ({ handle, pid: 9100, title: 'A' })) };
+    return { foreground: { handle: handles[foregroundIndex], pid: 9100, title: 'A' }, windows: handles.map((handle) => ({ handle, pid: 9100, title: 'A' })) };
   };
   const first = await controls.cycleWindows();
   assert.equal(first.ok, true);

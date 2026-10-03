@@ -2,7 +2,7 @@ import { h, toast } from '../../core/ui.js';
 import { md } from '../../core/md.js';
 
 /**
- * 自动科研：五个「AI 自己做研究」的开源项目，一页切换。
+ * 自动科研：多个「AI 自己做研究」的开源项目，一页切换。
  *
  * 左边选项目，右边按「拿代码 → 装环境 → 配置 → 跑 → 看产出」五步走。
  * 跑起来的进程归主进程管，这里只显示日志；起了网页的（AI-Researcher / DeepScientist）
