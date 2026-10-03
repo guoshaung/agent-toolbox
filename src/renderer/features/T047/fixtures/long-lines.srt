@@ -1,0 +1,7 @@
+1
+00:00:00,500 --> 00:00:02,500
+这是用于字幕安全区验收的中文长句，换行之后每一个文字都应清楚可见，不能被画面边缘裁掉。
+
+2
+00:00:03,000 --> 00:00:05,000
+This long English sentence must wrap within the safe rectangle and every word must remain visible in the burned video.

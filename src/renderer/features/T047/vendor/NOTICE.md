@@ -1,0 +1,7 @@
+# T047 私有固定字体与测量库
+
+NotoSansCJKsc-Regular.otf为notofonts/noto-cjk固定提交523d033d6cb47f4a80c58a35753646f5c3608a78，原SIL OFL1.1 LICENSE保留，SHA与原来源URL在manifest。实际外部FFmpeg只读取复制到自己真实临时目录的font.otf，绝不使用ASAR虚拟路径或用户任意字体。
+
+@pdf-lib/fontkit1.1.1的npm浏览器UMD dist bundle作为fontkit.cjs独立复制，包URL、SHA512 integrity与所有随附字节SHA256在manifest，原package.json和README保留。原npm包未附LICENSE文件；fontkit-LICENSE.txt是根据其package/README声明的MIT许可添加的标准MIT文本及来源说明，不冒称npm原文件。没有安装脚本执行或顶层依赖更改；运行仅用于固定字体字形advance测量，不需要PDF功能，不引用其他feature。
+
+.gitattributes禁止vendor/fixture文本换行改写；缺失或哈希不符时完整还原本功能固定vendor。manifest是复现/损坏检查，不是签名认证。
