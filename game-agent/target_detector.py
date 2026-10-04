@@ -179,7 +179,7 @@ class TargetDetector:
         self.hold_frames = 0
         self.multi_candidate_frames = 0
 
-        if config.mode == "template":
+        if config.mode in ("template", "feature"):
             self._load_template()
 
     # ------------------------------------------------------------ 颜色区间
@@ -209,7 +209,9 @@ class TargetDetector:
 
     def describe(self) -> str:
         """给 HUD 用的一行说明。"""
-        if self.config.mode == "template":
+        if self.config.mode == "feature":
+            base = f"feature {self._template_name()}"
+        elif self.config.mode == "template":
             base = f"template {self._template_name()}"
         elif self._locked_note:
             base = f"color {self._locked_note}"
@@ -316,11 +318,20 @@ class TargetDetector:
             raise ValueError("mode=template 但没有给 template_path")
         from config import resolve_path
 
-        img = cv2.imread(str(resolve_path(path)), cv2.IMREAD_COLOR)
+        # OpenCV imread on Windows cannot reliably open Chinese file paths.
+        try:
+            img = cv2.imdecode(np.fromfile(resolve_path(path), dtype=np.uint8), cv2.IMREAD_COLOR)
+        except OSError:
+            img = None
         if img is None:
             raise ValueError(f"模板图读不出来：{path}")
         self._template = img
         self._template_gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+        if float(np.std(self._template_gray)) < 2.0:
+            raise ValueError('模板没有足够明暗细节，纯色模板会产生虚假高分。')
+        if self.config.mode == "feature":
+            from feature_matcher import FeatureMatcher
+            self._feature_matcher = FeatureMatcher(img)
 
     def lock_template(self, image: np.ndarray, rect: Rect) -> str:
         """从当前帧里抠一块当模板（等价于方案 C，只是素材是现场截的）。"""
@@ -331,6 +342,8 @@ class TargetDetector:
         if x1 - x0 < 4 or y1 - y0 < 4:
             return "选区太小或越界，抠不出模板"
         crop = image[y0:y1, x0:x1].copy()
+        if float(np.std(cv2.cvtColor(crop, cv2.COLOR_BGR2GRAY))) < 2.0:
+            return "选区没有足够明暗细节，不能作为模板"
         self._template = crop
         self._template_gray = cv2.cvtColor(crop, cv2.COLOR_BGR2GRAY)
         self.config.mode = "template"
@@ -402,7 +415,9 @@ class TargetDetector:
         base_h = int(getattr(frame, "base_height", image.shape[0]))
         self._last_base = (base_w, base_h)
 
-        if self.config.mode == "template":
+        if self.config.mode == "feature":
+            target = self._detect_feature(frame)
+        elif self.config.mode == "template":
             target = self._detect_template(frame)
         else:
             target = self._detect_color(frame)
@@ -412,7 +427,7 @@ class TargetDetector:
 
     def detect(self, image: np.ndarray) -> Target:
         """老签名，只给「手上只有一张图」的场合用（等价于整帧都是逻辑画面）。"""
-        return self._detect_color(_PlainFrame(image))
+        return self.detect_frame(_PlainFrame(image))
 
     # ------------------------------------------------------------ 窗口解析
 
@@ -705,6 +720,18 @@ class TargetDetector:
         return Target.missing(method)
 
     # ------------------------------------------------------------ 模板匹配
+
+    def _detect_feature(self, frame) -> Target:
+        # Full-frame reacquisition avoids using stale coordinates as evidence.
+        result = self._feature_matcher.match(frame.image)
+        if result is None:
+            return Target.missing("feature")
+        (x,y,w,h), confidence = result
+        tl = frame.image_to_base(x,y)
+        br = frame.image_to_base(x+w,y+h)
+        box = (int(tl[0]),int(tl[1]),max(1,int(br[0]-tl[0])),max(1,int(br[1]-tl[1])))
+        return Target(found=True,x=int((tl[0]+br[0])/2),y=int((tl[1]+br[1])/2),bbox=box,
+                      area=box[2]*box[3],confidence=confidence,method="feature",candidates=1)
 
     def _detect_template(self, frame) -> Target:
         if self._template_gray is None:

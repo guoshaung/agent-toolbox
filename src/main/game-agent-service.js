@@ -13,7 +13,8 @@
 
 'use strict';
 
-const electron = require('electron');
+let electron;
+try { electron = require('electron'); } catch (_) { electron = null; }
 const app = electron && typeof electron === 'object' ? electron.app : null;
 const { spawn } = require('child_process');
 const path = require('path');
@@ -64,8 +65,9 @@ function buildArgs(config) {
   if (Number.isFinite(config.fps)) args.push('--fps', String(config.fps));
   if (config.preset) args.push('--preset', String(config.preset));
   if (config.mode) args.push('--mode', String(config.mode));
-  if (config.mode === 'template' && config.template) args.push('--template', String(config.template));
-  if (config.backend) args.push('--backend', String(config.backend));
+  if (['template', 'feature'].includes(config.mode) && config.template) args.push('--template', String(config.template));
+  const testedWindow = config.windowTitle === 'AgentToolboxTestTarget' && config.focusTitle === config.windowTitle && config.focusMode === 'block';
+  args.push('--backend', source === 'screen' && !testedWindow ? 'null' : String(config.backend || 'null'));
   if (config.windowTitle) args.push('--window-title', String(config.windowTitle));
   if (config.focusTitle) args.push('--focus-title', String(config.focusTitle));
   if (config.focusMode) args.push('--focus-mode', String(config.focusMode));
@@ -172,7 +174,7 @@ class GameAgentService {
         if (line.startsWith(FRAME_MARK)) {
           try {
             const payload = JSON.parse(line.slice(FRAME_MARK.length));
-            this.frameCount = payload.index || this.frameCount + 1;
+            if (payload.type === 'frame') this.frameCount += 1;
             this.send('frame', payload);
           } catch (_) { /* 半行 JSON 就丢掉，别让界面卡住 */ }
         } else {
@@ -427,4 +429,4 @@ function registerGameAgentIpc(ipcMain, getSender) {
   return service;
 }
 
-module.exports = { registerGameAgentIpc, resolveGameAgentDir, EVENT_CHANNEL };
+module.exports = { registerGameAgentIpc, resolveGameAgentDir, EVENT_CHANNEL, GameAgentService, buildArgs };

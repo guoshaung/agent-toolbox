@@ -1,0 +1,23 @@
+.feature-l022 { padding: 20px; max-width: 1250px; margin: auto; line-height: 1.6; }
+.feature-l022 h2 { margin: 0; }
+.feature-l022 .l022-editor, .feature-l022 .l022-output { margin-top: 20px; }
+.feature-l022 .l022-field { display: flex; flex-direction: column; gap: 5px; margin: 10px 0; }
+.feature-l022 .l022-actions { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin: 12px 0; }
+.feature-l022 .l022-muted { opacity: .75; font-size: 13px; }
+.feature-l022 .l022-code { padding: 10px; overflow: auto; background: rgba(92, 153, 230, .08); border: 1px solid var(--border, #445268); white-space: pre; }
+.feature-l022 .l022-code-pair { display: grid; grid-template-columns: repeat(2, minmax(100px, 1fr)); gap: 14px; }
+.feature-l022 .l022-summary { font-weight: 600; font-size: 20px; }
+.feature-l022 .l022-mutant { border: 1px solid var(--border, #445268); border-left-width: 4px; padding: 12px; margin: 16px 0; }
+.feature-l022 .is-killed { border-left-color: #5ac696; }
+.feature-l022 .is-survived { border-left-color: #e39d36; }
+.feature-l022 .is-equivalent { border-left-color: var(--accent, #80baff); }
+.feature-l022 .l022-score-policy { padding: 10px; border-left: 3px solid var(--accent, #80baff); }
+.feature-l022 .l022-notice, .feature-l022 .l022-storage { white-space: pre-wrap; }
+.feature-l022 .is-error, .feature-l022 .l022-storage { color: var(--danger, #d95764); }
+.feature-l022 .is-baseline-failed { background: rgba(210, 78, 85, .14); }
+.feature-l022 .l022-table-scroll { overflow: auto; max-height: 420px; margin: 16px 0; }
+.feature-l022 table { min-width: 100%; border-collapse: collapse; }
+.feature-l022 caption { text-align: left; margin: 5px 0; }
+.feature-l022 th, .feature-l022 td { padding: 7px 10px; border: 1px solid var(--border, #445268); text-align: center; }
+.feature-l022 td input { min-width: 95px; max-width: 180px; width: 100%; box-sizing: border-box; }
+@media (max-width: 650px) { .feature-l022 { padding: 12px; } .feature-l022 .l022-code-pair { grid-template-columns: 1fr; gap: 0; } }

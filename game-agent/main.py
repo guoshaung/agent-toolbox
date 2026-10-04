@@ -64,6 +64,7 @@ from screen_capture import (
 )
 from sim_game import SimulatedGame
 from target_detector import Target, TargetDetector
+from observation import observed_target, live_backend
 from visualizer import Visualizer, VisualizerStats
 
 EVENT_MARK = "@@FRAME@@"  # 给工具箱父进程认的行前缀
@@ -375,6 +376,9 @@ class FrameRecord:
     candidates: int = 0  # 这一帧有几个候选团块
     windowed: bool = False  # 只在跟踪窗口里找的
     frozen: bool = False  # 画面卡住
+    observed: bool = False
+    confidence: float = 0.0
+    method: str = ""
 
 
 class Logger:
@@ -472,6 +476,9 @@ class Logger:
                 "candidates": r.candidates,
                 "windowed": r.windowed,
                 "frozen": r.frozen,
+                "observed": r.observed,
+                "confidence": r.confidence,
+                "method": r.method,
             }
             self._emit(EVENT_MARK + json.dumps(payload, ensure_ascii=False), human=False)
             # 同时留一份人看的日志在 stderr，便于直接跑的时候也能看
@@ -592,11 +599,12 @@ class GameAgent:
         self.guard = FocusGuard(config.capture.focus_title, config.capture.focus_mode)
         self.hotkeys = HotkeyWatcher(config.hotkey_toggle, config.hotkey_quit)
         self.stats = VisualizerStats()
+        self.observed_frames = 0
         self.clock = FrameClock(config.capture.target_fps)
         self.timings = Timings()
 
         # 仿真模式下如果没显式指定，就用 null 后端把脉冲喂给虚拟游戏
-        backend = config.control.backend
+        backend = live_backend(config.capture.source, config.control.backend, config.capture.window_title, config.capture.focus_title, config.capture.focus_mode)
         if self.source.is_sim and backend == "pyautogui":
             backend = "null"
         self.backend_name = backend
@@ -685,7 +693,7 @@ class GameAgent:
         只在开了 capture_roi、真实截图、而且已经锁定目标时才收窄。
         窗口尺寸用上一帧的 —— 第一帧必然是全画面，这样才能「找到」目标。
         """
-        if not self.config.capture.capture_roi or self.source.is_sim:
+        if not self.config.capture.capture_roi or self.source.is_sim or self.config.detect.mode == "feature":
             return None
         if self._last_base_size is None:
             return None
@@ -700,7 +708,14 @@ class GameAgent:
         except CaptureError as exc:
             self.timings.add("grab", (time.monotonic() - started) * 1000.0)
             if not self.source.has_base_region():
-                raise  # 窗口压根没找到，配置问题，直接报错退出
+                if time.monotonic() - self._loop_start < self.config.capture.startup_wait_seconds:
+                    self.capture_errors += 1
+                    self.skipped_frames += 1
+                    if self.capture_errors == 1:
+                        self.log.event(f"等待目标窗口进入前台；不截取旧位置：{exc}", "warn")
+                    ABORT.sleep(min(.25, max(.02, 1.0 / max(1.0, self.config.capture.target_fps))))
+                    return None
+                raise
             self.capture_errors += 1
             self.skipped_frames += 1
             self.log.event(f"截图失败，跳过这一帧（第 {self.capture_errors} 次）：{exc}", "warn")
@@ -708,6 +723,7 @@ class GameAgent:
                 raise CaptureError(
                     f"连续 {self.capture_errors} 帧截图失败，不再重试"
                 ) from exc
+            ABORT.sleep(max(0.0, self.clock.remaining(started)))
             return None
         self.timings.add("grab", (time.monotonic() - started) * 1000.0)
         self.capture_errors = 0
@@ -778,7 +794,7 @@ class GameAgent:
         started = time.monotonic()
         center_x = frame.center_x + int(self.config.control.center_offset)
         decision = decide(
-            target.x if target.found else None,
+            target.x if observed_target(target, frozen) else None,
             center_x,
             self.config.control.threshold_px,
             self.config.control.invert_axis,
@@ -795,16 +811,18 @@ class GameAgent:
 
         # 6. 统计 + 可视化
         detect_x = target.raw_x if target.raw_x is not None else (target.x if target.found else None)
-        self.stats.push(decision.error if target.found else None, decision.is_centered, target.found)
+        fresh = observed_target(target, frozen)
+        self.observed_frames += int(fresh)
+        self.stats.push(decision.error if fresh else None, fresh and decision.is_centered, fresh)
         self.visualizer.update_history(decision.error if target.found else None)
 
         self._tick_fps()
         record = FrameRecord(
             index=self.frame_index,
             wall=time.time(),
-            target_x=target.x if target.found else None,
+            target_x=target.x if fresh else None,
             center_x=center_x,
-            error=decision.error if target.found else None,
+            error=decision.error if fresh else None,
             decision=decision.direction,
             action_key=action.key if action.sent else None,
             duration_ms=action.duration_ms if action.sent else 0,
@@ -818,6 +836,9 @@ class GameAgent:
             candidates=target.candidates,
             windowed=target.windowed,
             frozen=frozen,
+            observed=fresh,
+            confidence=target.confidence if fresh else 0.0,
+            method=target.method,
         )
         self.log.frame(record)
 
@@ -1083,6 +1104,10 @@ class GameAgent:
             "elapsed_s": round(elapsed, 3),
             "effective_fps": round(self.frame_index / elapsed, 2) if elapsed > 0 else 0.0,
             "source": self.config.capture.source,
+            "validation_status": "simulation_only" if self.source.is_sim else "unverified_real_game",
+            "observed_frames": self.observed_frames,
+            "semantic_target_verified": False,
+            "motion_model_verified": False,
             "backend": self.backend_name,
             "detector": self.detector.describe(),
             "invert_axis": self.config.control.invert_axis,

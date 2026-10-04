@@ -72,6 +72,8 @@ class CaptureConfig:
     freeze_frames: int = 45
     # warn = 只在日志里提醒，照常发键；pause = 直接暂停自动控制（安全默认）
     freeze_action: str = "pause"
+    # Allow the user to switch from the toolbox to the target before the first frame.
+    startup_wait_seconds: float = 15.0
 
 
 @dataclass
@@ -346,7 +348,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
                    help="卡住时的动作：pause 暂停发键 / warn 只提醒")
 
     g = parser.add_argument_group("检测／Detect")
-    g.add_argument("--mode", dest="detect_mode", choices=["color", "template"], help="检测方式")
+    g.add_argument("--mode", dest="detect_mode", choices=["color", "template", "feature"], help="检测方式")
     g.add_argument("--preset", dest="detect_preset", help="颜色预设：red/yellow/green/blue/magenta/white")
     g.add_argument("--hsv-lower", help="HSV 下界 h,s,v")
     g.add_argument("--hsv-upper", help="HSV 上界 h,s,v")

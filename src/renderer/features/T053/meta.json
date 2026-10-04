@@ -1,0 +1,1 @@
+{"id":"T053","category":"工具","group":"开发转换与生成","title":"接口类型离线生成","description":"从有限 JSON Schema 离线生成 TypeScript 声明、规则映射及投影清单，预览后导出新目录。"}
