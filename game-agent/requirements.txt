@@ -1,0 +1,6 @@
+# 不想用 uv 的话，直接 pip 装这几个
+#   pip install -r requirements.txt
+numpy>=1.24
+opencv-python>=4.8
+mss>=9.0
+pyautogui>=0.9.54

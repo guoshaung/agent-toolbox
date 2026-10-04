@@ -211,7 +211,6 @@ export default {
       class: 'video__study-view',
       partition: 'persist:bilibili-study',
       src: BILIBILI_STUDY_URL,
-      allowpopups: true,
     });
     const studyLoadingNote = h('span', { class: 'video__study-loading-note' }, '正在连接 B 站学习区…');
     const studyLoading = h('div', {
@@ -490,9 +489,11 @@ export default {
       try {
         const result = await studyView.executeJavaScript(`(() => {
           const key = '__agentToolboxSmartZoom';
-          if (window[key]) {
+          const VERSION = 3;
+          if (window[key]?.version === VERSION) {
             return window[key].command(${JSON.stringify(cmd)}, ${JSON.stringify(value)});
           }
+          if (window[key]) window[key].disable?.();
           const MIN = ${ZOOM_MIN}, MAX = ${ZOOM_MAX}, STEP = ${ZOOM_STEP};
           const SENSITIVITY = ${WHEEL_SENSITIVITY};
           const SMART_RATIO = ${SMART_WIDTH_RATIO};
@@ -500,7 +501,7 @@ export default {
           const MIN_W = ${MIN_PLAYER_WIDTH};
           const STORE_KEY = 'agent-toolbox-smart-zoom:' + (location.pathname || 'study');
           const clamp = (n) => Math.max(MIN, Math.min(MAX, n));
-          const state = { enabled: true, smart: false, scale: 1, target: null, natural: null, original: null, overflow: null, tipTimer: null, scrollFrame: 0 };
+          const state = { enabled: true, smart: false, scale: 1, target: null, natural: null, original: null, overflow: null, tipTimer: null, scrollFrame: 0, pinch: null };
 
           const resolveTarget = () => {
             const el = document.querySelector('.bpx-player-container');
@@ -586,12 +587,12 @@ export default {
             const maxW = Math.max(n.w * MAX, Math.round(vw * MAX_VW));
             const w = Math.max(MIN_W, Math.min(maxW, wanted));
             const h = Math.round((w * n.h) / n.w);
-            el.style.width = w + 'px';
-            el.style.height = h + 'px';
-            el.style.marginLeft = 'auto';
-            el.style.marginRight = 'auto';
-            el.style.maxWidth = 'none';
-            el.style.zIndex = '110';
+            el.style.setProperty('width', w + 'px', 'important');
+            el.style.setProperty('height', h + 'px', 'important');
+            el.style.setProperty('margin-left', 'auto', 'important');
+            el.style.setProperty('margin-right', 'auto', 'important');
+            el.style.setProperty('max-width', 'none', 'important');
+            el.style.setProperty('z-index', '110', 'important');
           };
           const clearSize = () => {
             const el = state.target;
@@ -698,6 +699,37 @@ export default {
             apply();
             showTip();
           };
+          const touchDistance = (touches) => {
+            if (!touches || touches.length < 2) return 0;
+            return Math.hypot(
+              touches[1].clientX - touches[0].clientX,
+              touches[1].clientY - touches[0].clientY,
+            );
+          };
+          const onTouchStart = (event) => {
+            if (!state.enabled || event.touches.length !== 2) return;
+            const t = event.target;
+            if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) return;
+            const el = state.target || resolveTarget();
+            const distance = touchDistance(event.touches);
+            if (!el || !distance) return;
+            state.target = el;
+            state.pinch = { distance, scale: state.scale };
+          };
+          const onTouchMove = (event) => {
+            if (!state.enabled || !state.pinch || event.touches.length !== 2) return;
+            const distance = touchDistance(event.touches);
+            if (!distance) return;
+            event.preventDefault();
+            state.scale = clamp(state.pinch.scale * distance / state.pinch.distance);
+            apply();
+            showTip();
+          };
+          const onTouchEnd = (event) => {
+            if (!state.pinch || event.touches.length >= 2) return;
+            state.pinch = null;
+            persist();
+          };
           const command = (cmd, value) => {
             state.enabled = true;
             if (cmd === 'refresh' || !state.target) state.refresh();
@@ -735,6 +767,7 @@ export default {
           };
           const disable = () => {
             state.enabled = false;
+            state.pinch = null;
             clearSize();
           };
 
@@ -742,7 +775,11 @@ export default {
           state.target = resolveTarget();
           if (state.target) ensureOriginal();
           document.addEventListener('wheel', onWheel, { capture: true, passive: false });
-          window[key] = { command, disable, getState };
+          document.addEventListener('touchstart', onTouchStart, { capture: true, passive: true });
+          document.addEventListener('touchmove', onTouchMove, { capture: true, passive: false });
+          document.addEventListener('touchend', onTouchEnd, { capture: true, passive: true });
+          document.addEventListener('touchcancel', onTouchEnd, { capture: true, passive: true });
+          window[key] = { version: VERSION, command, disable, getState };
           return window[key].command(${JSON.stringify(cmd)}, ${JSON.stringify(value)});
         })()`, true);
         if (result && typeof result.scale === 'number') {
@@ -1586,7 +1623,6 @@ export default {
         class: 'video__feishu',
         partition: 'persist:feishu',
         src: url,
-        allowpopups: true,
       });
       const status = h('span', { class: 'faint video__feishu-status' }, '正在加载飞书报告…');
       const loginBtn = h('button', {
@@ -1956,6 +1992,13 @@ export default {
       if (!result) return toast('页面还没就绪，稍后再试', 'info');
       syncZoomUI(result);
     }
+
+    // Precision Touchpad pinch 从主进程 WebContents 层转发；DOM wheel/touch
+    // 仍负责触摸屏与会生成 Ctrl+wheel 的触控板。
+    window.toolbox.videoGestures?.onPinchZoom((direction) => {
+      if (currentView !== 'study') return;
+      runZoomCommand(direction === 'in' ? 'zoom-in' : 'zoom-out');
+    });
 
     const pluginBtn = h('button', { class: 'btn btn--sm video__plugin-btn', onclick: () => { pluginPanel.hidden = !pluginPanel.hidden; if (!pluginPanel.hidden) renderPluginLibrary(); } }, '插件库');
     const studyTab = h('button', { class: 'btn btn--sm video__mode-tab', onclick: () => setView('study') }, '学习区');

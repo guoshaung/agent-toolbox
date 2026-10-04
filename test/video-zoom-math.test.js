@@ -7,6 +7,7 @@ test('视频工具：智能尺寸与缩放的纯数值逻辑', async () => {
   const {
     ZOOM_MIN, ZOOM_MAX, ZOOM_STEP, clamp, zoomStep,
     wheelDeltaPixels, wheelZoomFactor, applyZoom, isZoomGesture,
+    pinchDistance, pinchZoom,
     smartBaseWidth, playerWidth, playerHeight, formatPercent,
   } = m;
 
@@ -37,6 +38,12 @@ test('视频工具：智能尺寸与缩放的纯数值逻辑', async () => {
   assert.equal(Math.abs(applyZoom(1, 0.9) - 0.9) < 1e-9, true);
   assert.equal(applyZoom(ZOOM_MAX, 1.5), ZOOM_MAX);
   assert.equal(applyZoom(ZOOM_MIN, 0.5), ZOOM_MIN);
+
+  // 原生双指 pinch：两点距离变化应按比例缩放，并遵守上下限
+  assert.equal(pinchDistance({ clientX: 0, clientY: 0 }, { clientX: 30, clientY: 40 }), 50);
+  assert.equal(pinchZoom(1, 100, 150), 1.5);
+  assert.equal(pinchZoom(1.5, 100, 200), ZOOM_MAX);
+  assert.equal(pinchZoom(1, 0, 200), 1);
 
   // 智能尺寸：以 92% 窗口宽为基准
   assert.equal(smartBaseWidth(1000), 920);
