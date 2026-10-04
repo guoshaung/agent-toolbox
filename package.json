@@ -43,8 +43,8 @@
     "zod": "^4.5.4"
   },
   "build": {
-    "appId": "cn.macpe.agenttoolbox.personal",
-    "productName": "Agent Toolbox personal",
+    "appId": "cn.macpe.agenttoolbox",
+    "productName": "Agent 工具箱",
     "asar": true,
     "asarUnpack": [
       "node_modules/@mediapipe/tasks-vision/wasm/**",
@@ -151,7 +151,14 @@
     "portable": {
       "artifactName": "Agent-Toolbox-${version}-Portable-${arch}.${ext}"
     },
-    "publish": null,
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "guoshaung",
+        "repo": "agent-toolbox",
+        "timeout": 900000
+      }
+    ],
     "electronVersion": "33.4.11",
     "beforePack": "scripts/build-prepare.cjs",
     "directories": {
