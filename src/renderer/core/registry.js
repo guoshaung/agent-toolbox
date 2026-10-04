@@ -40,10 +40,12 @@ import stickers from '../tools/stickers/index.js';
 import game from '../tools/game/index.js';
 import flylab from '../tools/flylab/index.js';
 import home from '../tools/home/index.js';
+import featureLab from '../tools/feature-lab/index.js';
+import gameagent from '../tools/gameagent/index.js';
 
 /**
  * 工具注册表 —— 需求第 5 条「以后还要更多工具」就靠这里。
  * 加一个工具：写 tools/<id>/index.js，默认导出 { id, title, icon, create(root, ctx) }，
  * 然后在这个数组里加一行。详见 docs/ADD-A-TOOL.md。
  */
-export const TOOLS = [home, ask, docs, typing, focus, game, flylab, study, notebook, notes, tidy, stickers, webtools, vault, chatAnalyze, api, git, netlog, monologue, eat, container, dsh, aipexbase, appgen, tavern, voicebox, digitalHuman, avatarRig, pet, history, video, research, coach, terms, dock, skills, remote, controls, appearance, voice, gesture, tasks, settings];
+export const TOOLS = [home, ask, docs, typing, focus, game, flylab, study, notebook, notes, tidy, stickers, webtools, vault, chatAnalyze, api, git, netlog, monologue, eat, container, dsh, aipexbase, appgen, tavern, voicebox, digitalHuman, avatarRig, pet, history, video, research, coach, terms, dock, skills, remote, controls, appearance, voice, gesture, gameagent, tasks, featureLab, settings];

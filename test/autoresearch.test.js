@@ -3,8 +3,8 @@ const { test } = require('node:test');
 const assert = require('node:assert/strict');
 const { PROJECTS, findWebUrl, slugify, topicMarkdown, agentLabYaml, AutoResearchService } = require('../src/main/autoresearch-service');
 
-test('自动科研：五个项目的登记表完整', () => {
-  assert.equal(PROJECTS.length, 5);
+test('自动科研：包含 OpenFARS 的六个项目登记表完整', () => {
+  assert.equal(PROJECTS.length, 6);
   const ids = new Set();
   for (const p of PROJECTS) {
     assert.ok(!ids.has(p.id)); ids.add(p.id);

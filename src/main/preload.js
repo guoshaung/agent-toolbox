@@ -15,6 +15,11 @@ contextBridge.exposeInMainWorld('toolbox', {
   },
 
   files: {
+    saveTextSupportsCopyOnly: true,
+    exportBundleSupportsCopyOnly: true,
+    saveBinarySupportsCopyOnly: true,
+    saveBinary: (payload) => ipcRenderer.invoke('files:saveBinary', payload),
+    exportBundle: (payload) => ipcRenderer.invoke('files:exportBundle', payload),
     /** 打开选图对话框，返回 { path, name, mime, base64 } 或 null（用户取消） */
     pickImage: () => ipcRenderer.invoke('files:pickImage'),
     pickText: (payload) => ipcRenderer.invoke('files:pickText', payload),
@@ -22,6 +27,13 @@ contextBridge.exposeInMainWorld('toolbox', {
     pickPetSkin: () => ipcRenderer.invoke('files:pickPetSkin'),
     saveImage: (payload) => ipcRenderer.invoke('files:saveImage', payload),
     saveText: (payload) => ipcRenderer.invoke('files:saveText', payload),
+  },
+
+  features: {
+    list: () => ipcRenderer.invoke('features:list'),
+    callHostSupported: true,
+    callHost: (id, operation, payload) => ipcRenderer.invoke('features:hostCall', id, operation, payload),
+    cancelHost: (id, jobId) => ipcRenderer.invoke('features:hostCancel', id, jobId),
   },
 
   /** 本机 AI 派发台：列出装了哪些 agent、把任务直接交出去 */
@@ -540,9 +552,11 @@ contextBridge.exposeInMainWorld('toolbox', {
     status: () => ipcRenderer.invoke('appControls:status'),
     /** 开启/关闭快捷控制，返回注册结果 */
     setEnabled: (enabled) => ipcRenderer.invoke('appControls:setEnabled', enabled),
-    /** 强制关闭当前前台应用（Ctrl+Q，带安全名单） */
+    /** 开启/关闭 Mac 风格的大图标 Alt+Tab */
+    setAltTabEnabled: (enabled) => ipcRenderer.invoke('appControls:setAltTabEnabled', enabled),
+    /** 强制关闭当前前台应用（Alt+Q，带安全名单） */
     closeForeground: () => ipcRenderer.invoke('appControls:closeForeground'),
-    /** 在当前前台应用的多个窗口间循环（Ctrl+~） */
+    /** 在当前前台应用的多个窗口间循环（Alt+~） */
     cycleWindows: () => ipcRenderer.invoke('appControls:cycleWindows'),
     onResult: (callback) => ipcRenderer.on('appControls:result', (_event, result) => callback(result)),
   },
@@ -756,6 +770,28 @@ contextBridge.exposeInMainWorld('toolbox', {
     readImage: () => ipcRenderer.invoke('clipboard:readImage'),
   },
 
+  /** 游戏控制 PoC：截图 → 检测目标 → 判左右 → 敲 A/D 的视觉闭环 */
+  gameAgent: {
+    status: () => ipcRenderer.invoke('game-agent:status'),
+    /** 环境自检：python 在不在、mss/cv2 装没装 */
+    doctor: () => ipcRenderer.invoke('game-agent:doctor'),
+    /** 列出当前可见窗口，用来下拉选游戏窗口；只读标题/矩形/进程名 */
+    listWindows: () => ipcRenderer.invoke('game-agent:list-windows'),
+    /** 一键装依赖：uv 优先，回退 pip；过程日志走 game-agent:event 的 log 通道 */
+    installDeps: () => ipcRenderer.invoke('game-agent:install-deps'),
+    /** config 只接受白名单字段，见 game-agent-service.js 的 ALLOWED_KEYS */
+    start: (config) => ipcRenderer.invoke('game-agent:start', config || {}),
+    stop: () => ipcRenderer.invoke('game-agent:stop'),
+    openTestWindow: () => ipcRenderer.invoke('game-agent:open-test-window'),
+    closeTestWindow: () => ipcRenderer.invoke('game-agent:close-test-window'),
+    /** 订阅事件流（frame / status / log / install）；返回值是取消订阅函数 */
+    onEvent: (callback) => {
+      const handler = (_event, payload) => callback(payload);
+      ipcRenderer.on('game-agent:event', handler);
+      return () => ipcRenderer.removeListener('game-agent:event', handler);
+    },
+  },
+
   remote: {
     /** 把工具箱当前的工具列表告诉手机端 */
     setTools: (list) => ipcRenderer.invoke('remote:setTools', list),
@@ -807,5 +843,9 @@ contextBridge.exposeInMainWorld('toolbox', {
     setWindowFxStyle: (style) => ipcRenderer.invoke('app:setWindowFxStyle', style),
     /** 用 PNG data URL 替换窗口/任务栏图标（macOS 上同时换 Dock 图标） */
     setAppIcon: (dataUrl) => ipcRenderer.invoke('app:setAppIcon', dataUrl),
+  },
+
+  videoGestures: {
+    onPinchZoom: (callback) => ipcRenderer.on('video:pinch-zoom', (_event, direction) => callback(direction)),
   },
 });

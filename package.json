@@ -1,9 +1,9 @@
 {
   "name": "agent-toolbox",
-  "version": "0.43.2",
+  "version": "0.44.0-personal.1",
   "description": "个人 Agent 工具箱：科研文献 / 代码阅读 / 文档 / 打字纠错 / 专注 / DeepSeek 快问",
   "private": true,
-  "main": "src/main/main.js",
+  "main": "channel-launch.cjs",
   "scripts": {
     "avatar:prepare": "node scripts/prepare-avatar-rig.cjs",
     "prestart": "npm run avatar:prepare",
@@ -43,9 +43,8 @@
     "zod": "^4.5.4"
   },
   "build": {
-    "beforePack": "scripts/build-prepare.cjs",
-    "appId": "cn.macpe.agenttoolbox",
-    "productName": "Agent 工具箱",
+    "appId": "cn.macpe.agenttoolbox.personal",
+    "productName": "Agent Toolbox personal",
     "asar": true,
     "asarUnpack": [
       "node_modules/@mediapipe/tasks-vision/wasm/**",
@@ -60,7 +59,8 @@
       "!docs/**",
       "!work/**",
       "!**/*.bak-*",
-      "!**/*.bak"
+      "!**/*.bak",
+      "channel-launch.cjs"
     ],
     "mac": {
       "category": "public.app-category.productivity",
@@ -131,6 +131,17 @@
           "!**/miku-official.png",
           "!**/.DS_Store"
         ]
+      },
+      {
+        "from": "game-agent",
+        "to": "game-agent",
+        "filter": [
+          "**/*",
+          "!.venv/**",
+          "!work/**",
+          "!**/__pycache__/**",
+          "!*.pyc"
+        ]
       }
     ],
     "nsis": {
@@ -140,13 +151,11 @@
     "portable": {
       "artifactName": "Agent-Toolbox-${version}-Portable-${arch}.${ext}"
     },
-    "publish": [
-      {
-        "provider": "github",
-        "owner": "guoshaung",
-        "repo": "agent-toolbox",
-        "timeout": 900000
-      }
-    ]
+    "publish": null,
+    "electronVersion": "33.4.11",
+    "beforePack": "scripts/build-prepare.cjs",
+    "directories": {
+      "output": "dist"
+    }
   }
 }

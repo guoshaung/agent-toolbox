@@ -67,6 +67,7 @@ const { generateTeachingSlides } = require('./teaching-slides');
 const { exportPptx } = require('./pptx-export');
 const { VoiceBoxService } = require('./voicebox-service');
 const voiceboxApi = require('./voicebox-api');
+const { registerGameAgentIpc } = require('./game-agent-service');
 const { sameLibrarySite } = require('./literature-site');
 
 async function remoteStatusWithQr(state) {
@@ -87,6 +88,7 @@ const { registerAipexBaseIpc } = require('./aipexbase-service');
 const { registerAppGenIpc } = require('./appgen-service');
 
 const IS_DEV = process.argv.includes('--dev');
+const SUPPRESS_AUTO_DEVTOOLS = process.argv.includes('--no-auto-devtools');
 const ICON_PATH = path.join(__dirname, '..', '..', 'assets', 'icon.png');
 const APP_USER_MODEL_ID = 'Guoshaung.AgentToolbox';
 let runtimeAppIcon = null;
@@ -213,6 +215,7 @@ let gazeService;
 let tavernService;
 let argosService;
 let appControls;
+let gameAgentService;
 let voiceBoxService;
 let voiceboxService;
 const siteFloatWindows = new Map();
@@ -772,7 +775,7 @@ function createWindow(showOnReady = true) {
     console.error('[renderer] render-process-gone', details.reason, details.exitCode);
   });
   mainWindow.webContents.on('unresponsive', () => console.error('[renderer] unresponsive'));
-  if (IS_DEV) mainWindow.webContents.openDevTools({ mode: 'detach' });
+  if (IS_DEV && !SUPPRESS_AUTO_DEVTOOLS) mainWindow.webContents.openDevTools({ mode: 'detach' });
 
   let rendererRecoveries = 0;
   mainWindow.webContents.on('render-process-gone', (_event, details) => {
@@ -859,6 +862,18 @@ function createWindow(showOnReady = true) {
     const bilibiliSession = session.fromPartition(PARTITIONS.bilibili);
     const feishuSession = session.fromPartition(PARTITIONS.feishu);
     const researchSession = session.fromPartition(PARTITIONS.research);
+
+    // Windows Precision Touchpad 的双指捏合由 Chromium 在 WebContents 层消费，
+    // guest 页面里的 wheel/touch 监听收不到。拦住整页缩放，转成视频播放器缩放。
+    if (guest.session === bilibiliSession) {
+      guest.on('zoom-changed', (event, direction) => {
+        event.preventDefault();
+        guest.setZoomFactor(1);
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send('video:pinch-zoom', direction === 'in' ? 'in' : 'out');
+        }
+      });
+    }
 
     // 拦截已知站点的强制登录重定向（先弹登录页再让内容页可访问）
     // 注意：did-attach-webview 的 guest 参数本身就是 WebContents
@@ -2345,6 +2360,10 @@ function registerIpc() {
     appControls.setEnabled(Boolean(enabled));
     return appControls.register(globalShortcut);
   });
+  ipcMain.handle('appControls:setAltTabEnabled', (_e, enabled) => {
+    appControls.setAltTabEnabled(Boolean(enabled));
+    return appControls.register(globalShortcut);
+  });
   ipcMain.handle('appControls:closeForeground', () => appControls.closeForeground());
   ipcMain.handle('appControls:cycleWindows', () => appControls.cycleWindows());
 
@@ -2713,7 +2732,7 @@ function registerIpc() {
     // 不然退出收尾（杀子进程、关 socket，最多 3 秒）还没走完，新实例已经起来、
     // 拿锁失败就自己退了 —— 看起来就是「双击 logo 只关闭不重启」。
     const args = process.argv.slice(1).filter((a) => !a.startsWith('--relaunch-from='));
-    app.relaunch({ args: [...args, `--relaunch-from=${process.pid}`] });
+    app.relaunch({ args: [...args, `--relaunch-from=${process.pid}`, '--no-auto-devtools'] });
     quitToolbox();
     return { ok: true };
   });
@@ -2890,6 +2909,11 @@ function registerIpc() {
     };
   });
 
+  ipcMain.handle('features:list', () => require('./feature-catalog').listFeatures(path.join(__dirname, '..', 'renderer', 'features')));
+  require('./feature-host').registerHostIpc(ipcMain, { featureRoot: path.join(__dirname, '..', 'renderer', 'features') });
+  require('./feature-bundle').registerBundleIpc(ipcMain, { dialog, getWindow: () => mainWindow, getDownloads: () => app.getPath('downloads') });
+  require('./feature-binary').registerBinaryIpc(ipcMain, { dialog, getWindow: () => mainWindow, getDownloads: () => app.getPath('downloads') });
+
   ipcMain.handle('files:pickText', async (_event, payload = {}) => {
     const result = await dialog.showOpenDialog(mainWindow, {
       title: payload.title || '打开学习文件',
@@ -2931,8 +2955,7 @@ function registerIpc() {
       filters: [{ name: extension.toUpperCase(), extensions: [extension] }],
     });
     if (result.canceled || !result.filePath) return { ok: false, canceled: true };
-    fs.writeFileSync(result.filePath, content, 'utf8');
-    return { ok: true, path: result.filePath, size: Buffer.byteLength(content) };
+    return require('./text-export').writeText(result.filePath, content, payload.copyOnly === true);
   });
 
   ipcMain.handle('files:pickPetSkin', async () => {
@@ -3873,6 +3896,9 @@ app.whenReady().then(async () => {
   voiceboxService = new VoiceboxService({ getUserDataPath: () => app.getPath('userData'), getWindow: () => mainWindow });
   appControls = new AppControls({
     store,
+    app,
+    BrowserWindow,
+    screen,
     // ⌘/Ctrl+Shift+Q 一键退出工具箱：走和点叉号同一条路（销毁全部窗口再退），
     // 这样 Windows 上不会留在后台。
     onQuitSelf: () => quitToolbox(),
@@ -3880,6 +3906,7 @@ app.whenReady().then(async () => {
       if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('appControls:result', result);
     },
   });
+  gameAgentService = registerGameAgentIpc(ipcMain, () => mainWindow);
   voiceBoxService = new VoiceBoxService({
     app,
     shell,
@@ -3983,6 +4010,7 @@ app.on('will-quit', () => {
     ['工具架子进程', () => stopAllShelfApps()],
     ['更新检查', () => stopAutoCheck()],
     ['全局快捷键', () => globalShortcut.unregisterAll()],
+    ['Alt+Tab 图标切换器', () => appControls?.dispose?.()],
     ['手机控制', () => remoteControl?.stop?.()],
     ['Argos', () => argosService?.destroy?.()],
     ['未完成的手机请求', () => {
@@ -4003,4 +4031,5 @@ app.on('will-quit', () => {
   for (const [name, run] of steps) {
     try { run(); } catch (error) { console.warn(`[quit] ${name} 收尾失败：`, error?.message || error); }
   }
+  gameAgentService?.shutdown?.();
 });

@@ -58,6 +58,13 @@ test('logo：svgToCssUrl 生成可被 CSS url() 使用的 data URI', async () =>
   assert.ok(url.includes('%23'), '颜色 # 必须编码为 %23');
 });
 
+test('logo：作为图片解码时补全 SVG 命名空间', async () => {
+  const { svgAsImage } = await import('../src/renderer/core/logos.js');
+  assert.match(svgAsImage('<svg viewBox="0 0 1 1"></svg>'), /^<svg xmlns="http:\/\/www\.w3\.org\/2000\/svg"/);
+  const namespaced = '<svg xmlns="http://www.w3.org/2000/svg"></svg>';
+  assert.equal(svgAsImage(namespaced), namespaced);
+});
+
 test('效果：结构完整且 id 唯一，默认磨砂玻璃', async () => {
   const { EFFECTS, effectById } = await import('../src/renderer/core/themes.js');
   assert.ok(Array.isArray(EFFECTS) && EFFECTS.length >= 3, '至少应有 3 种外观效果');

@@ -107,6 +107,18 @@ test('Voicebox API 对象错误会保留模型下载提示', async () => {
   }
 });
 
+test('Voicebox 500 空 detail 会触发 Whisper 模型下载并重试', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-toolbox-voicebox-500-'));
+  const file = path.join(dir, 'clip.mp4'); fs.writeFileSync(file, 'video');
+  const originalFetch = global.fetch; let transcribes = 0; let downloads = 0;
+  global.fetch = async (url, options = {}) => {
+    if (url.endsWith('/transcribe')) { transcribes += 1; if (transcribes === 1) return jsonResponse({ detail: '' }, 500); return jsonResponse({ text: '重试成功', duration: 1 }, 200); }
+    if (url.endsWith('/models/download')) { downloads += 1; return jsonResponse({ ok: true }, 200); }
+    throw new Error(`unexpected url: ${url}`);
+  };
+  try { const result = await voiceboxApi.transcribeFile(file, { retryDelay: 1, retryTimeout: 1000 }); assert.equal(result.text, '重试成功'); assert.equal(downloads, 1); } finally { global.fetch = originalFetch; fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
 test('Voicebox 转写会在 Whisper 模型下载完成后自动重试', async () => {
   const originalFetch = global.fetch;
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'agent-toolbox-voicebox-retry-'));

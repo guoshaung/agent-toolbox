@@ -26,7 +26,8 @@ async function request(pathname, options = {}) {
   if (!response.ok) {
     const rawDetail = typeof body === 'string' ? body : body?.detail || body?.error || body;
     const detail = typeof rawDetail === 'string' ? rawDetail : rawDetail?.message || JSON.stringify(rawDetail);
-    throw apiError(`Voicebox API ${response.status}：${String(detail).slice(0, 400)}`, 'http');
+    const readable = String(detail || '').trim() || '服务端未返回原因；通常是 Whisper 模型尚未下载或尚未加载。';
+    throw apiError(`Voicebox API ${response.status}：${readable.slice(0, 400)}`, 'http');
   }
   return body;
 }
@@ -58,12 +59,21 @@ async function transcribeFile(filePath, { language = 'auto', model = 'turbo', re
   };
   const started = Date.now();
   let result;
+  let downloadRequested = false;
   while (!result) {
     try {
       result = await request('/transcribe', { method: 'POST', body: buildForm() });
     } catch (error) {
       const downloading = error.code === 'http' && /model .*(?:download|downloading)|being downloaded/i.test(error.message);
-      if (!downloading || Date.now() - started >= retryTimeout) throw error;
+      if (error.code === 'http' && /API 500/.test(error.message) && !downloadRequested) {
+        // Voicebox 0.5 在模型未就绪时会返回空 detail；主动触发对应 Whisper 下载，
+        // 后续重试即可得到正常转写，而不是把用户误导成“视频格式错误”。
+        try {
+          await request('/models/download', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ model_name: `whisper-${String(model).toLowerCase()}` }) });
+          downloadRequested = true;
+        } catch { /* 服务端可能已在下载，继续按原错误重试 */ }
+      }
+      if (!(downloading || downloadRequested) || Date.now() - started >= retryTimeout) throw error;
       await new Promise((resolve) => setTimeout(resolve, Math.max(0, Number(retryDelay) || 0)));
     }
   }

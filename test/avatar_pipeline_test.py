@@ -2,6 +2,7 @@
 import importlib.util
 import json
 import struct
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -40,6 +41,7 @@ class ImagePreparationTest(unittest.TestCase):
                 image.save(job / f'input-{view}.png')
             prepare(job)
             images = [Image.open(job/f'{v}.png') for v in ['front','left','back']]
+            self.assertTrue(all((job/f'texture-source-{v}.png').is_file() for v in ['front','left','back']))
             boxes = [i.getbbox() for i in images]
             self.assertEqual({i.size for i in images}, {(1024, 1024)})
             self.assertLess(max(b[3]-b[1] for b in boxes)-min(b[3]-b[1] for b in boxes), 3)
@@ -47,6 +49,97 @@ class ImagePreparationTest(unittest.TestCase):
 
 
 class ExportTest(unittest.TestCase):
+    def test_reviewed_face_regions_export_vrm_expression_morphs(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            job=Path(tmp)
+            mesh=trimesh.creation.icosphere(subdivisions=2)
+            mesh.vertices[:,1]+=1.35
+            np.savez(job/'mesh.npz',vertices=mesh.vertices,faces=mesh.faces,
+                     colors=np.tile([240,220,210,255],(len(mesh.vertices),1)))
+            (job/'face-expressions.json').write_text(json.dumps({'regions':{
+                'leftEye':{'center':[.08,1.45,.1],'radius':[.12,.12,.12]},
+                'rightEye':{'center':[-.08,1.45,.1],'radius':[.12,.12,.12]},
+                'mouth':{'center':[0,1.35,.1],'radius':[.12,.12,.12]}}}))
+            result=export(job)
+            self.assertEqual(result['expressions'],['blinkLeft','blinkRight','happy','aa'])
+            self.assertGreater(result['expressionFeatureVertices'],0)
+            raw=(job/'avatar.vrm').read_bytes();size=struct.unpack_from('<I',raw,12)[0]
+            doc=json.loads(raw[20:20+size]);mesh_doc=doc['meshes'][0]
+            self.assertEqual(len(mesh_doc['primitives'][0]['targets']),4)
+            self.assertIn('Expression eyelids and mouth',[m['name'] for m in doc['materials']])
+            self.assertEqual(set(doc['extensions']['VRMC_vrm']['expressions']['preset']),
+                             {'blinkLeft','blinkRight','happy','aa'})
+
+    def test_reviewed_nose_limit_reduces_only_front_spike(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            job=Path(tmp)
+            vertices=np.array([[0,1.40,.22],[.16,1.40,.22],[0,1.1,.22]],dtype=float)
+            np.savez(job/'mesh.npz',vertices=vertices,faces=np.array([[0,1,2]]),
+                     colors=np.tile([240,220,210,255],(3,1)))
+            (job/'face-shape.json').write_text(json.dumps({'nose':{
+                'center':[0,1.40,.13],'radius':[.08,.08,.15],'maxZ':.135}}))
+            result=export(job)
+            self.assertEqual(result['noseShapeVerticesAdjusted'],1)
+
+    def test_separated_torso_cloth_exports_custom_bounce_morph(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            job=Path(tmp)
+            mesh=trimesh.creation.icosphere(subdivisions=2)
+            mesh.apply_scale([.20,.25,.20])
+            mesh.vertices[:,1]+=1.1
+            np.savez(job/'mesh.npz',vertices=mesh.vertices,faces=mesh.faces,
+                     colors=np.tile([230,220,210,255],(len(mesh.vertices),1)))
+            (job/'torso-cloth.json').write_text(json.dumps({'outer':{
+                'center':[0,1.1,0],'radius':[.35,.35,.35]},'bounce':{
+                'center':[0,1.15,.1],'radius':[.25,.25,.25],'amplitude':.01},'restOffset':.0025}))
+            result=export(job)
+            self.assertGreater(result['clothPhysics']['copiedFrontFaces'],12)
+            raw=(job/'avatar.vrm').read_bytes();size=struct.unpack_from('<I',raw,12)[0]
+            doc=json.loads(raw[20:20+size])
+            self.assertIn('chestBounce',doc['extensions']['VRMC_vrm']['expressions']['custom'])
+            self.assertEqual(len(doc['meshes'][0]['primitives'][0]['targets']),1)
+
+    def test_missing_side_is_mirrored_and_negative_x_faces_use_it(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            job = Path(tmp)
+            mesh = trimesh.creation.icosphere(subdivisions=1)
+            np.savez(job/'hunyuan-raw.npz', vertices=mesh.vertices, faces=mesh.faces)
+            for view in ['front','left','back']:
+                image = Image.new('RGBA', (32,32), 'red')
+                ImageDraw.Draw(image).rectangle((16,0,31,31), fill='blue')
+                image.save(job/(view+'.png'))
+            def prepare_mesh():
+                subprocess.run([sys.executable,str(STUDIO/'prepare_multiview_mesh.py'),
+                                '--job',str(job)],check=True,capture_output=True)
+            prepare_mesh()
+            right = np.asarray(Image.open(job/'right-texture.png'))
+            left = np.asarray(Image.open(job/'left-texture.png'))
+            np.testing.assert_array_equal(right,left[:,::-1])
+            report=export(job)
+            self.assertIn('mirrored',report['textureProvenance']['right'])
+            raw=(job/'avatar.vrm').read_bytes();size=struct.unpack_from('<I',raw,12)[0]
+            doc=json.loads(raw[20:20+size]);buffer=raw[28+size:]
+            def read(accessor,dtype,width):
+                a=doc['accessors'][accessor];v=doc['bufferViews'][a['bufferView']]
+                return np.frombuffer(buffer,dtype=dtype,count=a['count']*width,
+                                     offset=v.get('byteOffset',0)).reshape(-1,width)
+            primitives=doc['meshes'][0]['primitives']
+            self.assertEqual(len(primitives),4)
+            normals=read(primitives[0]['attributes']['NORMAL'],'<f4',3)
+            negative_x_count=0
+            for primitive in primitives:
+                faces=read(primitive['indices'],'<u4',1).reshape(-1,3)
+                n=normals[faces].mean(1)
+                negative=(n[:,0]<0)&(-n[:,0]>np.abs(n[:,2]))&(normals[faces][:,:,1].mean(1)<.25)
+                if negative.any():
+                    negative_x_count+=int(negative.sum())
+                    self.assertIn('right-texture.png',doc['materials'][primitive['material']]['name'])
+            self.assertGreater(negative_x_count,0)
+            Image.new('RGBA',(32,32),'green').save(job/'right.png')
+            prepare_mesh()
+            self.assertEqual(json.loads((job/'texture-provenance.json').read_text())['right'],'supplied reference')
+            self.assertEqual(Image.open(job/'right-texture.png').getpixel((0,0)),(0,128,0))
+
     def test_multiview_vrm_keeps_views_materials_and_character_metadata(self):
         with tempfile.TemporaryDirectory() as tmp:
             job = Path(tmp)
