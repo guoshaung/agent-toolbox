@@ -1,0 +1,23 @@
+.feature-l012 { padding: 20px; max-width: 1250px; margin: auto; line-height: 1.6; }
+.feature-l012 h2 { margin: 0; }
+.feature-l012 .l012-editor, .feature-l012 .l012-output { margin-top: 20px; }
+.feature-l012 .l012-field { display: flex; flex-direction: column; gap: 5px; margin: 10px 0; }
+.feature-l012 textarea { width: 100%; box-sizing: border-box; font-family: monospace; resize: vertical; }
+.feature-l012 .l012-actions { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin: 12px 0; }
+.feature-l012 .l012-parameters { display: grid; grid-template-columns: repeat(3, minmax(100px, 1fr)); gap: 16px; }
+.feature-l012 .l012-toggle { display: flex; align-items: center; gap: 8px; }
+.feature-l012 .l012-muted { opacity: .75; font-size: 13px; }
+.feature-l012 .l012-summary { font-size: 18px; font-weight: 600; }
+.feature-l012 .l012-notice, .feature-l012 .l012-storage { white-space: pre-wrap; }
+.feature-l012 .is-error, .feature-l012 .l012-storage { color: var(--danger, #d95764); }
+.feature-l012 .l012-access { border-left: 4px solid var(--accent, #80baff); padding: 12px 16px; margin: 18px 0; background: rgba(92, 153, 230, .08); }
+.feature-l012 .l012-access p { margin: 6px 0; }
+.feature-l012 .is-hit { border-color: #5ac696; }
+.feature-l012 .is-miss { border-color: #e39d36; }
+.feature-l012 .l012-table-scroll { overflow: auto; max-height: 410px; margin: 20px 0; }
+.feature-l012 table { min-width: 100%; border-collapse: collapse; font-family: monospace; }
+.feature-l012 caption { text-align: left; font-family: sans-serif; margin: 5px 0; }
+.feature-l012 th, .feature-l012 td { white-space: nowrap; text-align: center; border: 1px solid var(--border, #445268); padding: 7px 10px; }
+.feature-l012 td button { background: none; color: inherit; border: 0; cursor: pointer; text-decoration: underline; }
+.feature-l012 .is-current { outline: 1px solid var(--accent, #80baff); outline-offset: -1px; background: rgba(92, 153, 230, .13); }
+@media (max-width: 650px) { .feature-l012 { padding: 12px; } .feature-l012 .l012-parameters { grid-template-columns: 1fr; gap: 0; } }

@@ -1,6 +1,6 @@
 {
   "name": "agent-toolbox",
-  "version": "0.44.0-personal.1",
+  "version": "0.44.0-fixes.1",
   "description": "个人 Agent 工具箱：科研文献 / 代码阅读 / 文档 / 打字纠错 / 专注 / DeepSeek 快问",
   "private": true,
   "main": "channel-launch.cjs",
@@ -19,7 +19,7 @@
     "dist:win": "electron-builder --win nsis --x64",
     "icon": "electron scripts/build-icon.js",
     "test": "node --test \"test/*.test.js\"",
-    "check": "node --check src/main/main.js && node --check src/main/preload.js && node --test",
+    "check": "node scripts/check-compatible.cjs",
     "logo": "node scripts/build-logo.js",
     "release": "electron-builder --mac dmg zip --publish always"
   },
@@ -43,8 +43,8 @@
     "zod": "^4.5.4"
   },
   "build": {
-    "appId": "cn.macpe.agenttoolbox.personal",
-    "productName": "Agent Toolbox personal",
+    "appId": "cn.macpe.agenttoolbox.fixes",
+    "productName": "Agent Toolbox fixes",
     "asar": true,
     "asarUnpack": [
       "node_modules/@mediapipe/tasks-vision/wasm/**",

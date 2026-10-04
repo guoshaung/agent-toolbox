@@ -49,18 +49,18 @@ const SCENES = [
     id: 'live',
     title: '真实游戏 🎮',
     icon: 'target',
-    badge: '实战',
-    blurb: '截游戏窗口，向游戏发 A / D',
-    detail: '战斗交给 OK-WW，这里只管朝向',
+    badge: '只读检测',
+    blurb: '截游戏窗口，比较目标特征，不发送按键',
+    detail: '识别结果需用真实标注验证；A/D 不能直接当成相机转向',
     source: 'screen',
-    backend: 'sendinput',
+    backend: 'null',
     needsWindow: true,
   },
 ];
 
 const DECISIONS = {
-  LEFT: { text: '往左转', glyph: '←', tone: 'left', note: '目标在中心左边，敲一下 A' },
-  RIGHT: { text: '往右转', glyph: '→', tone: 'right', note: '目标在中心右边，敲一下 D' },
+  LEFT: { text: '目标偏左', glyph: '←', tone: 'left', note: '目标在中心左边，敲一下 A' },
+  RIGHT: { text: '目标偏右', glyph: '→', tone: 'right', note: '目标在中心右边，敲一下 D' },
   CENTERED: { text: '已居中', glyph: '✓', tone: 'centered', note: '稳稳的，先松开 A/D' },
   LOST: { text: '目标不见啦', glyph: '?', tone: 'lost', note: '这一帧没找到目标，先不动' },
 };
@@ -80,7 +80,7 @@ export default {
   id: 'gameagent',
   title: '游戏',
   icon: 'target',
-  hint: '视觉闭环：截图 → 找目标 → 判左右 → 敲 A/D',
+  hint: '截图检测与回放评估；真实游戏只读观察',
 
   create(root, ctx) {
     const { config } = ctx;
@@ -248,6 +248,10 @@ export default {
       ...PRESETS.map((p) => h('option', { value: p.id }, p.label)),
     );
 
+    const detectorMode = h('select',{class:'field'},h('option',{value:'feature'},'目标特征匹配（推荐真实画面）'),h('option',{value:'template'},'固定图标模板'),h('option',{value:'color'},'颜色团块（演练）'));
+    const targetTemplate = h('input',{class:'field',placeholder:'目标截图的完整路径'});
+    detectorMode.value = cfg('detectorMode','feature');
+    targetTemplate.value = cfg('targetTemplate','');
     const thresholdInput = h('input', {
       class: 'field', type: 'number', min: '10', max: '400', step: '5',
       value: String(cfg('threshold', 50)),
@@ -333,7 +337,7 @@ export default {
       if (!silent && status === 'idle') {
         launchNote.textContent = scene.source === 'sim'
           ? '不碰屏幕、不发键，纯看闭环能不能收敛。'
-          : '会真的往这个窗口敲 A / D，按 ESC 或点圆钮随时收手。';
+          : '真实游戏只做截图观察；测试窗口可验证 A/D 闭环。';
       }
       syncStateCopy();
     }
@@ -350,11 +354,11 @@ export default {
       if (running) {
         launchNote.textContent = scene.source === 'sim'
           ? `仿真演练跑着（第 ${frameCount} 帧），F8 暂停、ESC 退出。`
-          : `正在截「${windowInput.value.trim() || '整个屏幕'}」，只有它在前台时才发键。`;
+          : scene.id === 'live' ? `只读观察「${windowInput.value.trim() || '游戏'}」，不会发送 A/D；仅在游戏前台时采样。` : `正在截「${windowInput.value.trim() || '测试窗口'}」，只有测试窗口在前台时才发键。`;
       } else if (!busy && status === 'idle') {
         launchNote.textContent = scene.source === 'sim'
           ? '不碰屏幕、不发键，纯看闭环能不能收敛。'
-          : '会真的往这个窗口敲 A / D，按 ESC 或点圆钮随时收手。';
+          : '真实游戏只做截图观察；测试窗口可验证 A/D 闭环。';
       }
     }
 
@@ -365,6 +369,8 @@ export default {
       const payload = {
         source: sourceSelect.value,
         preset: presetSelect.value,
+        mode: scene.id === 'live' ? detectorMode.value : 'color',
+        template: targetTemplate.value.trim(),
         backend: backendSelect.value,
         threshold: Number(thresholdInput.value) || 50,
         fps: Number(fpsInput.value) || 8,
@@ -390,6 +396,8 @@ export default {
       persist('source', sourceSelect.value);
       persist('backend', backendSelect.value);
       persist('preset', presetSelect.value);
+      persist('detectorMode',detectorMode.value);
+      persist('targetTemplate',targetTemplate.value.trim());
       persist('threshold', Number(thresholdInput.value) || 50);
       persist('fps', Number(fpsInput.value) || 8);
       persist('maxPulseMs', Number(pulseInput.value) || 120);
@@ -408,6 +416,7 @@ export default {
     async function startAgent() {
       if (status !== 'idle') return;
       const payload = currentConfig();
+      if (sceneOf().id === 'live' && payload.mode !== 'color' && !payload.template) { toast('请填写目标截图路径，或者先用颜色演练观察误识别。','bad'); return; }
       const scene = sceneOf();
 
       if (scene.needsWindow && !payload.windowTitle) {
@@ -751,7 +760,7 @@ export default {
       h('div', { class: 'gameagent__fields' },
         field('画面来源', sourceSelect),
         field('输入方式', backendSelect),
-        field('目标颜色', presetSelect),
+        field('检测方法',detectorMode), field('目标截图',targetTemplate), field('目标颜色', presetSelect),
         field('居中阈值', thresholdInput, '误差小于它就认为已居中'),
         field('帧率', fpsInput, '5~10 就够了'),
         field('单次按键上限', pulseInput, '毫秒；短脉冲，绝不长按'),
@@ -795,7 +804,9 @@ export default {
 
     const unsubscribe = window.toolbox.gameAgent.onEvent((payload) => {
       if (!payload) return;
-      if (payload.channel === 'frame') applyFrame(payload);
+      if (payload.channel === 'frame' && payload.type === 'frame') applyFrame(payload);
+      else if (payload.channel === 'frame' && payload.type === 'event') appendLog(payload.level || 'info',payload.message || '');
+      else if (payload.channel === 'frame' && payload.type === 'summary') appendLog('info',`验收状态：${payload.validation_status || '未验证'}；新鲜观测 ${payload.observed_frames || 0} 帧；居中不代表游戏任务成功。`);
       else if (payload.channel === 'status') applyStatus(payload.status);
       else if (payload.channel === 'log') appendLog(payload.level || 'info', payload.message || '');
       else if (payload.channel === 'install') {

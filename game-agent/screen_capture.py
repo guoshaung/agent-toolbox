@@ -239,6 +239,12 @@ def find_window_rect(title_substring: str) -> Optional[Rect]:
             return True
         if user32.IsIconic(hwnd):  # 最小化了，截出来是空的
             return True
+        # MSS reads desktop pixels. A background window rectangle is not its image.
+        if user32.GetForegroundWindow() != hwnd:
+            return True
+        if any(name in needle for name in ("鸣潮", "wuther")):
+            if "launcher" in _window_process_name(user32, hwnd).lower():
+                return True
         rect = window_rect(hwnd, user32)
         if rect is not None and rect[2] > 16 and rect[3] > 16:
             found.append(rect)
@@ -247,8 +253,8 @@ def find_window_rect(title_substring: str) -> Optional[Rect]:
     _enumerate_windows(handler)
     if not found:
         return None
-    # 多个同标题窗口时取面积最大的那个
-    return max(found, key=lambda r: r[2] * r[3])
+    # Only an unambiguous foreground target can provide an observation.
+    return found[0] if len(found) == 1 else None
 
 
 def visible_windows() -> list[tuple[object, str, Rect]]:
@@ -436,7 +442,7 @@ class ScreenCapture:
     def resolve_base_region(self) -> Rect:
         """决定「逻辑画面」是哪一块。优先级：窗口 > 显式 region > 整屏。
 
-        窗口找不到时沿用上一帧的位置（窗口切后台会枚举不到），实在没有才报错。
+        窗口不可见或不在前台时拒绝截图；旧矩形不能代表旧窗口仍存在。
         """
         cfg = self.config
 
@@ -447,11 +453,9 @@ class ScreenCapture:
                 self._last_base = rect
                 return rect
             self.window_miss_count += 1
-            if self._last_base is not None:
-                return self._last_base
             raise CaptureError(
-                f"找不到标题包含 {cfg.window_title!r} 的可见窗口。"
-                "确认窗口没被最小化，标题拼写是否正确。"
+                f"没有标题包含 {cfg.window_title!r} 的明确前台目标窗口。"
+                "请切到游戏本体，不能用启动器、后台窗口或旧坐标充当游戏截图。"
             )
 
         if cfg.region:
