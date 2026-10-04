@@ -664,6 +664,9 @@
 .settings__api { display: flex; flex-direction: column; gap: 10px; margin: 14px 0; }
 .settings__field { display: flex; align-items: center; gap: 12px; }
 .settings__field > span { width: 76px; flex: 0 0 76px; color: var(--text-faint); font-size: 12.5px; }
+.settings__field > .settings__secret-field { width: auto; flex: 1 1 auto; color: inherit; font-size: inherit; display: flex; gap: 7px; }
+.settings__secret-field .field { min-width: 0; flex: 1 1 auto; }
+.settings__secret-toggle { flex: 0 0 auto; min-width: 52px; }
 .settings__warn { color: var(--warn); font-size: 12px; line-height: 1.75; }
 .settings__row--first { border-top: 0; }
 .settings__inline-actions { display: flex; align-items: center; justify-content: flex-end; gap: 7px; }
@@ -4835,3 +4838,34 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .runner__stage { flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center; padding: 4px 14px; }
 .runner__canvas { display: block; width: 100%; height: auto; max-height: calc(100vh - 230px); aspect-ratio: 900 / 360; border: 1px solid #33436a; border-radius: 14px; background: #0d1220; box-shadow: 0 12px 34px rgba(0,0,0,.34); touch-action: none; cursor: pointer; }
 .runner__hint { padding: 4px 14px 12px; text-align: center; color: #7f93bd; font-size: 12px; }
+
+/* 开合动效风格选择（设置 → 外观） */
+.fxpick { display: flex; flex-direction: column; gap: 8px; margin-top: 4px; }
+.fxpick__opt { text-align: left; padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--bg-raised); color: var(--text); cursor: pointer; transition: border-color .15s, background .15s, transform .1s; }
+.fxpick__opt:hover { border-color: var(--accent); transform: translateY(-1px); }
+.fxpick__opt.is-active { border-color: var(--accent); background: var(--accent-soft); box-shadow: 0 0 0 1px var(--accent) inset; }
+.fxpick__name { font-weight: 700; margin-bottom: 2px; }
+.fxpick__opt.is-active .fxpick__name { color: var(--accent); }
+
+/* ---------- 果蝇观察箱 ---------- */
+.flylab__body { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; padding: 14px 18px; }
+.flylab__spacer { flex: 1; }
+.flylab__controls { display: flex; align-items: flex-end; gap: 12px; flex-wrap: wrap; }
+.flylab__ctl { display: flex; flex-direction: column; gap: 4px; }
+.flylab__ctl > span { font-size: 11px; color: var(--text-faint); }
+.flylab__pbar { height: 6px; border-radius: 3px; background: var(--bg-sunken); overflow: hidden; }
+.flylab__pbar-fill { height: 100%; width: 0; background: var(--accent); transition: width .2s; }
+.flylab__status { font-size: 13px; min-height: 18px; }
+.flylab__log { font-size: 11px; color: var(--text-faint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.flylab__stage { position: relative; min-height: 260px; display: flex; align-items: center; justify-content: center; border: 1px solid var(--line-soft); border-radius: 12px; background: var(--bg-sunken); overflow: hidden; }
+.flylab__placeholder { max-width: 480px; text-align: center; padding: 24px; line-height: 1.7; }
+.flylab__video { width: 100%; max-height: 60vh; display: block; background: #000; border-radius: 12px; }
+.flylab__gallery { display: flex; flex-direction: column; gap: 6px; }
+.flylab__gallery-head { font-size: 11px; }
+.flylab__gitem { display: flex; align-items: center; gap: 6px; }
+.flylab__note { font-size: 11px; line-height: 1.6; }
+/* 酷跑：AI 接管按钮 + jev 决策日志 */
+.runner__hud-mid { display: flex; gap: 6px; }
+.runner__hud-mid .btn.is-active { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); box-shadow: 0 0 0 1px var(--accent) inset; }
+.runner__agentlog { margin: 2px 14px 0; padding: 6px 10px; border-radius: 8px; font-size: 12px; line-height: 1.45; color: #ffd166; background: rgba(255,209,102,.08); border: 1px solid rgba(255,209,102,.25); }
+.runner__agentlog[hidden] { display: none; }

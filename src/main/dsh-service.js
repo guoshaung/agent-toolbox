@@ -142,7 +142,7 @@ class DshService {
       const mcpServer = path.join(__dirname, 'toolbox-mcp-server.js');
       const overlay = path.join(userData, 'dsh-toolbox.patch.yml');
       const yamlPath = (value) => JSON.stringify(String(value).replace(/\\/g, '/'));
-      fs.writeFileSync(overlay, [
+      const overlayLines = [
         '- id: mcp-agent-toolbox',
         "  name: '@deepseek-ai/dsh-mcp-client'",
         '  config:',
@@ -157,7 +157,26 @@ class DshService {
         '    toolCallTimeoutMs: 180000',
         '    failOnStartupError: true',
         '',
-      ].join('\n'), 'utf8');
+      ];
+      // Blender MCP（mcp-for-blender，MIT 开源免费）：装了 uvx 就挂上。
+      // failOnStartupError:false —— Blender 没开/没装也不拖垮 DSH 和上面的 toolbox MCP。
+      // 真要用:装 Blender + `uvx mcp-for-blender install-addon` 启用插件，让 Blender 开着。
+      const uvx = resolveCommand('uvx', userData);
+      if (uvx) {
+        overlayLines.push(
+          '- id: mcp-blender',
+          "  name: '@deepseek-ai/dsh-mcp-client'",
+          '  config:',
+          '    serverName: blender',
+          '    transport: stdio',
+          `    command: ${yamlPath(uvx)}`,
+          "    args: ['mcp-for-blender']",
+          '    toolCallTimeoutMs: 180000',
+          '    failOnStartupError: false',
+          '',
+        );
+      }
+      fs.writeFileSync(overlay, overlayLines.join('\n'), 'utf8');
       this.emit({ status: 'starting', url: this.url, managed: true, error: '' });
       // 新版 DSH 的 URL 含一次性认证 token。若 3080 已被另一个实例占用，
       // 让 DSH 自选空闲端口，避免要求用户手动寻找并关闭旧进程。

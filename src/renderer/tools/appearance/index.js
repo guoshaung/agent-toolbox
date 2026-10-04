@@ -100,11 +100,24 @@ export default {
         ),
         (() => {
           const card = h('section', { class: 'card', id: 'appearance-fx' }, h('h3', { class: 'card__title' }, '开合动效'),
-            h('p', { class: 'faint settings__hint' }, '关闭工具箱窗口时，整个界面被吸进中心的黑洞（旋转坍缩）；重新打开时从中心展开。只影响主窗口的开与关，不影响日常使用。'));
-          const input = h('input', { type: 'checkbox', class: 'switch__input' });
-          window.toolbox.app.windowFx?.().then((on) => { input.checked = on !== false; }).catch(() => { input.checked = true; });
-          input.addEventListener('change', () => { window.toolbox.app.setWindowFx?.(input.checked); toast(input.checked ? '开合动效已开，关一次窗口试试' : '开合动效已关', 'good'); });
-          card.append(h('div', { class: 'settings__row' }, h('div', {}, h('div', {}, '黑洞坍缩'), h('div', { class: 'faint settings__hint' }, '关窗坍缩、开窗展开')), h('label', { class: 'switch' }, input, h('span', { class: 'switch__track' }))));
+            h('p', { class: 'faint settings__hint' }, '打开 / 关闭主窗口时的整窗动效。只影响开与关，不影响日常使用。选好后关一次窗口就能看到。'));
+          const STYLES = [
+            { id: 'particle', name: '粒子汇聚 / 大爆炸', hint: '开：粒子从四周汇聚成型；关：中心大爆炸、粒子炫酷四射' },
+            { id: 'blackhole', name: '黑洞坍缩', hint: '开：从中心旋转展开；关：整窗吸进中心黑洞' },
+            { id: 'off', name: '关闭', hint: '不放动效，直接开关' },
+          ];
+          const row = h('div', { class: 'fxpick' });
+          const btns = {};
+          const paint = (cur) => { for (const s of STYLES) btns[s.id].classList.toggle('is-active', s.id === cur); };
+          for (const s of STYLES) {
+            const b = h('button', { class: 'fxpick__opt', onclick: () => {
+              window.toolbox.app.setWindowFxStyle?.(s.id); paint(s.id);
+              toast(s.id === 'off' ? '开合动效已关' : `已选「${s.name}」，关一次窗口试试`, 'good');
+            } }, h('div', { class: 'fxpick__name' }, s.name), h('div', { class: 'faint settings__hint' }, s.hint));
+            btns[s.id] = b; row.appendChild(b);
+          }
+          window.toolbox.app.windowFxStyle?.().then((cur) => paint(cur || 'particle')).catch(() => paint('particle'));
+          card.append(row);
           return card;
         })(),
 

@@ -1054,6 +1054,16 @@ body.is-expanding .blackhole__ring { animation: bh-ring-shrink 1.05s ease-in for
 @keyframes bh-ring-shrink { 0% { transform: scale(6) rotate(460deg); opacity: 0; } 45% { opacity: 1; } 100% { transform: scale(0) rotate(0); opacity: 0; } }
 @media (prefers-reduced-motion: reduce) { body.is-collapsing #app, body.is-expanding #app, .blackhole__void, .blackhole__ring { animation-duration: .01ms !important; } }
 
+/* ---------- 开合动效：粒子汇聚（开）/ 大爆炸（关） ---------- */
+.pfx { position: fixed; inset: 0; z-index: 9999; pointer-events: none; }
+/* 开：应用从中心一小团放大淡入，正好接住汇聚过来的粒子 */
+body.is-pfx-expanding #app { animation: pfx-in 1s cubic-bezier(.16,.84,.3,1) forwards; transform-origin: 50% 50%; }
+/* 关：应用先急速缩进中心，随后粒子四射（爆炸在 canvas 上继续） */
+body.is-pfx-collapsing #app { animation: pfx-out .5s cubic-bezier(.6,.02,.9,.3) forwards; transform-origin: 50% 50%; }
+@keyframes pfx-in { 0% { transform: scale(.35); opacity: 0; filter: blur(6px); } 55% { opacity: .5; filter: blur(2px); } 100% { transform: scale(1); opacity: 1; filter: blur(0); } }
+@keyframes pfx-out { 0% { transform: scale(1); opacity: 1; filter: blur(0); } 45% { transform: scale(.9); opacity: .7; } 100% { transform: scale(.08); opacity: 0; filter: blur(4px); } }
+@media (prefers-reduced-motion: reduce) { body.is-pfx-expanding #app, body.is-pfx-collapsing #app { animation-duration: .01ms !important; } }
+
 /* 整条标题栏可拖动移动窗口；里面的按钮不跟随拖动 */
 .atelier-banner { -webkit-app-region: drag; }
 .atelier-banner button, .atelier-banner__winctl, .atelier-banner__dsh, .atelier-banner__k { -webkit-app-region: no-drag; }

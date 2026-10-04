@@ -88,8 +88,13 @@ export default {
     let refreshLibrary = () => {};
 
     async function saveSkill({ picker, name, description, content }) {
-      if (!name.trim()) return toast('先填 Skill 名称', 'info');
-      if (!description.trim()) return toast('补一句这个 Skill 什么时候使用', 'info');
+      // 直接粘了整份 SKILL.md 到预览框、上面的名称/描述没填：从 frontmatter 里补出来
+      const meta = metaFromMarkdown(content);
+      if (!name.trim() && meta.name) name = meta.name;
+      if (!description.trim() && meta.description) description = meta.description;
+      if (!name.trim()) return toast('先填 Skill 名称（或在 SKILL.md 顶部写 name:）', 'info');
+      if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(name.trim())) return toast(`Skill 名称「${name.trim()}」不合法：只能用小写字母、数字、连字符，比如 infinite-learning`, 'bad', 6000);
+      if (!description.trim()) return toast('补一句这个 Skill 什么时候使用（或在 SKILL.md 顶部写 description:）', 'info');
       const directory = picker.getDirectory();
       if (!directory) return toast('先选择 Skill 输出目录', 'info');
       let result = await tool.write({ directory, name, description, content });

@@ -118,11 +118,95 @@ export default {
         filterBar,
         countLabel,
         h('span', { class: 'vault__spacer' }),
-        h('button', { class: 'btn btn--sm btn--primary', onclick: () => startEdit(null) }, '＋ 新增'),
-        h('button', { class: 'btn btn--sm btn--ghost', title: '密文文件在哪（备份用）', onclick: () => api.openFolder() }, '文件位置'),
+        barActions,
       ),
-      h('div', { class: 'vault__body' }, list, side),
+      bodyWrap,
+      gate,
     );
+
+    // ---------- 保险箱门：没设密码常开，设了就要输 6 位 ----------
+    function setLocked(locked) {
+      bodyWrap.hidden = locked;
+      gate.hidden = !locked;
+      searchInput.disabled = locked;
+      barActions.querySelectorAll('.btn').forEach((b) => { if (b !== lockBtn) b.disabled = locked; });
+      lockBtn.textContent = locked ? '🔒' : (pin.hasPin ? '🔓' : '🔑');
+      lockBtn.title = locked ? '已锁定' : (pin.hasPin ? '点此锁上' : '给保险箱设个密码');
+    }
+
+    async function syncGate() {
+      pin = await api.pinStatus();
+      const locked = pin.hasPin && !pin.unlocked;
+      setLocked(locked);
+      if (locked) renderGate();
+      else if (!editing) refresh();
+    }
+
+    function pinPad(onSubmit, { title, hint, confirm } = {}) {
+      let digits = '';
+      let stage = 1;            // confirm 模式：1 输入、2 再输一遍
+      let firstPass = '';
+      const dots = h('div', { class: 'vault__pin-dots' });
+      const msg = h('div', { class: 'faint vault__pin-msg' }, hint || '');
+      function paint() { dots.replaceChildren(...Array.from({ length: 6 }, (_, i) => h('span', { class: `vault__pin-dot ${i < digits.length ? 'is-on' : ''}` }))); }
+      async function commit() {
+        if (confirm && stage === 1) { firstPass = digits; digits = ''; stage = 2; msg.textContent = '再输一遍确认'; paint(); return; }
+        if (confirm && stage === 2 && digits !== firstPass) { digits = ''; stage = 1; firstPass = ''; msg.textContent = '两次不一样，重来'; paint(); return; }
+        const val = confirm ? firstPass : digits;
+        const r = await onSubmit(val);
+        if (r && r.error) { digits = ''; stage = 1; firstPass = ''; msg.textContent = r.error; paint(); }
+      }
+      function push(d) { if (digits.length < 6) { digits += d; paint(); if (digits.length === 6) commit(); } }
+      function back() { digits = digits.slice(0, -1); paint(); }
+      const keys = h('div', { class: 'vault__pin-keys' },
+        ...['1', '2', '3', '4', '5', '6', '7', '8', '9'].map((d) => h('button', { class: 'btn vault__pin-key', onclick: () => push(d) }, d)),
+        h('span', {}),
+        h('button', { class: 'btn vault__pin-key', onclick: () => push('0') }, '0'),
+        h('button', { class: 'btn vault__pin-key vault__pin-back', onclick: back }, '⌫'),
+      );
+      paint();
+      const box = h('div', { class: 'vault__pin' },
+        h('div', { class: 'vault__pin-title' }, title || '输入密码'),
+        dots, msg, keys,
+      );
+      box.tabIndex = 0;
+      box.addEventListener('keydown', (e) => { if (/^\d$/.test(e.key)) push(e.key); else if (e.key === 'Backspace') back(); });
+      setTimeout(() => box.focus(), 30);
+      return box;
+    }
+
+    function renderGate() {
+      if (pin.cooldownMs > 0) {
+        gate.replaceChildren(h('div', { class: 'vault__pin' }, h('div', { class: 'vault__pin-title' }, '暂时锁住'), h('div', { class: 'faint' }, `连错太多次，${Math.ceil(pin.cooldownMs / 1000)} 秒后再试`)));
+        setTimeout(syncGate, Math.min(pin.cooldownMs + 200, 5000));
+        return;
+      }
+      gate.replaceChildren(pinPad(async (val) => {
+        const r = await api.unlock(val);
+        if (r.ok) { pin = r; setLocked(false); refresh(); return null; }
+        if (r.code === 'cooldown') { pin = { ...pin, cooldownMs: r.cooldownMs }; renderGate(); return null; }
+        return { error: r.error || '密码不对' };
+      }, { title: '🔐 打开保险箱', hint: '输入 6 位数字密码' }));
+    }
+
+    async function onLockButton() {
+      pin = await api.pinStatus();
+      if (!pin.hasPin) {
+        // 还没设：设一个
+        setLocked(true);
+        gate.replaceChildren(pinPad(async (val) => {
+          const r = await api.setPin(val);
+          if (r.ok) { pin = r; toast('保险箱密码设好了', 'good'); setLocked(false); refresh(); return null; }
+          return { error: r.error };
+        }, { title: '给保险箱设个密码', hint: '设 6 位数字，下次进来要输', confirm: true }));
+        return;
+      }
+      // 已设：直接锁上
+      await api.lock();
+      pin.unlocked = false;
+      setLocked(true);
+      renderGate();
+    }
 
     async function refresh() {
       const r = await api.list();
@@ -174,6 +258,23 @@ export default {
             e.username ? copyBtn(e, 'username', '账号') : null,
             e.has?.password ? copyBtn(e, 'password', '密码') : null,
             e.has?.key ? copyBtn(e, 'key', 'key') : null,
+            e.has?.key ? h('button', {
+              class: 'btn btn--sm btn--ghost', title: '把这条 key 填进 AI 接口配置，蒸馏 / 补全 / 快速解释都用它',
+              onclick: async () => {
+                const r = await api.useAsAiKey(e.id, 'default');
+                if (!r.ok) return toast(r.error, 'bad');
+                if (r.needsConfig) toast(`key 填好了，但还差：${(r.missing || []).join('、')}，去「设置 → AI」补上`, 'info', 6000);
+                else toast('已设为 AI 接口 Key，现在蒸馏 / 补全能用了', 'good');
+              },
+            }, '设为 AI Key') : null,
+            e.has?.key ? h('button', {
+              class: 'btn btn--sm btn--ghost', title: '把这条 key 填进「生图模型」通道（image），表情融合 / 教学配图都用它',
+              onclick: async () => {
+                const r = await api.useAsAiKey(e.id, 'image');
+                if (!r.ok) return toast(r.error, 'bad');
+                toast('已设为生图 Key，表情融合 / 教学配图能用了。地址不是 OpenAI 的话去「语音」工具改 Base URL', 'good', 6000);
+              },
+            }, '设为生图 Key') : null,
             e.url ? h('button', { class: 'btn btn--sm btn--ghost', title: '打开网址', onclick: () => window.toolbox.shell.openExternal(/^https?:\/\//i.test(e.url) ? e.url : `https://${e.url}`) }, '↗') : null,
             (e.has?.password || e.has?.key || e.has?.notes) ? h('button', {
               class: 'btn btn--sm btn--ghost', title: rv ? '隐藏' : '显示密码 / key',
@@ -265,7 +366,7 @@ export default {
       refresh();
     }
 
-    refresh();
-    return { activate: () => { if (!editing) refresh(); }, deactivate: () => { revealed.clear(); } };
+    syncGate();
+    return { activate: () => { syncGate(); }, deactivate: () => { revealed.clear(); } };
   },
 };

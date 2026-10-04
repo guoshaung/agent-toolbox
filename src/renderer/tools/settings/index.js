@@ -98,6 +98,52 @@ export default {
     // ---- AI 接口：需求里说的「预留一个 ai 接口，后面导入」 ----
     const { ai } = ctx;
 
+    const KEY_MASK = '************';
+    function secretField(input, scope = 'default') {
+      let revealed = false;
+      const toggle = h('button', {
+        class: 'btn btn--sm btn--ghost settings__secret-toggle', type: 'button', hidden: true,
+        title: '显示 API Key', 'aria-label': '显示 API Key',
+        onclick: async () => {
+          if (revealed) {
+            revealed = false;
+            input.type = 'password';
+            input.value = KEY_MASK;
+            toggle.textContent = '显示';
+            toggle.title = toggle.ariaLabel = '显示 API Key';
+            return;
+          }
+          const result = await window.toolbox.ai.revealCredential(scope);
+          if (!result?.key) return toast('没有可显示的 API Key', 'bad');
+          revealed = true;
+          input.type = 'text';
+          input.value = result.key;
+          toggle.textContent = '隐藏';
+          toggle.title = toggle.ariaLabel = '隐藏 API Key';
+        },
+      }, '显示');
+
+      input.addEventListener('focus', () => {
+        if (input.dataset.saved === 'true' && !revealed) input.value = '';
+      });
+      input.addEventListener('blur', () => {
+        if (input.dataset.saved === 'true' && !revealed && !input.value) input.value = KEY_MASK;
+      });
+
+      return {
+        element: h('span', { class: 'settings__secret-field' }, input, toggle),
+        setSaved(hasKey) {
+          revealed = false;
+          input.dataset.saved = String(Boolean(hasKey));
+          input.type = 'password';
+          input.value = hasKey ? KEY_MASK : '';
+          toggle.hidden = !hasKey;
+          toggle.textContent = '显示';
+          toggle.title = toggle.ariaLabel = '显示 API Key';
+        },
+      };
+    }
+
     const providerSelect = h('select', { class: 'field field--sm' },
       ...Object.entries(PROVIDERS).map(([id, meta]) => h('option', { value: id }, meta.label)));
     providerSelect.value = ai.provider;
@@ -112,6 +158,7 @@ export default {
       class: 'field mono', type: 'password', placeholder: '输入新 Key（已保存内容不会回显）',
       autocomplete: 'new-password', value: '',
     });
+    const apiKeyField = secretField(apiKey);
     const model = h('input', {
       class: 'field mono', placeholder: 'deepseek-chat',
       value: config.get('ai.api.model', ''),
@@ -128,6 +175,7 @@ export default {
       config.cache.ai.api.hasKey = state.hasKey;
       credentialState.textContent = state.hasKey ? '已安全保存' : '未保存';
       credentialState.className = `tag ${state.hasKey ? 'tag--good' : 'tag--warn'}`;
+      apiKeyField.setSaved(state.hasKey);
     }
     const saveKeyBtn = h('button', {
       class: 'btn btn--sm',
@@ -191,14 +239,14 @@ export default {
 
     apiFields.append(
       h('label', { class: 'settings__field' }, h('span', {}, 'Base URL'), baseUrl),
-      h('label', { class: 'settings__field' }, h('span', {}, 'API Key'), apiKey),
+      h('label', { class: 'settings__field' }, h('span', {}, 'API Key'), apiKeyField.element),
       h('div', { class: 'settings__inline-actions' }, credentialState, saveKeyBtn, clearKeyBtn),
       h('label', { class: 'settings__field' }, h('span', {}, '模型名'), model, modelList, loadModelsBtn),
       h('div', { class: 'faint settings__hint' },
         'Base URL 填到 /v1 为止，不含 /chat/completions。常见：DeepSeek 官方 https://api.deepseek.com/v1（模型 deepseek-chat）；' +
         '本地 Ollama http://localhost:11434/v1。'),
       h('div', { class: 'faint settings__hint' },
-        'API Key 由系统安全存储加密，保存后不回显，也不会进入页面配置。查询模型失败不影响手工填写模型名。'),
+        'API Key 由系统安全存储加密；保存后显示为星号，点“显示”可临时查看。查询模型失败不影响手工填写模型名。'),
     );
 
     // ---- 学习出题专用模型：与全局 AI 分开，避免出题时切换整套工具 ----
@@ -211,6 +259,7 @@ export default {
       class: 'field mono', type: 'password', placeholder: '输入通义千问 / DashScope API Key（保存后不回显）',
       autocomplete: 'new-password', value: '',
     });
+    const quizKeyField = secretField(quizKey, 'quiz');
     const quizModel = h('input', {
       class: 'field mono', placeholder: 'qwen3.5-flash',
       value: config.get('study.quiz.model', 'qwen3.5-flash'),
@@ -226,6 +275,7 @@ export default {
       config.cache.study.quiz.hasKey = state.hasKey;
       quizCredentialState.textContent = state.hasKey ? '出题 Key 已保存' : '出题 Key 未保存';
       quizCredentialState.className = `tag ${state.hasKey ? 'tag--good' : 'tag--warn'}`;
+      quizKeyField.setSaved(state.hasKey);
     }
     const saveQuizKeyBtn = h('button', {
       class: 'btn btn--sm',
@@ -285,7 +335,7 @@ export default {
       h('p', { class: 'faint settings__hint' },
         '学习工具单独使用低成本的 Qwen3.5-Flash：每轮先讲一个范围内知识点，再生成选择题考察基础、边界和迁移。不会改变快问、纠错等工具的模型。'),
       h('label', { class: 'settings__field' }, h('span', {}, '兼容接口地址'), quizBaseUrl),
-      h('label', { class: 'settings__field' }, h('span', {}, 'API Key'), quizKey),
+      h('label', { class: 'settings__field' }, h('span', {}, 'API Key'), quizKeyField.element),
       h('div', { class: 'settings__inline-actions' }, quizCredentialState, saveQuizKeyBtn, clearQuizKeyBtn),
       h('label', { class: 'settings__field' }, h('span', {}, '模型名'), quizModel, quizModelList, loadQuizModelsBtn),
       h('div', { class: 'faint settings__hint' }, '默认：`qwen3.5-flash`。如果你的账号或自建服务提供 `qwen3.5-35b-a3b`，也可以直接填那个模型名。'),
@@ -302,6 +352,7 @@ export default {
       class: 'field mono', type: 'password', placeholder: '输入方舟 API Key（保存后不回显）',
       autocomplete: 'new-password', value: '',
     });
+    const doubaoKeyField = secretField(doubaoKey, 'translation');
     const doubaoModel = h('input', {
       class: 'field mono', placeholder: 'ep-xxxxxxxx 或豆包模型 ID',
       value: config.get('research.translation.model', ''),
@@ -317,6 +368,7 @@ export default {
       config.cache.research.translation.hasKey = state.hasKey;
       doubaoCredentialState.textContent = state.hasKey ? '豆包 Key 已保存' : '豆包 Key 未保存';
       doubaoCredentialState.className = `tag ${state.hasKey ? 'tag--good' : 'tag--warn'}`;
+      doubaoKeyField.setSaved(state.hasKey);
     }
     const saveDoubaoKeyBtn = h('button', {
       class: 'btn btn--sm',
@@ -395,7 +447,7 @@ export default {
           h('p', { class: 'faint settings__hint' },
             '普通文献翻译优先使用 Chrome Translator 或本机 Argos，不消耗 API Key。只有主动点击「AI 精译」时才使用这里的独立豆包配置。'),
           h('label', { class: 'settings__field' }, h('span', {}, '方舟 Base URL'), doubaoBaseUrl),
-          h('label', { class: 'settings__field' }, h('span', {}, 'API Key'), doubaoKey),
+          h('label', { class: 'settings__field' }, h('span', {}, 'API Key'), doubaoKeyField.element),
           h('div', { class: 'settings__inline-actions' }, doubaoCredentialState, saveDoubaoKeyBtn, clearDoubaoKeyBtn),
           h('label', { class: 'settings__field' }, h('span', {}, '模型 / 接入点'), doubaoModel, doubaoModelList, loadDoubaoModelsBtn),
           h('div', { class: 'faint settings__hint' },

@@ -119,3 +119,32 @@ test('image：非法 size 不发起网络请求', async () => {
   assert.equal(result.ok, false);
   assert.match(result.error, /16/);
 });
+
+test('image：editImage 走 /images/edits，多图 multipart，返回 base64', async () => {
+  let seen = null;
+  const client = new OpenAIImageClient({ apiKey: 'sk-x', baseUrl: 'https://gw.example/v1', fetchImpl: async (url, opts) => {
+    seen = { url, opts };
+    return jsonResponse(200, { data: [{ b64_json: PNG_B64 }] });
+  } });
+  const r = await client.editImage('把两张融合', [
+    { buffer: Buffer.from([1, 2, 3]), mime: 'image/png', name: 'a.png' },
+    { buffer: Buffer.from([4, 5, 6]), mime: 'image/png', name: 'b.png' },
+  ], { model: 'gpt-image-2.5-flare', size: '1024x1024' });
+  assert.ok(r.ok, r.error);
+  assert.equal(r.base64, PNG_B64);
+  assert.equal(seen.url, 'https://gw.example/v1/images/edits');
+  assert.equal(seen.opts.method, 'POST');
+  assert.ok(seen.opts.body instanceof FormData, 'body 应是 FormData');
+  // 不手写 Content-Type（让 fetch 带 boundary）
+  assert.ok(!Object.keys(seen.opts.headers).some((k) => k.toLowerCase() === 'content-type'));
+  assert.equal(seen.opts.headers.Authorization, 'Bearer sk-x');
+});
+
+test('image：editImage 缺图 / 缺 Key 直接报错，不发请求', async () => {
+  let called = false;
+  const client = new OpenAIImageClient({ apiKey: 'sk-x', fetchImpl: async () => { called = true; return jsonResponse(200, {}); } });
+  assert.equal((await client.editImage('x', [])).ok, false);
+  const noKey = new OpenAIImageClient({ apiKey: '', fetchImpl: async () => { called = true; return jsonResponse(200, {}); } });
+  assert.equal((await noKey.editImage('x', [{ buffer: Buffer.from([1]) }])).ok, false);
+  assert.equal(called, false);
+});

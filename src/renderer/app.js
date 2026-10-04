@@ -14,8 +14,10 @@ import { createDropzone } from './core/dropzone.js';
 import { togglePinned as togglePinnedState, addToRight, removePinned, LEFT_MAX, RIGHT_MAX } from './core/right-rail.js';
 import { createRadialMenu } from './core/radial.js';
 import { openWebPanel } from './core/webpanel.js';
+import { playParticleFx } from './window-fx.js';
 import { SUB_SECTIONS as RESEARCH_SUBS } from './tools/research/index.js';
 import { SUB_SECTIONS as FOCUS_SUBS } from './tools/focus/index.js';
+import { SUB_SECTIONS as GAME_SUBS } from './tools/game/index.js';
 
 const rail = document.getElementById('rail');
 const stage = document.getElementById('stage');
@@ -165,9 +167,9 @@ const libraryPanel = h('section', { class: 'rail-library', hidden: true },
 // 「更多」轮盘：按类别分圈，工具在第二圈，有子页的（科研 / 专注）第三圈
 const WHEEL_GROUPS = [
   { id: 'learn', label: '学习科研', icon: 'graduation', color: '#3fbf87', tools: ['research', 'study', 'docs', 'terms', 'coach', 'skills', 'typing'] },
-  { id: 'make', label: '写作代码', icon: 'pen', color: '#ff9a6b', tools: ['notebook', 'notes', 'git', 'api', 'netlog', 'webtools'] },
+  { id: 'make', label: '写作代码', icon: 'pen', color: '#ff9a6b', tools: ['notebook', 'notes', 'git', 'api', 'appgen', 'aipexbase', 'netlog', 'webtools'] },
   { id: 'ai', label: 'AI 伙伴', icon: 'bot', color: '#c9a7ff', tools: ['ask', 'tavern', 'voicebox', 'digital-human', 'avatar-rig', 'voice', 'gesture', 'monologue'] },
-  { id: 'life', label: '生活效率', icon: 'bowl', color: '#f0b93d', tools: ['home', 'tasks', 'focus', 'tidy', 'container', 'eat', 'history', 'video', 'vault'] },
+  { id: 'life', label: '生活效率', icon: 'bowl', color: '#f0b93d', tools: ['home', 'tasks', 'focus', 'game', 'flylab', 'stickers', 'tidy', 'container', 'eat', 'history', 'video', 'vault'] },
   { id: 'device', label: '设备外观', icon: 'smartphone', color: '#7aa8ff', tools: ['remote', 'dsh', 'controls', 'dock', 'pet', 'appearance'] },
 ];
 {
@@ -177,7 +179,7 @@ const WHEEL_GROUPS = [
   if (rest.length) WHEEL_GROUPS.push({ id: 'other', label: '其他', icon: 'more', color: '#98a2b3', tools: rest });
   for (const g of WHEEL_GROUPS) g.tools = g.tools.filter((id) => TOOLS.some((t) => t.id === id));
 }
-const TOOL_SUBS = { research: RESEARCH_SUBS, focus: FOCUS_SUBS };
+const TOOL_SUBS = { research: RESEARCH_SUBS, focus: FOCUS_SUBS, game: GAME_SUBS };
 let radial = null;
 const moreButton = h('button', {
   class: 'rail__item rail__more',
@@ -574,38 +576,49 @@ window.toolbox.remote.onCommand(async ({ requestId, type, payload }) => {
 
 window.__ctx = ctx; // 方便在 DevTools 里手动调试
 
-// ---- 开合动效：黑洞坍缩（关窗前）/ 展开（打开时）----
-// 关窗时主进程先发 app:collapse，这里把整个界面吸进中心一个黑洞，放完通知主进程真的关。
-// 打开时（页面加载）反着放一遍。开关在「设置 → 外观」。
+// ---- 开合动效：可选风格（设置 → 外观 → 开合动效）----
+// 关窗时主进程先发 app:collapse，这里放完动画再通知主进程真的关；打开时（页面加载）反着放。
+//  - particle：粒子从四周汇聚成型 / 关窗中心大爆炸四射（window-fx.js）
+//  - blackhole：整窗旋进中心黑洞 / 从中心展开（下面这套 DOM 覆盖层 + base.css 关键帧）
+//  - off：不放
 {
-  const fx = document.createElement('div');
-  fx.className = 'blackhole';
-  fx.innerHTML = '<div class="blackhole__void"></div><div class="blackhole__ring"></div>';
-  const stage = document.getElementById('app');
-  function play(mode, done) {
+  let bh = null; // 黑洞覆盖层，惰性创建
+  function ensureBH() {
+    if (!bh) { bh = document.createElement('div'); bh.className = 'blackhole'; bh.innerHTML = '<div class="blackhole__void"></div><div class="blackhole__ring"></div>'; }
+    if (!bh.isConnected) document.body.appendChild(bh);
+    return bh;
+  }
+  function playBlackhole(mode, done) {
+    const fx = ensureBH();
     document.body.classList.remove('is-collapsing', 'is-expanding');
-    if (!fx.isConnected) document.body.appendChild(fx);
-    void fx.offsetWidth;
-    fx.classList.remove('is-on');
-    void fx.offsetWidth;
-    fx.classList.add('is-on');
+    void fx.offsetWidth; fx.classList.remove('is-on'); void fx.offsetWidth; fx.classList.add('is-on');
     document.body.classList.add(mode === 'collapse' ? 'is-collapsing' : 'is-expanding');
-    const ms = mode === 'collapse' ? 380 : 1160; // 关窗快、开窗从容，和 base.css 里的动画时长对齐
+    const ms = mode === 'collapse' ? 380 : 1160;
     setTimeout(() => {
       if (mode === 'expand') { document.body.classList.remove('is-expanding'); fx.classList.remove('is-on'); }
       done && done();
     }, ms);
   }
-  window.toolbox.app.windowFx?.().then((on) => {
-    if (on === false) return;
-    // 让首帧先画出来再展开，避免白闪
-    requestAnimationFrame(() => requestAnimationFrame(() => play('expand')));
+  function play(mode, style, done) {
+    if (style === 'particle') {
+      document.body.classList.add(mode === 'collapse' ? 'is-pfx-collapsing' : 'is-pfx-expanding');
+      playParticleFx(mode === 'collapse' ? 'collapse' : 'expand', () => {
+        if (mode === 'expand') document.body.classList.remove('is-pfx-expanding');
+        done && done();
+      });
+    } else {
+      playBlackhole(mode, done);
+    }
+  }
+  const styleOf = () => (window.toolbox.app.windowFxStyle?.() || Promise.resolve('particle'));
+  styleOf().then((style) => {
+    if (!style || style === 'off') return;
+    requestAnimationFrame(() => requestAnimationFrame(() => play('expand', style)));
   }).catch(() => {});
   window.toolbox.app.onCollapse?.(() => {
-    window.toolbox.app.windowFx?.().then((on) => {
-      if (on === false) return window.toolbox.app.collapseDone?.();
-      play('collapse', () => window.toolbox.app.collapseDone?.());
+    styleOf().then((style) => {
+      if (!style || style === 'off') return window.toolbox.app.collapseDone?.();
+      play('collapse', style, () => window.toolbox.app.collapseDone?.());
     }).catch(() => window.toolbox.app.collapseDone?.());
   });
-  void stage;
 }

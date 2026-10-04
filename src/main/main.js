@@ -55,6 +55,7 @@ const { AutoResearchService } = require('./autoresearch-service');
 const { ZoteroService } = require('./zotero');
 const { VaultService } = require('./vault');
 const { IdeasService } = require('./ideas');
+const { StickersService } = require('./stickers');
 const { HOTKEYS, normalizeAccelerator, accelLabel } = require('./hotkeys');
 const { GazeService } = require('./gaze');
 const { TavernService } = require('./tavern-service');
@@ -82,6 +83,8 @@ async function remoteStatusWithQr(state) {
   };
 }
 const { ArgosService } = require('./argos-service');
+const { registerAipexBaseIpc } = require('./aipexbase-service');
+const { registerAppGenIpc } = require('./appgen-service');
 
 const IS_DEV = process.argv.includes('--dev');
 const ICON_PATH = path.join(__dirname, '..', '..', 'assets', 'icon.png');
@@ -592,8 +595,8 @@ function credentialPath(scope = 'default') {
   if (scope === 'translation') return 'research.translation.keyEncrypted';
   if (scope === 'quiz') return 'study.quiz.keyEncrypted';
   if (scope === 'image') return 'image.api.keyEncrypted';
-  return 'ai.api.keyEncrypted';
   if (scope === 'vibe') return 'study.vibe.keyEncrypted';
+  return 'ai.api.keyEncrypted';
 }
 
 function readApiKey(scope = 'default') {
@@ -795,7 +798,8 @@ function createWindow(showOnReady = true) {
   // 吸附模式、或关了动效开关时不拦。
   let fxClosing = false;
   mainWindow.on('close', (event) => {
-    if (fxClosing || store.get('ui.windowFx', true) === false || windowDock?.status().active) return;
+    const fxOff = (store.get('ui.windowFxStyle') || (store.get('ui.windowFx', true) === false ? 'off' : 'particle')) === 'off';
+    if (fxClosing || fxOff || windowDock?.status().active) return;
     event.preventDefault();
     fxClosing = true;
     try { mainWindow.webContents.send('app:collapse'); } catch { /* 页面没了就直接关 */ }
@@ -1855,8 +1859,6 @@ function registerIpc() {
   // 代码记事本：读取 Understand-Anything 的知识图谱 + 按行号回读源码
   registerNotebookIpc(ipcMain, { dialog, getWindow: () => mainWindow, getUserDataPath: () => app.getPath('userData') });
   registerContainerIpc(ipcMain, { shell, getUserDataPath: () => app.getPath('userData') });
-  // 剪贴板历史：只在内存里留最近 30 条文字（不落盘 —— 剪贴板里常有密码），⌘K 里能搜回来
-  const clipHistory = [];
   // 懒人学习：Obsidian 仓库 / 弱模型陪练 / 书架下载 / 终端选择题
   registerStudyLazy(ipcMain, {
     store, readApiKey, performCompatibleRequest, containerRoot, hookContainerDownloads, dialog, shell,
@@ -1864,6 +1866,8 @@ function registerIpc() {
   });
   // 「代码」里内嵌的 VS Code（本地 code-server）；默认工作区 = 容器
   registerVscodeIpc(ipcMain, { getUserDataPath: () => app.getPath('userData'), defaultFolder: () => containerRoot(() => app.getPath('userData')), getMainWindow: () => mainWindow });
+  // 剪贴板历史：只在内存里留最近 30 条文字（不落盘 —— 剪贴板里常有密码），⌘K 里能搜回来
+  const clipHistory = [];
   let clipLast = '';
   // 密码本复制出来的值：不进历史（⌘K 里能搜到的话等于明文展示）
   const clipSecrets = new Set();
@@ -1882,7 +1886,7 @@ function registerIpc() {
   ipcMain.handle('clip:history', () => clipHistory.map((x) => ({ text: x.text, at: x.at })));
 
   // ---- 密码本：safeStorage 加密落在 userData/vault.json，明文不进渲染层 ----
-  const vault = new VaultService({ file: path.join(app.getPath('userData'), 'vault.json'), safeStorage, clipboard, markClipboardSecret: (v) => { clipSecrets.add(v); if (clipSecrets.size > 50) clipSecrets.delete(clipSecrets.values().next().value); } });
+  const vault = new VaultService({ file: path.join(app.getPath('userData'), 'vault.json'), safeStorage, clipboard, store, markClipboardSecret: (v) => { clipSecrets.add(v); if (clipSecrets.size > 50) clipSecrets.delete(clipSecrets.values().next().value); } });
   ipcMain.handle('vault:list', () => vault.list());
   ipcMain.handle('vault:save', (_e, entry) => vault.save(entry || {}));
   ipcMain.handle('vault:remove', (_e, id) => vault.remove(String(id || '')));
@@ -1956,6 +1960,47 @@ function registerIpc() {
   ipcMain.handle('ideas:openPath', (_e, p) => ideas.openPath(p));
   ipcMain.handle('ideas:openInObsidian', (_e, p) => ideas.openInObsidian(p));
   ipcMain.handle('ideas:openTerminalChat', (_e, payload) => ideas.openTerminalChat(payload || {}));
+
+  // ---- 果蝇观察箱：flygym + MuJoCo 仿真跑在独立 venv（~/.agent-toolbox/flylab），进度流回渲染层 ----
+  const { FlyLabService } = require('./flylab');
+  const flylab = new FlyLabService({ getWindow: () => mainWindow });
+  ipcMain.handle('flylab:status', () => flylab.status());
+  ipcMain.handle('flylab:cameras', () => flylab.cameras());
+  ipcMain.handle('flylab:run', (_e, cfg) => flylab.run(cfg || {}));
+  ipcMain.handle('flylab:cancel', () => flylab.cancel());
+  ipcMain.handle('flylab:list', () => flylab.list());
+  ipcMain.handle('flylab:readVideo', (_e, p) => flylab.readVideo(p));
+  ipcMain.handle('flylab:openFolder', () => flylab.openFolder());
+  ipcMain.handle('flylab:remove', (_e, p) => flylab.remove(p));
+
+  // ---- 表情包管理：本地库在 userData/stickers/，Tenor Key 用 safeStorage 加密，同步只往私有仓库 ----
+  const stickers = new StickersService({
+    store, safeStorage, clipboard, shell, dialog, userDataDir: app.getPath('userData'), getWindow: () => mainWindow, execFileAsync,
+    // 融合复用已配好的生图模型（image scope），不新增凭据
+    getImageConfig: () => ({ apiKey: process.env.OPENAI_API_KEY || readApiKey('image'), baseUrl: process.env.OPENAI_BASE_URL || store.get('image.api.baseUrl', 'https://api.openai.com/v1'), model: store.get('image.api.model', '') || '' }),
+  });
+  ipcMain.handle('stickers:list', (_e, filter) => stickers.list(filter || {}));
+  ipcMain.handle('stickers:import', () => stickers.importDialog());
+  ipcMain.handle('stickers:importPaths', (_e, paths, meta) => stickers.importPaths(paths || [], meta || {}));
+  ipcMain.handle('stickers:update', (_e, id, patch) => stickers.update(String(id || ''), patch || {}));
+  ipcMain.handle('stickers:remove', (_e, id) => stickers.remove(String(id || '')));
+  ipcMain.handle('stickers:copy', (_e, id) => stickers.copy(String(id || '')));
+  ipcMain.handle('stickers:reveal', (_e, id) => stickers.reveal(String(id || '')));
+  ipcMain.handle('stickers:openFolder', () => stickers.openFolder());
+  ipcMain.handle('stickers:keyStatus', () => stickers.keyStatus());
+  ipcMain.handle('stickers:saveKey', (_e, key) => stickers.saveKey(key));
+  ipcMain.handle('stickers:search', (_e, payload) => stickers.search(payload || {}));
+  ipcMain.handle('stickers:categories', () => stickers.categories());
+  ipcMain.handle('stickers:saveFromUrl', (_e, payload) => stickers.saveFromUrl(payload || {}));
+  ipcMain.handle('stickers:syncStatus', () => stickers.syncStatus());
+  ipcMain.handle('stickers:setRemote', (_e, url) => stickers.setRemote(url));
+  ipcMain.handle('stickers:sync', (_e, message) => stickers.sync(String(message || '')));
+  ipcMain.handle('stickers:saveComposed', (_e, payload) => stickers.saveComposed(payload || {}));
+  ipcMain.handle('stickers:qrMatrix', (_e, text) => stickers.qrMatrix(text));
+  ipcMain.handle('stickers:dataUrl', (_e, id) => stickers.dataUrl(String(id || '')));
+  ipcMain.handle('stickers:imageStatus', () => stickers.imageStatus());
+  ipcMain.handle('stickers:fuse', (_e, payload) => stickers.fuse(payload || {}));
+
   ipcMain.handle('clip:clear', () => { clipHistory.length = 0; clipLast = ''; return { ok: true }; });
 
   // 学习记录：解释过什么、看懂过哪个项目、读过哪个文件、考了几分 —— 首页给一点进度感
@@ -2302,6 +2347,12 @@ function registerIpc() {
   });
   ipcMain.handle('appControls:closeForeground', () => appControls.closeForeground());
   ipcMain.handle('appControls:cycleWindows', () => appControls.cycleWindows());
+
+  // ---- AipexBase:移植进容器的公司开源 BaaS 后端(起停 + 真实数据代理)----
+  registerAipexBaseIpc(ipcMain, {});
+
+  // ---- 生成应用:一句话 → agentworld build_new_app 流水线 ----
+  registerAppGenIpc(ipcMain);
 
   // 教学幻灯片：5 页 storyboard + 5 张 GPT Image（Key 来自环境变量，绝不硬编码）
   ipcMain.handle('slides:generateTeaching', async (_e, topic) => {
@@ -2669,8 +2720,20 @@ function registerIpc() {
   // 坍缩动效放完渲染层发这个；真正的一次性监听在窗口 close 里用 ipcMain.once 挂。这里放一个常驻空监听，
   // 一是让接线静态检查认得这个通道，二是没有进行中的关窗时收到也不报错。
   ipcMain.on('app:collapse-done', () => {});
-  ipcMain.handle('app:windowFx', () => store.get('ui.windowFx', true) !== false);
-  ipcMain.handle('app:setWindowFx', (_e, on) => { store.set('ui.windowFx', Boolean(on)); return { ok: true }; });
+  // 开合动效：老版本只有开/关布尔，这里升级成风格三选一，并向后兼容。
+  const fxStyle = () => {
+    const s = store.get('ui.windowFxStyle');
+    if (s === 'off' || s === 'blackhole' || s === 'particle') return s;
+    return store.get('ui.windowFx', true) === false ? 'off' : 'particle';
+  };
+  ipcMain.handle('app:windowFx', () => fxStyle() !== 'off');
+  ipcMain.handle('app:setWindowFx', (_e, on) => { store.set('ui.windowFx', Boolean(on)); store.set('ui.windowFxStyle', on ? 'particle' : 'off'); return { ok: true }; });
+  ipcMain.handle('app:windowFxStyle', () => fxStyle());
+  ipcMain.handle('app:setWindowFxStyle', (_e, style) => {
+    const v = ['off', 'blackhole', 'particle'].includes(style) ? style : 'particle';
+    store.set('ui.windowFxStyle', v); store.set('ui.windowFx', v !== 'off');
+    return { ok: true };
+  });
   ipcMain.handle('app:reload', () => { if (mainWindow) mainWindow.reload(); });
   ipcMain.handle('app:openDevTools', () => {
     if (mainWindow) mainWindow.webContents.openDevTools({ mode: 'detach' });
@@ -2700,6 +2763,7 @@ function registerIpc() {
   ipcMain.handle('ai:translate', (_e, payload) => callTranslationApi(payload));
   ipcMain.handle('ai:quiz', (_e, payload) => callQuizApi(payload));
   ipcMain.handle('ai:credentialStatus', (_e, scope = 'default') => ({ hasKey: Boolean(readApiKey(scope)), secure: safeStorage.isEncryptionAvailable() }));
+  ipcMain.handle('ai:revealCredential', (_e, scope = 'default') => ({ key: readApiKey(scope) }));
   ipcMain.handle('ai:saveCredential', (_e, key, scope = 'default') => saveApiKey(key, scope));
   ipcMain.handle('ai:clearCredential', (_e, scope = 'default') => saveApiKey('', scope));
   ipcMain.handle('ai:listModels', async (_e, { baseUrl, scope = 'default' }) => {
@@ -3613,6 +3677,16 @@ function registerIpc() {
 
 // 单实例。再敲一次 npm start 不会开出第二个实例，而是把现有窗口叫回来 ——
 // 窗口被关掉、或 Dock 图标因为某些窗口设置消失时，这是最顺手的找回方式。
+// 双击 logo 重启带过来的：老实例还在收尾，先等它退干净（最多 8 秒），再拿锁
+const relaunchFrom = Number((process.argv.find((a) => a.startsWith('--relaunch-from=')) || '').split('=')[1] || 0);
+if (relaunchFrom && relaunchFrom !== process.pid) {
+  const deadline = Date.now() + 8000;
+  const tick = new Int32Array(new SharedArrayBuffer(4));
+  while (Date.now() < deadline) {
+    try { process.kill(relaunchFrom, 0); } catch { break; }      // 抛错 = 进程已经不在了
+    Atomics.wait(tick, 0, 0, 100);
+  }
+}
 if (!app.requestSingleInstanceLock()) {
   app.quit();
 } else {
@@ -3687,16 +3761,6 @@ function logMainError(kind, error) {
 process.on('unhandledRejection', (reason) => logMainError('unhandledRejection', reason));
 // 渲染层（主窗口 / 桌宠 / 浮窗）的未捕获错误也送到同一份日志，排查时不用开 DevTools
 ipcMain.on('log:renderer', (event, payload = {}) => {
-// 双击 logo 重启带过来的：老实例还在收尾，先等它退干净（最多 8 秒），再拿锁
-const relaunchFrom = Number((process.argv.find((a) => a.startsWith('--relaunch-from=')) || '').split('=')[1] || 0);
-if (relaunchFrom && relaunchFrom !== process.pid) {
-  const deadline = Date.now() + 8000;
-  const tick = new Int32Array(new SharedArrayBuffer(4));
-  while (Date.now() < deadline) {
-    try { process.kill(relaunchFrom, 0); } catch { break; }      // 抛错 = 进程已经不在了
-    Atomics.wait(tick, 0, 0, 100);
-  }
-}
   const where = (() => { try { return new URL(event.sender.getURL()).pathname.split('/').slice(-2).join('/'); } catch { return '?'; } })();
   logMainError(`renderer(${where}) ${String(payload.kind || 'error')}`, `${String(payload.message || '').slice(0, 500)}\n${String(payload.stack || '').slice(0, 1500)}`);
 });

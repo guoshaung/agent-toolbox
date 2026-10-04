@@ -173,6 +173,68 @@ class OpenAIImageClient {
     }
   }
 
+  /**
+   * 多图融合 / 图生图：把一张或多张参考图 + prompt 交给 /images/edits，返回合成图的 base64。
+   * @param {string} prompt 融合指令
+   * @param {Array<{buffer:Buffer, mime?:string, name?:string}>} images 参考图
+   * @param {object} [options] { model, size }
+   * 返回 { ok, base64, meta | error }，不抛异常。
+   */
+  async editImage(prompt, images, options = {}) {
+    const { model = DEFAULT_MODEL, size = '1024x1024' } = options;
+    if (!prompt || !String(prompt).trim()) return { ok: false, error: 'prompt 不能为空', meta: { model, size } };
+    if (!images || !images.length) return { ok: false, error: '至少需要一张参考图', meta: { model, size } };
+    if (!this.apiKey) return { ok: false, error: '缺少 API Key：请在设置里配好生图模型的 Key', meta: { model, size } };
+    if (typeof FormData === 'undefined' || typeof Blob === 'undefined') return { ok: false, error: '当前运行时不支持 FormData/Blob', meta: { model, size } };
+
+    const started = Date.now();
+    let attempt = 0;
+    for (;;) {
+      attempt += 1;
+      // FormData 每次重试都要重建（body 是一次性的）
+      const form = new FormData();
+      form.append('model', model);
+      form.append('prompt', String(prompt));
+      if (size) form.append('size', size);
+      form.append('n', '1');
+      images.forEach((img, i) => {
+        const buf = Buffer.isBuffer(img) ? img : (img.buffer || Buffer.from(img));
+        form.append('image[]', new Blob([buf], { type: img.mime || 'image/png' }), img.name || `ref${i}.png`);
+      });
+      let response;
+      try {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), this.timeoutMs);
+        response = await this.fetch(`${this.baseUrl}/images/edits`, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${this.apiKey}` }, // 不要手写 Content-Type，让 fetch 带 multipart boundary
+          body: form,
+          signal: controller.signal,
+        }).finally(() => clearTimeout(timer));
+      } catch (error) {
+        if (attempt <= this.maxRetries) { await sleep(this.retryBaseMs * 2 ** (attempt - 1)); continue; }
+        return { ok: false, error: `网络错误：${error.message}`, meta: { model, size, attempts: attempt } };
+      }
+      if (response.status === 429 || response.status >= 500) {
+        if (attempt <= this.maxRetries) {
+          const retryAfter = Number(response.headers.get('retry-after'));
+          await sleep(Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter * 1000 : this.retryBaseMs * 2 ** (attempt - 1));
+          continue;
+        }
+        return { ok: false, error: `HTTP ${response.status}（已重试 ${this.maxRetries} 次）`, meta: { model, size, attempts: attempt } };
+      }
+      if (!response.ok) {
+        const detail = await response.text().catch(() => '');
+        return { ok: false, error: `HTTP ${response.status}：${detail.slice(0, 300)}`, meta: { model, size, attempts: attempt } };
+      }
+      let data;
+      try { data = await response.json(); } catch (error) { return { ok: false, error: `响应不是 JSON：${error.message}`, meta: { model, size } }; }
+      const item = data && data.data && data.data[0];
+      if (!item || !item.b64_json) return { ok: false, error: '响应缺少 data[0].b64_json（这个网关/模型可能不支持图片编辑）', meta: { model, size } };
+      return { ok: true, base64: item.b64_json, meta: { model, size, elapsedMs: Date.now() - started, attempts: attempt, usage: data.usage || null } };
+    }
+  }
+
   /** b64 → 文件。独立成函数便于测试。 */
   saveImage(b64, outputDir, filename, outputFormat = 'png') {
     try {

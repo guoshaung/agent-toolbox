@@ -4,14 +4,12 @@ import { createTimer } from './timer.js';
 import { createGames } from './games.js';
 import { createNews } from './news.js';
 import { createWatch } from './watch.js';
-import { createBattle } from './battle.js';
 
 export const SUB_SECTIONS = [
   { id: 'timer', label: '专注', icon: 'target' },
   { id: 'games', label: '醒脑', icon: 'zap' },
   { id: 'news', label: '情报', icon: 'scan' },
   { id: 'watch', label: '大佬动态', icon: 'x' },
-  { id: 'battle', label: '火柴人战斗', icon: 'zap' },
 ];
 
 /**
@@ -40,7 +38,6 @@ export default {
       games: createGames,
       news: createNews,
       watch: createWatch,
-      battle: (panel) => createBattle(panel, ctx),
     };
 
     function selectSub(id) {

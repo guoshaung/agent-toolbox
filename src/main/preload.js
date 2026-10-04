@@ -237,6 +237,7 @@ contextBridge.exposeInMainWorld('toolbox', {
     streamStop: (id) => ipcRenderer.invoke('ai:streamStop', id),
     onStreamChunk: (callback) => { const handler = (_event, payload) => callback(payload); ipcRenderer.on('ai:stream:chunk', handler); return () => ipcRenderer.removeListener('ai:stream:chunk', handler); },
     credentialStatus: (scope) => ipcRenderer.invoke('ai:credentialStatus', scope),
+    revealCredential: (scope) => ipcRenderer.invoke('ai:revealCredential', scope),
     saveCredential: (key, scope) => ipcRenderer.invoke('ai:saveCredential', key, scope),
     clearCredential: (scope) => ipcRenderer.invoke('ai:clearCredential', scope),
     listModels: (baseUrl, scope) => ipcRenderer.invoke('ai:listModels', { baseUrl, scope }),
@@ -487,6 +488,23 @@ contextBridge.exposeInMainWorld('toolbox', {
     onStatus: (callback) => ipcRenderer.on('dsh:status', (_event, state) => callback(state)),
   },
 
+  aipexbase: {
+    status: () => ipcRenderer.invoke('aipexbase:status'),
+    start: () => ipcRenderer.invoke('aipexbase:start'),
+    stop: () => ipcRenderer.invoke('aipexbase:stop'),
+    provision: () => ipcRenderer.invoke('aipexbase:provision'),
+    data: (method, params, table) => ipcRenderer.invoke('aipexbase:data', method, params, table),
+  },
+
+  appgen: {
+    start: (prompt) => ipcRenderer.invoke('appgen:start', prompt),
+    status: (chatId) => ipcRenderer.invoke('appgen:status', chatId),
+    listRuns: () => ipcRenderer.invoke('appgen:listRuns'),
+    stop: (chatId) => ipcRenderer.invoke('appgen:stop', chatId),
+    readFile: (chatId, rel) => ipcRenderer.invoke('appgen:readFile', chatId, rel),
+    compilePreview: (chatId) => ipcRenderer.invoke('appgen:compilePreview', chatId),
+  },
+
   tavern: {
     status: () => ipcRenderer.invoke('tavern:status'),
     start: () => ipcRenderer.invoke('tavern:start'),
@@ -610,12 +628,12 @@ contextBridge.exposeInMainWorld('toolbox', {
     vaultRead: (rel) => ipcRenderer.invoke('study:vaultRead', rel),
     vaultWriteCard: (card) => ipcRenderer.invoke('study:vaultWriteCard', card),
     openInObsidian: (rel) => ipcRenderer.invoke('study:openInObsidian', rel),
-    /** 把一个 webview 里所有 frame 的文字抓出来（「⚡ 讲这篇」用），传 webview.getWebContentsId() */
-    grabPage: (webContentsId) => ipcRenderer.invoke('study:grabPage', webContentsId),
     shelfInfo: () => ipcRenderer.invoke('study:shelfInfo'),
     exportQuiz: (payload) => ipcRenderer.invoke('study:exportQuiz', payload),
     runQuizInTerminal: (launcher) => ipcRenderer.invoke('study:runQuizInTerminal', launcher),
     saveProject: (payload) => ipcRenderer.invoke('study:saveProject', payload),
+    /** 把一个 webview 里所有 frame 的文字抓出来（「⚡ 讲这篇」用），传 webview.getWebContentsId() */
+    grabPage: (webContentsId) => ipcRenderer.invoke('study:grabPage', webContentsId),
   },
 
   /** 内嵌 VS Code（本地 code-server）：状态 / 启停 / 选工作区 / 安装 */
@@ -635,6 +653,31 @@ contextBridge.exposeInMainWorld('toolbox', {
     read: (rel) => ipcRenderer.invoke('paper:read', rel),
     write: (payload) => ipcRenderer.invoke('paper:write', payload),
     list: (rel) => ipcRenderer.invoke('paper:list', rel),
+  },
+
+  /** 表情包管理：本地库 + Tenor 在线搜索 + 私有仓库同步 */
+  stickers: {
+    list: (filter) => ipcRenderer.invoke('stickers:list', filter),
+    import: () => ipcRenderer.invoke('stickers:import'),
+    importPaths: (paths, meta) => ipcRenderer.invoke('stickers:importPaths', paths, meta),
+    update: (id, patch) => ipcRenderer.invoke('stickers:update', id, patch),
+    remove: (id) => ipcRenderer.invoke('stickers:remove', id),
+    copy: (id) => ipcRenderer.invoke('stickers:copy', id),
+    reveal: (id) => ipcRenderer.invoke('stickers:reveal', id),
+    openFolder: () => ipcRenderer.invoke('stickers:openFolder'),
+    keyStatus: () => ipcRenderer.invoke('stickers:keyStatus'),
+    saveKey: (key) => ipcRenderer.invoke('stickers:saveKey', key),
+    search: (payload) => ipcRenderer.invoke('stickers:search', payload),
+    categories: () => ipcRenderer.invoke('stickers:categories'),
+    saveFromUrl: (payload) => ipcRenderer.invoke('stickers:saveFromUrl', payload),
+    syncStatus: () => ipcRenderer.invoke('stickers:syncStatus'),
+    setRemote: (url) => ipcRenderer.invoke('stickers:setRemote', url),
+    sync: (message) => ipcRenderer.invoke('stickers:sync', message),
+    saveComposed: (payload) => ipcRenderer.invoke('stickers:saveComposed', payload),
+    qrMatrix: (text) => ipcRenderer.invoke('stickers:qrMatrix', text),
+    dataUrl: (id) => ipcRenderer.invoke('stickers:dataUrl', id),
+    imageStatus: () => ipcRenderer.invoke('stickers:imageStatus'),
+    fuse: (payload) => ipcRenderer.invoke('stickers:fuse', payload),
   },
 
   vault: {
@@ -759,6 +802,9 @@ contextBridge.exposeInMainWorld('toolbox', {
     collapseDone: () => ipcRenderer.send('app:collapse-done'),
     setWindowFx: (on) => ipcRenderer.invoke('app:setWindowFx', on),
     windowFx: () => ipcRenderer.invoke('app:windowFx'),
+    /** 开合动效风格：'particle' | 'blackhole' | 'off' */
+    windowFxStyle: () => ipcRenderer.invoke('app:windowFxStyle'),
+    setWindowFxStyle: (style) => ipcRenderer.invoke('app:setWindowFxStyle', style),
     /** 用 PNG data URL 替换窗口/任务栏图标（macOS 上同时换 Dock 图标） */
     setAppIcon: (dataUrl) => ipcRenderer.invoke('app:setAppIcon', dataUrl),
   },
