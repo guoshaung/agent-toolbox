@@ -1,0 +1,53 @@
+.feature-e023 { max-width: 1000px; padding: 24px; margin: 0 auto; color: #edf0f6; line-height: 1.6; }
+.feature-e023 * { box-sizing: border-box; }
+.feature-e023 h2, .feature-e023 h3, .feature-e023 p { margin: 0; }
+.feature-e023 h2 { font-size: 28px; letter-spacing: .04em; }
+.feature-e023 button, .feature-e023 input, .feature-e023 select { font: inherit; padding: 8px 12px; border: 1px solid #4a5870; border-radius: 8px; color: #edf0f6; background: #202c3f; }
+.feature-e023 button { cursor: pointer; }
+.feature-e023 button:hover { filter: brightness(1.12); }
+.feature-e023 button:disabled { cursor: default; opacity: .45; }
+.feature-e023 button:focus-visible, .feature-e023 input:focus-visible, .feature-e023 select:focus-visible, .feature-e023 [tabindex]:focus-visible, .feature-e023 summary:focus-visible { outline: 3px solid #dceafa; outline-offset: 3px; }
+.feature-e023 .e023-heading { display: flex; justify-content: space-between; align-items: center; gap: 16px; margin-bottom: 22px; }
+.feature-e023 .e023-heading p { color: #b4c2d9; margin-top: 6px; }
+.feature-e023 .e023-settings { display: flex; flex-wrap: wrap; gap: 12px; align-items: end; margin-bottom: 10px; }
+.feature-e023 .e023-settings label { display: flex; flex-direction: column; gap: 4px; color: #becbe0; font-size: 13px; }
+.feature-e023 .e023-settings input { width: 140px; }
+.feature-e023 .e023-settings input[type=number] { width: 110px; }
+.feature-e023 .e023-muted { font-size: 13px; color: #adbbd1; }
+.feature-e023 .e023-rule { border-left: 3px solid #e2c58b; padding: 10px 14px; margin: 18px 0; background: #222c3a; color: #e3d6bc; font-size: 14px; }
+.feature-e023 .e023-scoreboard { display: flex; gap: 18px; }
+.feature-e023 .e023-scoreboard > div { flex: 1; display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 14px 18px; border-bottom: 2px solid #46556e; }
+.feature-e023 .e023-scoreboard > div.is-active { border-color: #92c9bb; background: #192d31; }
+.feature-e023 .e023-scoreboard span { overflow-wrap: anywhere; }
+.feature-e023 .e023-scoreboard strong { white-space: nowrap; font-size: 24px; font-variant-numeric: tabular-nums; }
+.feature-e023 .e023-progress { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 18px 0 6px; }
+.feature-e023 .e023-clock { white-space: nowrap; font-size: 26px; font-variant-numeric: tabular-nums; }
+.feature-e023 .e023-status { min-height: 52px; padding: 12px 0; font-weight: 600; color: #d0e2f9; }
+.feature-e023 .e023-card { padding: 28px; background: #ebe5d8; color: #252d37; border-radius: 14px; max-width: 600px; margin: 0 auto 18px; text-align: center; }
+.feature-e023 .e023-card-caption { font-size: 13px; letter-spacing: .08em; color: #5b626b; }
+.feature-e023 .e023-card h3 { font-size: 44px; margin: 10px 0 24px; }
+.feature-e023 .e023-host { padding: 10px 0; }
+.feature-e023 .e023-judges { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; margin-bottom: 12px; }
+.feature-e023 .e023-judges button { padding: 12px 20px; font-weight: 700; }
+.feature-e023 .e023-judges button[data-outcome=hit] { background: #a5d5c5; color: #17352c; }
+.feature-e023 .e023-counts { margin: 12px 0; }
+.feature-e023 .e023-ready, .feature-e023 .e023-paused, .feature-e023 .e023-finish { padding: 24px; border-radius: 12px; background: #182334; }
+.feature-e023 .e023-ready p, .feature-e023 .e023-finish p { margin: 8px 0 18px; color: #b4c2d9; }
+.feature-e023 .e023-ready button { background: #d8e8fa; color: #172638; font-weight: 700; }
+.feature-e023 .e023-paused { min-height: 250px; display: grid; place-items: center; text-align: center; }
+.feature-e023 .e023-round-summary { padding: 12px 0; }
+.feature-e023 .e023-round-summary p { color: #b4c2d9; }
+.feature-e023 .e023-finish button { margin-right: 10px; }
+.feature-e023 .e023-round-detail { padding: 14px 0; border-bottom: 1px solid #34445c; }
+.feature-e023 .e023-round-detail summary { cursor: pointer; font-weight: 600; }
+.feature-e023 .e023-round-detail ol { padding-left: 24px; color: #bdc9dc; font-size: 14px; }
+.feature-e023 .e023-history { margin-top: 28px; }
+.feature-e023 .e023-ranking { margin: 20px 0; overflow-x: auto; }
+.feature-e023 .e023-ranking h3 { font-size: 18px; margin-top: 16px; }
+.feature-e023 .e023-ranking table { width: 100%; border-collapse: collapse; margin-top: 10px; text-align: left; }
+.feature-e023 .e023-ranking th, .feature-e023 .e023-ranking td { padding: 10px; border-bottom: 1px solid #34445c; }
+.feature-e023 .e023-history h3 { font-size: 18px; }
+.feature-e023 .e023-recent { padding: 0; margin: 8px 0; list-style: none; }
+.feature-e023 .e023-recent li { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; padding: 12px 0; border-bottom: 1px solid #34445c; }
+.feature-e023 .e023-recent span { overflow-wrap: anywhere; font-size: 13px; color: #adbbd1; }
+@media (max-width: 600px) { .feature-e023 { padding: 16px; } .feature-e023 .e023-scoreboard { gap: 8px; } .feature-e023 .e023-scoreboard > div { padding: 10px; } .feature-e023 .e023-card { padding: 20px 14px; } .feature-e023 .e023-card h3 { font-size: 36px; } }
