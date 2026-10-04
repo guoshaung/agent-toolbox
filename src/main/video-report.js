@@ -447,6 +447,7 @@ async function runYtDlp(ytdlp, args, timeout) {
       maxBuffer: 8 * 1024 * 1024,
       timeout,
       env: process.env,
+      shell: process.platform === 'win32' && /\.cmd$/i.test(ytdlp),
     });
     return { ok: true, error: '' };
   } catch (err) {

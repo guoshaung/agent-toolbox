@@ -1,0 +1,20 @@
+@font-face { font-family: 'Toolbox Kuaile'; src: url('../../../assets/fonts/ZCOOLKuaiLe-Regular.ttf') format('truetype'); font-display: swap; }
+:root[data-typography="q-headings"] :is(h1,h2,h3,.card__title,.rail__label,.tool-title,.atelier-banner__brand),
+:root[data-typography="q-all"] body { font-family: 'Toolbox Kuaile', 'Microsoft YaHei', sans-serif; }
+:root[data-typography="q-all"] { --font: 'Toolbox Kuaile', 'Microsoft YaHei', sans-serif; }
+:root[data-typography="handwritten"] { --font: 'KaiTi', 'STKaiti', 'Microsoft YaHei', sans-serif; }
+:root[data-typography] :is(pre,code,.mono,.cm-editor,.monaco-editor) { font-family: var(--mono); }
+.awakening { position: fixed; inset: 0; z-index: 100000; display: flex; flex-direction: column; justify-content: center; align-items: center; background: radial-gradient(ellipse at 50% 42%,#391021 0%,#110c16 45%,#08090d 90%); color: #f8e7ed; animation: awakening-arrive .35s ease-out; -webkit-app-region: no-drag; }
+.awakening-orbit { position: absolute; width: min(75vw,760px); aspect-ratio: 1; border: 1px solid #b2315630; border-radius: 50%; box-shadow: 0 0 100px #ac12351a; pointer-events: none; }
+.awakening-eyes { width: min(84vw,760px); filter: drop-shadow(0 0 24px #e62b5866); overflow: visible; }
+.awakening-lids { transform: scaleY(.025); animation: awakening-open .85s cubic-bezier(.2,.75,.25,1) var(--delay) forwards; }
+.awakening-iris { transform-origin: 0 0; animation: awakening-spin 1.7s cubic-bezier(.2,.1,.2,1) .6s forwards; }
+.awakening-brand { margin-top: -10px; font: 500 18px/1.5 'Segoe UI',sans-serif; letter-spacing: .35em; }
+.awakening-brand strong { color: #fb587b; font-weight: 700; }
+.awakening-caption { color: #c596a7; font: 17px 'Toolbox Kuaile','Microsoft YaHei',sans-serif; letter-spacing: .15em; }
+.awakening-skip { position: absolute; bottom: 26px; right: 28px; border: 1px solid #6f3449; padding: 9px 16px; border-radius: 99px; background: #ffffff08; color: #e4bdca; cursor: pointer; }
+.awakening-skip:focus-visible { outline: 2px solid #ff7499; outline-offset: 4px; }
+@keyframes awakening-open { to { transform: scaleY(1); } }
+@keyframes awakening-spin { to { transform: rotate(480deg); } }
+@keyframes awakening-arrive { from { opacity: 0; } to { opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .awakening,.awakening-lids,.awakening-iris { animation: none; } .awakening-lids { transform: scaleY(1); } }

@@ -102,8 +102,15 @@ export function svgToCssUrl(svg) {
   return `url("data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}")`;
 }
 
+/** SVG 作为独立图片加载时必须声明命名空间；内联到 HTML 时则可以省略。 */
+export function svgAsImage(svg) {
+  return /<svg\b[^>]*\bxmlns=/.test(svg)
+    ? svg
+    : svg.replace('<svg', '<svg xmlns="http://www.w3.org/2000/svg"');
+}
+
 function svgToDataUrl(svg) {
-  return `data:image/svg+xml;base64,${btoa(unescape(encodeURIComponent(svg)))}`;
+  return `data:image/svg+xml;base64,${btoa(unescape(encodeURIComponent(svgAsImage(svg))))}`;
 }
 
 export function applyLogo(id) {

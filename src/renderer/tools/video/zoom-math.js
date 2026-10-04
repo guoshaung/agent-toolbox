@@ -43,6 +43,18 @@ export function applyZoom(scale, factor) {
   return clamp(scale * factor);
 }
 
+/** 两个触点之间的距离，用于触摸屏/触控板原生 pinch 缩放。 */
+export function pinchDistance(first, second) {
+  if (!first || !second) return 0;
+  return Math.hypot(second.clientX - first.clientX, second.clientY - first.clientY);
+}
+
+/** 根据 pinch 起止距离计算新缩放值。 */
+export function pinchZoom(startScale, startDistance, currentDistance) {
+  if (!(startDistance > 0) || !(currentDistance > 0)) return clamp(startScale);
+  return applyZoom(startScale, currentDistance / startDistance);
+}
+
 /** 智能尺寸基准宽度 = 窗口宽度 × SMART_WIDTH_RATIO */
 export function smartBaseWidth(viewportWidth, ratio = SMART_WIDTH_RATIO) {
   return Math.max(1, Math.round(viewportWidth * ratio));

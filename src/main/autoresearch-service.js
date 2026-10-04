@@ -1,13 +1,13 @@
 'use strict';
 
 /**
- * 自动科研：把 GitHub 上那几个「AI 自己做研究」的项目接进来。
+ * 自动科研：把 GitHub 上几个「AI 自己做研究」的项目接进来。
  *
  * 这里只做四件事：克隆、装环境、按模式起进程（流式日志回渲染层）、列产出。
  * API key 一律不经手 —— 每个项目自己的 .env / yaml 由用户在编辑器里填，
  * 工具箱只负责把文件从模板复制出来、再帮忙打开。
  *
- * 五个项目各自的命令都抄自它们 README（2026-09 读的），改动时对照原仓库。
+ * 各项目命令都抄自它们 README（2026-09 读的），改动时对照原仓库。
  */
 
 const fs = require('node:fs');
@@ -16,6 +16,7 @@ const path = require('node:path');
 const { spawn, execFile, execFileSync } = require('node:child_process');
 
 const HOME = os.homedir();
+const IS_WINDOWS = process.platform === 'win32';
 const MAX_LINES = 600;
 const OUTPUT_EXT = /\.(md|json|pdf|tex|txt|html|csv|png)$/i;
 const SKIP_DIRS = new Set(['.git', 'node_modules', '.venv', 'venv', 'venv_agent_lab', '__pycache__', 'cache', 'data', '.cache', 'dist', 'build']);
@@ -23,22 +24,54 @@ const SKIP_DIRS = new Set(['.git', 'node_modules', '.venv', 'venv', 'venv_agent_
 /** Posix 下 GUI 进程的 PATH 很干净，uv / brew / nvm 装的东西都要自己补进去 */
 const PATH_PRELUDE = 'export PATH="$HOME/.local/bin:$HOME/.cargo/bin:/opt/homebrew/bin:/usr/local/bin:$HOME/.nvm/versions/node/v22.23.1/bin:$PATH"';
 
-const PY_VENV = (dir) => `. ${dir}/bin/activate`;
+const PYTHON = IS_WINDOWS ? 'python' : 'python3';
+const VENV_ACTIVATE = (dir = '.venv') => `. ${dir}/${IS_WINDOWS ? 'Scripts' : 'bin'}/activate`;
+const VENV_PYTHON = (dir = '.venv') => `${dir}/${IS_WINDOWS ? 'Scripts/python.exe' : 'bin/python'}`;
+const PY_VENV = (dir) => VENV_ACTIVATE(dir);
 
 const PROJECTS = [
+  {
+    id: 'openfars', name: 'OpenFARS', org: 'open-fars', badge: 'FARS 开源实现',
+    repo: 'https://github.com/open-fars/openfars', dirName: 'OpenFARS',
+    desc: 'FARS 的社区开源实现：13 个智能体协作完成方向、文献、想法、实验、评估、图表和论文。先用零密钥演示检查流程；它不是 Analemma 未开源的原版 FARS。',
+    tags: ['全流程', '多智能体', '可审计'],
+    needs: [{ cmd: 'python3|python', label: 'Python 3.10+' }],
+    install: `${PYTHON} -m venv .venv && ${VENV_ACTIVATE()} && python -m pip install -e .`,
+    envCheck: VENV_PYTHON(),
+    config: { file: 'openfars.local.yaml', template: 'openfars.yaml', hint: '密钥只放环境变量，不写进 YAML。首次体验请先运行“零密钥演示”；真实模型需要再安装模型支持并修改这里的模型路由。' },
+    outputDirs: ['outputs', '.openfars', '.'],
+    modes: [
+      { id: 'demo', label: '零密钥演示', kind: 'web', url: 'http://127.0.0.1:18765',
+        script: `${VENV_ACTIVATE()} && cp examples/offline.yaml .toolbox-offline.yaml && printf '\nweb: {host: 127.0.0.1, port: 18765, open_browser: false, event_poll_ms: 750}\n' >> .toolbox-offline.yaml && openfars web --config .toolbox-offline.yaml --no-open`,
+        note: '不用 API key，展示 13 个智能体和完整工作流，但不会伪造真实实验结果。适合第一次试效果。' },
+      { id: 'models', label: '安装模型支持', kind: 'job',
+        script: `${VENV_ACTIVATE()} && python -m pip install -e '.[models]'`,
+        note: '准备连接 OpenAI、Claude、Gemini、DeepSeek、OpenRouter 或本地模型；可能需要几分钟。' },
+      { id: 'doctor', label: '检查配置', kind: 'job',
+        script: `${VENV_ACTIVATE()} && openfars doctor --config openfars.local.yaml`,
+        note: '检查模型路由、环境变量和实验环境，不会开始研究。' },
+      { id: 'web', label: '真实科研界面', kind: 'web', url: 'http://127.0.0.1:18765',
+        script: `${VENV_ACTIVATE()} && openfars web --config openfars.local.yaml --no-open`,
+        note: '使用 openfars.local.yaml 中的模型团队；先安装模型支持并运行配置检查。' },
+      { id: 'run', label: '按主题开跑', kind: 'job',
+        fields: [{ key: 'topic', label: '研究方向', default: '' }],
+        script: (p) => `${VENV_ACTIVATE()} && openfars run --config openfars.local.yaml --topic ${JSON.stringify(p.topic)}`,
+        note: '执行真实研究流程。建议先在网页界面确认模型配置和人工检查点。' },
+    ],
+  },
   {
     id: 'ai-researcher', name: 'AI-Researcher', org: 'HKUDS', badge: 'NeurIPS 2025 Spotlight',
     repo: 'https://github.com/HKUDS/AI-Researcher', dirName: 'AI-Researcher',
     desc: '文献综述 → 出 idea → 设计算法 → 跑实验 → 写稿，一条龙。自带网页界面，综述和找 idea 在网页里选。',
     tags: ['综述', '找 idea', '全流程'],
     needs: [{ cmd: 'uv', label: 'uv' }, { cmd: 'docker', label: 'Docker（跑实验时才要）' }],
-    install: 'uv venv --python 3.11 && . .venv/bin/activate && uv pip install -e . && playwright install chromium',
-    envCheck: '.venv/bin/python',
+    install: `uv venv --python 3.11 && ${VENV_ACTIVATE()} && uv pip install -e . && playwright install chromium`,
+    envCheck: VENV_PYTHON(),
     config: { file: '.env', template: '.env.template', hint: '把 OPENROUTER_API_KEY（或别的 LiteLLM 支持的 key）填进去；COMPLETION_MODEL 选你有额度的模型。' },
     outputDirs: ['research_agent/workplace', 'paper_agent', 'cache'],
     modes: [
       { id: 'gui', label: '网页界面', kind: 'web', url: 'http://127.0.0.1:7039',
-        script: '. .venv/bin/activate && python web_ai_researcher.py',
+        script: `${VENV_ACTIVATE()} && python web_ai_researcher.py`,
         note: '起一个本地网页（Gradio）。综述、找 idea、全流程都在里面点；跑实验那步要 Docker。' },
       { id: 'idea', label: '找 idea（命令行）', kind: 'job',
         fields: [
@@ -46,7 +79,7 @@ const PROJECTS = [
           { key: 'instance', label: '参考任务（benchmark/final/<方向>/ 下的 json 名）', default: 'one_layer_vq' },
           { key: 'model', label: '模型（LiteLLM 写法）', default: 'openrouter/google/gemini-2.5-pro-preview-05-20' },
         ],
-        script: (p) => `. .venv/bin/activate && cd research_agent && python run_infer_idea.py --instance_path ../benchmark/final/${p.category}/${p.instance}.json --container_name paper_eval --model ${p.model} --workplace_name workplace --cache_path cache --port 12372 --max_iter_times 0 --category ${p.category}`,
+        script: (p) => `${VENV_ACTIVATE()} && cd research_agent && python run_infer_idea.py --instance_path ../benchmark/final/${p.category}/${p.instance}.json --container_name paper_eval --model ${p.model} --workplace_name workplace --cache_path cache --port 12372 --max_iter_times 0 --category ${p.category}`,
         note: '按参考论文出新 idea 并实现。要 Docker 起沙箱容器。' },
     ],
   },
@@ -78,9 +111,9 @@ const PROJECTS = [
     repo: 'https://github.com/SakanaAI/AI-Scientist-v2', dirName: 'AI-Scientist-v2',
     desc: '最早出名的那个。给一段主题描述，它脑暴 idea 并用 Semantic Scholar 查新；全流程用树搜索跑实验再写论文。',
     tags: ['找 idea', '全流程'],
-    needs: [{ cmd: 'python3', label: 'Python 3.11' }, { cmd: 'nvidia-smi', label: 'NVIDIA GPU（只有全流程要）' }],
-    install: 'python3 -m venv .venv && . .venv/bin/activate && pip install -r requirements.txt',
-    envCheck: '.venv/bin/python',
+    needs: [{ cmd: 'python3|python', label: 'Python 3.11' }, { cmd: 'nvidia-smi', label: 'NVIDIA GPU（只有全流程要）' }],
+    install: `${PYTHON} -m venv .venv && ${VENV_ACTIVATE()} && pip install -r requirements.txt`,
+    envCheck: VENV_PYTHON(),
     config: { file: '.env', template: null, hint: 'OPENAI_API_KEY 或 GEMINI_API_KEY 二选一；S2_API_KEY 可不填（查新会慢）。', seed: '# AI Scientist v2 用到的环境变量，填完保存即可（工具箱启动时会 source 这个文件）\nOPENAI_API_KEY=\nGEMINI_API_KEY=\nS2_API_KEY=\n' },
     outputDirs: ['ai_scientist/ideas', 'experiments'],
     modes: [
@@ -95,7 +128,7 @@ const PROJECTS = [
           { key: 'n', label: '出几个 idea', default: '10' },
           { key: 'reflections', label: '每个打磨几轮', default: '3' },
         ],
-        script: (p) => `. .venv/bin/activate && python ai_scientist/perform_ideation_temp_free.py --workshop-file "ai_scientist/ideas/${p.slug}.md" --model ${p.model} --max-num-generations ${p.n} --num-reflections ${p.reflections}`,
+        script: (p) => `${VENV_ACTIVATE()} && python ai_scientist/perform_ideation_temp_free.py --workshop-file "ai_scientist/ideas/${p.slug}.md" --model ${p.model} --max-num-generations ${p.n} --num-reflections ${p.reflections}`,
         note: '只用模型 API，Mac 上就能跑。产出在 ai_scientist/ideas/<主题>.json。' },
       { id: 'full', label: '全流程', kind: 'job',
         fields: [
@@ -103,7 +136,7 @@ const PROJECTS = [
           { key: 'writeup', label: '写稿模型', default: 'o1-preview-2024-09-12' },
           { key: 'cite', label: '引用 / 评审模型', default: 'gpt-4o-2024-11-20' },
         ],
-        script: (p) => `. .venv/bin/activate && python launch_scientist_bfts.py --load_ideas "${p.ideas}" --add_dataset_ref --model_writeup ${p.writeup} --model_citation ${p.cite} --model_review ${p.cite} --model_agg_plots o3-mini-2025-01-31 --num_cite_rounds 20`,
+        script: (p) => `${VENV_ACTIVATE()} && python launch_scientist_bfts.py --load_ideas "${p.ideas}" --add_dataset_ref --model_writeup ${p.writeup} --model_citation ${p.cite} --model_review ${p.cite} --model_agg_plots o3-mini-2025-01-31 --num_cite_rounds 20`,
         note: '要 Linux + NVIDIA GPU，Mac 上跑不动实验。树搜索参数在 bfts_config.yaml。' },
     ],
   },
@@ -129,9 +162,9 @@ const PROJECTS = [
     repo: 'https://github.com/SamuelSchmidgall/AgentLaboratory', dirName: 'AgentLaboratory',
     desc: '几个 LLM 当研究助理分工：文献综述 → 定计划 → 写代码跑实验 → 写论文。一份 yaml 配好主题就开跑，支持中文、支持人机协作模式。',
     tags: ['综述', '全流程', '中文'],
-    needs: [{ cmd: 'python3', label: 'Python 3.12' }],
-    install: 'python3 -m venv venv_agent_lab && . venv_agent_lab/bin/activate && pip install -r requirements.txt',
-    envCheck: 'venv_agent_lab/bin/python',
+    needs: [{ cmd: 'python3|python', label: 'Python 3.12' }],
+    install: `${PYTHON} -m venv venv_agent_lab && ${VENV_ACTIVATE('venv_agent_lab')} && pip install -r requirements.txt`,
+    envCheck: VENV_PYTHON('venv_agent_lab'),
     config: { file: 'experiment_configs/toolbox.yaml', template: 'experiment_configs/MATH_agentlab.yaml', hint: 'api-key 填 OpenAI 的，或者把那行改成 deepseek-api-key；research-topic 写你的题目。' },
     outputDirs: ['research_dir', 'state_saves', '.'],
     modes: [
@@ -144,6 +177,15 @@ const PROJECTS = [
 ];
 
 function resolveCommand(command) {
+  // 自动科研脚本用的是 POSIX shell 语法。Windows 自带的 System32\bash.exe
+  // 指向 WSL，既不认识普通 Windows 路径，也可能根本没装发行版；这里必须优先 Git Bash。
+  if (process.platform === 'win32' && command === 'bash') {
+    const gitBash = [
+      path.join(process.env.ProgramFiles || 'C:\\Program Files', 'Git', 'bin', 'bash.exe'),
+      path.join(process.env.LOCALAPPDATA || '', 'Programs', 'Git', 'bin', 'bash.exe'),
+    ].find((candidate) => candidate && fs.existsSync(candidate));
+    if (gitBash) return gitBash;
+  }
   const names = process.platform === 'win32' ? [`${command}.cmd`, `${command}.exe`, `${command}.bat`, command] : [command];
   const dirs = [
     path.join(HOME, '.local', 'bin'), path.join(HOME, '.cargo', 'bin'), '/opt/homebrew/bin', '/usr/local/bin',
@@ -265,6 +307,7 @@ class AutoResearchService {
         if (!fs.existsSync(tpl)) return { ok: false, error: `仓库里没有模板 ${p.config.template}` };
         content = fs.readFileSync(tpl, 'utf8');
         if (id === 'agent-laboratory') content = agentLabYaml(content, options);
+        if (id === 'openfars') content = content.replace(/web:\s*\{[^\n]*\}/, 'web: {host: 127.0.0.1, port: 18765, open_browser: false, event_poll_ms: 750}');
       }
       fs.mkdirSync(path.dirname(target), { recursive: true });
       fs.writeFileSync(target, content, 'utf8');
@@ -296,6 +339,7 @@ class AutoResearchService {
     if (mode.kind === 'manual') return { ok: false, error: '这一步要在编码 agent 里做' };
     const filled = {};
     for (const f of mode.fields || []) filled[f.key] = String(params[f.key] ?? f.default ?? '').trim();
+    if (p.id === 'openfars' && mode.id === 'run' && !filled.topic) return { ok: false, error: '先写研究方向' };
     if (mode.topic) {
       if (!filled.title) return { ok: false, error: '先写主题标题' };
       const wrote = this.writeTopic(id, filled);

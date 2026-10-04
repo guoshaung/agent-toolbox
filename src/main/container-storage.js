@@ -43,6 +43,13 @@ function seedContainer(getUserDataPath, seedDir) {
   if (!seedDir || !fs.existsSync(seedDir)) return { ok: true, copied: [] };
   const root = containerRoot(getUserDataPath);
   const copied = [];
+  const copyMissing = (source, target) => {
+    if (!fs.existsSync(source)) return;
+    if (fs.statSync(source).isDirectory()) {
+      fs.mkdirSync(target, { recursive: true });
+      for (const child of fs.readdirSync(source)) if (!child.startsWith('.')) copyMissing(path.join(source, child), path.join(target, child));
+    } else if (!fs.existsSync(target)) { fs.copyFileSync(source, target); copied.push(path.relative(root, target)); }
+  };
   for (const name of fs.readdirSync(seedDir)) {
     if (name.startsWith('.')) continue;
     const target = path.join(root, name);
@@ -52,6 +59,7 @@ function seedContainer(getUserDataPath, seedDir) {
       if (fs.statSync(target).isDirectory() && fs.existsSync(path.join(source, 'pyproject.toml')) && !fs.existsSync(path.join(target, 'pyproject.toml'))) {
         try { fs.copyFileSync(path.join(source, 'pyproject.toml'), path.join(target, 'pyproject.toml')); } catch (err) { console.warn('[container] 项目元数据补齐失败', name, err.message); }
       }
+      if (name === '技术学习验证系统') copyMissing(source, target);
       continue;
     }
     try {
