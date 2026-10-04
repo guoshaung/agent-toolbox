@@ -268,8 +268,8 @@ async function exportBilibiliCookies() {
         cookie.path || '/',
         cookie.secure ? 'TRUE' : 'FALSE',
         Math.floor(Number(cookie.expirationDate) || 0),
-        String(cookie.name || '').replace(/[\t\r\n]/g, ''),
-        String(cookie.value || '').replace(/[\t\r\n]/g, ''),
+        String(cookie.name || '').replace(/[\t\n]/g, ''),
+        String(cookie.value || '').replace(/[\t\n]/g, ''),
       ].join('\t')),
       '',
     ];
@@ -2310,6 +2310,10 @@ function registerIpc() {
   ipcMain.handle('appControls:status', () => appControls.status());
   ipcMain.handle('appControls:setEnabled', (_e, enabled) => {
     appControls.setEnabled(Boolean(enabled));
+    return appControls.register(globalShortcut);
+  });
+  ipcMain.handle('appControls:setAltTabEnabled', (_e, enabled) => {
+    appControls.setAltTabEnabled(Boolean(enabled));
     return appControls.register(globalShortcut);
   });
   ipcMain.handle('appControls:closeForeground', () => appControls.closeForeground());

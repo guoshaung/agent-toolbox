@@ -1,4 +1,5 @@
 :root {
+  --ui-scale: 1;
   /* 主色板：深蓝底 + 蓝紫粉三色渐变强调 */
   /* 背景从近乎纯黑（亮度 0.3%）抬起来，正文从纯白压下来：
      原本 #0c0e13 配 #eef1f7 是 17:1，比 VSCode Dark+ 的 11.25:1 硬得多，
@@ -81,7 +82,7 @@ button, input, textarea, select { font-family: inherit; font-size: inherit; colo
 
 /* ---------- 应用骨架 ---------- */
 
-#app { display: flex; height: 100vh; }
+#app { display: flex; width: calc(100% / var(--ui-scale)); height: calc(100vh / var(--ui-scale)); transform: scale(var(--ui-scale)); transform-origin: top left; }
 
 .rail {
   width: 78px;

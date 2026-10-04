@@ -1,4 +1,5 @@
 import { TOOLS } from './core/registry.js';
+import { applyTypography, applyUiScale, showStartup } from './core/startup-style.js';
 import { colorOf } from './core/tool-colors.js';
 import { DeepSeekBridge } from './core/deepseek-bridge.js';
 import { Config } from './core/config.js';
@@ -46,6 +47,9 @@ const atelierBanner = h('header', { class: 'atelier-banner', 'aria-label': 'Agen
 stage.appendChild(atelierBanner);
 
 const config = await Config.load();
+applyTypography(config);
+applyUiScale(config);
+showStartup(config);
 const calmVisualMigrationDone = config.get('ui.visualMigration.crystalCalm', false);
 if (!calmVisualMigrationDone && config.get('ui.theme') === 'cyber' && config.get('ui.effect') === 'neon') {
   void config.set('ui.theme', 'violet');

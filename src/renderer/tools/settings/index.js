@@ -1,6 +1,7 @@
 import { h, toast } from '../../core/ui.js';
 import { acceleratorFromKeyEvent } from '../../core/hotkeys.js';
 import { PROVIDERS } from '../../core/ai.js';
+import { applyTypography, applyUiScale, showStartup } from '../../core/startup-style.js';
 
 export default {
   id: 'settings',
@@ -10,6 +11,25 @@ export default {
 
   create(root, ctx) {
     const { config, bridge } = ctx;
+
+    const typography = h('select', { class: 'field', 'aria-label': '文字风格' },
+      ...[['system','原样 · 清晰正文'],['q-headings','Q 版标题 · 正文清晰'],['q-all','全界面 Q 版'],['handwritten','手写风']].map(([value,label]) => h('option',{value},label)));
+    typography.value = config.get('ui.typography','q-all');
+    typography.addEventListener('change', async () => { await config.set('ui.typography',typography.value); applyTypography(config); });
+    const uiScale = h('select', { class: 'field', 'aria-label': '界面适配' },
+      h('option', { value: 'standard' }, '标准 · 100%'),
+      h('option', { value: 'large' }, '大屏 · 116%'),
+      h('option', { value: 'xlarge' }, '超大屏 · 132%'));
+    uiScale.value = config.get('ui.scale', 'standard');
+    uiScale.addEventListener('change', async () => { await config.set('ui.scale', uiScale.value); applyUiScale(config); });
+    const startupSkin = h('select', { class: 'field', 'aria-label': '启动皮肤' },
+      h('option',{value:'sharingan'},'写轮眼 · 睁眼与三勾玉旋转'), h('option',{value:'none'},'直接进入工具箱'));
+    startupSkin.value = config.get('ui.startupSkin','sharingan');
+    startupSkin.addEventListener('change', () => config.set('ui.startupSkin',startupSkin.value));
+    root.append(h('section',{class:'card',id:'settings-personal-style'},
+      h('h3',{class:'card__title'},'启动皮肤、文字与界面适配'), startupSkin, typography, uiScale,
+      h('button',{class:'btn',onclick:()=>showStartup(config,{preview:true})},'预览睁眼动画'),
+      h('p',{class:'faint'},'界面适配会放大按钮、文字、卡片和侧栏；代码与日志保留等宽字体。动画可按 Esc 跳过。')));
 
     const probeOut = h('pre', { class: 'settings__probe mono' }, '还没检测');
 

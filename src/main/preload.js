@@ -534,6 +534,7 @@ contextBridge.exposeInMainWorld('toolbox', {
     status: () => ipcRenderer.invoke('appControls:status'),
     /** 开启/关闭快捷控制，返回注册结果 */
     setEnabled: (enabled) => ipcRenderer.invoke('appControls:setEnabled', enabled),
+    setAltTabEnabled: (enabled) => ipcRenderer.invoke('appControls:setAltTabEnabled', enabled),
     /** 强制关闭当前前台应用（Ctrl+Q，带安全名单） */
     closeForeground: () => ipcRenderer.invoke('appControls:closeForeground'),
     /** 在当前前台应用的多个窗口间循环（Ctrl+~） */
