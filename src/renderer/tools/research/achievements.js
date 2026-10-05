@@ -5,7 +5,7 @@ import { h, toast } from '../../core/ui.js';
  *
  * 规则（强制）：一篇要标成「已读」，必须先有 >=2 条批注 + 一段 >=20 字的心得体会。
  *   点「标记已读」时若没达标，直接拦下来：缺批注就提醒去选中原文写批注，缺心得就当场弹框逼你写。
- * 激励（游戏化）：每条批注 / 划重点 / 心得 / 读完都给经验值，攒等级（旁听生→教授），
+ * 激励（游戏化）：每条批注 / 划重点 / 心得 / 读完都给经验值，攒修为等级（炼气→渡劫），
  *   连续阅读有连击，达成里程碑解锁成就徽章并弹庆祝。一个奖杯按钮随时看进度。
  *
  * 数据：成就自身状态存 config 的 research.achieve（xp / 解锁列表 / 连击 / 已庆祝）；
@@ -17,17 +17,17 @@ export const REFLECT_MIN = 20;       // 心得体会最少字数
 const DEEP_ANNOS = 5;                // 「深读」门槛：一篇 >=5 批注且有心得
 const XP = { anno: 10, highlight: 4, reflection: 25, read: 60, deep: 40 };
 
-// 等级：按累计经验，名字走学术进阶，够中二够上头
+// 等级：按累计经验，名字走修仙阶位，够中二够上头
 const LEVELS = [
-  { at: 0, name: '旁听生', icon: '🧑‍🎓' },
-  { at: 120, name: '本科生', icon: '📘' },
-  { at: 350, name: '研究生', icon: '📗' },
-  { at: 750, name: '博士生', icon: '📙' },
-  { at: 1400, name: '博士后', icon: '🔬' },
-  { at: 2600, name: '讲师', icon: '🎓' },
-  { at: 4200, name: '副教授', icon: '🏛' },
-  { at: 6500, name: '教授', icon: '👑' },
-  { at: 10000, name: '院士', icon: '🌟' },
+  { at: 0, name: '炼气', icon: '🌱' },
+  { at: 120, name: '筑基', icon: '🪨' },
+  { at: 350, name: '结丹', icon: '🟡' },
+  { at: 750, name: '元婴', icon: '👶' },
+  { at: 1400, name: '化神', icon: '🔮' },
+  { at: 2600, name: '炼虚', icon: '🌫' },
+  { at: 4200, name: '合体', icon: '☯' },
+  { at: 6500, name: '大乘', icon: '✨' },
+  { at: 10000, name: '渡劫', icon: '⚡' },
 ];
 
 // 成就徽章：test 收到 stats() 的结果
@@ -47,7 +47,7 @@ const ACHIEVEMENTS = [
   { id: 'streak-3', name: '三天不断', icon: '🔥', desc: '连续 3 天有阅读', test: (s) => s.streak >= 3 },
   { id: 'streak-7', name: '一周坚持', icon: '🔥', desc: '连续 7 天有阅读', test: (s) => s.streak >= 7 },
   { id: 'streak-30', name: '月度自律', icon: '🏆', desc: '连续 30 天有阅读', test: (s) => s.streak >= 30 },
-  { id: 'lvl-5', name: '登堂入室', icon: '🎓', desc: '升到「讲师」', test: (s) => s.level >= 5 },
+  { id: 'lvl-5', name: '登堂入室', icon: '🎓', desc: '修为突破「炼虚」', test: (s) => s.level >= 5 },
 ];
 
 const CSS = `
@@ -149,7 +149,7 @@ export function createAchievements(ctx) {
     s.xp = (s.xp || 0) + delta;
     save(s);
     const after = levelOf(s.xp);
-    if (after > before) setTimeout(() => celebrate([{ icon: LEVELS[after].icon, name: `升级：${LEVELS[after].name}`, kicker: 'LEVEL UP' }]), 350);
+    if (after > before) setTimeout(() => celebrate([{ icon: LEVELS[after].icon, name: `突破：${LEVELS[after].name}`, kicker: '境界突破' }]), 350);
     return s;
   }
   function checkUnlocks() {
@@ -219,7 +219,7 @@ export function createAchievements(ctx) {
         h('div', { class: 'ach-panel__kicker' }, 'Reading Achievements · 读论文成就'),
         h('div', { class: 'ach-panel__lvl' }, h('span', { class: 'ach-panel__lvl-icon' }, lv.icon),
           h('div', {}, h('div', { class: 'ach-panel__lvl-name' }, `Lv.${st.level} ${lv.name}`),
-            h('div', { class: 'ach-panel__lvl-sub' }, next ? `距「${next.name}」还差 ${next.at - st.xp} 经验` : '已达顶级 · 读书人之巅'))),
+            h('div', { class: 'ach-panel__lvl-sub' }, next ? `距「${next.name}」还差 ${next.at - st.xp} 修为` : '已达顶级 · 飞升在即'))),
         h('div', { class: 'ach-xpbar' }, h('div', { class: 'ach-xpbar__fill', style: { width: `${Math.round(into * 100)}%` } })),
         h('button', { class: 'ach-x', onclick: () => ov.remove() }, '×')),
       h('div', { class: 'ach-stats' }, tile(st.reads, '读完'), tile(st.annos, '批注'), tile(st.reflections, '心得'), tile(st.deepReads, '深读'), tile(st.highlights, '重点'), tile(st.streak, '连击(天)'), tile(unlocked.size, '成就'), tile(st.xp, '经验')),
