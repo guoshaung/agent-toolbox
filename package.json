@@ -1,9 +1,9 @@
 {
   "name": "agent-toolbox",
-  "version": "0.45.0",
+  "version": "0.45.1",
   "description": "个人 Agent 工具箱：科研文献 / 代码阅读 / 文档 / 打字纠错 / 专注 / DeepSeek 快问",
   "private": true,
-  "main": "channel-launch.cjs",
+  "main": "src/main/main.js",
   "scripts": {
     "avatar:prepare": "node scripts/prepare-avatar-rig.cjs",
     "prestart": "npm run avatar:prepare",
@@ -59,8 +59,7 @@
       "!docs/**",
       "!work/**",
       "!**/*.bak-*",
-      "!**/*.bak",
-      "channel-launch.cjs"
+      "!**/*.bak"
     ],
     "mac": {
       "category": "public.app-category.productivity",

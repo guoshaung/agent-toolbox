@@ -8,6 +8,7 @@ import {
 } from './reading-progress.js';
 import { pushSearchHistory } from './search-history.js';
 import { annotationAnchor, annotationMatches } from './annotation-utils.js';
+import { createAchievements } from './achievements.js';
 
 const FORMAT_ICONS = {
   pdf: '📕', doc: '📘', docx: '📘', txt: '📄', md: '📄',
@@ -86,6 +87,8 @@ function loadPdfJs() {
 export function createLiterature(root, ctx) {
   const { config } = ctx;
   const lit = window.toolbox.lit;
+  // 阅读成就系统：批注/心得/读完给经验，标已读要先达标。见 achievements.js
+  const achieve = createAchievements(ctx);
 
   let files = [];
   let current = null; // 当前阅读的 { file, format, size, mtime }
@@ -161,6 +164,7 @@ export function createLiterature(root, ctx) {
     readingProgress,
     pageNav,
     markReadBtn,
+    achieve.badge,
     h('span', { style: { flex: 1 } }),
     handBtn, selectBtn,
     h('span', { class: 'subbar__sep' }),
@@ -699,6 +703,7 @@ export function createLiterature(root, ctx) {
     hideSelectionAction();
     applyBilingualHighlights();
     renderAnnos();
+    achieve.onHighlight();
     toast('重点已保存', 'good');
   }
 
@@ -757,6 +762,7 @@ export function createLiterature(root, ctx) {
     annoQuote.value = '';
     annoNote.value = '';
     renderAnnos();
+    achieve.onAnnotation();
     toast('批注已记下', 'good');
   }
 
@@ -1043,9 +1049,7 @@ export function createLiterature(root, ctx) {
     void config.set('research.litMeta', metaMap);
   }
 
-  async function markCurrentRead() {
-    if (!current) return;
-    const file = current.file;
+  async function finishMarkRead(file) {
     const metaMap = meta();
     metaMap[file] = { ...(metaMap[file] || {}), readStatus: 'read', readAt: new Date().toISOString() };
     await config.set('research.litMeta', metaMap);
@@ -1053,7 +1057,27 @@ export function createLiterature(root, ctx) {
     if (snapshot) await saveReadingProgressSnapshot({ ...snapshot, progress: 1 });
     renderReadingProgress({ ...(snapshot || {}), progress: 1 });
     await renderList();
-    toast('已标记为已读', 'good');
+    achieve.onRead(file);
+    toast('已读 ✓ 这才算真读过', 'good');
+  }
+
+  // 强制：标「已读」前必须有足够批注 + 一段心得。缺心得就当场弹框逼你写完再标。
+  async function markCurrentRead() {
+    if (!current) return;
+    const file = current.file;
+    const gate = achieve.canMarkRead(file);
+    if (gate.ok) return finishMarkRead(file);
+    if (!gate.enoughAnnos) {
+      toast(`想标已读，先在原文里选中文字写够批注：${gate.missing.find((x) => x.includes('批注')) || ''}`, 'info', 6000);
+      if (annoPanel && annoPanel.hasAttribute('hidden')) annoToggle.click?.();
+      return;
+    }
+    // 批注够了，只差心得：弹框写，写完自动标为已读
+    const metaMap = meta();
+    achieve.promptReflection(file, {
+      title: metaMap[file]?.title || file,
+      onDone: () => finishMarkRead(file),
+    });
   }
 
   function isSingleWord(text) {
@@ -2453,6 +2477,7 @@ export function createLiterature(root, ctx) {
           const next = meta();
           next[item.file] = { ...(next[item.file] || {}), note: noteInput.value.trim(), addedAt: m.addedAt };
           await config.set('research.litMeta', next);
+          achieve.onReflection(noteInput.value.trim().length);
         },
       });
       const openFromCard = (event) => {
@@ -3059,6 +3084,8 @@ export function createLiterature(root, ctx) {
       fetchBtn,
       fetchStatus,
       h('span', { class: 'faint lit__hint' }, '点「阅读」右侧直接看，不用开 WPS'),
+      h('span', { style: { flex: 1 } }),
+      h('button', { class: 'btn btn--sm', title: '阅读成就 · 督促懒人：读完要有批注和心得', onclick: () => achieve.openPanel() }, '🏆 成就'),
     ),
     h('div', { class: 'lit__body' },
       h('div', { class: 'lit__side' }, dropZone, recentReadingEl, analysisHistoryEl, discoveryPanel, libraryPanel, noticeEl, libraryFilter, listEl),
