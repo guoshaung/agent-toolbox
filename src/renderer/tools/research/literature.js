@@ -159,6 +159,49 @@ export function createLiterature(root, ctx) {
   const pageJump = h('button', { class: 'btn btn--sm', title: '跳到指定页', onclick: jumpToPage }, '跳页');
   const pageNav = h('span', { class: 'lit__page-nav', hidden: true }, '第', pageInput, '/', pageCountLabel, '页', pageJump);
   const markReadBtn = h('button', { class: 'btn btn--sm', disabled: true, title: '把当前文献标记为已读', onclick: markCurrentRead }, '标记已读');
+
+  // —— 看解说：论文读着累，一键去视频/社区平台搜这篇的解读、精读、讲解 ——
+  const EXPLAIN_SITES = [
+    { id: 'bili', label: 'B站', icon: '📺', suffix: ' 解读', url: (q) => `https://search.bilibili.com/all?keyword=${encodeURIComponent(q)}` },
+    { id: 'xhs', label: '小红书', icon: '📕', suffix: ' 论文', url: (q) => `https://www.xiaohongshu.com/search_result?keyword=${encodeURIComponent(q)}` },
+    { id: 'douyin', label: '抖音', icon: '🎵', suffix: ' 解读', url: (q) => `https://www.douyin.com/search/${encodeURIComponent(q)}` },
+    { id: 'zhihu', label: '知乎', icon: '🧠', suffix: ' 论文解读', url: (q) => `https://www.zhihu.com/search?type=content&q=${encodeURIComponent(q)}` },
+    { id: 'youtube', label: 'YouTube', icon: '▶️', suffix: ' explained', url: (q) => `https://www.youtube.com/results?search_query=${encodeURIComponent(q)}` },
+  ];
+  function explainQuery() {
+    const raw = (meta()[current?.file]?.title || current?.file?.replace(/\.[^.]+$/, '') || '').trim();
+    const short = raw.split(/[:：]/)[0].trim();        // 取冒号前的短名（如 AFlow），更容易搜到解说
+    return short.length >= 2 ? short : raw;
+  }
+  function openExplain(site) {
+    const kw = (explainInput.value || '').trim();
+    if (!kw) { explainInput.focus(); return; }
+    window.toolbox.shell.openExternal(site.url(kw + (site.suffix || '')));
+    explainMenu.hidden = true;
+  }
+  const explainInput = h('input', {
+    class: 'field field--sm lit__explain-q', placeholder: '搜索关键词（可改）',
+    onkeydown: (e) => { if (e.key === 'Enter') openExplain(EXPLAIN_SITES[0]); },
+  });
+  const explainMenu = h('div', { class: 'lit__explain-menu', hidden: true },
+    h('div', { class: 'lit__explain-head' }, '看这篇的解说', h('span', { class: 'faint' }, '选平台搜')),
+    explainInput,
+    h('div', { class: 'lit__explain-sites' }, ...EXPLAIN_SITES.map((s) => h('button', { class: 'btn btn--sm', onclick: () => openExplain(s) }, `${s.icon} ${s.label}`))),
+  );
+  const explainBtn = h('button', { class: 'btn btn--sm', title: '去 B站/小红书/抖音/知乎/YouTube 搜这篇论文的解说、精读', onclick: () => toggleExplain() }, '🎬 看解说');
+  const explainWrap = h('span', { class: 'lit__explain-wrap' }, explainBtn, explainMenu);
+  function toggleExplain() {
+    if (explainMenu.hidden) {
+      explainInput.value = explainQuery();
+      const r = explainBtn.getBoundingClientRect();        // fixed 定位，避开工具栏裁剪
+      explainMenu.style.top = `${Math.round(r.bottom + 6)}px`;
+      explainMenu.style.right = `${Math.round(window.innerWidth - r.right)}px`;
+      explainMenu.hidden = false;
+      explainInput.focus(); explainInput.select();
+    } else { explainMenu.hidden = true; }
+  }
+  document.addEventListener('click', (e) => { if (!explainMenu.hidden && !explainWrap.contains(e.target)) explainMenu.hidden = true; });
+
   const viewerBar = h('div', { class: 'bar lit__viewerbar', hidden: true },
     h('span', { class: 'lit__viewer-name', title: '' }, ''),
     readingProgress,
@@ -172,7 +215,7 @@ export function createLiterature(root, ctx) {
     h('span', { class: 'subbar__sep' }),
     bilingBtn, selBtn, snipBtn, transToggleBtn, compareBtn,
     h('span', { class: 'subbar__sep' }),
-    referencesBtn, paperAnalysisBtn, chatToggle, annoToggle,
+    referencesBtn, paperAnalysisBtn, chatToggle, annoToggle, explainWrap,
   );
   const referencesPanel = h('aside', { class: 'lit__references', hidden: true });
   const analysisContent = h('div', { class: 'lit__analysis-content' });
