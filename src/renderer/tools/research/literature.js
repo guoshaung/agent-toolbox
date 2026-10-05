@@ -2039,6 +2039,9 @@ export function createLiterature(root, ctx) {
       await page.render({ canvasContext: canvas.getContext('2d'), viewport: renderViewport }).promise;
       if (runId !== readerRunId || pdfDoc !== doc) return;
       textLayerEl.textContent = '';
+      // pdf.js v4 的 TextLayer 给每个 span 设 font-size: calc(var(--scale-factor) * Npx)，
+      // 不定义这个变量 calc 会失效、字号退回继承值 → 整层错位、选中时和画布文字叠成重影。
+      textLayerEl.style.setProperty('--scale-factor', String(pdfRenderedScale));
       const pdfjsLib = await loadPdfJs();
       const textLayer = new pdfjsLib.TextLayer({
         textContentSource: await page.getTextContent(),
