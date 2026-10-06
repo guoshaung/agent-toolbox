@@ -805,6 +805,14 @@ contextBridge.exposeInMainWorld('toolbox', {
     onInbox: (callback) => ipcRenderer.on('remote:inbox', (_event, item) => callback(item)),
   },
 
+  // 鼠标侧键 → 切换应用（macOS）
+  mouseSwitch: {
+    start: (back, fwd) => ipcRenderer.invoke('mouseSwitch:start', back, fwd),
+    stop: () => ipcRenderer.invoke('mouseSwitch:stop'),
+    status: () => ipcRenderer.invoke('mouseSwitch:status'),
+    learn: (timeoutMs) => ipcRenderer.invoke('mouseSwitch:learn', timeoutMs),
+  },
+
   shell: {
     openExternal: (url) => ipcRenderer.invoke('shell:openExternal', url),
     openEasyConnect: () => ipcRenderer.invoke('shell:openEasyConnect'),

@@ -13,23 +13,78 @@ export default {
   icon: 'zap',
   hint: 'Alt+Tab 大图标切换 / Alt+Q 强关 / Alt+~ 循环窗口（默认关闭）',
 
-  create(root) {
+  create(root, ctx) {
     const isWindows = window.toolbox.platform === 'win32';
     if (!isWindows) {
+      // macOS：把「快捷控制」做成「鼠标侧键 → 切换应用」。
+      const config = ctx?.config;
+      const get = (k, d) => (config ? config.get(k, d) : d);
+      const setCfg = (k, v) => (config ? config.set(k, v) : Promise.resolve());
+      let back = Number(get('mouseSwitch.back', 3)) || 3;
+      let fwd = Number(get('mouseSwitch.fwd', 4)) || 4;
+
+      const enabledToggle = h('input', { type: 'checkbox', class: 'switch__input' });
+      const statusTag = h('span', { class: 'tag' }, '已关闭');
+      const backLabel = h('kbd', { class: 'controls__key' }, `侧键 ${back}`);
+      const fwdLabel = h('kbd', { class: 'controls__key' }, `侧键 ${fwd}`);
+
+      async function refreshStatus() {
+        const st = await window.toolbox.mouseSwitch.status();
+        if (st.running) { statusTag.textContent = '已开启'; statusTag.className = 'tag tag--good'; }
+        else if (enabledToggle.checked) { statusTag.textContent = st.error || '未启动'; statusTag.className = 'tag tag--bad'; }
+        else { statusTag.textContent = '已关闭'; statusTag.className = 'tag'; }
+      }
+
+      async function applyEnabled(on) {
+        await setCfg('mouseSwitch.enabled', on);
+        if (on) {
+          const r = await window.toolbox.mouseSwitch.start(back, fwd);
+          toast(r.ok ? '鼠标侧键切换已开启' : (r.error || '启动失败'), r.ok ? 'good' : 'bad', r.ok ? 2500 : 6000);
+        } else {
+          await window.toolbox.mouseSwitch.stop();
+          toast('鼠标侧键切换已关闭', 'info');
+        }
+        refreshStatus();
+      }
+      enabledToggle.addEventListener('change', () => applyEnabled(enabledToggle.checked));
+
+      async function learnButton(which) {
+        const name = which === 'back' ? '上一个应用' : '下一个应用';
+        toast(`请在 8 秒内按一下你想用作「${name}」的鼠标侧键…`, 'info', 6000);
+        const r = await window.toolbox.mouseSwitch.learn(8000);
+        if (r.button == null) {
+          toast('没捕捉到侧键（超时）。确认鼠标侧键能发 otherMouse 事件，且已在「辅助功能」里打开 Agent 工具箱。', 'bad', 7000);
+        } else if (which === 'back') {
+          back = r.button; backLabel.textContent = `侧键 ${back}`; await setCfg('mouseSwitch.back', back);
+          toast(`已把侧键 ${back} 设为「上一个应用」`, 'good');
+        } else {
+          fwd = r.button; fwdLabel.textContent = `侧键 ${fwd}`; await setCfg('mouseSwitch.fwd', fwd);
+          toast(`已把侧键 ${fwd} 设为「下一个应用」`, 'good');
+        }
+        if (enabledToggle.checked) await window.toolbox.mouseSwitch.start(back, fwd);  // 用新键号重启
+        refreshStatus();
+      }
+
       root.append(
         h('div', { class: 'bar bar--drag' },
-          h('strong', {}, '快捷控制'),
-          h('span', { class: 'faint' }, '仅 Windows 可用'),
+          h('strong', {}, '鼠标侧键切换'),
+          h('span', { class: 'faint' }, 'macOS · 侧键当 Cmd+Tab'),
+          h('span', { style: { flex: 1 } }),
+          statusTag,
         ),
         h('div', { class: 'dock__body' },
-          h('section', { class: 'card dock__unsupported' },
-            h('h2', {}, '这个功能在当前系统上用不了'),
-            h('p', { class: 'faint' },
-              '快捷控制依赖 Windows 全局窗口 API（user32 枚举/激活窗口、taskkill 结束进程）。' +
-              'macOS 上系统自带的 Cmd+Q / Cmd+` 已经覆盖同样的场景。'),
+          h('section', { class: 'card' },
+            h('h2', {}, '用鼠标拇指键切换应用'),
+            h('p', { class: 'faint' }, '把鼠标侧边两个按键映射成 Cmd+Tab / Cmd+Shift+Tab，点一下就在应用之间前后切换，不用再按键盘。'),
+            h('label', { class: 'switch switch--large', style: { margin: '6px 0 10px' } }, enabledToggle, h('span', { class: 'switch__track' }), '启用'),
+            h('div', { class: 'controls__shortcut-row' }, backLabel, h('span', { class: 'controls__shortcut-name' }, '→ 上一个应用（Cmd+Tab）'), h('button', { class: 'btn btn--sm', onclick: () => learnButton('back') }, '学习此键')),
+            h('div', { class: 'controls__shortcut-row' }, fwdLabel, h('span', { class: 'controls__shortcut-name' }, '→ 下一个应用（Cmd+Shift+Tab）'), h('button', { class: 'btn btn--sm', onclick: () => learnButton('fwd') }, '学习此键')),
+            h('p', { class: 'faint' }, '默认用「后退/前进」两个侧键（编号 3 / 4）。要是不对，点「学习此键」再按一下你的侧键就行。首次启用需要在 系统设置 → 隐私与安全性 → 辅助功能 里打开「Agent 工具箱」。'),
           ),
         ),
       );
+      enabledToggle.checked = Boolean(get('mouseSwitch.enabled', false));
+      refreshStatus();
       return {};
     }
 

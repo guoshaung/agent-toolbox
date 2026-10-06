@@ -59,6 +59,12 @@ if (!calmVisualMigrationDone && config.get('ui.theme') === 'cyber' && config.get
 if (!calmVisualMigrationDone) void config.set('ui.visualMigration.crystalCalm', true);
 applyStoredTheme(config);
 applyStoredEffect(config);
+// 鼠标侧键切换：上次开着就自动拉起（仅 macOS），不用每次去工具里点
+if (window.toolbox.platform === 'darwin' && config.get('mouseSwitch.enabled', false)) {
+  const _msBack = Number(config.get('mouseSwitch.back', 3)) || 3;
+  const _msFwd = Number(config.get('mouseSwitch.fwd', 4)) || 4;
+  window.toolbox.mouseSwitch?.start(_msBack, _msFwd).catch(() => {});
+}
 const logoMigrationDone = config.get('ui.logoMigration.prismCore', false);
 const startupLogoId = logoMigrationDone ? config.get('ui.logo', 'prism-core') : 'prism-core';
 if (!logoMigrationDone) {

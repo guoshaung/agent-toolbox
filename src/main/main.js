@@ -60,6 +60,7 @@ const { HOTKEYS, normalizeAccelerator, accelLabel } = require('./hotkeys');
 const { GazeService } = require('./gaze');
 const { TavernService } = require('./tavern-service');
 const { AppControls } = require('./app-controls');
+const { registerMouseSwitchIpc, stopMouseSwitch } = require('./mouse-switch');
 const { computeBounds, canApplyGesture } = require('./window-gesture');
 const { VoiceboxService } = require('./voicebox-service');
 const { OpenAIImageClient } = require('./openai-image');
@@ -1874,6 +1875,8 @@ function registerIpc() {
   // 代码记事本：读取 Understand-Anything 的知识图谱 + 按行号回读源码
   registerNotebookIpc(ipcMain, { dialog, getWindow: () => mainWindow, getUserDataPath: () => app.getPath('userData') });
   registerContainerIpc(ipcMain, { shell, getUserDataPath: () => app.getPath('userData') });
+  // 鼠标侧键 → 切换应用（macOS，swiftc 编译的 CGEventTap 小助手）
+  registerMouseSwitchIpc(ipcMain, { getUserDataPath: () => app.getPath('userData') });
   // 懒人学习：Obsidian 仓库 / 弱模型陪练 / 书架下载 / 终端选择题
   registerStudyLazy(ipcMain, {
     store, readApiKey, performCompatibleRequest, containerRoot, hookContainerDownloads, dialog, shell,
@@ -4008,6 +4011,7 @@ app.on('will-quit', () => {
   armForceExit();
   const steps = [
     ['工具架子进程', () => stopAllShelfApps()],
+    ['鼠标侧键助手', () => stopMouseSwitch()],
     ['更新检查', () => stopAutoCheck()],
     ['全局快捷键', () => globalShortcut.unregisterAll()],
     ['Alt+Tab 图标切换器', () => appControls?.dispose?.()],
