@@ -75,7 +75,7 @@ export default {
         h('div', { class: 'dock__body' },
           h('section', { class: 'card' },
             h('h2', {}, '用鼠标拇指键切换应用'),
-            h('p', { class: 'faint' }, '把鼠标侧边两个按键映射成 Cmd+Tab / Cmd+Shift+Tab，点一下就在应用之间前后切换，不用再按键盘。'),
+            h('p', { class: 'faint' }, '长按侧键呼出应用切换器(Cmd+Tab 大图标)并保持，再连点侧键在应用间移动高亮，停一下就落定切换；轻点一下则是快速切到上/下一个。'),
             h('label', { class: 'switch switch--large', style: { margin: '6px 0 10px' } }, enabledToggle, h('span', { class: 'switch__track' }), '启用'),
             h('div', { class: 'controls__shortcut-row' }, backLabel, h('span', { class: 'controls__shortcut-name' }, '→ 上一个应用（Cmd+Tab）'), h('button', { class: 'btn btn--sm', onclick: () => learnButton('back') }, '学习此键')),
             h('div', { class: 'controls__shortcut-row' }, fwdLabel, h('span', { class: 'controls__shortcut-name' }, '→ 下一个应用（Cmd+Shift+Tab）'), h('button', { class: 'btn btn--sm', onclick: () => learnButton('fwd') }, '学习此键')),
