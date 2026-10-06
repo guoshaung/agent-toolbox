@@ -1339,11 +1339,19 @@ export function createLiterature(root, ctx) {
     lastSelection = selected;
     lastSelectionContext = selectionContext(selection);
     try {
+      selectionAction.removeAttribute('hidden');          // 先显示，才能量到真实宽高
       const rect = selection.getRangeAt(0).getBoundingClientRect();
       const box = viewerEl.getBoundingClientRect();
-      selectionAction.style.left = `${Math.max(8, Math.min(box.width - 340, rect.right - box.left + 8))}px`;
-      selectionAction.style.top = `${Math.max(8, Math.min(box.height - 38, rect.top - box.top - 4))}px`;
-      selectionAction.removeAttribute('hidden');
+      const tw = selectionAction.offsetWidth || 320;
+      const th = selectionAction.offsetHeight || 36;
+      // 水平：对准选区中线居中；左右都留 8px 不出框
+      const centerX = rect.left - box.left + rect.width / 2;
+      const left = Math.max(8, Math.min(box.width - tw - 8, centerX - tw / 2));
+      // 垂直：默认放在选区正上方；上方塞不下就落到选区下方
+      let top = rect.top - box.top - th - 8;
+      if (top < 8) top = Math.min(box.height - th - 8, rect.bottom - box.top + 8);
+      selectionAction.style.left = `${Math.round(left)}px`;
+      selectionAction.style.top = `${Math.round(top)}px`;
     } catch {
       hideSelectionAction();
     }
