@@ -23,13 +23,16 @@ function sourceText() {
   return fs.readFileSync(path.join(__dirname, 'native', 'sideswitch.swift'), 'utf8');
 }
 
-function findSwiftc() {
-  return new Promise((resolve) => {
-    execFile('/usr/bin/xcrun', ['--find', 'swiftc'], (err, stdout) => {
-      if (!err && stdout && stdout.trim()) return resolve(stdout.trim());
-      // 兜底：常见路径
-      for (const p of ['/usr/bin/swiftc']) { if (fs.existsSync(p)) return resolve(p); }
-      resolve(null);
+// 干净环境：Electron 会注入 SDKROOT / MACOSX_DEPLOYMENT_TARGET 等变量，
+// 让 swiftc 去找不存在的目标标准库而编译失败。这里只给最小、安全的环境。
+function cleanEnv() {
+  return { PATH: '/usr/bin:/bin:/usr/sbin:/sbin', HOME: process.env.HOME || '/tmp' };
+}
+
+function xcrun(args) {
+  return new Promise((resolve, reject) => {
+    execFile('/usr/bin/xcrun', args, { env: cleanEnv() }, (err, stdout) => {
+      if (err) reject(err); else resolve((stdout || '').trim());
     });
   });
 }
@@ -44,12 +47,18 @@ async function ensureBinary(getUserDataPath) {
   const cachedHash = fs.existsSync(hashFile) ? fs.readFileSync(hashFile, 'utf8').trim() : '';
   if (fs.existsSync(bin) && cachedHash === hash) return bin;
 
-  const swiftc = await findSwiftc();
-  if (!swiftc) throw new Error('没找到 swiftc（需要 Xcode 命令行工具：xcode-select --install）');
+  if (!fs.existsSync('/usr/bin/xcrun')) throw new Error('没找到 Xcode 命令行工具（运行 xcode-select --install）');
+  let sdk = '';
+  try { sdk = await xcrun(['--show-sdk-path']); } catch (_) { /* 用默认 */ }
+  const target = `${process.arch === 'x64' ? 'x86_64' : 'arm64'}-apple-macosx12.0`;
+
   const srcFile = path.join(dir, 'sideswitch.swift');
   fs.writeFileSync(srcFile, src);
+  const args = ['swiftc'];
+  if (sdk) args.push('-sdk', sdk);
+  args.push('-target', target, '-O', srcFile, '-o', bin);
   await new Promise((resolve, reject) => {
-    const c = spawn(swiftc, ['-O', srcFile, '-o', bin], { stdio: ['ignore', 'pipe', 'pipe'] });
+    const c = spawn('/usr/bin/xcrun', args, { env: cleanEnv(), stdio: ['ignore', 'pipe', 'pipe'] });
     let err = '';
     c.stderr.on('data', (d) => { err += d.toString(); });
     c.on('error', reject);
