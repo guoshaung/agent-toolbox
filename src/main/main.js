@@ -1999,22 +1999,28 @@ function registerIpc() {
   ipcMain.handle('flylab:remove', (_e, p) => flylab.remove(p));
 
   // ---- Research Orchestrator：GPT 网页审稿 ↔ Claude 会话(--resume)查证的自动循环 ----
-  const { OrchestratorService } = require('./orchestrator-service');
-  const orchestrator = new OrchestratorService({ getWindow: () => mainWindow });
-  ipcMain.handle('orchestrator:status', () => orchestrator.status());
-  ipcMain.handle('orchestrator:setup', (_e, cfg) => orchestrator.setup(cfg || {}));
-  ipcMain.handle('orchestrator:sessions', () => orchestrator.listClaudeSessions());
-  ipcMain.handle('orchestrator:runRound', (_e, cfg) => orchestrator.runRound(cfg || {}));
-  ipcMain.handle('orchestrator:runAuto', (_e, cfg) => orchestrator.runAuto(cfg || {}));
-  ipcMain.handle('orchestrator:edgeStatus', () => orchestrator.edgeStatus());
-  ipcMain.handle('orchestrator:openChatgpt', () => orchestrator.openChatgpt());
-  ipcMain.handle('orchestrator:cancel', () => orchestrator.cancel());
-  ipcMain.handle('orchestrator:openFolder', () => orchestrator.openFolder());
-  ipcMain.handle('orchestrator:pickRepo', async () => {
-    const r = await dialog.showOpenDialog(mainWindow || undefined, { title: '选目标仓库（Claude 在这里查证）', properties: ['openDirectory'] });
-    if (r.canceled || !r.filePaths?.[0]) return { ok: false, canceled: true };
-    return orchestrator.setup({ targetRepo: r.filePaths[0] });
-  });
+  // 这两个文件（orchestrator-service / cdp-client）目前是未提交的在研功能，
+  // 打包时可能不在产物里；缺了就跳过，绝不能因此拖垮整个主进程（否则窗口都起不来）。
+  try {
+    const { OrchestratorService } = require('./orchestrator-service');
+    const orchestrator = new OrchestratorService({ getWindow: () => mainWindow });
+    ipcMain.handle('orchestrator:status', () => orchestrator.status());
+    ipcMain.handle('orchestrator:setup', (_e, cfg) => orchestrator.setup(cfg || {}));
+    ipcMain.handle('orchestrator:sessions', () => orchestrator.listClaudeSessions());
+    ipcMain.handle('orchestrator:runRound', (_e, cfg) => orchestrator.runRound(cfg || {}));
+    ipcMain.handle('orchestrator:runAuto', (_e, cfg) => orchestrator.runAuto(cfg || {}));
+    ipcMain.handle('orchestrator:edgeStatus', () => orchestrator.edgeStatus());
+    ipcMain.handle('orchestrator:openChatgpt', () => orchestrator.openChatgpt());
+    ipcMain.handle('orchestrator:cancel', () => orchestrator.cancel());
+    ipcMain.handle('orchestrator:openFolder', () => orchestrator.openFolder());
+    ipcMain.handle('orchestrator:pickRepo', async () => {
+      const r = await dialog.showOpenDialog(mainWindow || undefined, { title: '选目标仓库（Claude 在这里查证）', properties: ['openDirectory'] });
+      if (r.canceled || !r.filePaths?.[0]) return { ok: false, canceled: true };
+      return orchestrator.setup({ targetRepo: r.filePaths[0] });
+    });
+  } catch (err) {
+    console.error('[orchestrator] 未加载（文件可能未打包）：', err.message);
+  }
 
   // ---- 表情包管理：本地库在 userData/stickers/，Tenor Key 用 safeStorage 加密，同步只往私有仓库 ----
   const stickers = new StickersService({
