@@ -107,6 +107,46 @@ const mounted = new Map(); // id -> { el, instance }
 // 写成 const 放下面的话，activate 早于它执行就会撞上暂时性死区（?. 也挡不住）。
 let switcher = null;
 let currentId = null;
+
+// —— 工具撕成独立窗口 ——
+// 本窗口是不是某个工具的独立窗口（index.html?detach=<id>）
+const DETACH_ID = new URLSearchParams(location.search).get('detach');
+let detachedIds = [];                       // 当前已弹出的工具（主窗口里用来加角标/改点击行为）
+const isDetached = (id) => detachedIds.includes(id);
+function openOrFocus(id) {
+  // 已弹出的工具：点左栏图标就把它的独立窗口叫到前面，而不是在主窗口里再开一份
+  if (isDetached(id)) { window.toolbox.detach?.focus(id); return; }
+  activate(id);
+}
+// 从左栏图标往窗口外拖 → 在松手处弹出独立窗口（像拖标签页）
+function startRailDrag(e, id) {
+  if (e.button !== 0 || DETACH_ID || isDetached(id)) return;
+  const sx = e.screenX, sy = e.screenY;
+  let popped = false;
+  const outside = (ev) => ev.screenX < window.screenX || ev.screenX > window.screenX + window.outerWidth
+    || ev.screenY < window.screenY || ev.screenY > window.screenY + window.outerHeight;
+  const onMove = (ev) => {
+    const moved = Math.hypot(ev.screenX - sx, ev.screenY - sy) > 22;
+    document.body.classList.toggle('rail-dragging', moved);
+    if (!popped && moved && outside(ev)) {
+      popped = true; cleanup();
+      window.toolbox.detach?.open(id, { x: ev.screenX - 90, y: ev.screenY - 14 });
+    }
+  };
+  const cleanup = () => {
+    window.removeEventListener('mousemove', onMove);
+    window.removeEventListener('mouseup', cleanup);
+    document.body.classList.remove('rail-dragging');
+  };
+  window.addEventListener('mousemove', onMove);
+  window.addEventListener('mouseup', cleanup);
+}
+function markDetached(ids) {
+  detachedIds = Array.isArray(ids) ? ids : [];
+  for (const btn of document.querySelectorAll('.rail__item[data-id]')) {
+    btn.classList.toggle('is-detached', detachedIds.includes(btn.dataset.id));
+  }
+}
 const SETTINGS_ID = 'settings';
 const MAX_PINNED = LEFT_MAX;
 const DEFAULT_PINNED = ['home', 'ask', 'terms', 'docs', 'controls', 'avatar-rig', 'voice', 'focus'];
@@ -262,20 +302,31 @@ function activate(id) {
   config.set('ui.lastTool', id);
 }
 
-function railButton(tool, extraClass = '') {
+function railButton(tool, extraClass = '', opts = {}) {
+  const { contextPop = true } = opts;
   const button = h('button', {
     class: `rail__item ${extraClass}`.trim(),
     dataset: { id: tool.id },
-    title: tool.hint || tool.title,
-    onclick: () => activate(tool.id),
+    title: `${tool.hint || tool.title}${contextPop ? ' · 右键或拖出 → 独立窗口' : ''}`,
+    onclick: () => openOrFocus(tool.id),
   },
     h('span', { class: 'rail__active-mark' }),
     h('span', { class: 'rail__icon' }, iconFor(tool.icon)),
     h('span', { class: 'rail__label' }, tool.title),
+    h('span', { class: 'rail__detach-badge', title: '已弹出为独立窗口' }, '↗'),
   );
   // 用 JS 设而不是写成 style="..." —— 页面 CSP 是 style-src 'self'，
   // 内联 style 属性会被直接丢掉（办公室那边已经栽过一次）。
   button.style.setProperty('--tool-color', colorOf(tool.id));
+  button.classList.toggle('is-detached', isDetached(tool.id));
+  button.addEventListener('mousedown', (e) => startRailDrag(e, tool.id));
+  if (contextPop) {
+    button.addEventListener('contextmenu', (e) => {
+      e.preventDefault();
+      if (isDetached(tool.id)) window.toolbox.detach?.focus(tool.id);
+      else window.toolbox.detach?.open(tool.id);
+    });
+  }
   return button;
 }
 
@@ -307,8 +358,9 @@ function librarySection(title, tools, pinned) {
     },
       h('button', {
         class: 'rail-library__open',
-        title: tool.hint || tool.title,
-        onclick: () => activate(tool.id),
+        title: `${tool.hint || tool.title} · 右键独立窗口`,
+        onclick: () => openOrFocus(tool.id),
+        oncontextmenu: (event) => { event.preventDefault(); if (isDetached(tool.id)) window.toolbox.detach?.focus(tool.id); else window.toolbox.detach?.open(tool.id); },
       },
         h('span', { class: 'rail-library__card-icon' }, iconFor(tool.icon)),
         h('span', { class: 'rail-library__card-copy' },
@@ -329,8 +381,8 @@ function librarySection(title, tools, pinned) {
 }
 
 function rightRailButton(tool) {
-  const button = railButton(tool, 'rail__right-item');
-  button.title = `${tool.hint || tool.title} · 右键取消收藏`;
+  const button = railButton(tool, 'rail__right-item', { contextPop: false });
+  button.title = `${tool.hint || tool.title} · 右键取消收藏 · 拖出为独立窗口`;
   button.addEventListener('contextmenu', async (event) => {
     event.preventDefault();
     rightPinnedIds = removePinned({ left: [], right: rightPinnedIds }, tool.id).right;
@@ -498,10 +550,35 @@ window.addEventListener('keydown', (e) => {
 // 把工具表推给手机端。写死的话每加一个工具手机上就少一个。
 window.toolbox.remote?.setTools?.(TOOLS.map((t) => ({ id: t.id, title: t.title, emoji: t.emoji || '', color: colorOf(t.id) })));
 
-// 每次打开先落在「今天」；关掉这个开关就回到上次用的工具
-const last = config.get('ui.lastTool');
-const startHome = config.get('ui.startHome', true) !== false && TOOLS.some((t) => t.id === 'home');
-activate(startHome ? 'home' : (TOOLS.some((t) => t.id === last) ? last : TOOLS[0].id));
+if (DETACH_ID && TOOLS.some((t) => t.id === DETACH_ID)) {
+  // 这是某个工具的独立窗口：藏掉导航栏，只全屏渲染这一个工具，顶部加「收回」栏
+  setupDetachedWindow(DETACH_ID);
+} else {
+  // 每次打开先落在「今天」；关掉这个开关就回到上次用的工具
+  const last = config.get('ui.lastTool');
+  const startHome = config.get('ui.startHome', true) !== false && TOOLS.some((t) => t.id === 'home');
+  activate(startHome ? 'home' : (TOOLS.some((t) => t.id === last) ? last : TOOLS[0].id));
+  // 主窗口：同步"哪些工具已弹出"（加角标 + 点击改成聚焦独立窗口），以及收回时在主窗口激活
+  window.toolbox.detach?.onChanged?.(markDetached);
+  window.toolbox.detach?.onDock?.((id) => activate(id));
+  window.toolbox.detach?.list?.().then(markDetached);
+}
+
+function setupDetachedWindow(id) {
+  const tool = TOOLS.find((t) => t.id === id);
+  document.body.classList.add('is-detached-window');
+  const bar = h('div', { class: 'detach-bar' },
+    h('span', { class: 'detach-bar__icon' }, iconFor(tool?.icon || 'app')),
+    h('strong', { class: 'detach-bar__title' }, tool?.title || id),
+    h('span', { style: { flex: 1 } }),
+    h('button', { class: 'detach-bar__dock', title: '收回到主窗口', onclick: () => window.toolbox.detach?.dock(id) }, '⇤ 收回'),
+  );
+  document.getElementById('app').prepend(bar);
+  const overlay = h('div', { class: 'detach-snap-overlay' }, h('span', {}, '松手 → 吸附回主窗口'));
+  document.body.appendChild(overlay);
+  window.toolbox.detach?.onSnapHint?.((near) => document.body.classList.toggle('detach-snapping', !!near));
+  activate(id);
+}
 
 // 桥接出问题时说清楚，不要让工具静默转圈
 bridge.onStatus((state, detail) => {

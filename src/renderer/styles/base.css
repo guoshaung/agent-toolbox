@@ -1111,3 +1111,48 @@ body.is-pfx-collapsing #app { animation: pfx-out .5s cubic-bezier(.6,.02,.9,.3) 
 .dsh__frame { flex: 1; min-height: 0; display: flex; background: #fff; }
 .dsh__frame webview { flex: 1; min-height: 0; }
 .dsh__external-panel { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; padding: 24px; text-align: center; background: var(--bg-sunken); color: var(--text); }
+
+/* —— 工具撕成独立窗口 —— */
+.rail__detach-badge {
+  position: absolute; top: 3px; right: 3px; font-size: 10px; line-height: 1;
+  padding: 1px 3px; border-radius: 6px; background: var(--accent, #4b74ff); color: #fff;
+  opacity: 0; transform: scale(.6); transition: .12s; pointer-events: none;
+}
+.rail__item { position: relative; }
+.rail__item.is-detached .rail__detach-badge { opacity: 1; transform: scale(1); }
+.rail__item.is-detached .rail__icon { opacity: .55; }
+body.rail-dragging, body.rail-dragging * { cursor: grabbing !important; }
+
+/* 独立窗口模式：藏掉两侧导航栏，只全屏显示这一个工具，顶部一条收回栏 */
+.is-detached-window #app { flex-direction: column; }
+.is-detached-window .rail,
+.is-detached-window .rail--right,
+.is-detached-window .rail-library,
+.is-detached-window .dsh-banner { display: none !important; }
+.is-detached-window .stage { flex: 1; width: 100%; min-width: 0; }
+.detach-bar {
+  flex: 0 0 auto; display: flex; align-items: center; gap: 8px;
+  height: 40px; padding: 0 12px 0 82px; /* 左边给红绿灯让位 */
+  background: var(--bg-raised, #1b1e26); border-bottom: 1px solid var(--line-soft, #2a2f3a);
+  -webkit-app-region: drag; user-select: none;
+}
+.detach-bar__icon { display: inline-flex; width: 18px; height: 18px; opacity: .85; }
+.detach-bar__title { font-size: 13px; font-weight: 650; }
+.detach-bar__dock {
+  -webkit-app-region: no-drag; cursor: pointer; font-size: 12px;
+  padding: 4px 11px; border-radius: 8px; border: 1px solid var(--line-soft, #2a2f3a);
+  background: var(--bg-sunken, #14171d); color: var(--text, #e8ecf3);
+}
+.detach-bar__dock:hover { border-color: var(--accent, #4b74ff); color: var(--accent, #4b74ff); }
+
+.detach-snap-overlay {
+  position: fixed; inset: 0; z-index: 99999; display: none;
+  align-items: center; justify-content: center; pointer-events: none;
+  background: rgba(75,116,255,.14); border: 3px solid var(--accent, #4b74ff);
+  box-shadow: inset 0 0 60px rgba(75,116,255,.35);
+}
+.detach-snap-overlay span {
+  padding: 8px 16px; border-radius: 999px; background: var(--accent, #4b74ff);
+  color: #fff; font-size: 13px; font-weight: 650;
+}
+body.detach-snapping .detach-snap-overlay { display: flex; }

@@ -61,6 +61,7 @@ const { GazeService } = require('./gaze');
 const { TavernService } = require('./tavern-service');
 const { AppControls } = require('./app-controls');
 const { registerMouseSwitchIpc, stopMouseSwitch } = require('./mouse-switch');
+const { registerDetachedIpc, closeAll: closeDetachedTools } = require('./detached-tools');
 const { computeBounds, canApplyGesture } = require('./window-gesture');
 const { VoiceboxService } = require('./voicebox-service');
 const { OpenAIImageClient } = require('./openai-image');
@@ -1877,6 +1878,12 @@ function registerIpc() {
   registerContainerIpc(ipcMain, { shell, getUserDataPath: () => app.getPath('userData') });
   // 鼠标侧键 → 切换应用（macOS，swiftc 编译的 CGEventTap 小助手）
   registerMouseSwitchIpc(ipcMain, { getUserDataPath: () => app.getPath('userData') });
+  // 工具撕成独立窗口（拖出/右键弹出，关闭或拖近主窗口吸附收回）
+  registerDetachedIpc(ipcMain, {
+    getMainWindow: () => mainWindow,
+    preload: path.join(__dirname, 'preload.js'),
+    getIcon: () => (runtimeAppIcon && !runtimeAppIcon.isEmpty() ? runtimeAppIcon : undefined),
+  });
   // 懒人学习：Obsidian 仓库 / 弱模型陪练 / 书架下载 / 终端选择题
   registerStudyLazy(ipcMain, {
     store, readApiKey, performCompatibleRequest, containerRoot, hookContainerDownloads, dialog, shell,
@@ -1990,6 +1997,24 @@ function registerIpc() {
   ipcMain.handle('flylab:readVideo', (_e, p) => flylab.readVideo(p));
   ipcMain.handle('flylab:openFolder', () => flylab.openFolder());
   ipcMain.handle('flylab:remove', (_e, p) => flylab.remove(p));
+
+  // ---- Research Orchestrator：GPT 网页审稿 ↔ Claude 会话(--resume)查证的自动循环 ----
+  const { OrchestratorService } = require('./orchestrator-service');
+  const orchestrator = new OrchestratorService({ getWindow: () => mainWindow });
+  ipcMain.handle('orchestrator:status', () => orchestrator.status());
+  ipcMain.handle('orchestrator:setup', (_e, cfg) => orchestrator.setup(cfg || {}));
+  ipcMain.handle('orchestrator:sessions', () => orchestrator.listClaudeSessions());
+  ipcMain.handle('orchestrator:runRound', (_e, cfg) => orchestrator.runRound(cfg || {}));
+  ipcMain.handle('orchestrator:runAuto', (_e, cfg) => orchestrator.runAuto(cfg || {}));
+  ipcMain.handle('orchestrator:edgeStatus', () => orchestrator.edgeStatus());
+  ipcMain.handle('orchestrator:openChatgpt', () => orchestrator.openChatgpt());
+  ipcMain.handle('orchestrator:cancel', () => orchestrator.cancel());
+  ipcMain.handle('orchestrator:openFolder', () => orchestrator.openFolder());
+  ipcMain.handle('orchestrator:pickRepo', async () => {
+    const r = await dialog.showOpenDialog(mainWindow || undefined, { title: '选目标仓库（Claude 在这里查证）', properties: ['openDirectory'] });
+    if (r.canceled || !r.filePaths?.[0]) return { ok: false, canceled: true };
+    return orchestrator.setup({ targetRepo: r.filePaths[0] });
+  });
 
   // ---- 表情包管理：本地库在 userData/stickers/，Tenor Key 用 safeStorage 加密，同步只往私有仓库 ----
   const stickers = new StickersService({
@@ -3662,7 +3687,7 @@ function registerIpc() {
   ipcMain.handle('coach:install', () => installCoachExtension());
 
   ipcMain.handle('practice:environment', () => practiceRunner.environment());
-  ipcMain.handle('practice:run', (_e, payload = {}) => practiceRunner.run(payload.track, payload.code, { timeout: payload.timeout, prelude: payload.prelude, cwd: payload.cwd }));
+  ipcMain.handle('practice:run', (_e, payload = {}) => practiceRunner.run(payload.track, payload.code, { timeout: payload.timeout, prelude: payload.prelude, preludeCells: payload.preludeCells, cwd: payload.cwd }));
   // 学 GitHub 仓库：贴地址 → 克隆到代码目录 → 扫文件 → 渲染层切成一课一课
   ipcMain.handle('practice:importRepo', async (_e, url) => {
     const cloned = await tidy.cloneRepo(String(url || ''), tidySettings().codeDir);
@@ -4011,6 +4036,7 @@ app.on('will-quit', () => {
   armForceExit();
   const steps = [
     ['工具架子进程', () => stopAllShelfApps()],
+    ['独立工具窗口', () => closeDetachedTools()],
     ['鼠标侧键助手', () => stopMouseSwitch()],
     ['更新检查', () => stopAutoCheck()],
     ['全局快捷键', () => globalShortcut.unregisterAll()],

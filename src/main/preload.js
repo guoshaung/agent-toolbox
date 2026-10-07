@@ -731,6 +731,20 @@ contextBridge.exposeInMainWorld('toolbox', {
     onProgress: (callback) => ipcRenderer.on('flylab:progress', (_event, state) => callback(state)),
   },
 
+  orchestrator: {
+    status: () => ipcRenderer.invoke('orchestrator:status'),
+    setup: (cfg) => ipcRenderer.invoke('orchestrator:setup', cfg),
+    sessions: () => ipcRenderer.invoke('orchestrator:sessions'),
+    runRound: (cfg) => ipcRenderer.invoke('orchestrator:runRound', cfg),
+    runAuto: (cfg) => ipcRenderer.invoke('orchestrator:runAuto', cfg),
+    edgeStatus: () => ipcRenderer.invoke('orchestrator:edgeStatus'),
+    openChatgpt: () => ipcRenderer.invoke('orchestrator:openChatgpt'),
+    cancel: () => ipcRenderer.invoke('orchestrator:cancel'),
+    openFolder: () => ipcRenderer.invoke('orchestrator:openFolder'),
+    pickRepo: () => ipcRenderer.invoke('orchestrator:pickRepo'),
+    onProgress: (callback) => ipcRenderer.on('orchestrator:progress', (_event, state) => callback(state)),
+  },
+
   zotero: {
     detect: () => ipcRenderer.invoke('zotero:detect'),
     snapshot: (force) => ipcRenderer.invoke('zotero:snapshot', force),
@@ -803,6 +817,17 @@ contextBridge.exposeInMainWorld('toolbox', {
     resolve: (payload) => ipcRenderer.invoke('remote:resolve', payload),
     onCommand: (callback) => ipcRenderer.on('remote:command', (_event, command) => callback(command)),
     onInbox: (callback) => ipcRenderer.on('remote:inbox', (_event, item) => callback(item)),
+  },
+
+  // 工具撕成独立窗口
+  detach: {
+    open: (toolId, bounds) => ipcRenderer.invoke('detach:open', toolId, bounds),
+    dock: (toolId) => ipcRenderer.invoke('detach:dock', toolId),
+    focus: (toolId) => ipcRenderer.invoke('detach:focus', toolId),
+    list: () => ipcRenderer.invoke('detach:list'),
+    onChanged: (cb) => { const h = (_e, ids) => cb(ids); ipcRenderer.on('detach:changed', h); return () => ipcRenderer.removeListener('detach:changed', h); },
+    onDock: (cb) => { const h = (_e, id) => cb(id); ipcRenderer.on('detach:dock', h); return () => ipcRenderer.removeListener('detach:dock', h); },
+    onSnapHint: (cb) => { const h = (_e, near) => cb(near); ipcRenderer.on('detach:snapHint', h); return () => ipcRenderer.removeListener('detach:snapHint', h); },
   },
 
   // 鼠标侧键 → 切换应用（macOS）
