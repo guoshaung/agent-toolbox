@@ -20,7 +20,7 @@ function notifyMain() {
   if (mw) mw.webContents.send('detach:changed', [...windows.keys()]);
 }
 
-// 独立窗口和主窗口重叠超过自身面积的 ~35% 就算"靠近，可吸附"
+// 独立窗口和主窗口重叠超过自身面积的 ~50% 才算"靠近，可吸附"（要够果断，不然碰一下就吸回去）
 function nearMain(win) {
   const mw = mainWin();
   if (!mw || win.isDestroyed()) return false;
@@ -28,7 +28,7 @@ function nearMain(win) {
   const b = mw.getBounds();
   const ix = Math.max(0, Math.min(a.x + a.width, b.x + b.width) - Math.max(a.x, b.x));
   const iy = Math.max(0, Math.min(a.y + a.height, b.y + b.height) - Math.max(a.y, b.y));
-  return ix * iy > 0.35 * a.width * a.height;
+  return ix * iy > 0.5 * a.width * a.height;
 }
 
 function openDetached(toolId, bounds) {
@@ -58,13 +58,23 @@ function openDetached(toolId, bounds) {
   win.once('ready-to-show', () => { if (!win.isDestroyed()) win.show(); });
   win.on('closed', () => { if (windows.get(toolId) === win) windows.delete(toolId); notifyMain(); });
 
+  // 滞回：必须先把窗口拖离主窗口一次(armed)，之后再拖回去才吸附。
+  // 否则"从主窗口里的图标拖出来"的窗口一生成就压在主窗口上，一松手就被吸回去。
   let hinted = false;
+  let armed = false;
+  const spawnedAt = Date.now();
   win.on('move', () => {
     if (win.isDestroyed()) return;
     const near = nearMain(win);
-    if (near !== hinted) { hinted = near; win.webContents.send('detach:snapHint', near); }
+    if (!near) armed = true;                 // 离开过吸附区 → 解锁
+    const showHint = armed && near;
+    if (showHint !== hinted) { hinted = showHint; win.webContents.send('detach:snapHint', showHint); }
   });
-  win.on('moved', () => { if (nearMain(win)) dockDetached(toolId); });
+  win.on('moved', () => {
+    if (win.isDestroyed()) return;
+    if (!armed || Date.now() - spawnedAt < 500) return;  // 还没离开过 / 刚生成 0.5s 内：不吸附
+    if (nearMain(win)) dockDetached(toolId);
+  });
 
   notifyMain();
   return { ok: true };
