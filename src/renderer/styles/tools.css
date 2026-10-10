@@ -5206,3 +5206,39 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 @media (prefers-reduced-motion: reduce) {
   .gameagent__mascot, .gameagent__power-halo, .gameagent__power-glyph { animation: none; }
 }
+
+/* ---------- Research Orchestrator（自动科研里自己的那张卡）---------- */
+.ar__item--mine { border-left: 2px solid var(--accent); }
+.orch__warn { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border: 1px solid var(--line-soft); border-radius: 8px; background: var(--bg-sunken); margin: 8px 0; }
+.orch__goal, .orch__q { width: 100%; resize: vertical; }
+.orch__roles { align-items: center; gap: 8px; flex-wrap: wrap; }
+.orch__danger { color: var(--text-dim); }
+.orch__rounds { width: 64px; }
+.orch__log { max-height: 220px; overflow-y: auto; margin-top: 6px; }
+.orch__log-head { display: flex; align-items: center; justify-content: space-between; margin-top: 8px; }
+.orch__dec { align-items: center; gap: 10px; }
+.orch__dectag { font-weight: 700; }
+.orch__sec { margin-top: 8px; border: 1px solid var(--line-soft); border-radius: 8px; padding: 6px 10px; }
+.orch__sec > summary { cursor: pointer; font-size: 13px; }
+.orch__sec .ar__md { max-height: 320px; overflow-y: auto; margin-top: 8px; }
+.orch__lineage { display: flex; flex-direction: column; gap: 5px; }
+.orch__ln { display: flex; align-items: center; gap: 8px; font-size: 12px; }
+.orch__ln-q { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.orch__repo { max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+
+/* ---------- Orchestrator：两条对话 + 内嵌 chatgpt ---------- */
+.orch__cols { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+@media (max-width: 1100px) { .orch__cols { grid-template-columns: 1fr; } }
+.orch__col { min-width: 0; display: flex; flex-direction: column; gap: 8px; }
+.orch__gptpane { display: flex; flex-direction: column; gap: 6px; }
+.orch__gptview { width: 100%; height: 420px; border: 1px solid var(--line-soft); border-radius: 8px; background: #fff; }
+.orch__url { flex: 1; min-width: 0; }
+.orch__sess { flex: 1; min-width: 0; }
+
+/* 图片建模：非 Windows 平台限制提示 */
+.avatar-rig__platform-warn {
+  border: 1px solid #c9a227; background: rgba(201,162,39,.12);
+  border-radius: 10px; padding: 12px 14px; margin: 10px 0;
+}
+.avatar-rig__platform-warn strong { color: #e6b422; font-size: 14px; }
+.avatar-rig__platform-warn p { margin: 6px 0 0; font-size: 12.5px; line-height: 1.55; }
