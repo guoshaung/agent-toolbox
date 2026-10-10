@@ -1156,3 +1156,14 @@ body.rail-dragging, body.rail-dragging * { cursor: grabbing !important; }
   color: #fff; font-size: 13px; font-weight: 650;
 }
 body.detach-snapping .detach-snap-overlay { display: flex; }
+
+/* 快问(DeepSeek webview)切走时别 display:none —— 那会丢弃 GPU 合成面，切回要重绘白屏。
+   改成 visibility:hidden 并绝对定位叠在 stage 里，webview 保持"温"的，切回即时。 */
+#tool-ask[hidden] {
+  display: flex;
+  visibility: hidden;
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 0;
+}
