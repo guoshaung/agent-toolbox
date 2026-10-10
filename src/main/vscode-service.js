@@ -49,8 +49,9 @@ function findBinary() {
 }
 
 class VscodeService {
-  constructor({ getUserDataPath, defaultFolder, getMainWindow }) {
+  constructor({ getUserDataPath, defaultFolder, getMainWindow, loadLastFolder, saveLastFolder }) {
     this.getUserDataPath = getUserDataPath; this.defaultFolder = defaultFolder; this.getMainWindow = getMainWindow;
+    this.loadLastFolder = loadLastFolder; this.saveLastFolder = saveLastFolder;
     userDataDir = getUserDataPath();
     this.child = null; this.installer = null; this.log = [];
     this.state = { status: 'idle', url: '', folder: '', bin: '', error: '', log: '' };
@@ -62,7 +63,13 @@ class VscodeService {
   }
   pushLog(line) { for (const l of String(line).split(/\r?\n/)) if (l.trim()) this.log.push(l.trim().slice(0, 200)); if (this.log.length > 200) this.log.splice(0, this.log.length - 200); }
   status() { const bin = findBinary(); return { ...this.state, bin, installed: Boolean(bin), log: this.log.slice(-40).join('\n') }; }
-  folder() { return this.state.folder || this.defaultFolder(); }
+  // 上次打开的工作区（持久化在 store），还存在才用；否则回退默认（容器目录）
+  _savedFolder() {
+    try { const f = this.loadLastFolder?.(); if (f && fs.existsSync(f)) return f; } catch { /* store 读失败 */ }
+    return '';
+  }
+  _remember(folder) { try { if (folder) this.saveLastFolder?.(folder); } catch { /* store 写失败 */ } }
+  folder() { return this.state.folder || this._savedFolder() || this.defaultFolder(); }
   urlFor(folder) { return `http://127.0.0.1:${PORT}/?folder=${encodeURIComponent(folder)}`; }
 
   async healthy() {
@@ -79,6 +86,7 @@ class VscodeService {
 
   async _start({ folder } = {}) {
     const target = folder || this.folder();
+    this._remember(target);   // 记住这次打开的工作区，下次默认用它
     try { fs.mkdirSync(target, { recursive: true }); } catch { /* 让 code-server 自己报 */ }
     if (this.state.status === 'running' && this.child && await this.healthy()) { this.emit({ folder: target, url: this.urlFor(target) }); return { ok: true, ...this.state }; }
     // 端口上已经有一个活的（上次没退干净）：直接复用
@@ -126,6 +134,7 @@ class VscodeService {
     const r = await dialog.showOpenDialog(this.getMainWindow() || undefined, { title: '选一个文件夹当 VS Code 的工作区', defaultPath: this.folder(), properties: ['openDirectory', 'createDirectory'] });
     if (r.canceled || !r.filePaths[0]) return { ok: false, canceled: true };
     const folder = r.filePaths[0];
+    this._remember(folder);   // 选了新文件夹，记住它
     this.emit({ folder, url: this.state.status === 'running' ? this.urlFor(folder) : '' });
     return { ok: true, folder, url: this.state.url };
   }

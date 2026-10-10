@@ -1890,7 +1890,13 @@ function registerIpc() {
     getUserDataPath: () => app.getPath('userData'), getMainWindow: () => mainWindow,
   });
   // 「代码」里内嵌的 VS Code（本地 code-server）；默认工作区 = 容器
-  registerVscodeIpc(ipcMain, { getUserDataPath: () => app.getPath('userData'), defaultFolder: () => containerRoot(() => app.getPath('userData')), getMainWindow: () => mainWindow });
+  registerVscodeIpc(ipcMain, {
+    getUserDataPath: () => app.getPath('userData'),
+    defaultFolder: () => containerRoot(() => app.getPath('userData')),
+    getMainWindow: () => mainWindow,
+    loadLastFolder: () => store.get('vscode.lastFolder', ''),
+    saveLastFolder: (f) => store.set('vscode.lastFolder', f),
+  });
   // 剪贴板历史：只在内存里留最近 30 条文字（不落盘 —— 剪贴板里常有密码），⌘K 里能搜回来
   const clipHistory = [];
   let clipLast = '';
