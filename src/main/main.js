@@ -109,6 +109,7 @@ const PARTITIONS = {
   literature: 'persist:literature-download',
   focus: 'persist:focus',
   bilibili: 'persist:bilibili-study',
+  dsh: 'persist:dsh',
 };
 
 let store;
@@ -864,6 +865,7 @@ function createWindow(showOnReady = true) {
     const bilibiliSession = session.fromPartition(PARTITIONS.bilibili);
     const feishuSession = session.fromPartition(PARTITIONS.feishu);
     const researchSession = session.fromPartition(PARTITIONS.research);
+    const dshSession = session.fromPartition(PARTITIONS.dsh);
 
     // Windows Precision Touchpad 的双指捏合由 Chromium 在 WebContents 层消费，
     // guest 页面里的 wheel/touch 监听收不到。拦住整页缩放，转成视频播放器缩放。
@@ -959,6 +961,30 @@ function createWindow(showOnReady = true) {
             backgroundColor: '#ffffff',
             webPreferences: {
               partition: PARTITIONS.feishu,
+              contextIsolation: true,
+              nodeIntegration: false,
+              sandbox: process.platform !== 'darwin',
+            },
+          },
+        };
+      }
+
+      // DSH 面板里点「star 仓库 / GitHub 登录」是 window.open 弹窗（解锁 EAC 模型需要）。
+      // 默认分支会 deny 掉、转成文档工具的开标签事件 → DSH 这边没人接 = 点了不弹页面。
+      // 给它一个真窗口，并显式用同一个 persist:dsh partition —— 否则 GitHub 登录/授权的
+      // cookie 落在别的会话里，DSH 面板还是认为你没登录、star 不生效。
+      if (guest.session === dshSession) {
+        return {
+          action: 'allow',
+          overrideBrowserWindowOptions: {
+            width: 640,
+            height: 780,
+            parent: mainWindow,
+            autoHideMenuBar: true,
+            title: 'GitHub 授权 / Star',
+            backgroundColor: '#ffffff',
+            webPreferences: {
+              partition: PARTITIONS.dsh,
               contextIsolation: true,
               nodeIntegration: false,
               sandbox: process.platform !== 'darwin',
