@@ -1,0 +1,1 @@
+{"id":"T036","title":"透明素材边界修复","category":"工具","group":"图片与视觉素材","description":"按Alpha与源内边距裁切PNG透明边界，原始主体RGBA逐字节保留，完整预览及尺寸清单新副本。"}
