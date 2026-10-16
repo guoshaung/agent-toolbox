@@ -148,7 +148,6 @@ function reaLocalScript(userData) {
  * failOnStartupError:false —— 首次要下载 ~100MB，慢或失败都只是没有 REA 工具，不拖垮 DSH。
  */
 function reaMcpLines({ nodeBin, userData, platform = process.platform, exists = fs.existsSync, realpath = fs.realpathSync }) {
-  const yamlPath = (value) => JSON.stringify(String(value).replace(/\\/g, '/'));
   const local = reaLocalScript(userData);
   let command; let args;
   if (local && exists(local) && nodeBin) { command = nodeBin; args = [local, 'mcp']; }
@@ -192,6 +191,72 @@ function ensureReaInstalled(userData, nodeBin) {
     return false;
   }
 }
+
+/* ---------- DSH overlay（--patch）：把 MCP server 挂进 profile ---------- */
+
+const yamlPath = (value) => JSON.stringify(String(value).replace(/\\/g, '/'));
+
+/**
+ * 把「条目列表」包成一个 `- insert:` 操作。
+ * DSH 的 patch 列表里，裸写 `- id: xxx` 的语义是「修改已有条目」——id 在树里不存在就只在 stderr 打一句
+ * `patch: entry "xxx" not found` 然后跳过，整个 overlay 等于没写。新增条目必须走 `- insert:`。
+ * 工具箱的 MCP overlay 之前就是裸写的，agent_toolbox / Blender 两条其实从来没加载过——这坑是用 --dump-config
+ * 加一条故意写坏的 mcp-client 做判别实验才抓到的（坏条目既不报错也不影响激活计数 ⇒ overlay 根本没进树）。
+ */
+function asInsertPatch(entryLines) {
+  return ['- insert:', ...entryLines.map((line) => (line ? `    ${line}` : ''))];
+}
+
+/** 工具箱自己的 MCP（toolbox-mcp-server.js，用 Electron 以 node 模式跑）。failOnStartupError:true——它挂了说明工具箱自身有问题，要暴露出来。 */
+function toolboxMcpLines({ userData, mcpServer, execPath }) {
+  return [
+    '- id: mcp-agent-toolbox',
+    "  name: '@deepseek-ai/dsh-mcp-client'",
+    '  config:',
+    '    serverName: agent_toolbox',
+    '    transport: stdio',
+    `    command: ${yamlPath(execPath)}`,
+    `    args: [${yamlPath(mcpServer)}]`,
+    `    cwd: ${yamlPath(path.dirname(mcpServer))}`,
+    '    env:',
+    `      AGENT_TOOLBOX_USER_DATA: ${yamlPath(userData)}`,
+    '      ELECTRON_RUN_AS_NODE: "1"',
+    '    toolCallTimeoutMs: 180000',
+    '    failOnStartupError: true',
+    '',
+  ];
+}
+
+/** Blender MCP（mcp-for-blender，MIT 开源免费）：装了 uvx 才挂；Blender 没开/没装也不拖垮 DSH。真要用：装 Blender + `uvx mcp-for-blender install-addon`，让 Blender 开着。 */
+function blenderMcpLines(uvx) {
+  if (!uvx) return [];
+  return [
+    '- id: mcp-blender',
+    "  name: '@deepseek-ai/dsh-mcp-client'",
+    '  config:',
+    '    serverName: blender',
+    '    transport: stdio',
+    `    command: ${yamlPath(uvx)}`,
+    "    args: ['mcp-for-blender']",
+    '    toolCallTimeoutMs: 180000',
+    '    failOnStartupError: false',
+    '',
+  ];
+}
+
+/** 整份 overlay 文本（纯函数，好测）：toolbox MCP + Blender（可选）+ REA，全部包在一个 insert 里。 */
+function buildOverlay({ userData, mcpServer, execPath, uvx, nodeBin }) {
+  const entries = [
+    ...toolboxMcpLines({ userData, mcpServer, execPath }),
+    ...blenderMcpLines(uvx),
+    ...reaMcpLines({ nodeBin, userData }),
+  ];
+  return `${asInsertPatch(entries).join('\n')}\n`;
+}
+
+// DSH 只把这些事写在 stderr：overlay 没生效（patch: entry not found）、条目没激活（did not activate）、MCP 连不上。
+// 以前整条 stderr 只用来找 URL、其余全扔，MCP 没挂上也没人知道。
+const DSH_WARNING = /^dsh: (warning|\[.*\] patch:)|did not activate|mcp-client\(|skipping profile bundle/;
 
 function probe(port = DEFAULT_PORT, requestPath = '/') {
   return new Promise((resolve) => {
@@ -238,7 +303,7 @@ class DshService {
     this.getWindow = getWindow;
     this.child = null;
     this.url = `http://127.0.0.1:${DEFAULT_PORT}`;
-    this.state = { status: 'idle', url: this.url, managed: false, error: '' };
+    this.state = { status: 'idle', url: this.url, managed: false, error: '', warnings: [] };
     this.listeners = new Set();
   }
 
@@ -293,46 +358,10 @@ class DshService {
       const nodeBin = resolveCommand('node', userData);
       const mcpServer = path.join(__dirname, 'toolbox-mcp-server.js');
       const overlay = path.join(userData, 'dsh-toolbox.patch.yml');
-      const yamlPath = (value) => JSON.stringify(String(value).replace(/\\/g, '/'));
-      const overlayLines = [
-        '- id: mcp-agent-toolbox',
-        "  name: '@deepseek-ai/dsh-mcp-client'",
-        '  config:',
-        '    serverName: agent_toolbox',
-        '    transport: stdio',
-        `    command: ${yamlPath(process.execPath)}`,
-        `    args: [${yamlPath(mcpServer)}]`,
-        `    cwd: ${yamlPath(path.dirname(mcpServer))}`,
-        '    env:',
-        `      AGENT_TOOLBOX_USER_DATA: ${yamlPath(userData)}`,
-        '      ELECTRON_RUN_AS_NODE: "1"',
-        '    toolCallTimeoutMs: 180000',
-        '    failOnStartupError: true',
-        '',
-      ];
-      // Blender MCP（mcp-for-blender，MIT 开源免费）：装了 uvx 就挂上。
-      // failOnStartupError:false —— Blender 没开/没装也不拖垮 DSH 和上面的 toolbox MCP。
-      // 真要用:装 Blender + `uvx mcp-for-blender install-addon` 启用插件，让 Blender 开着。
-      const uvx = resolveCommand('uvx', userData);
-      if (uvx) {
-        overlayLines.push(
-          '- id: mcp-blender',
-          "  name: '@deepseek-ai/dsh-mcp-client'",
-          '  config:',
-          '    serverName: blender',
-          '    transport: stdio',
-          `    command: ${yamlPath(uvx)}`,
-          "    args: ['mcp-for-blender']",
-          '    toolCallTimeoutMs: 180000',
-          '    failOnStartupError: false',
-          '',
-        );
-      }
-      // REA 逆向 MCP：二进制(Hopper/Ghidra) / JS·Electron / .NET / 网站。见 reaMcpLines 的说明。
-      overlayLines.push(...reaMcpLines({ nodeBin, userData }));
+      // toolbox MCP + Blender（可选）+ REA 逆向 MCP，见 buildOverlay / 各 *McpLines 的说明
+      fs.writeFileSync(overlay, buildOverlay({ userData, mcpServer, execPath: process.execPath, uvx: resolveCommand('uvx', userData), nodeBin }), 'utf8');
       ensureReaInstalled(userData, nodeBin);
-      fs.writeFileSync(overlay, overlayLines.join('\n'), 'utf8');
-      this.emit({ status: 'starting', url: this.url, managed: true, error: '' });
+      this.emit({ status: 'starting', url: this.url, managed: true, error: '', warnings: [] });
       // 新版 DSH 的 URL 含一次性认证 token。若 3080 已被另一个实例占用，
       // 让 DSH 自选空闲端口，避免要求用户手动寻找并关闭旧进程。
       const port = existing.running ? 0 : DEFAULT_PORT;
@@ -342,8 +371,15 @@ class DshService {
         const url = findWebUrl(chunk);
         if (url) this.url = url;
       };
+      const captureWarnings = (chunk) => {
+        for (const line of String(chunk).split(/\r?\n/)) {
+          if (!DSH_WARNING.test(line)) continue;
+          console.warn('[dsh]', line);
+          this.emit({ warnings: [...(this.state.warnings || []), line].slice(-20) });
+        }
+      };
       this.child.stdout.on('data', captureUrl);
-      this.child.stderr.on('data', captureUrl);
+      this.child.stderr.on('data', (chunk) => { captureUrl(chunk); captureWarnings(chunk); });
       this.child.on('error', (error) => this.emit({ status: 'error', error: `DSH 启动失败：${error.message}` }));
       this.child.on('close', (code) => {
         this.child = null;
@@ -381,4 +417,4 @@ class DshService {
   }
 }
 
-module.exports = { DSH_PACKAGE, DEFAULT_PORT, DshService, findWebUrl, probe, resolveCommand, dshHomeDir, SEED_PLUGINS, seedTgzPath, webProfileNeedsSeed, seedWebProfile, withNodeOnPath, dshSpawnSpec, REA_PACKAGE, reaLocalScript, reaMcpLines, ensureReaInstalled };
+module.exports = { DSH_PACKAGE, DEFAULT_PORT, DshService, findWebUrl, probe, resolveCommand, dshHomeDir, SEED_PLUGINS, seedTgzPath, webProfileNeedsSeed, seedWebProfile, withNodeOnPath, dshSpawnSpec, REA_PACKAGE, reaLocalScript, reaMcpLines, ensureReaInstalled, asInsertPatch, buildOverlay, DSH_WARNING };
