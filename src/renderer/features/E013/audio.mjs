@@ -1,0 +1,6 @@
+import{frequency}from'./model.mjs';
+export function voice(context,pitch,tone,velocity,volume,start=context.currentTime,end=null){
+ const oscillator=context.createOscillator(),gain=context.createGain(),amp=.8/24*velocity/127*volume/100;oscillator.type=['sine','triangle','square'][tone];oscillator.frequency.setValueAtTime(frequency(pitch),start);oscillator.connect(gain);gain.connect(context.destination);gain.gain.setValueAtTime(0,start);const attack=end===null?start+.005:Math.min(start+.005,end),level=amp*Math.min(1,(attack-start)/.005);gain.gain.linearRampToValueAtTime(level,attack);let released=false;
+ const result={oscillator,gain,start,pitch,close(){try{oscillator.stop();}catch{}try{oscillator.disconnect();gain.disconnect();}catch{}},release(at=context.currentTime){if(released)return;released=true;at=Math.max(start,at);if(end===null)gain.gain.cancelAndHoldAtTime(at);else gain.gain.setValueAtTime(level,at);gain.gain.linearRampToValueAtTime(0,at+.04);oscillator.stop(at+.04);}};oscillator.start(start);if(end!==null)result.release(end);return result;
+}
+export function replay(context,project,at=context.currentTime+.03){const nodes=project.notes.map(n=>voice(context,n[0],n[3],n[4],project.volume,at+n[1]/1000,at+n[2]/1000));return{nodes,start:at,end:at+project.durationMs/1000+.04,close(){for(const n of nodes)n.close();}};}
