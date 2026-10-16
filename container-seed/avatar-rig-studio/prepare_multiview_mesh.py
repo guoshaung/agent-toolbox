@@ -4,7 +4,7 @@ import argparse
 from pathlib import Path
 import numpy as np
 import trimesh
-from PIL import Image
+from PIL import Image, ImageOps
 from scipy.ndimage import map_coordinates, distance_transform_edt
 
 p=argparse.ArgumentParser();p.add_argument('--job',type=Path,required=True);args=p.parse_args()
@@ -24,9 +24,15 @@ mesh.vertices=v
 mesh.visual.vertex_colors=np.tile([190,196,205,255],(len(v),1))
 mesh.export(root/'reconstructed.glb')
 mesh.export(root/'reconstructed.ply')
-uvs=[];sampled=[]
-for name,horizontal in [('front',v[:,0]),('left',-v[:,2]),('back',-v[:,0])]:
-    image=Image.open(root/(name+'.png')).convert('RGBA')
+uvs=[];sampled=[];provenance={}
+for name,horizontal in [('front',v[:,0]),('left',-v[:,2]),('back',-v[:,0]),('right',v[:,2])]:
+    if name == 'right' and not (root/'right.png').is_file():
+        image=ImageOps.mirror(Image.open(root/'left.png').convert('RGBA'))
+        provenance[name]='mirrored left reference; not observed right-side detail'
+    else:
+        source = root / f'texture-source-{name}.png'
+        image=Image.open(source if source.is_file() else root/(name+'.png')).convert('RGBA')
+        provenance[name]='supplied reference'
     bbox=image.getbbox()
     if bbox is None:raise ValueError(f'{name} image is empty')
     scale=(bbox[3]-bbox[1])/1.6
@@ -43,11 +49,12 @@ for name,horizontal in [('front',v[:,0]),('left',-v[:,2]),('back',-v[:,0])]:
     color=np.stack([map_coordinates(rgb[:,:,c].astype(float),[y,u],order=1,mode='nearest') for c in range(3)],axis=1)
     sampled.append(color)
 normals=mesh.vertex_normals
-scores=np.stack((normals[:,2],normals[:,0],-normals[:,2]),axis=1)
+scores=np.stack((normals[:,2],normals[:,0],-normals[:,2],-normals[:,0]),axis=1)
 which=scores.argmax(1)
 colors=np.stack(sampled,axis=1)[np.arange(len(v)),which]
 colors=np.c_[colors,np.full(len(v),255)].astype('uint8')
 np.savez_compressed(root/'mesh.npz',vertices=v,faces=mesh.faces,normals=normals,colors=colors,
-                    multiview_uv=np.stack(uvs),texture_files=np.array(['front-texture.png','left-texture.png','back-texture.png']))
+                    multiview_uv=np.stack(uvs),texture_files=np.array(['front-texture.png','left-texture.png','back-texture.png','right-texture.png']))
+(root/'texture-provenance.json').write_text(json.dumps(provenance,indent=2),'utf8')
 (root/'project.json').write_text(json.dumps({'engine':'Hunyuan3D-2mv','stage':'geometry preview'}),encoding='utf8')
 print({'vertices':len(v),'triangles':len(mesh.faces),'bounds':mesh.bounds.tolist()},flush=True)
