@@ -130,6 +130,69 @@ function dshSpawnSpec(dshBin, nodeBin, args) {
   return { command: dshBin, args };
 }
 
+/* ---------- REA（morluto/rea，MIT）：逆向 MCP ---------- */
+
+// 固定版本，和它官方文档推荐的 `npx -y rea-agents@<ver> mcp` 一致；升级时改这里并重测 `rea mcp doctor`
+const REA_PACKAGE = 'rea-agents@6.5.0';
+
+/** dsh-runtime 里本地装好的 REA 入口（装过就有）。 */
+function reaLocalScript(userData) {
+  return userData ? path.join(userData, 'dsh-runtime', 'node_modules', 'rea-agents', 'scripts', 'rea.mjs') : '';
+}
+
+/**
+ * REA 逆向 MCP 的 overlay 条目（纯函数，好测）。
+ * 优先级：本地已装 → `node rea.mjs mcp`；否则按官方形状走 npx——但 npx 自己也是 `env node` 脚本（nvm/官方包里是指向
+ * npm/bin/npx-cli.js 的软链），GUI 下同样找不到 node，所以这里把软链解到 npx-cli.js、显式用 node 跑它；
+ * Windows 按 REA 文档包一层 `cmd.exe /d /c npx …`（Windows 安装器会把 node 写进系统 PATH）。
+ * failOnStartupError:false —— 首次要下载 ~100MB，慢或失败都只是没有 REA 工具，不拖垮 DSH。
+ */
+function reaMcpLines({ nodeBin, userData, platform = process.platform, exists = fs.existsSync, realpath = fs.realpathSync }) {
+  const yamlPath = (value) => JSON.stringify(String(value).replace(/\\/g, '/'));
+  const local = reaLocalScript(userData);
+  let command; let args;
+  if (local && exists(local) && nodeBin) { command = nodeBin; args = [local, 'mcp']; }
+  else if (platform === 'win32') { command = 'cmd.exe'; args = ['/d', '/c', 'npx', '-y', REA_PACKAGE, 'mcp']; }
+  else {
+    let npxCli = '';
+    if (nodeBin) { try { npxCli = realpath(path.join(path.dirname(nodeBin), 'npx')); } catch { /* 没有 npx 就退回 PATH 里的 */ } }
+    if (npxCli && nodeBin) { command = nodeBin; args = [npxCli, '-y', REA_PACKAGE, 'mcp']; }
+    else { command = 'npx'; args = ['-y', REA_PACKAGE, 'mcp']; }
+  }
+  return [
+    '- id: mcp-rea',
+    "  name: '@deepseek-ai/dsh-mcp-client'",
+    '  config:',
+    '    serverName: rea',
+    '    transport: stdio',
+    `    command: ${yamlPath(command)}`,
+    `    args: [${args.map(yamlPath).join(', ')}]`,
+    '    toolCallTimeoutMs: 600000',
+    '    failOnStartupError: false',
+    '',
+  ];
+}
+
+let reaInstallStarted = false;
+/** 把 REA 装进 dsh-runtime（和 DSH 内核同一个 prefix）：只在缺的时候、后台静默装一次，供下次启动走本地包。失败只打日志。 */
+function ensureReaInstalled(userData, nodeBin) {
+  try {
+    if (reaInstallStarted || !userData || fs.existsSync(reaLocalScript(userData))) return false;
+    const npm = resolveCommand('npm', userData);
+    if (!npm) return false;
+    reaInstallStarted = true;
+    const prefix = path.join(userData, 'dsh-runtime');
+    fs.mkdirSync(prefix, { recursive: true });
+    const child = spawn(npm, ['install', '--prefix', prefix, '--no-fund', '--no-audit', REA_PACKAGE], spawnOptions({ cwd: prefix, stdio: 'ignore', env: withNodeOnPath(process.env, nodeBin) }));
+    child.on('error', (error) => console.warn(`[dsh] REA 后台安装失败：${error.message}`));
+    child.on('close', (code) => console.log(`[dsh] REA 后台安装${code === 0 ? '完成，下次启动 DSH 走本地包' : `退出（${code}）`}`));
+    return true;
+  } catch (error) {
+    console.warn(`[dsh] REA 后台安装未开始：${error.message}`);
+    return false;
+  }
+}
+
 function probe(port = DEFAULT_PORT, requestPath = '/') {
   return new Promise((resolve) => {
     const request = http.get({ hostname: '127.0.0.1', port, path: requestPath, timeout: 1200 }, (response) => {
@@ -227,6 +290,7 @@ class DshService {
       if (seeded.seeded) console.log(`[dsh] 已从内置种子初始化 web profile（${seeded.reason}）`);
       else if (!seeded.ok && seeded.reason !== 'no-seed') console.warn(`[dsh] 内置插件种子未生效：${seeded.reason}`);
       const userData = this.app.getPath('userData');
+      const nodeBin = resolveCommand('node', userData);
       const mcpServer = path.join(__dirname, 'toolbox-mcp-server.js');
       const overlay = path.join(userData, 'dsh-toolbox.patch.yml');
       const yamlPath = (value) => JSON.stringify(String(value).replace(/\\/g, '/'));
@@ -264,12 +328,14 @@ class DshService {
           '',
         );
       }
+      // REA 逆向 MCP：二进制(Hopper/Ghidra) / JS·Electron / .NET / 网站。见 reaMcpLines 的说明。
+      overlayLines.push(...reaMcpLines({ nodeBin, userData }));
+      ensureReaInstalled(userData, nodeBin);
       fs.writeFileSync(overlay, overlayLines.join('\n'), 'utf8');
       this.emit({ status: 'starting', url: this.url, managed: true, error: '' });
       // 新版 DSH 的 URL 含一次性认证 token。若 3080 已被另一个实例占用，
       // 让 DSH 自选空闲端口，避免要求用户手动寻找并关闭旧进程。
       const port = existing.running ? 0 : DEFAULT_PORT;
-      const nodeBin = resolveCommand('node', userData);
       const spec = dshSpawnSpec(dsh, nodeBin, ['--profile', 'web', '--patch', overlay, '--no-open', '--port', String(port)]);
       this.child = spawn(spec.command, spec.args, spawnOptions({ cwd: dshWorkDir(userData), stdio: ['ignore', 'pipe', 'pipe'], env: withNodeOnPath(process.env, nodeBin) }));
       const captureUrl = (chunk) => {
@@ -315,4 +381,4 @@ class DshService {
   }
 }
 
-module.exports = { DSH_PACKAGE, DEFAULT_PORT, DshService, findWebUrl, probe, resolveCommand, dshHomeDir, SEED_PLUGINS, seedTgzPath, webProfileNeedsSeed, seedWebProfile, withNodeOnPath, dshSpawnSpec };
+module.exports = { DSH_PACKAGE, DEFAULT_PORT, DshService, findWebUrl, probe, resolveCommand, dshHomeDir, SEED_PLUGINS, seedTgzPath, webProfileNeedsSeed, seedWebProfile, withNodeOnPath, dshSpawnSpec, REA_PACKAGE, reaLocalScript, reaMcpLines, ensureReaInstalled };

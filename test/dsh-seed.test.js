@@ -74,7 +74,7 @@ test('DSH 种子：仓库自带的真种子包能解到任意 DSH_HOME，插件�
     const fm = head.match(/^---\r?\n([\s\S]*?)\r?\n---/)?.[1] || '';   // name 可能就在 --- 的下一行，别要求中间有空行
     assert.ok(/^name:/m.test(fm) && /^description:/m.test(fm), `${d.name}/SKILL.md 要有带 name+description 的 frontmatter，否则 DSH 会忽略`);
   }
-  for (const must of ['anatomy', 'systematic-debugging', 'test-driven-development', 'taste-skill', 'tdd']) assert.ok(fs.existsSync(path.join(skills, must, 'SKILL.md')), `应包含 ${must}`);
+  for (const must of ['anatomy', 'systematic-debugging', 'test-driven-development', 'taste-skill', 'tdd', 'reverse-engineer-anything']) assert.ok(fs.existsSync(path.join(skills, must, 'SKILL.md')), `应包含 ${must}`);
   // skill-explorer 面板被 web-all 默认关掉，profile patch 里要把它打开，用户才看得见这些 skill
   assert.match(fs.readFileSync(path.join(web, 'cordis.patch.yml'), 'utf8'), /id: web-ui-skill-explorer\n\s+disabled: false/);
   // 整棵树不能有任何软链——Windows 可移植的硬要求
