@@ -1,0 +1,45 @@
+{
+  "upstream": "https://registry.npmjs.org/pdf-lib/-/pdf-lib-1.17.1.tgz",
+  "integrity": "sha512-V/mpyJAoTsN4cnP31vc0wfNA1+p20evqqnap0KLoRUN0Yk/p3wN52DOEsL4oBFcLdb76hlpKPtzJIgo67j/XLw==",
+  "bundleBytes": 523417,
+  "bundleSHA256": "72c052d97b4d5d9fa6cdbdcb7ad709f03d4ddb1122390cb3afeba4d88651d969",
+  "packages": [
+    {
+      "name": "pdf-lib",
+      "version": "1.17.1",
+      "license": "MIT",
+      "licenseFile": "pdf-lib-LICENSE.txt"
+    },
+    {
+      "name": "@pdf-lib/standard-fonts",
+      "version": "1.0.0",
+      "license": "MIT",
+      "licenseFile": "standard-fonts-LICENSE.txt"
+    },
+    {
+      "name": "@pdf-lib/upng",
+      "version": "1.0.1",
+      "license": "MIT",
+      "licenseFile": "upng-LICENSE.txt"
+    },
+    {
+      "name": "pako",
+      "version": "1.0.10",
+      "license": "(MIT AND Zlib)",
+      "licenseFile": "pako-1.0.10-LICENSE.txt"
+    },
+    {
+      "name": "pako",
+      "version": "1.0.11",
+      "license": "(MIT AND Zlib)",
+      "licenseFile": "pako-1.0.11-LICENSE.txt"
+    },
+    {
+      "name": "tslib",
+      "version": "1.11.1",
+      "license": "Apache-2.0",
+      "licenseFile": "tslib-LICENSE.txt"
+    }
+  ],
+  "provenance": "Original npm distribution ESM bundle, not rebuilt. Dependency inventory from package yarn.lock includes both pako1.0.10 and1.0.11. No runtime CDN or npm lookup."
+}
