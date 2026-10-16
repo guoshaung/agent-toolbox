@@ -20,7 +20,10 @@ test('DSH 种子：没有 profile / 解析不了 / 缺任一内置插件 都判�
   writeProfile(home, ['@deepseek-ai/dsh-base']);
   assert.deepEqual(webProfileNeedsSeed(home), { needed: true, reason: `missing:${SEED_PLUGINS.join(',')}` });
   writeProfile(home, ['@deepseek-ai/dsh-base', 'ds-bot']);
-  assert.deepEqual(webProfileNeedsSeed(home), { needed: true, reason: 'missing:dsh-our-free-model' });
+  assert.deepEqual(webProfileNeedsSeed(home), { needed: true, reason: `missing:${SEED_PLUGINS.filter((n) => n !== 'ds-bot').join(',')}` });
+  // 0.46.9 种出来的 profile（有免费模型 + ds-bot、没逆向包）升级后要判成「缺」，才会补种
+  writeProfile(home, ['@deepseek-ai/dsh-base', 'dsh-our-free-model', 'ds-bot']);
+  assert.deepEqual(webProfileNeedsSeed(home), { needed: true, reason: 'missing:@dhicoc/dsh-reverse-skill' });
   writeProfile(home, ['@deepseek-ai/dsh-base', ...SEED_PLUGINS]);
   assert.deepEqual(webProfileNeedsSeed(home), { needed: false, reason: 'complete' });
   fs.writeFileSync(path.join(home, 'profiles', 'web', 'package.json'), '{not json');
@@ -55,6 +58,25 @@ test('DSH 种子：仓库自带的真种子包能解到任意 DSH_HOME，插件�
   assert.equal(pkg.dependencies['dsh-our-free-model'], 'link:../../plugins/dsh-our-free-model', 'link: 依赖必须是相对路径');
   assert.ok(fs.existsSync(path.join(web, 'node_modules', 'ds-bot', 'package.json')));
   assert.equal(fs.existsSync(path.join(web, 'node_modules', '.bin')), false, '.bin 全是软链，Windows 解不出来，不该随种子走');
+  // 逆向整合包：从 GitHub 装的真目录，88 个 SKILL.md 随插件走
+  const reverse = path.join(web, 'node_modules', '@dhicoc', 'dsh-reverse-skill');
+  assert.ok(fs.lstatSync(reverse).isDirectory(), '逆向插件应是真目录');
+  assert.ok(fs.existsSync(path.join(reverse, 'cordis.patch.yml')) && fs.existsSync(path.join(reverse, 'lib')), '逆向插件要有 bundle patch 和 lib/');
+  const countSkillMd = (dir) => fs.readdirSync(dir, { withFileTypes: true })
+    .reduce((n, d) => n + (d.isDirectory() ? countSkillMd(path.join(dir, d.name)) : d.name === 'SKILL.md' ? 1 : 0), 0);
+  assert.ok(countSkillMd(reverse) >= 80, `逆向插件 SKILL.md 应 ≥80，实际 ${countSkillMd(reverse)}`);
+  // 用户级 skills 根：Superpowers / taste / mattpocock / Anatomy 摊平成 <名字>/SKILL.md，DSH 只认这两层
+  const skills = path.join(home, 'skills');
+  const skillDirs = fs.readdirSync(skills, { withFileTypes: true }).filter((d) => d.isDirectory());
+  assert.ok(skillDirs.length >= 60, `skills/ 应 ≥60 个，实际 ${skillDirs.length}`);
+  for (const d of skillDirs) {
+    const head = fs.readFileSync(path.join(skills, d.name, 'SKILL.md'), 'utf8').slice(0, 4000);
+    const fm = head.match(/^---\r?\n([\s\S]*?)\r?\n---/)?.[1] || '';   // name 可能就在 --- 的下一行，别要求中间有空行
+    assert.ok(/^name:/m.test(fm) && /^description:/m.test(fm), `${d.name}/SKILL.md 要有带 name+description 的 frontmatter，否则 DSH 会忽略`);
+  }
+  for (const must of ['anatomy', 'systematic-debugging', 'test-driven-development', 'taste-skill', 'tdd']) assert.ok(fs.existsSync(path.join(skills, must, 'SKILL.md')), `应包含 ${must}`);
+  // skill-explorer 面板被 web-all 默认关掉，profile patch 里要把它打开，用户才看得见这些 skill
+  assert.match(fs.readFileSync(path.join(web, 'cordis.patch.yml'), 'utf8'), /id: web-ui-skill-explorer\n\s+disabled: false/);
   // 整棵树不能有任何软链——Windows 可移植的硬要求
   const symlinks = (dir) => fs.readdirSync(dir, { withFileTypes: true })
     .flatMap((d) => d.isSymbolicLink() ? [path.join(dir, d.name)] : d.isDirectory() ? symlinks(path.join(dir, d.name)) : []);

@@ -27,9 +27,10 @@ function dshHomeDir() {
   return process.env.DSH_HOME || path.join(os.homedir(), '.dsh');
 }
 
-// 判定 web profile「配齐了」的标志插件。免费模型插件不在 npm 上、ds-bot 要手动启用——
-// 这两个都在，说明这份 profile 是我们种过（或用户自己配齐）的，不用再动。
-const SEED_PLUGINS = ['dsh-our-free-model', 'ds-bot'];
+// 判定 web profile「配齐了」的标志插件。免费模型插件不在 npm 上、ds-bot 要手动启用、
+// 逆向整合包（88 个 SKILL.md）只能从 GitHub 装且要兼容性豁免——三个都在，说明这份 profile 是我们种过
+// （或用户自己配齐）的，不用再动。少一个就重种（旧的会整个备份），所以 0.46.9 种过的机器升级后也会补上逆向包和 skills。
+const SEED_PLUGINS = ['dsh-our-free-model', 'ds-bot', '@dhicoc/dsh-reverse-skill'];
 
 // 种子包在 app 里的位置：打包后在 resources/dsh-seed，开发时在仓库根目录（同 container-seed 的约定）
 function seedTgzPath(app) {
@@ -53,6 +54,8 @@ function webProfileNeedsSeed(dshHome) {
  * 种子是从一台配好的机器整体导出的：node_modules 自洽，且整棵树没有任何软链（Windows 上 tar 解出的软链一 stat 就
  * EPERM，CI 栽过）——不在 npm 上的免费模型插件在 node_modules 里是真目录，plugins/ 下另留一份给 package.json 里
  * 相对路径的 link: 依赖用；.bin 全是软链所以不带。不含 .plugin-manager 登录态和任何密钥（模型配置只写 apiKeyEnv 变量名）。
+ * 除 profiles/web 和 plugins/ 外还带 skills/（Superpowers、taste、mattpocock、Anatomy 等摊平成 <名字>/SKILL.md，
+ * 这是 dsh-skill-filesystem 的用户级根 $DSH_HOME/skills）。
  * tgz 内路径带 `.dsh/` 前缀，--strip-components=1 剥掉它，这样 DSH_HOME 叫什么都能落对位置。
  * 任何一步失败都只返回 ok:false，不抛——调用方不该因它拦住 DSH 启动。
  */
@@ -105,6 +108,26 @@ function resolveCommand(command, userDataPath = '') {
 
 function spawnOptions(options = {}) {
   return process.platform === 'win32' ? { ...options, shell: true } : options;
+}
+
+/**
+ * 把 node 所在目录放到子进程 PATH 最前面。
+ * 工具箱是 GUI 进程，macOS 上 launchd 给它的 PATH 只有 /usr/bin:/bin:/usr/sbin:/sbin ——
+ * node 只装在 nvm / homebrew 里的机器上，`dsh` 脚本的 `#!/usr/bin/env node` 一个都找不到，
+ * 子进程当场退出、我们这边只看到「启动超时」。这坑栽过：profile 明明能起，换成从 Finder 双击就起不来。
+ * 纯函数，好测。
+ */
+function withNodeOnPath(env, nodeBin) {
+  if (!nodeBin) return { ...env };
+  const dir = path.dirname(nodeBin);
+  const parts = String(env.PATH || '').split(path.delimiter).filter(Boolean);
+  return { ...env, PATH: [dir, ...parts.filter((p) => p !== dir)].join(path.delimiter) };
+}
+
+/** `dsh` 在 mac/linux 上是个 `env node` 脚本：显式用解析到的 node 去跑它，不赌 PATH。Windows 的 .cmd 走 shell 原样执行。 */
+function dshSpawnSpec(dshBin, nodeBin, args) {
+  if (nodeBin && !/\.(cmd|exe|bat)$/i.test(dshBin)) return { command: nodeBin, args: [dshBin, ...args] };
+  return { command: dshBin, args };
 }
 
 function probe(port = DEFAULT_PORT, requestPath = '/') {
@@ -176,7 +199,8 @@ class DshService {
     fs.mkdirSync(prefix, { recursive: true });
     this.emit({ status: 'installing', error: '' });
     const result = await new Promise((resolve) => {
-      const child = spawn(npm, ['install', '--prefix', prefix, '--no-fund', '--no-audit', DSH_PACKAGE], spawnOptions({ cwd: prefix, stdio: ['ignore', 'pipe', 'pipe'] }));
+      const env = withNodeOnPath(process.env, resolveCommand('node', userData));
+      const child = spawn(npm, ['install', '--prefix', prefix, '--no-fund', '--no-audit', DSH_PACKAGE], spawnOptions({ cwd: prefix, stdio: ['ignore', 'pipe', 'pipe'], env }));
       let stderr = '';
       child.stderr.on('data', (chunk) => { stderr += chunk; });
       child.on('error', (error) => resolve({ ok: false, error: error.message }));
@@ -245,7 +269,9 @@ class DshService {
       // 新版 DSH 的 URL 含一次性认证 token。若 3080 已被另一个实例占用，
       // 让 DSH 自选空闲端口，避免要求用户手动寻找并关闭旧进程。
       const port = existing.running ? 0 : DEFAULT_PORT;
-      this.child = spawn(dsh, ['--profile', 'web', '--patch', overlay, '--no-open', '--port', String(port)], spawnOptions({ cwd: dshWorkDir(this.app.getPath('userData')), stdio: ['ignore', 'pipe', 'pipe'] }));
+      const nodeBin = resolveCommand('node', userData);
+      const spec = dshSpawnSpec(dsh, nodeBin, ['--profile', 'web', '--patch', overlay, '--no-open', '--port', String(port)]);
+      this.child = spawn(spec.command, spec.args, spawnOptions({ cwd: dshWorkDir(userData), stdio: ['ignore', 'pipe', 'pipe'], env: withNodeOnPath(process.env, nodeBin) }));
       const captureUrl = (chunk) => {
         const url = findWebUrl(chunk);
         if (url) this.url = url;
@@ -289,4 +315,4 @@ class DshService {
   }
 }
 
-module.exports = { DSH_PACKAGE, DEFAULT_PORT, DshService, findWebUrl, probe, resolveCommand, dshHomeDir, SEED_PLUGINS, seedTgzPath, webProfileNeedsSeed, seedWebProfile };
+module.exports = { DSH_PACKAGE, DEFAULT_PORT, DshService, findWebUrl, probe, resolveCommand, dshHomeDir, SEED_PLUGINS, seedTgzPath, webProfileNeedsSeed, seedWebProfile, withNodeOnPath, dshSpawnSpec };
