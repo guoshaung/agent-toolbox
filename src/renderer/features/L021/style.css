@@ -1,0 +1,28 @@
+.feature-l021 { padding: 20px; max-width: 1200px; margin: auto; line-height: 1.6; }
+.feature-l021 h2 { margin: 0; }
+.feature-l021 .l021-editor, .feature-l021 .l021-output { margin-top: 20px; }
+.feature-l021 .l021-field { display: flex; flex-direction: column; gap: 5px; margin: 10px 0; }
+.feature-l021 textarea { width: 100%; box-sizing: border-box; font-family: monospace; resize: vertical; }
+.feature-l021 .l021-parameters { display: grid; grid-template-columns: 2fr 1fr 1fr; gap: 12px; }
+.feature-l021 .l021-actions { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin: 12px 0; }
+.feature-l021 .l021-toggle { display: flex; align-items: center; gap: 8px; }
+.feature-l021 .l021-muted { opacity: .75; font-size: 13px; }
+.feature-l021 .l021-summary { font-size: 18px; font-weight: 600; }
+.feature-l021 .l021-chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 12px 0; }
+.feature-l021 .l021-chip { display: flex; flex-direction: column; text-align: center; border: 1px solid var(--border, #445268); padding: 6px 12px; border-radius: 5px; }
+.feature-l021 .l021-chip small { opacity: .65; font-size: 10px; }
+.feature-l021 .l021-attempt { border-left: 4px solid var(--accent, #80baff); padding: 12px 16px; background: rgba(92, 153, 230, .07); }
+.feature-l021 .l021-attempt p { overflow-wrap: anywhere; }
+.feature-l021 .is-fail { border-color: #e39d36; }
+.feature-l021 .is-pass { border-color: #5ac696; }
+.feature-l021 .l021-proof-status { padding: 10px; border: 1px solid var(--border, #445268); }
+.feature-l021 .is-verified { border-color: #5ac696; }
+.feature-l021 .l021-notice, .feature-l021 .l021-storage { white-space: pre-wrap; }
+.feature-l021 .is-error, .feature-l021 .l021-storage { color: var(--danger, #d95764); }
+.feature-l021 .l021-table-scroll { overflow: auto; max-height: 390px; margin: 20px 0; }
+.feature-l021 table { border-collapse: collapse; min-width: 100%; font-family: monospace; }
+.feature-l021 caption { text-align: left; font-family: sans-serif; margin: 5px 0; }
+.feature-l021 th, .feature-l021 td { padding: 7px 10px; border: 1px solid var(--border, #445268); text-align: center; }
+.feature-l021 td button { background: none; color: inherit; border: 0; cursor: pointer; text-decoration: underline; }
+.feature-l021 .is-current { outline: 1px solid var(--accent, #80baff); outline-offset: -1px; background: rgba(92, 153, 230, .13); }
+@media (max-width: 650px) { .feature-l021 { padding: 12px; } .feature-l021 .l021-parameters { grid-template-columns: 1fr; gap: 0; } }
