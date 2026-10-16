@@ -1,0 +1,46 @@
+.feature-e024 { max-width: 1040px; margin: 0 auto; padding: 24px; color: #e9eef7; line-height: 1.6; }
+.feature-e024 * { box-sizing: border-box; }
+.feature-e024 h2, .feature-e024 h3, .feature-e024 p { margin: 0; }
+.feature-e024 h2 { font-size: 28px; }
+.feature-e024 button, .feature-e024 input, .feature-e024 select { font: inherit; color: #edf2f8; background: #233148; border: 1px solid #4a5b77; border-radius: 8px; padding: 8px 12px; }
+.feature-e024 button { cursor: pointer; }
+.feature-e024 button:disabled { opacity: .4; cursor: default; }
+.feature-e024 button:focus-visible, .feature-e024 input:focus-visible, .feature-e024 select:focus-visible { outline: 3px solid #d8e9fc; outline-offset: 3px; }
+.feature-e024 .e024-heading, .feature-e024 .e024-progress { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 18px; }
+.feature-e024 .e024-heading p { color: #b8c6dc; margin-top: 6px; }
+.feature-e024 .e024-settings, .feature-e024 .e024-brushes, .feature-e024 .e024-guess-form { display: flex; align-items: end; flex-wrap: wrap; gap: 10px; margin-bottom: 12px; }
+.feature-e024 .e024-settings label { display: flex; flex-direction: column; gap: 4px; color: #b8c6dc; font-size: 13px; }
+.feature-e024 .e024-settings input { width: 130px; }
+.feature-e024 .e024-settings input[type=number] { width: 108px; }
+.feature-e024 .e024-muted { color: #a9bbd4; font-size: 13px; }
+.feature-e024 .e024-rule { padding: 12px 0; color: #cbdcf4; }
+.feature-e024 .e024-warning { padding: 10px 14px; background: #2c2c30; color: #e4d1ac; border-left: 3px solid #e4bc80; font-size: 13px; margin-bottom: 18px; }
+.feature-e024 .e024-scores { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 16px; }
+.feature-e024 .e024-scores > div { display: flex; justify-content: space-between; gap: 14px; flex: 1; min-width: 160px; padding: 12px 16px; border-bottom: 2px solid #415877; }
+.feature-e024 .e024-scores .is-drawer { background: #1f3337; border-color: #98cabd; }
+.feature-e024 .e024-scores span { overflow-wrap: anywhere; }
+.feature-e024 .e024-scores strong { white-space: nowrap; }
+.feature-e024 .e024-progress strong { font-size: 24px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.feature-e024 .e024-status { color: #d6e8ff; font-weight: 600; min-height: 48px; }
+.feature-e024 .e024-private, .feature-e024 .e024-paused, .feature-e024 .e024-result { padding: 24px; background: #182538; border-radius: 12px; }
+.feature-e024 .e024-private p { margin: 8px 0 18px; color: #b8c6dc; }
+.feature-e024 .e024-private > button, .feature-e024 .e024-result > button { margin: 8px 10px 0 0; }
+.feature-e024 .e024-choices { display: flex; gap: 14px; flex-wrap: wrap; margin: 18px 0; }
+.feature-e024 .e024-choices button { padding: 18px 26px; font-size: 22px; }
+.feature-e024 .e024-choices button[aria-pressed=true] { background: #badbce; color: #162e29; }
+.feature-e024 .e024-brushes button { border-bottom-width: 5px; }
+.feature-e024 .e024-brushes button[aria-pressed=true] { outline: 2px solid #d6e8ff; outline-offset: 1px; }
+.feature-e024 .e024-canvas { display: block; width: min(100%, 640px); height: auto; background: white; border-radius: 6px; border: 1px solid #7890af; touch-action: none; cursor: crosshair; }
+.feature-e024 .e024-guess-form { margin-top: 16px; }
+.feature-e024 .e024-guess-form input { flex: 1; min-width: 170px; }
+.feature-e024 .e024-guesses { padding-left: 24px; max-height: 200px; overflow-y: auto; color: #bccae0; }
+.feature-e024 .e024-paused { min-height: 240px; display: grid; place-items: center; }
+.feature-e024 .e024-last { margin-bottom: 14px; color: #c4d7f0; }
+.feature-e024 .e024-gallery { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; margin-top: 22px; }
+.feature-e024 .e024-gallery figure { margin: 0; }
+.feature-e024 .e024-gallery img { width: 100%; display: block; background: white; border-radius: 6px; }
+.feature-e024 .e024-gallery figcaption { font-size: 14px; color: #c4d7f0; padding: 8px 0; overflow-wrap: anywhere; }
+.feature-e024 .e024-history { margin-top: 28px; }
+.feature-e024 .e024-history h3 { font-size: 18px; }
+.feature-e024 .e024-recent { margin: 8px 0; padding-left: 22px; color: #b0c1da; font-size: 13px; }
+@media (max-width: 600px) { .feature-e024 { padding: 16px; } .feature-e024 .e024-gallery { grid-template-columns: 1fr; } }
