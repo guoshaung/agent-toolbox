@@ -1,0 +1,1 @@
+{"id":"T044","category":"工具","group":"音视频与字幕","title":"音频响度统一","description":"真实测量PCM WAV，用FFmpeg双遍归一化并复测响度与真峰值，试听后保存完整新目录。"}
