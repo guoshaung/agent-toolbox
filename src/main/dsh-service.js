@@ -207,7 +207,12 @@ function asInsertPatch(entryLines) {
   return ['- insert:', ...entryLines.map((line) => (line ? `    ${line}` : ''))];
 }
 
-/** 工具箱自己的 MCP（toolbox-mcp-server.js，用 Electron 以 node 模式跑）。failOnStartupError:true——它挂了说明工具箱自身有问题，要暴露出来。 */
+/**
+ * 工具箱自己的 MCP（toolbox-mcp-server.js，用 Electron 以 node 模式跑）。failOnStartupError:true——它挂了说明工具箱自身有问题，要暴露出来。
+ * cwd 必须是真目录：打包后 mcpServer 在 app.asar 里，那个"目录"只在 Electron 进程里看着像目录，
+ * 对 OS 来说不是——子进程一设 cwd 就 `spawn ENOTDIR`，DSH 只报"initial connection failed"。开发态是真目录所以看不出来。
+ * 脚本本身从 asar 里 require 没问题（ELECTRON_RUN_AS_NODE 下 asar 支持仍开着），只是 cwd 不能指进去。
+ */
 function toolboxMcpLines({ userData, mcpServer, execPath }) {
   return [
     '- id: mcp-agent-toolbox',
@@ -217,7 +222,7 @@ function toolboxMcpLines({ userData, mcpServer, execPath }) {
     '    transport: stdio',
     `    command: ${yamlPath(execPath)}`,
     `    args: [${yamlPath(mcpServer)}]`,
-    `    cwd: ${yamlPath(path.dirname(mcpServer))}`,
+    `    cwd: ${yamlPath(userData)}`,
     '    env:',
     `      AGENT_TOOLBOX_USER_DATA: ${yamlPath(userData)}`,
     '      ELECTRON_RUN_AS_NODE: "1"',

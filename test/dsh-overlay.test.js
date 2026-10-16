@@ -21,7 +21,8 @@ test('DSH overlay：工具箱自己的 MCP 用 Electron 以 node 模式跑、启
   assert.equal(toolbox.config.transport, 'stdio');
   assert.equal(toolbox.config.command, '/App.app/Contents/MacOS/App');
   assert.deepEqual(toolbox.config.args, ['/app/src/main/toolbox-mcp-server.js']);
-  assert.equal(toolbox.config.cwd, '/app/src/main');
+  // cwd 不能是脚本所在目录：打包后它在 app.asar 里，对 OS 不是真目录，spawn 会 ENOTDIR（打包态栽过）
+  assert.equal(toolbox.config.cwd, '/ud');
   assert.equal(toolbox.config.env.ELECTRON_RUN_AS_NODE, '1');
   assert.equal(toolbox.config.env.AGENT_TOOLBOX_USER_DATA, '/ud');
   assert.equal(toolbox.config.failOnStartupError, true);
