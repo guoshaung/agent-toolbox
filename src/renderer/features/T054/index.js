@@ -1,0 +1,36 @@
+import { h } from '../../core/ui.js';
+import { SyntheticError, LIMITS, EXAMPLE, checkText, generate, bundlePayload } from './model.mjs';
+
+export default {
+  id: 'T054',
+  create(root) {
+    let active = false; let destroyed = false; let ticket = 0; let busy = false; let result = null;
+    const status = h('p', { class: 't054-status', role: 'status', 'aria-live': 'polite' });
+    const source = h('textarea', { rows: '14', 'aria-label': '模拟数据 Schema 源文本', oninput: () => { if (!active || destroyed || document.hidden || busy) return; invalidate(); message('源已编辑，旧文件预览废弃，请重新生成。'); } }); source.value = EXAMPLE;
+    const seed = h('input', { type: 'text', value: 'seed-42', maxlength: '64', 'aria-label': '固定随机种子', oninput: () => { if (!active || destroyed || busy) return; invalidate(); message('种子改变，旧预览废弃，请重新生成。'); } }); seed.value = 'seed-42';
+    const file = h('input', { type: 'file', accept: '.json,.schema.json', 'aria-label': '读取 UTF-8 模拟 Schema 文件', onchange: e => readFile(e.target) });
+    const inspect = button('生成并预览全部文件', inspectSource); const cancel = button('取消当前读取或生成', () => { ticket++; message('已取消，未保存部分产物；等待当前异步操作结束后重试。'); });
+    const issuesHost = h('section', {}); const resultHost = h('section', {});
+    root.append(h('link', { rel: 'stylesheet', href: new URL('./style.css', import.meta.url).href }), h('section', { class: 'feature-t054', 'aria-label': '可复现模拟数据生成' }, h('h2', {}, '可复现模拟数据生成'), h('p', {}, '只生成显式标识的合成记录，不使用真实人名库或个人记录：synthetic-data.json、每表 CSV、generation-manifest.json。无网络、账号、AI，不执行代码或表达式。'),
+      h('p', { class: 't054-rule' }, 'T054-schema v1：1–10表，每表1–20字段，合计0–1000行；每表一个id主键。支持id/整数/定点小数/布尔/原始枚举/合成文本/外键，固定 uniform 分布。源≤64 KiB、深度≤8、JSON节点≤3000，全部产物≤2 MiB。'),
+      h('p', { class: 't054-muted' }, '边界模式：各表第1/2行分别选域首/末（不足2行不虚构末边界），其他行离散伪均匀；不是统计分布保证。整数min/max ±1000000；小数minUnits/maxUnits为整数、scale0–3；外键只引用目标表主键，缺表/空目标/循环全部拒绝。同Schema与种子生成字节和SHA相同，无当前时间。'), source, field('固定种子（1–64字符，非安全随机）', seed), field('只读用户选中的本地文件', file), actions(inspect, cancel, button('载入用户与订单合成示例', () => { if (busy) return; source.value = EXAMPLE; seed.value = 'seed-42'; invalidate(); message('示例已载入，点击生成预览。'); }), button('清除源与所有预览', clear)), status, issuesHost, resultHost,
+      h('p', { class: 't054-muted' }, '源与生成结果仅当前面板内存，不自动写配置；切换功能销毁未保存内容。用户手填的枚举/文本前缀会复制，合成生成不替代去敏。CSV字符串公式候选前加单引号，JSON保留原值；可能与CSV文本不同，表格导入行为仍需自行核对。所有文件必须先完整预览，再显式创建全新副本目录；已有目录拒绝，无源文件修改。')));
+    update();
+    function button(label, fn) { return h('button', { type: 'button', onclick: e => { if (!active || destroyed || document.hidden || e.detail > 1) return; fn(); } }, label); }
+    function actions(...nodes) { return h('div', { class: 't054-actions' }, nodes); }
+    function field(label, input) { return h('label', {}, h('span', {}, label), input); }
+    function message(text) { if (!destroyed) status.textContent = text; }
+    function invalidate() { ticket++; result = null; resultHost.replaceChildren(); issuesHost.replaceChildren(); }
+    function update() { if (destroyed) return; source.disabled = !active || busy; seed.disabled = !active || busy; file.disabled = !active || busy; inspect.disabled = !active || busy; cancel.disabled = !active || !busy; }
+    async function task(fn) { if (busy) return; const owner = ++ticket; busy = true; update(); const options = { isCanceled: () => destroyed || !active || document.hidden || owner !== ticket }; try { await fn(options); } catch (error) { if (!destroyed && owner === ticket) { if (error instanceof SyntheticError) { renderIssues(error.issues || []); message(`${error.code}：${error.message} 没有部分数据文件。`); } else message('本地处理失败，异常上下文已隐藏；已预览产物若存在会保留。'); } } finally { if (!destroyed) { busy = false; update(); } } }
+    async function inspectSource() { if (busy) return; invalidate(); const text = source.value; const fixedSeed=seed.value; await task(async options => { await new Promise(r => setTimeout(r, 0)); if (options.isCanceled()) return; const next = await generate(text, fixedSeed, options); if (options.isCanceled()) return; result = next; renderIssues([]); renderFiles(); message(`已生成 ${next.files.length} 个完整文件 / ${next.totalBytes} 字节；${next.tables} 表 / ${next.totalRows} 行。请逐个预览；记录均为合成，不是实际人物/交易。`); }); }
+    async function readFile(control) { const selected = control.files?.[0]; control.value = ''; if (!active || destroyed || document.hidden || busy || !selected) return; source.value = ''; invalidate(); await task(async options => { if (!Number.isSafeInteger(selected.size) || selected.size < 0 || selected.size > LIMITS.inputBytes || typeof selected.slice !== 'function') throw new SyntheticError('input_limit'); const data = await selected.slice(0, selected.size).arrayBuffer(); if (options.isCanceled()) return; if (!(data instanceof ArrayBuffer) || data.byteLength !== selected.size) throw new SyntheticError('read_size'); let text; try { text = new TextDecoder('utf-8', { fatal: true }).decode(data); } catch { throw new SyntheticError('invalid_utf8'); } checkText(text); if (options.isCanceled()) return; source.value = text; message('UTF-8 文件已只读载入，尚未生成；未保存文件名或任意路径。'); }); }
+    function renderIssues(issues) { issuesHost.replaceChildren(); if (!issues.length) return; issuesHost.append(h('h3', {}, '输入阻止原因'), h('table', { class: 't054-data' }, h('thead', {}, h('tr', {}, ['JSON Pointer', '级别', '原因码'].map(x => h('th', {}, x)))), h('tbody', {}, issues.map(i => h('tr', {}, h('td', {}, i.path), h('td', {}, i.severity), h('td', {}, i.code)))))); }
+    function renderFiles() { resultHost.replaceChildren(); const expected = result; resultHost.append(h('h3', {}, '全部生成文件完整预览'), h('p', {}, '拟创建 T054-synthetic-data-copy 新目录，实际路径由保存对话框确认。JSON、每表CSV、完整参数清单；不可覆盖已有目录。'), ...expected.files.map(f => { const text = h('textarea', { rows: '10', readonly: true, 'aria-label': `完整预览 ${f.path}` }); text.value = f.content; return h('section', {}, h('h4', {}, f.path), h('p', {}, `${f.bytes} 字节 · SHA-256 ${f.sha256}`), text); }), button('确认导出已预览文件到全新目录', () => save(expected))); }
+    async function save(expected) { if (busy || result !== expected) return; const api = window.toolbox?.files; if (api?.exportBundleSupportsCopyOnly !== true || typeof api.exportBundle !== 'function') { message('当前宿主缺少多文件副本保护接口，已阻止保存。'); return; } await task(async options => { const saved = await api.exportBundle(bundlePayload(expected)); if (options.isCanceled() || result !== expected) return; if (saved?.ok === true) message('已创建完整合成数据副本目录，源文件未修改。'); else if (saved?.canceled === true) message('已取消保存，完整预览保留。'); else if (saved?.partialPath) message('保存失败且新目录清理未完成；请核对保存对话框选择的目录，完整预览保留。'); else message('保存失败，完整预览保留；不能覆盖已有目录。'); }); }
+    function clear() { source.value = ''; seed.value = ''; file.value = ''; invalidate(); message('源与所有生成预览已清除；不承诺物理内存擦除。'); }
+    function hide() { if (document.hidden && !destroyed) { ticket++; message('面板隐藏，当前读取/生成取消，返回后手动重试；不会自动导出。'); } }
+    document.addEventListener('visibilitychange', hide);
+    return { activate() { if (destroyed) return; active = true; update(); }, deactivate() { if (destroyed) return; active = false; ticket++; update(); message('面板暂停，任务取消；已完成预览保留，不自动导出。'); }, destroy() { if (destroyed) return; clear(); destroyed = true; active = false; ticket++; document.removeEventListener('visibilitychange', hide); root.replaceChildren(); } };
+  }
+};
