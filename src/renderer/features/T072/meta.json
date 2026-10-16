@@ -1,0 +1,1 @@
+{"id":"T072","category":"工具","group":"系统与本地环境","title":"PATH 命令冲突诊断","description":"按明确PATH/PATHEXT快照只读检查同名文件、顺序、重复目录与疑似占位，不执行命令或修改环境。"}
