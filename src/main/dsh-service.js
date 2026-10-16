@@ -6,7 +6,8 @@ const path = require('node:path');
 const http = require('node:http');
 const { spawn, execFile, execFileSync } = require('node:child_process');
 
-const DSH_PACKAGE = '@deepseek-ai/dsh@0.1.1-rc.2';
+// 2026-10-06 升到 0.1.7-rc.2：内置种子里的 dsh-our-free-model 插件要求内核 0.1.5～0.1.7-rc.2；0.2.x 超出插件范围、且 dsh-web-all 0.4.x 才要 0.2
+const DSH_PACKAGE = '@deepseek-ai/dsh@0.1.7-rc.2';
 
 /**
  * DSH 的工作目录。
@@ -18,6 +19,64 @@ function dshWorkDir(userDataPath) {
   const dir = path.join(userDataPath, 'container', 'dsh');
   try { fs.mkdirSync(dir, { recursive: true }); return dir; } catch { return os.homedir(); }
 }
+
+/* ---------- 内置 DSH 插件种子：新机器开箱即用 ---------- */
+
+// DSH 的 $DSH_HOME（profile / 插件都在这下面）。和 DSH 自己的约定一致：没设环境变量就是 ~/.dsh
+function dshHomeDir() {
+  return process.env.DSH_HOME || path.join(os.homedir(), '.dsh');
+}
+
+// 判定 web profile「配齐了」的标志插件。免费模型插件不在 npm 上、ds-bot 要手动启用——
+// 这两个都在，说明这份 profile 是我们种过（或用户自己配齐）的，不用再动。
+const SEED_PLUGINS = ['dsh-our-free-model', 'ds-bot'];
+
+// 种子包在 app 里的位置：打包后在 resources/dsh-seed，开发时在仓库根目录（同 container-seed 的约定）
+function seedTgzPath(app) {
+  const root = app?.isPackaged ? process.resourcesPath : path.join(__dirname, '..', '..');
+  return path.join(root, 'dsh-seed', 'dsh-web-profile.tgz');
+}
+
+/** 纯判断：$DSH_HOME/profiles/web 缺不缺内置插件。没 profile、解析不了、少任一标志插件都算缺。 */
+function webProfileNeedsSeed(dshHome) {
+  const file = path.join(dshHome, 'profiles', 'web', 'package.json');
+  if (!fs.existsSync(file)) return { needed: true, reason: 'no-profile' };
+  let bundles;
+  try { bundles = JSON.parse(fs.readFileSync(file, 'utf8'))?.dsh?.profile?.bundles; } catch { return { needed: true, reason: 'bad-profile' }; }
+  if (!Array.isArray(bundles)) return { needed: true, reason: 'bad-profile' };
+  const missing = SEED_PLUGINS.filter((name) => !bundles.includes(name));
+  return missing.length ? { needed: true, reason: `missing:${missing.join(',')}` } : { needed: false, reason: 'complete' };
+}
+
+/**
+ * 把 app 自带的 web profile 种子解包到 $DSH_HOME。只在缺插件时做；已有的 profile 先整个备份成 web.bak-<时间>。
+ * 种子是从一台配好的机器整体导出的：node_modules 自洽，且整棵树没有任何软链（Windows 上 tar 解出的软链一 stat 就
+ * EPERM，CI 栽过）——不在 npm 上的免费模型插件在 node_modules 里是真目录，plugins/ 下另留一份给 package.json 里
+ * 相对路径的 link: 依赖用；.bin 全是软链所以不带。不含 .plugin-manager 登录态和任何密钥（模型配置只写 apiKeyEnv 变量名）。
+ * tgz 内路径带 `.dsh/` 前缀，--strip-components=1 剥掉它，这样 DSH_HOME 叫什么都能落对位置。
+ * 任何一步失败都只返回 ok:false，不抛——调用方不该因它拦住 DSH 启动。
+ */
+function seedWebProfile(seedTgz, dshHome = dshHomeDir()) {
+  try {
+    if (!fs.existsSync(seedTgz)) return { ok: false, seeded: false, reason: 'no-seed' };
+    const check = webProfileNeedsSeed(dshHome);
+    if (!check.needed) return { ok: true, seeded: false, reason: check.reason };
+    const web = path.join(dshHome, 'profiles', 'web');
+    let backup = '';
+    if (fs.existsSync(web)) {
+      backup = `${web}.bak-${new Date().toISOString().replace(/[:.]/g, '-')}`;
+      fs.renameSync(web, backup);
+    }
+    fs.mkdirSync(dshHome, { recursive: true });
+    // 选项全部放在 -f 之前，bsdtar（macOS / Win10+ 自带）和 GNU tar 都认
+    execFileSync('tar', ['-x', '-z', '--strip-components=1', '-f', seedTgz, '-C', dshHome], { stdio: 'ignore', timeout: 120000 });
+    if (!fs.existsSync(path.join(web, 'package.json'))) throw new Error('解包后没有 profiles/web/package.json');
+    return { ok: true, seeded: true, reason: check.reason, backup };
+  } catch (error) {
+    return { ok: false, seeded: false, reason: error.message };
+  }
+}
+
 const DEFAULT_PORT = 3080;
 
 function resolveCommand(command, userDataPath = '') {
@@ -138,6 +197,11 @@ class DshService {
     if (this.child && !this.child.killed) return { ok: true, ...this.state };
     try {
       const dsh = await this.ensureInstalled();
+      // 新机器开箱即用：web profile 缺内置插件（免费模型 / ds-bot…）就从 app 自带的种子解包一份到 $DSH_HOME。
+      // 已配齐的不碰；失败也不拦启动，最多退回 DSH 自己的默认 profile。
+      const seeded = seedWebProfile(seedTgzPath(this.app));
+      if (seeded.seeded) console.log(`[dsh] 已从内置种子初始化 web profile（${seeded.reason}）`);
+      else if (!seeded.ok && seeded.reason !== 'no-seed') console.warn(`[dsh] 内置插件种子未生效：${seeded.reason}`);
       const userData = this.app.getPath('userData');
       const mcpServer = path.join(__dirname, 'toolbox-mcp-server.js');
       const overlay = path.join(userData, 'dsh-toolbox.patch.yml');
@@ -225,4 +289,4 @@ class DshService {
   }
 }
 
-module.exports = { DSH_PACKAGE, DEFAULT_PORT, DshService, findWebUrl, probe, resolveCommand };
+module.exports = { DSH_PACKAGE, DEFAULT_PORT, DshService, findWebUrl, probe, resolveCommand, dshHomeDir, SEED_PLUGINS, seedTgzPath, webProfileNeedsSeed, seedWebProfile };
