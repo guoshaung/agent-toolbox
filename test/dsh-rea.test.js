@@ -6,6 +6,9 @@ const os = require('node:os');
 const path = require('node:path');
 const { REA_PACKAGE, reaLocalScript, reaMcpLines } = require('../src/main/dsh-service');
 
+// overlay 里的路径统一写成正斜杠（yamlPath 会把 Windows 的 \ 换成 /），比较时两边都归一——否则 Windows CI 上
+// path.join 出来的反斜杠路径和 YAML 里的永远不等（栽过一次）
+const fwd = (s) => String(s).replace(/\\/g, '/');
 const parse = (lines) => {
   const text = lines.join('\n');
   return {
@@ -21,7 +24,7 @@ test('REA MCP：dsh-runtime 里装好了就显式用 node 跑本地 rea.mjs mcp�
   fs.mkdirSync(path.dirname(local), { recursive: true }); fs.writeFileSync(local, '');
   const { command, args, text } = parse(reaMcpLines({ nodeBin: '/n/bin/node', userData, platform: 'darwin' }));
   assert.equal(command, '/n/bin/node');
-  assert.deepEqual(args, [local, 'mcp']);
+  assert.deepEqual(args, [fwd(local), 'mcp']);
   assert.match(text, /serverName: rea/);
   assert.match(text, /failOnStartupError: false/, '首装慢/失败不能拖垮 DSH');
   fs.rmSync(userData, { recursive: true, force: true });
@@ -34,8 +37,8 @@ test('REA MCP：没装本地包就按官方形状走 npx，但把 npx 软链解�
   fs.symlinkSync(cli, path.join(dir, 'npx'));   // 和 nvm/官方包一样：bin/npx 是软链，指向 npm/bin/npx-cli.js
   const nodeBin = path.join(dir, 'node'); fs.writeFileSync(nodeBin, '');
   const { command, args } = parse(reaMcpLines({ nodeBin, userData: path.join(dir, 'no-such-userdata'), platform: 'darwin' }));
-  assert.equal(command, nodeBin);
-  assert.deepEqual(args, [fs.realpathSync(cli), '-y', REA_PACKAGE, 'mcp']);
+  assert.equal(command, fwd(nodeBin));
+  assert.deepEqual(args, [fwd(fs.realpathSync(cli)), '-y', REA_PACKAGE, 'mcp']);
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
