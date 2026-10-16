@@ -1,0 +1,7 @@
+{
+  "id": "L011",
+  "category": "学习",
+  "group": "计算机原理交互实验",
+  "title": "指令流水线实验",
+  "description": "逐周期观察五级 ADD/LOAD/STORE 流水线，比较转发与数据冒险停顿。"
+}
