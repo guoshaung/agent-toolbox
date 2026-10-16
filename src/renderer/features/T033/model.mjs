@@ -1,0 +1,53 @@
+// Finite EXIF TIFF / JPEG-marker / PNG-chunk reader, following CIPA EXIF and W3C PNG.
+export const LIMITS=Object.freeze({files:10,fileBytes:10*1024*1024,totalBytes:40*1024*1024,pixels:40_000_000,side:10000,blocks:4000});
+const fail=s=>{throw Error(s);},ascii=b=>Array.from(b,x=>String.fromCharCode(x)).join(''),starts=(b,s)=>s.length<=b.length&&Array.from(s).every((c,i)=>b[i]===c.charCodeAt(0));
+export function concat(parts){const b=new Uint8Array(parts.reduce((s,p)=>s+p.length,0));let at=0;for(const p of parts){b.set(p,at);at+=p.length;}return b;}
+export function crc32(b){let c=0xffffffff;for(const v of b){c^=v;for(let k=0;k<8;k++)c=(c>>>1)^((c&1)?0xedb88320:0);}return(c^0xffffffff)>>>0;}
+export function pngChunk(type,data){const b=new Uint8Array(data.length+12),d=new DataView(b.buffer);d.setUint32(0,data.length);b.set(Array.from(type,c=>c.charCodeAt(0)),4);b.set(data,8);d.setUint32(data.length+8,crc32(b.subarray(4,data.length+8)));return b;}
+export function orientationTiff(n){if(!Number.isInteger(n)||n<1||n>8)fail('方向必须为1–8。');const b=new Uint8Array(26),d=new DataView(b.buffer);b.set([73,73,42,0,8,0,0,0,1,0]);d.setUint16(10,0x112,true);d.setUint16(12,3,true);d.setUint32(14,1,true);d.setUint16(18,n,true);return b;}
+export function readExif(b){
+ if(!(b instanceof Uint8Array)||b.length<8)fail('EXIF TIFF头不完整。');const le=starts(b,'II'),be=starts(b,'MM');if(!le&&!be)fail('EXIF字节序无效。');const d=new DataView(b.buffer,b.byteOffset,b.byteLength),bound=(p,n)=>{if(!Number.isSafeInteger(p)||p<0||p+n>b.length)fail('EXIF偏移或长度越界。');},u16=p=>{bound(p,2);return d.getUint16(p,le);},u32=p=>{bound(p,4);return d.getUint32(p,le);};if(u16(2)!==42)fail('不支持BigTIFF或无效EXIF版本。');
+ const sizes={1:1,2:1,3:2,4:4,5:8,6:1,7:1,8:2,9:4,10:8,11:4,12:8,13:4},seen=new Set(),report={orientation:1,orientationPresent:false,gpsPresent:false,gps:null,device:{},tags:[]};let entries=0;
+ const read=(p,scope,depth)=>{if(!p)return;if(depth>4||seen.has(p))fail('EXIF目录循环或层级过深。');seen.add(p);const count=u16(p);entries+=count;if(count>1024||entries>4096)fail('EXIF标签数超限。');bound(p+2,count*12+4);const values=new Map();
+  for(let i=0;i<count;i++){const q=p+2+i*12,tag=u16(q),type=u16(q+2),n=u32(q+4),size=sizes[type];if(!size)fail('EXIF含不支持的数据类型。');const len=n*size;if(!Number.isSafeInteger(len)||len>b.length)fail('EXIF字段长度无效。');const pos=len<=4?q+8:u32(q+8);bound(pos,len);if(values.has(tag))fail('EXIF目录有重复标签。');let value=null;
+   if(type===2){value=ascii(b.subarray(pos,pos+Math.min(len,512))).replace(/\0.*$/s,'');if(len>512)value+='…（字段预览上限512字节）';}
+   else if(n<=4&&[1,3,4,5,13].includes(type)){value=[];for(let j=0;j<n;j++){const r=pos+j*size;if(type===5){const den=u32(r+4);value.push(den?u32(r)/den:null);}else value.push(type===1?b[r]:type===3?u16(r):u32(r));}}
+   values.set(tag,{type,n,value});report.tags.push({scope,tag:'0x'+tag.toString(16).padStart(4,'0'),type,count:n});
+   if(scope==='IFD0'&&tag===0x112){if(type!==3||n!==1||!value||value[0]<1||value[0]>8)fail('EXIF方向不是明确的1–8。');report.orientation=value[0];report.orientationPresent=true;}
+   if([0x10f,0x110,0x131,0x132,0x9003,0xa431,0xa434].includes(tag)&&type===2)report.device[{'271':'制造商','272':'设备型号','305':'软件','306':'修改时间','36867':'拍摄时间','42033':'机身序列号','42036':'镜头型号'}[tag]]=value;
+  }
+  for(const [tag,scopeNext]of[[0x8769,'Exif'],[0x8825,'GPS'],[0xa005,'Interop']])if(values.has(tag)){const v=values.get(tag);if(v.type!==4||v.n!==1||!v.value?.[0])fail('EXIF子目录指针无效。');if(tag===0x8825)report.gpsPresent=true;read(v.value[0],scopeNext,depth+1);}
+  if(scope==='GPS'){const lat=values.get(2),lon=values.get(4),lr=values.get(1)?.value,or=values.get(3)?.value;const coord=(v,ref,max)=>{if(!v||v.type!==5||v.n!==3||!v.value?.every(Number.isFinite)||v.value[0]>max||v.value[1]>=60||v.value[2]>=60||v.value.some(x=>x<0))return null;const n=v.value[0]+v.value[1]/60+v.value[2]/3600;return n<=max?n*(['S','W'].includes(ref)?-1:1):null;};const latitude=['N','S'].includes(lr)?coord(lat,lr,90):null,longitude=['E','W'].includes(or)?coord(lon,or,180):null;report.gps=latitude!==null&&longitude!==null?{latitude,longitude}:null;}
+  const next=u32(p+2+count*12);if(next)read(next,scope+'-next',depth+1);
+ };if(u32(4)<8)fail('EXIF首目录偏移无效。');read(u32(4),'IFD0',0);return report;
+}
+const dimensions=(w,h)=>{if(!w||!h||w>LIMITS.side||h>LIMITS.side||w*h>LIMITS.pixels)fail('图像超过10000边长或4000万像素限额。');return{width:w,height:h};};
+function png(b){const d=new DataView(b.buffer,b.byteOffset,b.byteLength),parts=[b.subarray(0,8)],blocks=[],metadata=[];let p=8,exif=null,dim,idat=false,after=false,plte=false,ended=false;const known=new Set(['IHDR','PLTE','IDAT','IEND','tRNS','cHRM','gAMA','iCCP','sBIT','sRGB','cICP','mDCV','cLLI','bKGD','hIST','pHYs']),single=new Set();
+ while(p<b.length){if(blocks.length>=LIMITS.blocks||p+12>b.length)fail('PNG块数超限或块头截断。');const n=d.getUint32(p),end=p+12+n;if(n>0x7fffffff||end>b.length)fail('PNG块长度越界。');const type=ascii(b.subarray(p+4,p+8));if(!/^[A-Za-z]{4}$/.test(type)||type[2]!==type[2].toUpperCase())fail('PNG块名称无效。');if(crc32(b.subarray(p+4,p+8+n))!==d.getUint32(p+8+n))fail('PNG CRC不匹配。');const data=b.subarray(p+8,p+8+n),raw=b.subarray(p,end);if(!blocks.length&&type!=='IHDR')fail('PNG必须以IHDR开始。');if(['acTL','fcTL','fdAT'].includes(type))fail('不支持APNG动画；不会只清理其中一帧。');if(!known.has(type)&&type[0]===type[0].toUpperCase())fail('PNG未知关键块，拒绝清理。');
+  if(type!=='IDAT'&&known.has(type)){if(single.has(type))fail('PNG关键或显示块重复。');single.add(type);}
+  if(type==='IHDR'){if(n!==13)fail('PNG IHDR长度无效。');dim=dimensions(d.getUint32(p+8),d.getUint32(p+12));const depths={0:[1,2,4,8,16],2:[8,16],3:[1,2,4,8],4:[8,16],6:[8,16]};if(!depths[data[9]]?.includes(data[8])||data[10]||data[11]||data[12]>1)fail('PNG颜色/压缩/滤镜/交错字段无效。');dim.colorType=data[9];}
+  if(type==='PLTE'){if(idat||n<3||n>768||n%3)fail('PNG调色板无效。');plte=true;}
+  if(type==='IDAT'){if(after||!n)fail('PNG IDAT不连续或为空块（本版拒绝）。');idat=true;if(dim.colorType===3&&!plte)fail('索引PNG缺调色板。');}else if(idat)after=true;
+  if(type==='IEND'){if(n||!idat||end!==b.length)fail('PNG结束、图像数据或尾随字节无效。');ended=true;}
+  if(type==='eXIf'){if(exif)fail('PNG存在多份EXIF。');exif=readExif(data);}
+  const keep=known.has(type);blocks.push({type,size:n,action:keep?'保留显示/图像块':'删除附加元数据'});if(keep)parts.push(raw);else metadata.push({type,size:n,detail:type==='eXIf'?'EXIF拍摄、GPS与缩略图':type==='tEXt'||type==='zTXt'||type==='iTXt'?'文本/XMP容器（完整删除，不猜测压缩文字内容）':'其他附加块（完整删除）'});p=end;
+ }if(!ended)fail('PNG缺IEND。');return{format:'PNG',mime:'image/png',...dim,exif,blocks,metadata,parts,orientation:exif?.orientation??1};
+}
+function jpeg(b){const d=new DataView(b.buffer,b.byteOffset,b.byteLength),parts=[b.subarray(0,2)],blocks=[],metadata=[];let p=2,dim,exif=null,scan=false,ended=false,orientation=1;
+ while(p<b.length){if(blocks.length>=LIMITS.blocks)fail('JPEG标记数超限。');const start=p;if(b[p++]!==255)fail('JPEG标记缺FF。');while(b[p]===255)p++;const marker=b[p++];if(!marker||marker===0xd8||marker===0x01||marker>=0xd0&&marker<=0xd7)fail('JPEG独立标记位置无效。');if(marker===0xd9){if(!scan||!dim||p!==b.length)fail('JPEG无图像或有尾随/多图数据。');parts.push(b.subarray(start,p));blocks.push({type:'EOI',size:p-start,action:'保留'});ended=true;break;}if(p+2>b.length)fail('JPEG长度截断。');const len=d.getUint16(p),end=p+len;if(len<2||end>b.length)fail('JPEG段长度越界。');const data=b.subarray(p+2,end),raw=b.subarray(start,end),app=marker>=0xe0&&marker<=0xef;let keep=!app&&marker!==0xfe,detail='';
+  if([0xc0,0xc1,0xc2].includes(marker)){if(dim||data.length<6||data[0]!==8||![1,3,4].includes(data[5])||data.length!==6+3*data[5])fail('JPEG帧/精度/组件无效。');dim=dimensions(d.getUint16(p+5),d.getUint16(p+3));}else if(marker>=0xc0&&marker<=0xcf&&![0xc4,0xc8,0xcc].includes(marker))fail('本版只支持8位顺序/渐进DCT JPEG。');
+  if(marker===0xe1&&starts(data,'Exif\0\0')){if(exif)fail('JPEG存在多份EXIF。');exif=readExif(data.subarray(6));orientation=exif.orientation;detail='EXIF拍摄/GPS/设备/缩略图（仅重建方向）';}
+  if(marker===0xe2&&starts(data,'MPF\0'))fail('不支持MPO/多图片JPEG。');
+  if(marker===0xe0&&starts(data,'JFIF\0')){if(data.length<14||data.length!==14+3*data[12]*data[13])fail('JFIF结构无效。');keep=true;const bare=data.slice(0,14);bare[12]=0;bare[13]=0;parts.push(concat([new Uint8Array([255,224,0,16]),bare]));detail=data[12]||data[13]?'JFIF缩略图已移除，保留显示头':'JFIF显示头保留';}
+  else if(marker===0xe2&&starts(data,'ICC_PROFILE\0')){keep=true;parts.push(raw);detail='ICC色彩配置保留；自由文本未审查';}
+  else if(marker===0xee&&starts(data,'Adobe')&&data.length===12){keep=true;parts.push(raw);detail='Adobe颜色变换显示头保留';}
+  else if(keep)parts.push(raw);
+  const type=app?'APP'+(marker-0xe0):marker===0xfe?'COM':'0x'+marker.toString(16);blocks.push({type,size:raw.length,action:keep?'保留显示/图像块':'删除元数据',detail});if(!keep||marker===0xe0&&data.length>14)metadata.push({type,size:raw.length,detail:detail||'XMP/IPTC/注释或其他附加元数据（完整删除）'});p=end;
+  if(marker===0xda){if(!dim||data.length<4||data.length!==1+2*data[0]+3)fail('JPEG扫描头无效。');scan=true;const entropy=p;while(p<b.length){if(b[p]!==255){p++;continue;}let q=p+1;while(b[q]===255)q++;if(q>=b.length)fail('JPEG扫描截断。');if(b[q]===0||b[q]>=0xd0&&b[q]<=0xd7){p=q+1;continue;}break;}parts.push(b.subarray(entropy,p));}
+ }if(!ended)fail('JPEG缺完整EOI。');return{format:'JPEG',mime:'image/jpeg',...dim,exif,blocks,metadata,parts,orientation};
+}
+export function inspect(bytes){if(!(bytes instanceof Uint8Array)||!bytes.length||bytes.length>LIMITS.fileBytes)fail('单文件需1字节至10MiB。');const r=starts(bytes,'\x89PNG\r\n\x1a\n')?png(bytes):bytes[0]===255&&bytes[1]===216?jpeg(bytes):fail('仅支持实际JPEG/PNG签名；不支持HEIC/WebP/SVG。');const{parts,...view}=r;return view;}
+export function clean(bytes){inspect(bytes);const r=starts(bytes,'\x89PNG\r\n\x1a\n')?png(bytes):jpeg(bytes),parts=[...r.parts];if(r.exif?.orientationPresent){const t=orientationTiff(r.orientation);if(r.format==='JPEG'){const payload=concat([new Uint8Array([69,120,105,102,0,0]),t]),head=new Uint8Array([255,225,0,payload.length+2]);parts.splice(1,0,concat([head,payload]));}else parts.splice(2,0,pngChunk('eXIf',t));}const output=concat(parts),after=inspect(output);if(after.exif?.gpsPresent||after.metadata.some(x=>x.type!=='eXIf'&&x.type!=='APP1'))fail('清理后仍有不允许的元数据。');return{bytes:output,before:inspect(bytes),after};}
+export function checkFiles(files){if(!files.length||files.length>LIMITS.files)fail('一次选择1–10张照片。');let total=0;for(const f of files){if(!Number.isSafeInteger(f.size)||f.size<1||f.size>LIMITS.fileBytes)fail('每张照片需1字节至10MiB。');total+=f.size;}if(total>LIMITS.totalBytes)fail('本批原文件总量超过40MiB。');}
+export function defaultName(index,format){return'photo-'+String(index+1).padStart(2,'0')+'-privacy-copy.'+(format==='JPEG'?'jpg':'png');}
+export const BOUNDARY='仅清理文件中的EXIF拍摄/GPS、XMP、IPTC、注释、PNG文本和未知附加块；保留方向及显示/色彩块。ICC自由文本未审查，画面内地址、隐写、文件名和文件系统属性不在清理范围。';
