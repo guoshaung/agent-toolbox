@@ -1,0 +1,6 @@
+.feature-l029{max-width:1200px;margin:0 auto;color:var(--text)}.feature-l029 p{line-height:1.65}.feature-l029 h3{margin-top:20px}
+.l029-settings,.l029-actions{display:flex;gap:10px;flex-wrap:wrap;align-items:end;margin:14px 0}.l029-settings label{display:grid;gap:8px}.l029-settings input{width:150px}
+.l029-notice{min-height:22px;line-height:1.6}.l029-notice.is-error{color:var(--warn)}.l029-interval{padding:16px;background:var(--bg-raised);border:1px solid var(--line);border-left:4px solid var(--accent)}.l029-summary{font-weight:600;color:var(--accent)}
+.l029-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(100px,1fr));gap:7px;margin:14px 0;max-height:450px;overflow:auto;padding:8px;background:var(--bg-sunken)}
+.l029-commit{min-height:44px;white-space:normal}.l029-commit.is-good{border-color:var(--good)}.l029-commit.is-bad{border-color:var(--warn)}.l029-commit.is-excluded{opacity:.55}.l029-commit.is-candidate{border-color:var(--accent)}
+.l029-scroll{overflow:auto}.feature-l029 table{border-collapse:collapse;width:100%;background:var(--bg-raised)}.feature-l029 th,.feature-l029 td{border:1px solid var(--line);padding:9px;text-align:left}.feature-l029 details{padding:10px 0}.feature-l029 summary{cursor:pointer}
