@@ -1,0 +1,2 @@
+vendor/pdf-lib.esm.min.mjs -text
+vendor/*.txt -text whitespace=-blank-at-eol,-blank-at-eof
