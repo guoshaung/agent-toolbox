@@ -1,0 +1,5 @@
+'use strict';
+const{parentPort}=require('node:worker_threads'),path=require('node:path');
+global.fetch=async()=>{throw Error('识别线程禁止下载，需完整固定本地模型。');};
+let engine=null,image=null;
+parentPort.on('message',async message=>{try{if(!engine){image=Buffer.from(message.png);const t=require('./vendor/runtime/node_modules/tesseract.js');engine=await t.createWorker(message.language,1,{langPath:path.join(__dirname,'vendor/models'),gzip:false,cacheMethod:'none',logger:()=>{},errorHandler:()=>{}});await engine.setParameters({tessedit_pageseg_mode:'6',preserve_interword_spaces:'1'});}const result=await engine.recognize(image,{rectangle:message.rectangle},{blocks:true,text:true});const words=[];for(const block of result.data.blocks??[])for(const paragraph of block.paragraphs??[])for(const row of paragraph.lines??[])for(const word of row.words??[])if(word.text.trim())words.push({text:word.text.trim(),bbox:word.bbox,confidence:Math.max(0,Math.min(100,word.confidence))});parentPort.postMessage({ok:true,text:result.data.text.trim(),words});}catch(error){parentPort.postMessage({ok:false,error:String(error?.message??error).slice(0,500)});}});
