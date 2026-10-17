@@ -27,10 +27,12 @@ function dshHomeDir() {
   return process.env.DSH_HOME || path.join(os.homedir(), '.dsh');
 }
 
-// 判定 web profile「配齐了」的标志插件。免费模型插件不在 npm 上、ds-bot 要手动启用、
-// 逆向整合包（88 个 SKILL.md）只能从 GitHub 装且要兼容性豁免——三个都在，说明这份 profile 是我们种过
-// （或用户自己配齐）的，不用再动。少一个就重种（旧的会整个备份），所以 0.46.9 种过的机器升级后也会补上逆向包和 skills。
-const SEED_PLUGINS = ['dsh-our-free-model', 'ds-bot', '@dhicoc/dsh-reverse-skill'];
+// 判定 web profile「配齐了」的标志插件。只认换机器难重装的：免费模型不在 npm 上、逆向整合包（88 个 SKILL.md）
+// 只能从 GitHub 装且要兼容性豁免——都在就说明这份 profile 是我们种过（或用户自己配齐）的，不再动它。
+// ds-bot 刻意不列为标志：它是可开可关的助手（见 setBot / 切换按钮），用户关掉后绝不能被「种子还原」又装回来。
+const SEED_PLUGINS = ['dsh-our-free-model', '@dhicoc/dsh-reverse-skill'];
+// 可开关的助手 bundle：切换按钮就是往 profile 的 bundles 里增删这一项。
+const BOT_BUNDLE = 'ds-bot';
 
 // 种子包在 app 里的位置：打包后在 resources/dsh-seed，开发时在仓库根目录（同 container-seed 的约定）
 function seedTgzPath(app) {
@@ -78,6 +80,41 @@ function seedWebProfile(seedTgz, dshHome = dshHomeDir()) {
   } catch (error) {
     return { ok: false, seeded: false, reason: error.message };
   }
+}
+
+/* ---------- ds-bot 开关：在 profile 的 bundles 里增删这个 bundle，可逆、不删文件 ---------- */
+
+// 读 profile 的 bundles 数组（读不到/格式坏都返回空数组，不抛）
+function readProfileBundles(dshHome = dshHomeDir()) {
+  try {
+    const file = path.join(dshHome, 'profiles', 'web', 'package.json');
+    const bundles = JSON.parse(fs.readFileSync(file, 'utf8'))?.dsh?.profile?.bundles;
+    return Array.isArray(bundles) ? bundles : [];
+  } catch { return []; }
+}
+
+// ds-bot 当前是否开着 = 它在不在 bundles 里
+function botEnabled(dshHome = dshHomeDir()) {
+  return readProfileBundles(dshHome).includes(BOT_BUNDLE);
+}
+
+// 纯函数：返回增删某 bundle 后的新 bundles（幂等；开→去重后追加到末尾，关→过滤掉；其余顺序不变）
+function toggleBundle(bundles, name, enabled) {
+  const list = (Array.isArray(bundles) ? bundles : []).filter((b) => b !== name);
+  return enabled ? [...list, name] : list;
+}
+
+// 把开关写回 profile 的 package.json（原子写，整份 JSON round-trip 保留其余字段）。返回写完后该 bundle 是否在。
+function setBundleEnabled(name, enabled, dshHome = dshHomeDir()) {
+  const file = path.join(dshHome, 'profiles', 'web', 'package.json');
+  const data = JSON.parse(fs.readFileSync(file, 'utf8'));
+  data.dsh = data.dsh || {};
+  data.dsh.profile = data.dsh.profile || {};
+  data.dsh.profile.bundles = toggleBundle(data.dsh.profile.bundles, name, enabled);
+  const tmp = `${file}.tmp-${process.pid}`;
+  fs.writeFileSync(tmp, `${JSON.stringify(data, null, 2)}\n`);
+  fs.renameSync(tmp, file);
+  return data.dsh.profile.bundles.includes(name);
 }
 
 const DEFAULT_PORT = 3080;
@@ -412,6 +449,23 @@ class DshService {
     }
   }
 
+  // 当前 ds-bot 开没开（读 profile，不碰运行态）
+  botEnabled() { return botEnabled(); }
+
+  // 切换 ds-bot：改 profile 的 bundles，然后重启 DSH 让新 profile 生效。可逆。
+  async setBot(enabled) {
+    try {
+      const now = setBundleEnabled(BOT_BUNDLE, !!enabled);
+      await this.stop();
+      await new Promise((r) => setTimeout(r, 800));   // 等 3080 和子进程树彻底释放，别让 start() 误判端口还占着去 adopt 旧进程
+      const state = await this.start();
+      return { ...state, botEnabled: now };
+    } catch (error) {
+      this.emit({ status: 'error', error: `切换 DS Bot 失败：${error.message}` });
+      return { ok: false, ...this.state, botEnabled: botEnabled() };
+    }
+  }
+
   async stop() {
     if (!this.child || this.child.killed) return { ok: true, ...this.state };
     this.emit({ status: 'stopping' });
@@ -422,4 +476,4 @@ class DshService {
   }
 }
 
-module.exports = { DSH_PACKAGE, DEFAULT_PORT, DshService, findWebUrl, probe, resolveCommand, dshHomeDir, SEED_PLUGINS, seedTgzPath, webProfileNeedsSeed, seedWebProfile, withNodeOnPath, dshSpawnSpec, REA_PACKAGE, reaLocalScript, reaMcpLines, ensureReaInstalled, asInsertPatch, buildOverlay, DSH_WARNING };
+module.exports = { DSH_PACKAGE, DEFAULT_PORT, DshService, findWebUrl, probe, resolveCommand, dshHomeDir, SEED_PLUGINS, BOT_BUNDLE, seedTgzPath, webProfileNeedsSeed, seedWebProfile, withNodeOnPath, dshSpawnSpec, REA_PACKAGE, reaLocalScript, reaMcpLines, ensureReaInstalled, asInsertPatch, buildOverlay, DSH_WARNING, readProfileBundles, botEnabled, toggleBundle, setBundleEnabled };

@@ -498,6 +498,10 @@ contextBridge.exposeInMainWorld('toolbox', {
     start: () => ipcRenderer.invoke('dsh:start'),
     stop: () => ipcRenderer.invoke('dsh:stop'),
     onStatus: (callback) => ipcRenderer.on('dsh:status', (_event, state) => callback(state)),
+    bot: {
+      get: () => ipcRenderer.invoke('dsh:botEnabled'),
+      set: (enabled) => ipcRenderer.invoke('dsh:setBot', enabled),
+    },
   },
 
   aipexbase: {

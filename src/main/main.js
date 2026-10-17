@@ -2418,6 +2418,8 @@ function registerIpc() {
   ipcMain.handle('dsh:status', () => dshService.status());
   ipcMain.handle('dsh:start', () => dshService.start());
   ipcMain.handle('dsh:stop', () => dshService.stop());
+  ipcMain.handle('dsh:botEnabled', () => dshService.botEnabled());
+  ipcMain.handle('dsh:setBot', (_event, enabled) => dshService.setBot(enabled));
   ipcMain.handle('tavern:status', () => tavernService.status());
   ipcMain.handle('tavern:start', () => tavernService.start());
   ipcMain.handle('tavern:stop', () => tavernService.stop());
