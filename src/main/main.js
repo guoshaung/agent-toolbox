@@ -2086,6 +2086,17 @@ function registerIpc() {
     });
     ipcMain.handle('papertalk:list', () => paperTalk.list());
     ipcMain.handle('papertalk:plan', (_e, input) => paperTalk.plan(input));
+    const { BilibiliPublishService } = require('./bilibili-publish');
+    const publisher = new BilibiliPublishService({ outputDir: paperTalk.outDir, BrowserWindow, session,
+      partition: PARTITIONS.bilibili,
+      emit: state => { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('papertalk:publish-state', state); },
+    });
+    ipcMain.handle('papertalk:publishPrepare', (_e, file) => {
+      try { return publisher.prepare(file); } catch (e) { return { ok: false, error: e.message }; }
+    });
+    ipcMain.handle('papertalk:publishOpen', async (_e, payload) => {
+      try { return await publisher.open(payload || {}); } catch (e) { return { ok: false, error: e.message }; }
+    });
     ipcMain.handle('papertalk:reveal', (_e, p) => { shell.showItemInFolder(String(p || '')); return { ok: true }; });
     ipcMain.handle('papertalk:open', (_e, p) => shell.openPath(String(p || '')));
   } catch (err) {

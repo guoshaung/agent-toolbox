@@ -21,12 +21,17 @@ const STYLE = `
 .pt__history{display:flex;flex-direction:column;gap:6px}
 .pt__hist-row{display:flex;align-items:center;gap:8px}
 .pt__hist-name{flex:1;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;opacity:.85}
+.pt__publication label{display:flex;flex-direction:column;gap:6px;margin:10px 0}
+.pt__publication label.pt__row{flex-direction:row}
+.pt__publication label>.field{width:100%;box-sizing:border-box}
 `;
 
 export function createPaperTalk(root, ctx) {
   const { config } = ctx;
   const api = (window.toolbox && window.toolbox.paperTalk) || null;
   let unsub = null;
+  let unpublish = null;
+  let publicationId = '';
   let busy = false;
   if (!api) { root.append(h('div', { class: 'faint', style: 'padding:16px' }, '论文讲解服务没加载（重启工具箱试试）。')); return { refresh() {}, deactivate() {} }; }
 
@@ -60,6 +65,7 @@ export function createPaperTalk(root, ctx) {
   const barWrap = h('div', { class: 'pt__bar' }, bar);
   const status = h('div', { class: 'pt__status faint' }, '贴一篇 arXiv 论文，点生成。约 10–15 分钟一条，出片耗时看论文长度。');
   const result = h('div', { class: 'pt__result' });
+  const publishPanel = h('div', { class: 'pt__publication' });
   const outline = h('details', { open: '', style: 'border-top:1px solid var(--line);padding-top:10px' });
   const historyWrap = h('div', { class: 'pt__history' });
 
@@ -79,7 +85,7 @@ export function createPaperTalk(root, ctx) {
       h('span', { class: 'faint' }, '组会式 · 甲主持 + 乙专家 · 一条 mp4')),
     h('div', { class: 'pt__row' }, input, voiceSel, goBtn, testBtn),
     cg,
-    barWrap, status, outline, result,
+    barWrap, status, publishPanel, outline, result,
     h('div', { class: 'pt__head', style: 'margin-top:14px' }, h('strong', {}, '历史'), h('span', { class: 'faint' }, '都在 userData/paper-talk/')),
     historyWrap));
 
@@ -95,7 +101,44 @@ export function createPaperTalk(root, ctx) {
       vid,
       h('div', { class: 'pt__row' },
         h('button', { class: 'btn btn--sm', onclick: () => api.open(p) }, '▶ 用播放器打开'),
+        h('button', { class: 'btn btn--sm btn--primary', onclick: () => publish(p) }, '投稿到哔哩哔哩'),
         h('button', { class: 'btn btn--sm btn--ghost', onclick: () => api.reveal(p) }, '📂 所在文件夹')));
+  }
+
+  async function publish(file) {
+    if (!api.publishPrepare) { toast('请重启工具箱加载投稿功能'); return; }
+    const r = await api.publishPrepare(file);
+    if (!r.ok) { toast(r.error); return; }
+    const d = r.draft; publicationId = d.id;
+    const title = h('input', { class: 'field', value: d.title, maxlength: '80', 'aria-label': '投稿标题' });
+    const desc = h('textarea', { class: 'field', rows: '8', value: d.description, maxlength: '2000', 'aria-label': '投稿简介' });
+    const tags = h('input', { class: 'field', value: d.tags.join('，'), 'aria-label': '投稿标签' });
+    const consent = h('input', { type: 'checkbox' });
+    const note = h('div', { class: 'faint', style: 'font-size:12px;line-height:1.7' },
+      '扫码登录在B站官方窗口完成，登录状态保存在本机。视频上传后，请核对封面、分区、标签和AI创作声明，最后在B站页面确认发布。');
+    const pubStatus = h('div', { class: 'pt__status', id: 'pt-publish-status' }, '尚未上传：先核对视频与文案。');
+    const open = h('button', { class: 'btn btn--primary', disabled: true, onclick: async () => {
+      open.disabled = true; pubStatus.textContent = '正在打开B站官方投稿窗口…';
+      try {
+        const sent = await api.publishOpen({ id: d.id, title: title.value, description: desc.value,
+          tags: tags.value, consent: consent.checked });
+        pubStatus.textContent = sent.ok ? '已打开官方投稿页，请扫码登录并在上传后确认发布。' : '未开始：' + sent.error;
+      } catch (e) { pubStatus.textContent = '打开失败：' + e.message; }
+      finally { open.disabled = !consent.checked; }
+    } }, '开始上传 · 打开B站官方页面');
+    consent.addEventListener('change', () => { open.disabled = !consent.checked; });
+    publishPanel.innerHTML = '';
+    publishPanel.append(h('div', { class: 'pt__card' }, h('strong', {}, '哔哩哔哩投稿预览'),
+      h('p', { class: 'faint', style: 'font-size:12px;word-break:break-all' }, `${d.file}（${(d.size / 1024 / 1024).toFixed(1)} MB）`),
+      h('label', {}, '标题', title), h('label', {}, '简介与原论文来源', desc), h('label', {}, '标签（逗号分隔）', tags),
+      note,
+      h('label', { class: 'pt__row', style: 'margin:12px 0;font-size:13px' }, consent, '我确认将以上视频、标题、简介和标签发送至哔哩哔哩'),
+      h('div', { class: 'pt__row' }, open,
+        h('button', { class: 'btn btn--ghost', onclick: () => api.reveal(d.file) }, '显示视频文件'),
+        h('button', { class: 'btn btn--ghost', onclick: async () => { await navigator.clipboard.writeText(desc.value); toast('简介已复制'); } }, '复制简介'),
+        h('button', { class: 'btn btn--ghost', onclick: () => { publishPanel.innerHTML = ''; publicationId = ''; } }, '收起预览')),
+      pubStatus));
+    publishPanel.scrollIntoView({ behavior: 'smooth', block: 'start' });
   }
 
   async function run() {
@@ -136,6 +179,7 @@ export function createPaperTalk(root, ctx) {
       historyWrap.append(h('div', { class: 'pt__hist-row' },
         h('span', { class: 'pt__hist-name', title: it.path }, it.name),
         h('button', { class: 'btn btn--sm', onclick: () => api.open(it.path) }, '▶ 打开'),
+        h('button', { class: 'btn btn--sm btn--primary', onclick: () => publish(it.path) }, '投稿'),
         h('button', { class: 'btn btn--sm btn--ghost', onclick: () => api.reveal(it.path) }, '📂')));
     }
   }
@@ -143,10 +187,16 @@ export function createPaperTalk(root, ctx) {
   // 进度订阅
   if (api.onProgress) unsub = api.onProgress((e) => { if (e) { setProgress(e.pct, e.text); if (e.slides) renderPlan(e.slides); } });
   if (api.plan) api.plan(input.value).then(p => renderPlan(p?.slides)).catch(() => {});
+  if (api.onPublishState) unpublish = api.onPublishState(e => {
+    if (e?.id !== publicationId) return;
+    const el = publishPanel.querySelector('#pt-publish-status');
+    if (el) el.textContent = e.text || '';
+  });
   refresh();
 
   return {
     refresh,
-    deactivate() { if (unsub) { try { unsub(); } catch { /* */ } unsub = null; } },
+    deactivate() { /* Keep progress while the official upload window is open. */ },
+    dispose() { if (unsub) unsub(); if (unpublish) unpublish(); },
   };
 }
