@@ -2062,9 +2062,31 @@ function registerIpc() {
       userDataDir: app.getPath('userData'),
       resourcesDir: app.isPackaged ? process.resourcesPath : path.join(__dirname, '..', '..', 'resources'),
       resolveClaude,
+      generateScript: async (prompt) => {
+        const cfg = store.get('research.papertalk.api', {});
+        const credential = cfg.vaultId ? vault.keyOf(String(cfg.vaultId)) : { ok: true, key: readApiKey() };
+        if (!credential.ok) throw new Error('论文讲解密钥：' + credential.error);
+        const api = validateCompatibleConfig({
+          baseUrl: cfg.baseUrl || store.get('ai.api.baseUrl', ''),
+          model: cfg.model || store.get('ai.api.model', ''),
+          hasKey: Boolean(credential.key),
+        });
+        if (!api.ok) throw new Error(api.error);
+        const result = await performCompatibleRequest({ endpoint: api.endpoints.chat, apiKey: credential.key,
+          model: api.model, messages: [{ role: 'user', content: prompt }], timeout: 300000 });
+        if (!result.ok) throw new Error('论文讲解 AI：' + result.error);
+        if (typeof result.text !== 'string' || !result.text.trim()) throw new Error('论文讲解 AI 返回了空内容');
+        return result.text;
+      },
       emit: (e) => { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('papertalk:progress', e); },
     });
     ipcMain.handle('papertalk:run', (_e, payload) => paperTalk.run(payload || {}));
+    ipcMain.handle('papertalk:test', async () => {
+      try {
+        await paperTalk.generateScript('只回复 OK，不要其他内容。');
+        return { ok: true, model: store.get('research.papertalk.api.model', '') || store.get('ai.api.model', '') };
+      } catch (e) { return { ok: false, error: e.message }; }
+    });
     ipcMain.handle('papertalk:list', () => paperTalk.list());
     ipcMain.handle('papertalk:reveal', (_e, p) => { shell.showItemInFolder(String(p || '')); return { ok: true }; });
     ipcMain.handle('papertalk:open', (_e, p) => shell.openPath(String(p || '')));

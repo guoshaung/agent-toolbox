@@ -19,10 +19,11 @@ const VOICE_SETS = {
 };
 
 class PaperTalkService {
-  constructor({ userDataDir, resourcesDir, resolveClaude, emit } = {}) {
+  constructor({ userDataDir, resourcesDir, resolveClaude, generateScript, emit } = {}) {
     this.userDataDir = userDataDir || path.join(os.homedir(), '.agent-toolbox');
     this.resourcesDir = resourcesDir || path.join(__dirname, '..', '..', 'resources');
     this.resolveClaude = resolveClaude || (() => null);
+    this.generateScript = generateScript;
     this.emit = typeof emit === 'function' ? emit : () => {};
     this.outDir = path.join(this.userDataDir, 'paper-talk');
     try { fs.mkdirSync(this.outDir, { recursive: true }); } catch { /* */ }
@@ -79,7 +80,7 @@ class PaperTalkService {
   _get(url) {
     // Electron 主进程有全局 fetch，走系统代理；纯 node 环境也兼容
     return Promise.resolve().then(() => {
-      if (typeof fetch === 'function') return fetch(url, { redirect: 'follow' }).then((r) => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.text(); });
+      if (typeof fetch === 'function') return fetch(url, { redirect: 'follow', signal: AbortSignal.timeout(30000) }).then((r) => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.text(); });
       return new Promise((resolve, reject) => {
         const https = require('node:https');
         https.get(url, (res) => {
@@ -93,11 +94,15 @@ class PaperTalkService {
 
   // ---- 调 Claude 强模型写对话脚本（订阅通道，剥掉污染 env）----
   async writeScript(paper, cogniGuard) {
-    const bin = this.resolveClaude();
-    if (!bin) throw new Error('没找到 claude CLI，脚本这步需要它走订阅模型');
-    this._progress('script', '让强模型读论文、写对话讲解脚本…', 25);
+    this._progress('script', this.generateScript ? '通过 AI 接口读论文、写对话讲解脚本…' : '让 Claude 读论文、写对话讲解脚本…', 25);
     const prompt = this._scriptPrompt(paper, cogniGuard);
-    const text = await this._claude(bin, prompt);
+    let text;
+    if (this.generateScript) text = await this.generateScript(prompt);
+    else {
+      const bin = this.resolveClaude();
+      if (!bin) throw new Error('没找到 claude CLI，请配置论文讲解 AI 接口');
+      text = await this._claude(bin, prompt);
+    }
     const json = this._extractJson(text);
     if (!json || !Array.isArray(json.segments) || !json.segments.length) throw new Error('脚本没解析出有效 JSON（模型可能没按格式输出）');
     // 规范化
@@ -107,6 +112,7 @@ class PaperTalkService {
       title: String((s.slide && s.slide.title) || s.title || '').trim(),
       subtitle: String((s.slide && (s.slide.subtitle || s.slide.caption)) || s.subtitle || s.text || '').trim(),
     })).filter((s) => s.text);
+    if (!json.segments.length) throw new Error('讲解脚本没有有效台词，请重试');
     return json;
   }
 
@@ -209,6 +215,7 @@ class PaperTalkService {
     try {
       const paper = await this.fetchPaper(input);
       const script = await this.writeScript(paper, cogniGuard);
+      fs.writeFileSync(path.join(this.outDir, `${paper.id.replace(/\//g, '-')}-script.json`), JSON.stringify({ ...script, paper }, null, 2), { mode: 0o600 });
       const mp4 = await this.synth(script, voiceMode);
       this._progress('done', '出片完成', 100);
       return { ok: true, mp4, title: script.title || paper.title, segments: script.segments.length };

@@ -2,7 +2,7 @@ import { h, toast } from '../../core/ui.js';
 
 /**
  * 论文讲解：贴一个 arXiv 链接，出一条「组会式」对话讲解 mp4（甲主持 + 乙专家）。
- * 读论文、写脚本走强模型（宿主侧 claude 订阅通道）；配音用 macOS 系统中文嗓；
+ * 读论文、写脚本走配置的 AI 接口；配音用 macOS 系统中文嗓；
  * 画面 + 合成用随包的 papervid（AVFoundation，不依赖 ffmpeg）。
  */
 const STYLE = `
@@ -45,6 +45,16 @@ export function createPaperTalk(root, ctx) {
     placeholder: 'CogniGuard 一句话简介（可留空）：它解决什么问题、核心方法——用于片尾「CogniGuard 视角」点评',
     value: config.get('research.papertalk.cg', '') });
   const goBtn = h('button', { class: 'btn btn--primary', onclick: run }, '🎬 生成讲解视频');
+  const testBtn = h('button', { class: 'btn btn--ghost', onclick: async () => {
+    if (busy) return;
+    busy = true; goBtn.disabled = true; testBtn.disabled = true;
+    setProgress(0, '正在测试 AI 连接…');
+    try {
+      const r = await api.test();
+      setProgress(0, r.ok ? 'AI 连接正常：' + r.model : 'AI 连接失败：' + r.error);
+    } catch (e) { setProgress(0, 'AI 连接失败：' + e.message); }
+    finally { busy = false; goBtn.disabled = false; testBtn.disabled = false; }
+  } }, '测试 AI 连接');
 
   const bar = h('div', { class: 'pt__bar-fill' });
   const barWrap = h('div', { class: 'pt__bar' }, bar);
@@ -56,7 +66,7 @@ export function createPaperTalk(root, ctx) {
     h('div', { class: 'pt__head' },
       h('strong', {}, '论文讲解'),
       h('span', { class: 'faint' }, '组会式 · 甲主持 + 乙专家 · 一条 mp4')),
-    h('div', { class: 'pt__row' }, input, voiceSel, goBtn),
+    h('div', { class: 'pt__row' }, input, voiceSel, goBtn, testBtn),
     cg,
     barWrap, status, result,
     h('div', { class: 'pt__head', style: 'margin-top:14px' }, h('strong', {}, '历史'), h('span', { class: 'faint' }, '都在 userData/paper-talk/')),
