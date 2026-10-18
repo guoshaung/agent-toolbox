@@ -26,7 +26,7 @@ const STYLE = `
 .pt__publication label>.field{width:100%;box-sizing:border-box}
 .pt__drop{border:1px dashed var(--line);padding:16px;line-height:1.7}
 .pt__drop[data-drag=true]{border-color:var(--accent);background:var(--accent-soft)}
-.pt__local-preview{border-top:1px solid var(--line);padding-top:10px;margin-top:12px}
+.pt__local-preview{border-top:1px solid var(--line);padding-top:10px;margin-top:12px;overflow-wrap:anywhere}
 .pt__local-preview pre{white-space:pre-wrap;max-height:180px;overflow:auto;font:inherit;font-size:12px}
 .pt__consent{display:flex;align-items:flex-start;gap:8px;font-size:12px;margin-top:12px}
 `;
@@ -53,7 +53,7 @@ export function createPaperTalk(root, ctx) {
   const localConsent=h('input',{type:'checkbox','aria-label':'允许 AI 读取论文正文'});
   const localPreview=h('div',{class:'pt__local-preview'},'尚未选择 PDF');
   const pickPdf=h('button',{class:'btn',onclick:()=>importPdf()},'选择 PDF 文件');
-  const localPanel=h('div',{class:'pt__drop'},h('div',{class:'pt__row'},pickPdf,h('span',{class:'faint'},'或把一份 PDF 拖到这里（64 MB 以内，1–200 页）')),localPreview,
+  const localPanel=h('div',{class:'pt__drop'},h('div',{class:'pt__row'},h('span',{class:'faint'},'把一份 PDF 拖到这里，或点上方选择文件（64 MB 以内，1–200 页）')),localPreview,
     h('label',{class:'pt__consent'},localConsent,'我确认将提取的正文发送至已配置的 AI 服务生成讲解，配音台词交给火山语音。PDF 原文件只保存在本机。'));
   const voiceSel = h('select', { class: 'field pt__voice' },
     h('option', { value: 'mf' }, '火山男女声：云舟 + 小何'),
@@ -115,7 +115,7 @@ export function createPaperTalk(root, ctx) {
     h('div', { class: 'pt__head' },
       h('strong', {}, '论文讲解'),
       h('span', { class: 'faint' }, '学术简洁模板 · 双人讲解 · 原文图表')),
-    h('div', { class: 'pt__row' }, sourceSel, input),localPanel,
+    h('div', { class: 'pt__row' }, sourceSel, input, pickPdf),localPanel,
     h('div', { class: 'pt__row' }, voiceSel, goBtn, testBtn),
     voiceSettings, cg,
     barWrap, status, publishPanel, outline, result,

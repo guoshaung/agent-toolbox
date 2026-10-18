@@ -25,6 +25,9 @@ test('上传入口选择PDF后显示预览，未勾选确认不会调用生成',
   assert.match(f.root.textContent,/上传的本地论文/);assert.match(f.root.textContent,/5 页/);
   await f.button('生成讲解视频').onclick();assert.ok(f.messages.some(m=>/确认/.test(m)));assert.equal(f.calls.filter(c=>c[0]==='run').length,0);
 });
+test('默认链接模式下也能直接选择PDF，成功后自动切换来源',async()=>{
+  const f=await mount();assert.equal(f.mode.value,'arxiv');await f.button('选择 PDF 文件').onclick();assert.equal(f.mode.value,'local');assert.match(f.root.textContent,/上传的本地论文/);
+});
 test('确认后把本地论文ID而非伪造arXiv链接交给生成服务',async()=>{
   const f=await mount();f.mode.value='local';f.mode.events.change();await f.button('选择 PDF 文件').onclick();
   f.root.querySelectorAll('input').find(e=>e['aria-label']==='允许 AI 读取论文正文').checked=true;
