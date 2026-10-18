@@ -27,14 +27,15 @@ function extractPaperHtml(html, baseUrl) {
   return { body, figures: figures.slice(0, 12), sourceUrl: baseUrl };
 }
 
-function normalizePlan(raw, paper) {
-  if (!raw || !Array.isArray(raw.slides) || raw.slides.length < 8 || raw.slides.length > 16) throw new Error('教学规划需要 8–16 个主题页，请重新生成');
+function normalizePlan(raw, paper, { min = 8, max = 16, coreMin = 3 } = {}) {
+  if (!raw || !Array.isArray(raw.slides) || raw.slides.length < min || raw.slides.length > max) throw new Error(`教学规划需要 ${min}–${max} 个主题页，当前收到${Array.isArray(raw?.slides) ? raw.slides.length + '页' : '非 slides 数组'}，请重新生成`);
   const seen = new Set();
   const slides = raw.slides.map((s, i) => {
+    if (!s || typeof s !== 'object') throw new Error(`第 ${i + 1} 页不是有效页面对象`);
     const id = String(s.id || `s${i + 1}`);
     if (seen.has(id)) throw new Error('教学页编号重复');
     seen.add(id);
-    const points = (s.points || []).map(p => ({ heading: String(p.heading || '').trim(), detail: String(p.detail || '').trim() }));
+    const points = (Array.isArray(s.points) ? s.points : []).map(p => ({ heading: String(p?.heading || '').trim(), detail: String(p?.detail || '').trim() }));
     if (points.length < 2 || points.length > 4 || points.some(p => !p.heading || !p.detail || p.heading.length > 40 || p.detail.length > 110)) throw new Error(`第 ${i + 1} 页需要 2–4 条有解释的分层要点，不能只有标题`);
     if (!s.title || !s.takeaway || !s.source || !s.objective) throw new Error(`第 ${i + 1} 页缺少标题、结论、教学目标或来源`);
     const figure = (paper.figures || []).find(f => f.id === s.figureId);
@@ -45,11 +46,11 @@ function normalizePlan(raw, paper) {
       source: String(s.source), figureId: figure?.id || '', table,
       layout: table ? 'table' : figure ? 'figure' : s.layout === 'comparison' ? 'comparison' : 'outline' };
   });
-  if (slides.filter(s => s.emphasis === 'core').length < 3) throw new Error('教学规划必须明确至少三页核心方法或实验重点');
+  if (slides.filter(s => s.emphasis === 'core').length < coreMin) throw new Error('教学规划必须明确至少三页核心方法或实验重点');
   return { title: String(raw.title || paper.title), slides };
 }
 
-function normalizeNarration(raw, plan) {
+function normalizeNarration(raw, plan, { checkBalance = true } = {}) {
   if (!Array.isArray(raw?.segments) || !raw.segments.length) throw new Error('讲解脚本没有有效台词');
   const byId = new Map(plan.slides.map(s => [s.id, s]));
   const used = new Map();
@@ -71,7 +72,7 @@ function normalizeNarration(raw, plan) {
   for (const slide of plan.slides) if ((used.get(slide.id) || 0) < 2) throw new Error(`「${slide.title}」需要至少两轮对话，不能一句话换一页`);
   const coreWords = segments.filter(s => byId.get(s.slideId).emphasis === 'core').reduce((n, s) => n + s.text.length, 0);
   const totalWords = segments.reduce((n, s) => n + s.text.length, 0);
-  if (coreWords < totalWords * 0.5) throw new Error('方法与实验重点的讲解篇幅不足一半，请调整教学节奏');
+  if (checkBalance && coreWords < totalWords * 0.5) throw new Error('方法与实验重点的讲解篇幅不足一半，请调整教学节奏');
   return { title: plan.title, slides: plan.slides, segments, version: 2 };
 }
 

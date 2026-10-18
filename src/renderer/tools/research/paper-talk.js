@@ -33,6 +33,7 @@ export function createPaperTalk(root, ctx) {
   let unpublish = null;
   let publicationId = '';
   let busy = false;
+  let planRequest = 0;
   if (!api) { root.append(h('div', { class: 'faint', style: 'padding:16px' }, '论文讲解服务没加载（重启工具箱试试）。')); return { refresh() {}, deactivate() {} }; }
 
   if (!document.getElementById('pt-style')) {
@@ -88,8 +89,8 @@ export function createPaperTalk(root, ctx) {
   api.voiceStatus?.().then(r=>{if(r.configured)voiceInfo.textContent='火山语音已配置 · 男主持云舟 2.0 / 女讲解小何 2.0 · 密钥仅在本机密钥箱';}).catch(()=>{});
 
   function renderPlan(slides) {
-    if (!slides?.length) return;
     outline.innerHTML = '';
+    if (!slides?.length) return;
     outline.append(h('summary', {}, `教学规划：${slides.length} 个主题页 · 方法与实验重点展开`),
       h('ol', { style: 'line-height:1.8;padding-left:24px' }, ...slides.map(s => h('li', {},
         h('strong', {}, `${s.emphasis === 'core' ? '【重点】' : ''}${s.title}`),
@@ -165,6 +166,8 @@ export function createPaperTalk(root, ctx) {
     const val = input.value.trim();
     if (!val) { toast('先贴一个 arXiv 链接或编号'); return; }
     busy = true; goBtn.disabled = true; goBtn.textContent = '出片中…';
+    testBtn.disabled=true;input.disabled=true;voiceSel.disabled=true;cg.disabled=true;
+    planRequest++;renderPlan([]);
     config.set('research.papertalk.last', val);
     config.set('research.papertalk.voice', voiceSel.value);
     config.set('research.papertalk.cg', cg.value);
@@ -186,6 +189,7 @@ export function createPaperTalk(root, ctx) {
       setProgress(0, '失败：' + e.message);
     } finally {
       busy = false; goBtn.disabled = false; goBtn.textContent = '🎬 生成讲解视频';
+      testBtn.disabled=false;input.disabled=false;voiceSel.disabled=false;cg.disabled=false;
     }
   }
 
@@ -204,8 +208,28 @@ export function createPaperTalk(root, ctx) {
   }
 
   // 进度订阅
-  if (api.onProgress) unsub = api.onProgress((e) => { if (e) { setProgress(e.pct, e.text); if (e.slides) renderPlan(e.slides); } });
-  if (api.plan) api.plan(input.value).then(p => renderPlan(p?.slides)).catch(() => {});
+  function applyState(e) {
+    if(!e)return;
+    setProgress(e.pct,e.stage==='error'?'失败：'+e.text:e.text);if(e.slides)renderPlan(e.slides);
+    if(['done','error','interrupted'].includes(e.stage)) {
+      busy=false;goBtn.disabled=false;goBtn.textContent='🎬 生成讲解视频';
+      testBtn.disabled=false;input.disabled=false;voiceSel.disabled=false;cg.disabled=false;
+    }
+  }
+  if (api.onProgress) unsub = api.onProgress(applyState);
+  function loadPlan() {
+    const request=++planRequest, value=input.value;
+    renderPlan([]);
+    api.plan?.(value).then(p=>{if(request===planRequest && value===input.value && !busy)renderPlan(p?.slides);}).catch(()=>{});
+  }
+  input.addEventListener('input',loadPlan);
+  loadPlan();
+  const initialRequest=planRequest;
+  api.state?.().then(e=>{
+    if(!e || initialRequest!==planRequest || busy)return;
+    if(e.input===input.value)applyState(e);
+    if(e.running){busy=true;input.value=e.input;goBtn.disabled=true;goBtn.textContent='出片中…';testBtn.disabled=true;input.disabled=true;voiceSel.disabled=true;cg.disabled=true;applyState(e);}
+  }).catch(()=>{});
   if (api.onPublishState) unpublish = api.onPublishState(e => {
     if (e?.id !== publicationId) return;
     const el = publishPanel.querySelector('#pt-publish-status');

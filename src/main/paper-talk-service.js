@@ -11,6 +11,7 @@ const path = require('node:path');
 const os = require('node:os');
 const { spawn, spawnSync } = require('node:child_process');
 const { extractPaperHtml, normalizePlan, normalizeNarration, lessonNotes } = require('./paper-talk-lesson');
+const { extractObject, generateValidated, fatal } = require('./paper-talk-generation');
 
 const VOICE_SETS = {
   mf: { A: 'Li-mu', B: 'Tingting' },     // 男 + 女（现成）
@@ -29,9 +30,27 @@ class PaperTalkService {
     this.outDir = path.join(this.userDataDir, 'paper-talk');
     try { fs.mkdirSync(this.outDir, { recursive: true }); } catch { /* */ }
     this._busy = false;
+    this._state = null;
   }
 
-  _progress(stage, text, pct) { this.emit({ type: 'progress', stage, text: text || '', pct: pct == null ? null : pct }); }
+  _progress(stage, text, pct) {
+    const event={ type:'progress',stage,text:text||'',pct:pct==null?null:pct };
+    this._state={...(this._state||{}),...event,running:this._busy && !['done','error'].includes(stage),updatedAt:Date.now()};
+    try {const file=path.join(this.outDir,'last-task.json');fs.writeFileSync(file+'.tmp',JSON.stringify(this._state),{mode:0o600});fs.renameSync(file+'.tmp',file);}catch{}
+    this.emit(event);
+  }
+
+  state() {
+    if(this._state)return {...this._state,running:this._busy};
+    try {const saved=JSON.parse(fs.readFileSync(path.join(this.outDir,'last-task.json'),'utf8'));return {...saved,running:false,...(saved.running?{stage:'interrupted',text:'上次出片因应用退出中断，未标记成功；请重新生成。'}:{})};}catch{return null;}
+  }
+
+  _validated(stage,prompt,validate,attempts=3) {
+    return generateValidated({stage,prompt,validate,attempts,ask:p=>this._ask(p),
+      progress:text=>this._progress(stage.startsWith('规划')?'plan-repair':'script-repair',text,stage.startsWith('规划')?20:32),
+      record:entry=>{try{const dir=path.join(this.outDir,'diagnostics');fs.mkdirSync(dir,{recursive:true,mode:0o700});fs.writeFileSync(path.join(dir,`${Date.now()}-${stage}-${entry.attempt}.json`),JSON.stringify(entry,null,2),{mode:0o600});}catch{}},
+    });
+  }
 
   // ---- papervid 二进制：优先随包，缺了就现编到 userData ----
   papervidPath() {
@@ -112,7 +131,7 @@ class PaperTalkService {
   }
 
   async _ask(prompt) {
-    if (this.generateScript) return this.generateScript(prompt);
+    if (this.generateScript) return this.generateScript(prompt, { jsonMode:true });
     const bin = this.resolveClaude();
     if (!bin) throw new Error('请先配置论文讲解 AI 接口');
     return this._claude(bin, prompt);
@@ -137,7 +156,24 @@ class PaperTalkService {
       '只输出JSON：{"title":"标题","slides":[{"id":"s1","chapter":"背景/问题/方法/实验/讨论","title":"页标题","objective":"本页教会什么","emphasis":"core或support","takeaway":"核心结论","layout":"outline/figure/table/comparison","points":[{"heading":"要点","detail":"解释与证据"}],"source":"Section / Figure / Table","figureId":"可选，使用提供的编号","table":{"columns":["维度","方法","结果"],"rows":[["...","...","..."]]}}]}。无需表格就省略table。',
       this._paperContext(paper, cg),
     ].join('\n');
-    const plan = normalizePlan(this._extractJson(await this._ask(prompt)), paper);
+    let plan;
+    try {plan=await this._validated('规划',prompt,raw=>normalizePlan(raw,paper));}
+    catch(error) {
+      if(fatal(error))throw error;
+      this._progress('plan-fallback','整份规划多次未通过，改为分四批生成 12 个完整主题页…',21);
+      const topics=['背景与研究问题','现有方案与研究缺口','核心对象与任务设定','方法整体流程','核心步骤与机制细节','具体运行案例','实验或证据设置','指标与判定方法','主要结果与证据解释','消融对照或论证分析','局限与适用边界','结论与研究启示'];
+      const slides=[];
+      for(let start=0;start<12;start+=3) {
+        const slots=topics.slice(start,start+3).map((topic,j)=>({id:`s${start+j+1}`,topic,emphasis:start+j>=2 && start+j<=9?'core':'support'}));
+        const batch=await this._validated(`规划分批${start/3+1}`,prompt+'\n【当前仅生成局部】上方是全稿规范；本次只返回以下3个主题页，不生成其余页：'+JSON.stringify(slots)+'。只输出 {"slides":[...]}，id与emphasis严格使用给定值。每页仍需2–4条解释与真实来源；原文没有实验、数值或消融时，明确写未报告，使用已有论证与证据，绝不编造。',raw=>{
+          const part=normalizePlan(raw,paper,{min:3,max:3,coreMin:0});
+          if(part.slides.some((s,j)=>s.id!==slots[j].id || s.emphasis!==slots[j].emphasis))throw new Error('局部页编号或重点层级不符');
+          return part;
+        },2);
+        slides.push(...batch.slides);
+      }
+      plan=normalizePlan({title:paper.title,slides},paper);
+    }
     const id = (paper.id || 'paper').replace(/\//g, '-');
     fs.writeFileSync(path.join(this.outDir, `${id}-plan.json`), JSON.stringify(plan, null, 2));
     fs.writeFileSync(path.join(this.outDir, `${id}-source.json`), JSON.stringify(paper, null, 2));
@@ -157,7 +193,22 @@ class PaperTalkService {
       '只输出JSON：{"segments":[{"slideId":"s1","speaker":"A或B","text":"台词","focus":0,"caption":"短结论","delivery":"curious/explain/emphasize/reflect"}]}',
       '教学规划：' + JSON.stringify(plan), this._paperContext(paper, cg),
     ].join('\n');
-    return normalizeNarration(this._extractJson(await this._ask(prompt)), plan);
+    try {return await this._validated('台词',prompt,raw=>normalizeNarration(raw,plan));}
+    catch(error) {
+      if(fatal(error))throw error;
+      this._progress('script-fallback','整份台词多次未通过，改为逐页编排双人对话，保留教学重点…',34);
+      const segments=[];
+      for(let i=0;i<plan.slides.length;i++) {
+        const slide=plan.slides[i];
+        const page=await this._validated(`台词第${i+1}页`,prompt+'\n【当前仅生成局部】只输出以下这一页的segments，不要其他页，不输出slides。'+JSON.stringify(slide)+'。至少包含A和B；'+(slide.emphasis==='core'?'核心页3–4轮，每轮80–110中文字，深入解释机制和证据。':'辅助页2轮，每轮35–55中文字，保持简短。'),raw=>{
+          const part=normalizeNarration(raw,{title:plan.title,slides:[slide]},{checkBalance:false});
+          if(!part.segments.some(s=>s.speaker==='A') || !part.segments.some(s=>s.speaker==='B'))throw new Error('双人台词需要包含A主持与B讲解');
+          return part;
+        },2);
+        segments.push(...page.segments);
+      }
+      return normalizeNarration({segments},plan);
+    }
   }
 
   // 按 orchestrator 验证过的可用写法：prompt 当参数 + --output-format json（一次性非交互，
@@ -190,12 +241,7 @@ class PaperTalkService {
   }
 
   _extractJson(text) {
-    let t = String(text || '').trim();
-    const fence = t.match(/```(?:json)?\s*([\s\S]*?)```/);
-    if (fence) t = fence[1].trim();
-    const a = t.indexOf('{'), b = t.lastIndexOf('}');
-    if (a < 0 || b <= a) return null;
-    try { return JSON.parse(t.slice(a, b + 1)); } catch { return null; }
+    try {return extractObject(text);}catch{return null;}
   }
 
   async _figureAssets(paper, script) {
@@ -303,14 +349,18 @@ class PaperTalkService {
   async run({ input, cogniGuard, voiceMode } = {}) {
     if (this._busy) return { ok: false, error: '正在出片，稍等这条完成' };
     this._busy = true;
+    this._state={input:String(input||''),startedAt:Date.now()};
+    this._progress('start','任务已开始：先读取论文，再规划、配音并合成',1);
     try {
       const paper = await this.fetchPaper(input);
+      fs.writeFileSync(path.join(this.outDir,`${paper.id.replace(/\//g,'-')}-source.json`),JSON.stringify(paper,null,2),{mode:0o600});
       const plan = await this.planLesson(paper, cogniGuard);
       fs.writeFileSync(path.join(this.outDir, `${paper.id.replace(/\//g, '-')}-plan.json`), JSON.stringify(plan, null, 2));
       this.emit({ type: 'progress', stage: 'plan-ready', text: `已规划 ${plan.slides.length} 页，开始编排重点讲解`, pct: 25, slides: plan.slides });
       const script = await this.writeScript(paper, cogniGuard, plan);
       fs.writeFileSync(path.join(this.outDir, `${paper.id.replace(/\//g, '-')}-script.json`), JSON.stringify({ ...script, paper }, null, 2), { mode: 0o600 });
       const mp4 = await this.synth(script, voiceMode, paper);
+      this._state={...this._state,mp4,title:script.title||paper.title};
       this._progress('done', '出片完成', 100);
       return { ok: true, mp4, title: script.title || paper.title, segments: script.segments.length, pages: script.slides.length,
         lesson: mp4.replace(/\.mp4$/, '.lesson.md'), srt: mp4.replace(/\.mp4$/, '.srt') };

@@ -1,18 +1,27 @@
 'use strict';
 
 // Streaming keeps reverse proxies alive during long lesson generation.
-async function requestPaperText({ endpoint, apiKey, model, prompt, fetchFn = globalThis.fetch }) {
+async function requestPaperText({ endpoint, apiKey, model, prompt, jsonMode = false, fetchFn = globalThis.fetch }) {
   const clean = s => String(s).split(apiKey).join('[已隐藏]');
-  const res = await fetchFn(endpoint, {
+  let res;
+  for(let attempt=0;attempt<2;attempt++) {
+  const structured=jsonMode && attempt===0;
+  res = await fetchFn(endpoint, {
     method: 'POST', headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ model, messages: [{ role: 'user', content: prompt }], stream: true }),
+    body: JSON.stringify({ model, messages: [{ role: 'user', content: prompt }], stream: true,
+      ...(structured?{response_format:{type:'json_object'}}:{}) }),
     signal: AbortSignal.timeout(300000),
   });
-  if (!res.ok) throw new Error(`AI HTTP ${res.status}：${clean((await res.text()).slice(0, 300))}`);
+  if(res.ok)break;
+  const detail=clean((await res.text()).slice(0,1000));
+  if(structured && [400,422].includes(res.status) && /response_format|json_object/i.test(detail) && /unsupported|not.support|unknown|不支持|invalid|unrecognized/i.test(detail))continue;
+  throw new Error(`AI HTTP ${res.status}：${detail.slice(0,300)}`);
+  }
   if (!/text\/event-stream/i.test(res.headers.get('content-type') || '')) {
     const body = await res.text();
     let json; try { json = JSON.parse(body); } catch { throw new Error('AI 返回了网页或非 JSON 内容，请重试'); }
     const text = json.choices?.[0]?.message?.content;
+    if(json.choices?.[0]?.finish_reason==='length')throw new Error('AI 达到输出长度限制，脚本未完成');
     if (!text) throw new Error(clean(json.error?.message || 'AI 返回空内容'));
     return text;
   }

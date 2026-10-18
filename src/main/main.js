@@ -2065,7 +2065,7 @@ function registerIpc() {
       resourcesDir: app.isPackaged ? process.resourcesPath : path.join(__dirname, '..', '..', 'resources'),
       resolveClaude,
       synthesizeVoice,
-      generateScript: async (prompt) => {
+      generateScript: async (prompt, options = {}) => {
         const cfg = store.get('research.papertalk.api', {});
         const credential = cfg.vaultId ? vault.keyOf(String(cfg.vaultId)) : { ok: true, key: readApiKey() };
         if (!credential.ok) throw new Error('论文讲解密钥：' + credential.error);
@@ -2076,7 +2076,7 @@ function registerIpc() {
         });
         if (!api.ok) throw new Error(api.error);
         return require('./paper-talk-api').requestPaperText({ endpoint: api.endpoints.chat, apiKey: credential.key,
-          model: api.model, prompt });
+          model: api.model, prompt, jsonMode: Boolean(options.jsonMode) });
       },
       emit: (e) => { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('papertalk:progress', e); },
     });
@@ -2112,6 +2112,7 @@ function registerIpc() {
       } catch (e) { return { ok: false, error: e.message }; }
     });
     ipcMain.handle('papertalk:list', () => paperTalk.list());
+    ipcMain.handle('papertalk:state', () => paperTalk.state());
     ipcMain.handle('papertalk:plan', (_e, input) => paperTalk.plan(input));
     const { BilibiliPublishService } = require('./bilibili-publish');
     const publisher = new BilibiliPublishService({ outputDir: paperTalk.outDir, BrowserWindow, session,
