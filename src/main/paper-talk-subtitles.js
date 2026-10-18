@@ -4,6 +4,7 @@ function timedCues(words, duration, maxChars = 38) {
   if (!Array.isArray(words) || !Number.isFinite(duration) || duration <= 0) return [];
   const seen = new Set();
   const valid = words.flatMap(w => {
+    if(typeof w?.startTime !== 'number' || typeof w?.endTime !== 'number')return [];
     const text = String(w?.word || ''), start = Number(w?.startTime), end = Number(w?.endTime);
     const key = `${start}:${end}:${text}`;
     if (!text.trim() || [...text].length > maxChars || !Number.isFinite(start) || !Number.isFinite(end) || start < 0 || end <= start || end > duration + 0.1 || seen.has(key)) return [];

@@ -18,6 +18,7 @@ test('缺失、越界或重叠时间戳不使用估算字幕兜底',()=>{
   assert.deepEqual(timedCues([],5),[]);assert.deepEqual(timedCues(undefined,5),[]);
   assert.deepEqual(timedCues([{word:'错误',startTime:-1,endTime:3}],5),[]);
   assert.deepEqual(timedCues([{word:'错误',startTime:0,endTime:10}],5),[]);
+  assert.deepEqual(timedCues([{word:'错误',startTime:null,endTime:1}],5),[]);
   assert.deepEqual(timedCues([{word:'一',startTime:0,endTime:2},{word:'二',startTime:1,endTime:3}],5),[]);
 });
 test('重复返回的字级字幕去重，英文词之间保留空格',()=>{
