@@ -752,6 +752,7 @@ contextBridge.exposeInMainWorld('toolbox', {
   paperTalk: {
     run: (payload) => ipcRenderer.invoke('papertalk:run', payload),
     test: () => ipcRenderer.invoke('papertalk:test'),
+    plan: (input) => ipcRenderer.invoke('papertalk:plan', input),
     list: () => ipcRenderer.invoke('papertalk:list'),
     reveal: (p) => ipcRenderer.invoke('papertalk:reveal', p),
     open: (p) => ipcRenderer.invoke('papertalk:open', p),

@@ -60,7 +60,18 @@ export function createPaperTalk(root, ctx) {
   const barWrap = h('div', { class: 'pt__bar' }, bar);
   const status = h('div', { class: 'pt__status faint' }, '贴一篇 arXiv 论文，点生成。约 10–15 分钟一条，出片耗时看论文长度。');
   const result = h('div', { class: 'pt__result' });
+  const outline = h('details', { open: '', style: 'border-top:1px solid var(--line);padding-top:10px' });
   const historyWrap = h('div', { class: 'pt__history' });
+
+  function renderPlan(slides) {
+    if (!slides?.length) return;
+    outline.innerHTML = '';
+    outline.append(h('summary', {}, `教学规划：${slides.length} 个主题页 · 方法与实验重点展开`),
+      h('ol', { style: 'line-height:1.8;padding-left:24px' }, ...slides.map(s => h('li', {},
+        h('strong', {}, `${s.emphasis === 'core' ? '【重点】' : ''}${s.title}`),
+        h('div', { class: 'faint', style: 'font-size:12px' }, s.objective),
+        h('div', { style: 'font-size:12px' }, s.points.map(p => p.heading).join(' / '))))));
+  }
 
   root.append(h('div', { class: 'pt' },
     h('div', { class: 'pt__head' },
@@ -68,7 +79,7 @@ export function createPaperTalk(root, ctx) {
       h('span', { class: 'faint' }, '组会式 · 甲主持 + 乙专家 · 一条 mp4')),
     h('div', { class: 'pt__row' }, input, voiceSel, goBtn, testBtn),
     cg,
-    barWrap, status, result,
+    barWrap, status, outline, result,
     h('div', { class: 'pt__head', style: 'margin-top:14px' }, h('strong', {}, '历史'), h('span', { class: 'faint' }, '都在 userData/paper-talk/')),
     historyWrap));
 
@@ -100,8 +111,10 @@ export function createPaperTalk(root, ctx) {
     try {
       const r = await api.run({ input: val, cogniGuard: cg.value.trim(), voiceMode: voiceSel.value });
       if (r && r.ok) {
-        setProgress(100, `完成：${r.title || ''}（${r.segments || 0} 段）`);
+        setProgress(100, `完成：${r.title || ''}（${r.pages || 0} 个主题页，${r.segments || 0} 段对话）`);
         result.append(playerFor(r.mp4, r.title));
+        if (r.lesson) result.append(h('button', { class: 'btn btn--sm', onclick: () => api.open(r.lesson) }, '打开分层讲义'));
+        if (r.srt) result.append(h('button', { class: 'btn btn--sm btn--ghost', onclick: () => api.reveal(r.srt) }, '字幕文件'));
         refresh();
       } else {
         setProgress(0, '失败：' + ((r && r.error) || '未知错误'));
@@ -128,7 +141,8 @@ export function createPaperTalk(root, ctx) {
   }
 
   // 进度订阅
-  if (api.onProgress) unsub = api.onProgress((e) => { if (e) setProgress(e.pct, e.text); });
+  if (api.onProgress) unsub = api.onProgress((e) => { if (e) { setProgress(e.pct, e.text); if (e.slides) renderPlan(e.slides); } });
+  if (api.plan) api.plan(input.value).then(p => renderPlan(p?.slides)).catch(() => {});
   refresh();
 
   return {

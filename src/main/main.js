@@ -2072,11 +2072,8 @@ function registerIpc() {
           hasKey: Boolean(credential.key),
         });
         if (!api.ok) throw new Error(api.error);
-        const result = await performCompatibleRequest({ endpoint: api.endpoints.chat, apiKey: credential.key,
-          model: api.model, messages: [{ role: 'user', content: prompt }], timeout: 300000 });
-        if (!result.ok) throw new Error('论文讲解 AI：' + result.error);
-        if (typeof result.text !== 'string' || !result.text.trim()) throw new Error('论文讲解 AI 返回了空内容');
-        return result.text;
+        return require('./paper-talk-api').requestPaperText({ endpoint: api.endpoints.chat, apiKey: credential.key,
+          model: api.model, prompt });
       },
       emit: (e) => { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('papertalk:progress', e); },
     });
@@ -2088,6 +2085,7 @@ function registerIpc() {
       } catch (e) { return { ok: false, error: e.message }; }
     });
     ipcMain.handle('papertalk:list', () => paperTalk.list());
+    ipcMain.handle('papertalk:plan', (_e, input) => paperTalk.plan(input));
     ipcMain.handle('papertalk:reveal', (_e, p) => { shell.showItemInFolder(String(p || '')); return { ok: true }; });
     ipcMain.handle('papertalk:open', (_e, p) => shell.openPath(String(p || '')));
   } catch (err) {
