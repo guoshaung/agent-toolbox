@@ -2054,6 +2054,65 @@ function registerIpc() {
     console.error('[orchestrator] 未加载（文件可能未打包）：', err.message);
   }
 
+  // ---- 论文讲解：宿主侧出片（arXiv → Claude 写对话脚本 → say + papervid 合成 mp4；依赖 macOS，不进容器）----
+  try {
+    const { PaperTalkService } = require('./paper-talk-service');
+    const { resolveClaude } = require('./orchestrator-service');
+    const paperTalk = new PaperTalkService({
+      userDataDir: app.getPath('userData'),
+      resourcesDir: app.isPackaged ? process.resourcesPath : path.join(__dirname, '..', '..', 'resources'),
+      resolveClaude,
+      emit: (e) => { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('papertalk:progress', e); },
+    });
+    ipcMain.handle('papertalk:run', (_e, payload) => paperTalk.run(payload || {}));
+    ipcMain.handle('papertalk:list', () => paperTalk.list());
+    ipcMain.handle('papertalk:reveal', (_e, p) => { shell.showItemInFolder(String(p || '')); return { ok: true }; });
+    ipcMain.handle('papertalk:open', (_e, p) => shell.openPath(String(p || '')));
+  } catch (err) {
+    console.error('[paper-talk] 未加载：', err.message);
+  }
+
+  // ---- LocalSend：局域网里的工具箱互相发现、互传文件/文字（UDP 53318 发现 + HTTP 传输；对方点接受才收）----
+  try {
+    const { LocalSendService } = require('./localsend-service');
+    const localSend = new LocalSendService({
+      userDataDir: app.getPath('userData'),
+      recvDir: path.join(app.getPath('downloads'), 'LocalSend'),
+      emit: (e) => {
+        if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('localsend:event', e);
+        if (e.type === 'incoming') {
+          try {
+            const what = e.files.length ? `${e.files.length} 个文件${e.text ? ' + 文字' : ''}` : '一段文字';
+            const n = new Notification({ title: `LocalSend：${e.from.name || e.from.ip}（#${e.from.code || '?'}）`, body: `想发给你 ${what}，点这里查看并接受` });
+            n.on('click', () => ensureMainWindow({ show: true }).webContents.send('app:navigate-tool', { id: 'localsend' }));
+            n.show();
+          } catch { /* */ }
+        }
+        if (e.type === 'file-received' && e.done) {
+          try { const n = new Notification({ title: 'LocalSend 收好了', body: `来自 ${e.from} · 在 下载/LocalSend` }); n.on('click', () => shell.showItemInFolder(e.path)); n.show(); } catch { /* */ }
+        }
+      },
+    });
+    localSend.start();
+    ipcMain.handle('localsend:info', () => localSend.info());
+    ipcMain.handle('localsend:peers', () => localSend.listPeers());
+    ipcMain.handle('localsend:pending', () => localSend.pendingList());
+    ipcMain.handle('localsend:history', () => localSend.getHistory());
+    ipcMain.handle('localsend:setName', (_e, name) => localSend.setName(name));
+    ipcMain.handle('localsend:addIp', (_e, ip) => localSend.addByIp(ip));
+    ipcMain.handle('localsend:send', (_e, payload) => localSend.send(payload || {}));
+    ipcMain.handle('localsend:respond', (_e, offerId, accept) => localSend.respond(offerId, accept));
+    ipcMain.handle('localsend:openFolder', () => shell.openPath(localSend.recvDir));
+    ipcMain.handle('localsend:reveal', (_e, p) => { shell.showItemInFolder(String(p || '')); return { ok: true }; });
+    ipcMain.handle('localsend:pickFiles', async () => {
+      const r = await dialog.showOpenDialog(mainWindow || undefined, { title: '选要发送的文件', properties: ['openFile', 'multiSelections'] });
+      return r.canceled ? [] : r.filePaths;
+    });
+    app.on('before-quit', () => { try { localSend.stop(); } catch { /* */ } });
+  } catch (err) {
+    console.error('[localsend] 未加载：', err.message);
+  }
+
   // ---- 表情包管理：本地库在 userData/stickers/，Tenor Key 用 safeStorage 加密，同步只往私有仓库 ----
   const stickers = new StickersService({
     store, safeStorage, clipboard, shell, dialog, userDataDir: app.getPath('userData'), getWindow: () => mainWindow, execFileAsync,

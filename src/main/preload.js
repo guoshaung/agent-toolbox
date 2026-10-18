@@ -749,6 +749,29 @@ contextBridge.exposeInMainWorld('toolbox', {
     onProgress: (callback) => ipcRenderer.on('orchestrator:progress', (_event, state) => callback(state)),
   },
 
+  paperTalk: {
+    run: (payload) => ipcRenderer.invoke('papertalk:run', payload),
+    list: () => ipcRenderer.invoke('papertalk:list'),
+    reveal: (p) => ipcRenderer.invoke('papertalk:reveal', p),
+    open: (p) => ipcRenderer.invoke('papertalk:open', p),
+    onProgress: (callback) => { const handler = (_event, state) => callback(state); ipcRenderer.on('papertalk:progress', handler); return () => ipcRenderer.removeListener('papertalk:progress', handler); },
+  },
+
+  localSend: {
+    info: () => ipcRenderer.invoke('localsend:info'),
+    peers: () => ipcRenderer.invoke('localsend:peers'),
+    pending: () => ipcRenderer.invoke('localsend:pending'),
+    history: () => ipcRenderer.invoke('localsend:history'),
+    setName: (name) => ipcRenderer.invoke('localsend:setName', name),
+    addIp: (ip) => ipcRenderer.invoke('localsend:addIp', ip),
+    send: (payload) => ipcRenderer.invoke('localsend:send', payload),
+    respond: (offerId, accept) => ipcRenderer.invoke('localsend:respond', offerId, accept),
+    openFolder: () => ipcRenderer.invoke('localsend:openFolder'),
+    reveal: (p) => ipcRenderer.invoke('localsend:reveal', p),
+    pickFiles: () => ipcRenderer.invoke('localsend:pickFiles'),
+    onEvent: (callback) => { const handler = (_event, e) => callback(e); ipcRenderer.on('localsend:event', handler); return () => ipcRenderer.removeListener('localsend:event', handler); },
+  },
+
   zotero: {
     detect: () => ipcRenderer.invoke('zotero:detect'),
     snapshot: (force) => ipcRenderer.invoke('zotero:snapshot', force),
