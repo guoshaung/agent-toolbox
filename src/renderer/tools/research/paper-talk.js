@@ -24,6 +24,11 @@ const STYLE = `
 .pt__publication label{display:flex;flex-direction:column;gap:6px;margin:10px 0}
 .pt__publication label.pt__row{flex-direction:row}
 .pt__publication label>.field{width:100%;box-sizing:border-box}
+.pt__drop{border:1px dashed var(--line);padding:16px;line-height:1.7}
+.pt__drop[data-drag=true]{border-color:var(--accent);background:var(--accent-soft)}
+.pt__local-preview{border-top:1px solid var(--line);padding-top:10px;margin-top:12px}
+.pt__local-preview pre{white-space:pre-wrap;max-height:180px;overflow:auto;font:inherit;font-size:12px}
+.pt__consent{display:flex;align-items:flex-start;gap:8px;font-size:12px;margin-top:12px}
 `;
 
 export function createPaperTalk(root, ctx) {
@@ -34,6 +39,7 @@ export function createPaperTalk(root, ctx) {
   let publicationId = '';
   let busy = false;
   let planRequest = 0;
+  let localPaper = null, importing = false;
   if (!api) { root.append(h('div', { class: 'faint', style: 'padding:16px' }, '论文讲解服务没加载（重启工具箱试试）。')); return { refresh() {}, deactivate() {} }; }
 
   if (!document.getElementById('pt-style')) {
@@ -42,6 +48,13 @@ export function createPaperTalk(root, ctx) {
 
   const input = h('input', { class: 'field', type: 'text', placeholder: 'arXiv 链接或编号，如 1706.03762 或 https://arxiv.org/abs/1706.03762',
     value: config.get('research.papertalk.last', '') });
+  const sourceSel=h('select',{class:'field','aria-label':'论文来源',style:'flex:0 0 145px;min-width:145px'},h('option',{value:'arxiv'},'arXiv 链接'),h('option',{value:'local'},'本地 PDF'));
+  sourceSel.value=config.get('research.papertalk.source','arxiv');
+  const localConsent=h('input',{type:'checkbox','aria-label':'允许 AI 读取论文正文'});
+  const localPreview=h('div',{class:'pt__local-preview'},'尚未选择 PDF');
+  const pickPdf=h('button',{class:'btn',onclick:()=>importPdf()},'选择 PDF 文件');
+  const localPanel=h('div',{class:'pt__drop'},h('div',{class:'pt__row'},pickPdf,h('span',{class:'faint'},'或把一份 PDF 拖到这里（64 MB 以内，1–200 页）')),localPreview,
+    h('label',{class:'pt__consent'},localConsent,'我确认将提取的正文发送至已配置的 AI 服务生成讲解，配音台词交给火山语音。PDF 原文件只保存在本机。'));
   const voiceSel = h('select', { class: 'field pt__voice' },
     h('option', { value: 'mf' }, '火山男女声：云舟 + 小何'),
     h('option', { value: 'ff' }, '火山女女声：小何 + Vivi'),
@@ -65,7 +78,7 @@ export function createPaperTalk(root, ctx) {
 
   const bar = h('div', { class: 'pt__bar-fill' });
   const barWrap = h('div', { class: 'pt__bar' }, bar);
-  const status = h('div', { class: 'pt__status faint' }, '贴一篇 arXiv 论文，点生成。约 10–15 分钟一条，出片耗时看论文长度。');
+  const status = h('div', { class: 'pt__status faint' }, '粘贴 arXiv 链接，或选择本地 PDF，再生成讲解。');
   const result = h('div', { class: 'pt__result' });
   const publishPanel = h('div', { class: 'pt__publication' });
   const outline = h('details', { open: '', style: 'border-top:1px solid var(--line);padding-top:10px' });
@@ -102,7 +115,8 @@ export function createPaperTalk(root, ctx) {
     h('div', { class: 'pt__head' },
       h('strong', {}, '论文讲解'),
       h('span', { class: 'faint' }, '学术简洁模板 · 双人讲解 · 原文图表')),
-    h('div', { class: 'pt__row' }, input, voiceSel, goBtn, testBtn),
+    h('div', { class: 'pt__row' }, sourceSel, input),localPanel,
+    h('div', { class: 'pt__row' }, voiceSel, goBtn, testBtn),
     voiceSettings, cg,
     barWrap, status, publishPanel, outline, result,
     h('div', { class: 'pt__head', style: 'margin-top:14px' }, h('strong', {}, '历史'), h('span', { class: 'faint' }, '都在 userData/paper-talk/')),
@@ -112,6 +126,40 @@ export function createPaperTalk(root, ctx) {
     bar.style.width = (pct == null ? 0 : Math.max(0, Math.min(100, pct))) + '%';
     if (text != null) status.textContent = text;
   }
+
+  function sourceKey(){return sourceSel.value==='local'?(localPaper?'local:'+localPaper.id:''):input.value.trim();}
+  function lockSource(on){sourceSel.disabled=on;pickPdf.disabled=on;localConsent.disabled=on;localPreview.querySelectorAll('button').forEach(b=>b.disabled=on);}
+  function sourceUi(){input.style.display=sourceSel.value==='local'?'none':'';localPanel.style.display=sourceSel.value==='local'?'':'none';}
+  function showLocal(paper){
+    localPaper=paper;localConsent.checked=false;localPreview.innerHTML='';
+    localPreview.append(h('strong',{},paper.title),h('div',{class:'faint',style:'font-size:12px;word-break:break-all'},`${paper.name} · ${paper.pageCount} 页 · ${paper.textChars} 字符 · ${paper.figures} 张原文页图`),
+      ...(paper.warnings||[]).map(text=>h('div',{class:'faint',style:'font-size:12px'},text)),
+      h('details',{},h('summary',{},'查看读取的正文预览'),h('pre',{},paper.preview)),
+      h('div',{class:'pt__row'},h('button',{class:'btn btn--sm',onclick:()=>api.open(paper.file)},'查看 PDF'),h('button',{class:'btn btn--sm btn--ghost',onclick:()=>{if(busy||importing)return;localPaper=null;localConsent.checked=false;localPreview.textContent='尚未选择 PDF';config.set('research.papertalk.localId','');loadPlan();}},'取消选择')));
+  }
+  async function importPdf(file){
+    if(busy||importing)return;
+    importing=true;localConsent.checked=false;lockSource(true);goBtn.disabled=true;testBtn.disabled=true;
+    setProgress(0,'正在本机读取 PDF 正文和原文页图，不会调用 AI…');
+    try{
+      const r=await (file?api.importPdf(file):api.pickPdf());
+      if(r.canceled){setProgress(0,'已取消选择');return;}
+      if(!r.ok)throw new Error(r.error);
+      sourceSel.value='local';sourceUi();showLocal(r.paper);config.set('research.papertalk.source','local');config.set('research.papertalk.localId',r.paper.id);loadPlan();
+      setProgress(0,`PDF 已就绪：${r.paper.pageCount} 页。请检查正文预览，确认后生成。`);
+    }catch(e){setProgress(0,'PDF 未导入：'+e.message);toast(e.message);}
+    finally{importing=false;lockSource(busy);goBtn.disabled=busy;testBtn.disabled=busy;}
+  }
+  localPanel.addEventListener('dragover',e=>{e.preventDefault();if(!busy&&!importing)localPanel.dataset.drag='true';});
+  localPanel.addEventListener('dragleave',()=>delete localPanel.dataset.drag);
+  localPanel.addEventListener('drop',e=>{
+    e.preventDefault();delete localPanel.dataset.drag;if(busy||importing)return;
+    const files=[...(e.dataTransfer?.files||[])];if(files.length!==1){toast('请一次拖入一份 PDF');return;}
+    const file=window.toolbox.files.getPathForFile(files[0]);if(!file){toast('无法读取拖入的文件，请点击选择 PDF 文件');return;}
+    importPdf(file);
+  });
+  sourceSel.addEventListener('change',()=>{sourceUi();config.set('research.papertalk.source',sourceSel.value);loadPlan();result.innerHTML='';setProgress(0,'选择论文来源后生成讲解');});
+  sourceUi();
 
   function playerFor(p, title) {
     const vid = h('video', { class: 'pt__video', controls: '', src: 'file://' + p });
@@ -162,19 +210,21 @@ export function createPaperTalk(root, ctx) {
   }
 
   async function run() {
-    if (busy) return;
-    const val = input.value.trim();
-    if (!val) { toast('先贴一个 arXiv 链接或编号'); return; }
+    if (busy||importing) return;
+    const local=sourceSel.value==='local',val=sourceKey();
+    if(!val){toast(local?'请先选择 PDF':'先贴一个 arXiv 链接或编号');return;}
+    if(local&&!localConsent.checked){toast('请先确认允许 AI 读取论文正文');return;}
     busy = true; goBtn.disabled = true; goBtn.textContent = '出片中…';
+    lockSource(true);
     testBtn.disabled=true;input.disabled=true;voiceSel.disabled=true;cg.disabled=true;
     planRequest++;renderPlan([]);
-    config.set('research.papertalk.last', val);
+    if(!local)config.set('research.papertalk.last', val);
     config.set('research.papertalk.voice', voiceSel.value);
     config.set('research.papertalk.cg', cg.value);
     result.innerHTML = '';
     setProgress(2, '开始…');
     try {
-      const r = await api.run({ input: val, cogniGuard: cg.value.trim(), voiceMode: voiceSel.value });
+      const r = await api.run({ input: local?'':val, localPaperId:local?localPaper.id:undefined, allowCloud:local&&localConsent.checked, cogniGuard: cg.value.trim(), voiceMode: voiceSel.value });
       if (r && r.ok) {
         setProgress(100, `完成：${r.title || ''}（${r.pages || 0} 个主题页，${r.segments || 0} 段对话）`);
         result.append(playerFor(r.mp4, r.title));
@@ -190,6 +240,7 @@ export function createPaperTalk(root, ctx) {
     } finally {
       busy = false; goBtn.disabled = false; goBtn.textContent = '🎬 生成讲解视频';
       testBtn.disabled=false;input.disabled=false;voiceSel.disabled=false;cg.disabled=false;
+      lockSource(false);
     }
   }
 
@@ -214,22 +265,28 @@ export function createPaperTalk(root, ctx) {
     if(['done','error','interrupted'].includes(e.stage)) {
       busy=false;goBtn.disabled=false;goBtn.textContent='🎬 生成讲解视频';
       testBtn.disabled=false;input.disabled=false;voiceSel.disabled=false;cg.disabled=false;
+      lockSource(false);
     }
   }
   if (api.onProgress) unsub = api.onProgress(applyState);
   function loadPlan() {
-    const request=++planRequest, value=input.value;
+    const request=++planRequest, value=sourceKey();
     renderPlan([]);
-    api.plan?.(value).then(p=>{if(request===planRequest && value===input.value && !busy)renderPlan(p?.slides);}).catch(()=>{});
+    api.plan?.(value).then(p=>{if(request===planRequest && value===sourceKey() && !busy)renderPlan(p?.slides);}).catch(()=>{});
   }
   input.addEventListener('input',loadPlan);
   loadPlan();
-  const initialRequest=planRequest;
-  api.state?.().then(e=>{
-    if(!e || initialRequest!==planRequest || busy)return;
-    if(e.input===input.value)applyState(e);
-    if(e.running){busy=true;input.value=e.input;goBtn.disabled=true;goBtn.textContent='出片中…';testBtn.disabled=true;input.disabled=true;voiceSel.disabled=true;cg.disabled=true;applyState(e);}
-  }).catch(()=>{});
+  (async()=>{
+    const selected=config.get('research.papertalk.localId',''),selectionRequest=planRequest;
+    if(selected&&sourceSel.value==='local'){const loaded=await api.localInfo?.(selected);if(loaded?.ok&&selectionRequest===planRequest&&!busy&&!importing){showLocal(loaded.paper);loadPlan();}}
+    const initialRequest=planRequest,e=await api.state?.();
+    if(!e||initialRequest!==planRequest||busy||importing)return;
+    if(e.input===sourceKey())applyState(e);
+    if(e.running){
+      if(e.localPaperId){const loaded=await api.localInfo?.(e.localPaperId);sourceSel.value='local';sourceUi();if(loaded?.ok)showLocal(loaded.paper);}else{sourceSel.value='arxiv';input.value=e.input;sourceUi();}
+      busy=true;goBtn.disabled=true;goBtn.textContent='出片中…';testBtn.disabled=true;input.disabled=true;voiceSel.disabled=true;cg.disabled=true;lockSource(true);applyState(e);
+    }
+  })().catch(()=>{});
   if (api.onPublishState) unpublish = api.onPublishState(e => {
     if (e?.id !== publicationId) return;
     const el = publishPanel.querySelector('#pt-publish-status');

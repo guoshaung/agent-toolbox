@@ -750,6 +750,9 @@ contextBridge.exposeInMainWorld('toolbox', {
   },
 
   paperTalk: {
+    pickPdf: () => ipcRenderer.invoke('papertalk:pickPdf'),
+    importPdf: (file) => ipcRenderer.invoke('papertalk:importPdf', file),
+    localInfo: (id) => ipcRenderer.invoke('papertalk:localInfo', id),
     state: () => ipcRenderer.invoke('papertalk:state'),
     voiceStatus: () => ipcRenderer.invoke('papertalk:voiceStatus'),
     voiceSave: (key) => ipcRenderer.invoke('papertalk:voiceSave', key),

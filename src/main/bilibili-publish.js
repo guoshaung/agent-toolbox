@@ -73,10 +73,12 @@ class BilibiliPublishService {
       try { const script = JSON.parse(fs.readFileSync(path.join(this.outputDir, f), 'utf8')); if (script.title === timeline.title) { paper = script.paper || {}; break; } } catch {}
     }
     const title = Array.from(`【AI论文解读】${timeline.title || paper.title || path.basename(video, '.mp4')}`).slice(0, 80).join('');
-    const source = paper.id ? `https://arxiv.org/abs/${paper.id}` : '';
+    const localPdf=paper.sourceType==='local-pdf';
+    const source = !localPdf && paper.id ? `https://arxiv.org/abs/${paper.id}` : '';
     const description = [
       timeline.title || '论文云组会式讲解', paper.title ? `原论文：${paper.title}` : '', source ? `论文链接：${source}` : '',
-      '本视频使用 AI 辅助整理教学脚本，采用系统 TTS 合成配音。涉及原论文图表与结论时，请以原文为准。',
+      localPdf?'原文来源：本地上传的论文 PDF，请在发布前补充论文公开链接。':'',
+      '本视频使用 AI 辅助整理教学脚本，采用 TTS 合成配音。涉及原论文图表与结论时，请以原文为准。',
       ...(timeline.slides || []).slice(0, 14).map((s, i) => `${i + 1}. ${s.title}`),
     ].filter(Boolean).join('\n').slice(0, 2000);
     const topic = `${paper.title || ''} ${timeline.title || ''}`;

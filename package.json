@@ -119,7 +119,8 @@
         "from": "resources/bin",
         "to": "bin",
         "filter": [
-          "papervid"
+          "papervid",
+          "paperpdf"
         ]
       },
       {

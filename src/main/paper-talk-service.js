@@ -13,6 +13,7 @@ const { spawn, spawnSync } = require('node:child_process');
 const { extractPaperHtml, normalizePlan, normalizeNarration, lessonNotes } = require('./paper-talk-lesson');
 const { extractObject, generateValidated, fatal } = require('./paper-talk-generation');
 const { timedCues } = require('./paper-talk-subtitles');
+const { sourceId } = require('./paper-talk-local');
 
 const VOICE_SETS = {
   mf: { A: 'Li-mu', B: 'Tingting' },     // 男 + 女（现成）
@@ -21,13 +22,14 @@ const VOICE_SETS = {
 };
 
 class PaperTalkService {
-  constructor({ userDataDir, resourcesDir, resolveClaude, generateScript, synthesizeVoice, emit, ensureRelay } = {}) {
+  constructor({ userDataDir, resourcesDir, resolveClaude, generateScript, synthesizeVoice, loadLocalPaper, emit, ensureRelay } = {}) {
     this.ensureRelay = typeof ensureRelay === 'function' ? ensureRelay : () => this._ensureRelay();
     this.userDataDir = userDataDir || path.join(os.homedir(), '.agent-toolbox');
     this.resourcesDir = resourcesDir || path.join(__dirname, '..', '..', 'resources');
     this.resolveClaude = resolveClaude || (() => null);
     this.generateScript = generateScript;
     this.synthesizeVoice = synthesizeVoice;
+    this.loadLocalPaper = loadLocalPaper;
     this.emit = typeof emit === 'function' ? emit : () => {};
     this.outDir = path.join(this.userDataDir, 'paper-talk');
     try { fs.mkdirSync(this.outDir, { recursive: true }); } catch { /* */ }
@@ -149,7 +151,8 @@ class PaperTalkService {
 
   _paperContext(paper, cg) {
     return JSON.stringify({ title: paper.title, authors: paper.authors, abstract: paper.abstract,
-      body: paper.body, figures: paper.figures, sourceUrl: paper.sourceUrl,
+      body: paper.body, figures: (paper.figures||[]).map(f=>({id:f.id,caption:f.caption})), sourceUrl: paper.sourceUrl,
+      sourceType:paper.sourceType||'arxiv',pageCount:paper.pageCount,
       cogniGuard: cg || '未提供具体方法，只可列待验证的研究问题，不得声称已有实验或效果' });
   }
 
@@ -284,6 +287,11 @@ class PaperTalkService {
     const assets = {};
     await Promise.all((paper.figures || []).filter(f => wanted.has(f.id)).map(async (f) => {
       try {
+        if(paper.sourceType==='local-pdf' && sourceId(paper.id) && f.localPath){
+          const base=fs.realpathSync(path.join(this.outDir,'imports',paper.id)),file=fs.realpathSync(f.localPath);
+          if(path.dirname(file)===base && /\.png$/i.test(file) && fs.statSync(file).size<=12*1024*1024)assets[f.id]=file;
+          return;
+        }
         const id = require('node:crypto').createHash('sha256').update(f.url).digest('hex').slice(0, 16);
         const ext = /\.svg(?:\?|$)/i.test(f.url) ? '.svg' : '.png';
         const original = path.join(dir, id + ext), image = ext === '.svg' ? original + '.white.png' : original;
@@ -376,13 +384,15 @@ class PaperTalkService {
   }
 
   // ---- 入口 ----
-  async run({ input, cogniGuard, voiceMode } = {}) {
+  async run({ input, cogniGuard, voiceMode, localPaperId, allowCloud } = {}) {
     if (this._busy) return { ok: false, error: '正在出片，稍等这条完成' };
+    if(localPaperId && (!sourceId(localPaperId)||typeof this.loadLocalPaper!=='function'))return{ok:false,error:'本地论文无效，请重新上传 PDF'};
+    if(localPaperId && allowCloud!==true)return{ok:false,error:'请先确认允许将提取的论文正文发送至已配置的 AI 服务'};
     this._busy = true;
-    this._state={input:String(input||''),startedAt:Date.now()};
+    this._state={input:localPaperId?'local:'+localPaperId:String(input||''),localPaperId:localPaperId||'',startedAt:Date.now()};
     this._progress('start','任务已开始：先读取论文，再规划、配音并合成',1);
     try {
-      const paper = await this.fetchPaper(input);
+      const paper = localPaperId ? await this.loadLocalPaper(localPaperId) : await this.fetchPaper(input);
       fs.writeFileSync(path.join(this.outDir,`${paper.id.replace(/\//g,'-')}-source.json`),JSON.stringify(paper,null,2),{mode:0o600});
       const plan = await this.planLesson(paper, cogniGuard);
       fs.writeFileSync(path.join(this.outDir, `${paper.id.replace(/\//g, '-')}-plan.json`), JSON.stringify(plan, null, 2));
@@ -404,7 +414,7 @@ class PaperTalkService {
 
   // 给渲染端列历史产物
   plan(input) {
-    const id = this._arxivId(input);
+    const id = sourceId(input)||this._arxivId(input);
     if (!id) return null;
     try { return JSON.parse(fs.readFileSync(path.join(this.outDir, `${id.replace(/\//g, '-')}-plan.json`), 'utf8')); } catch { return null; }
   }

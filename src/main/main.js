@@ -2060,11 +2060,14 @@ function registerIpc() {
     const { resolveClaude } = require('./orchestrator-service');
     const voiceConfig = require('./paper-talk-voice-config').createVoiceConfig({ vault, store });
     const synthesizeVoice = options => require('./paper-talk-tts').synthesizeSpeech({ ...options, apiKey:voiceConfig.credential() });
+    const resourcesDir=app.isPackaged?process.resourcesPath:path.join(__dirname,'..','..','resources');
+    const localPapers=new (require('./paper-talk-local').LocalPaperService)({userDataDir:app.getPath('userData'),resourcesDir});
     const paperTalk = new PaperTalkService({
       userDataDir: app.getPath('userData'),
       resourcesDir: app.isPackaged ? process.resourcesPath : path.join(__dirname, '..', '..', 'resources'),
       resolveClaude,
       synthesizeVoice,
+      loadLocalPaper:id=>localPapers.load(id),
       generateScript: async (prompt, options = {}) => {
         const cfg = store.get('research.papertalk.api', {});
         const credential = cfg.vaultId ? vault.keyOf(String(cfg.vaultId)) : { ok: true, key: readApiKey() };
@@ -2081,9 +2084,19 @@ function registerIpc() {
       emit: (e) => { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('papertalk:progress', e); },
     });
     ipcMain.handle('papertalk:run', (_e, payload) => {
+      if(payload?.localPaperId&&payload.allowCloud!==true)return{ok:false,error:'请先确认允许将提取的论文正文发送至已配置的 AI 服务'};
       try { voiceConfig.credential(); return paperTalk.run(payload || {}); }
       catch (e) { return {ok:false,error:e.message}; }
     });
+    const localSender=e=>{try{const u=new URL(e.senderFrame.url),base=pathToFileURL(path.join(__dirname,'..','renderer')+path.sep).href;return u.protocol==='file:'&&u.href.startsWith(base)&&u.pathname.endsWith('.html');}catch{return false;}};
+    ipcMain.handle('papertalk:pickPdf',async(e)=>{
+      if(!localSender(e))return{ok:false,error:'仅允许在工具箱本地页面选择文件'};
+      const selected=await dialog.showOpenDialog(BrowserWindow.fromWebContents(e.sender)||mainWindow,{title:'选择用于论文讲解的 PDF',filters:[{name:'论文 PDF',extensions:['pdf']}],properties:['openFile']});
+      if(selected.canceled||!selected.filePaths[0])return{ok:false,canceled:true};
+      return localPapers.importFile(selected.filePaths[0]);
+    });
+    ipcMain.handle('papertalk:importPdf',(e,file)=>localSender(e)?localPapers.importFile(file):{ok:false,error:'仅允许从工具箱本地页面导入文件'});
+    ipcMain.handle('papertalk:localInfo',(e,id)=>{try{return localSender(e)?localPapers.info(id):{ok:false,error:'无权访问本地论文'};}catch{return{ok:false,error:'本地 PDF 缓存不存在，请重新上传'};}});
     ipcMain.handle('papertalk:voiceStatus', () => voiceConfig.status());
     ipcMain.handle('papertalk:voiceSave', (_e, key) => voiceConfig.save(key));
     let previewBusy = false;
