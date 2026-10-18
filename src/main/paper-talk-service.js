@@ -12,6 +12,7 @@ const os = require('node:os');
 const { spawn, spawnSync } = require('node:child_process');
 const { extractPaperHtml, normalizePlan, normalizeNarration, lessonNotes } = require('./paper-talk-lesson');
 const { extractObject, generateValidated, fatal } = require('./paper-talk-generation');
+const { timedCues } = require('./paper-talk-subtitles');
 
 const VOICE_SETS = {
   mf: { A: 'Li-mu', B: 'Tingting' },     // 男 + 女（现成）
@@ -58,10 +59,10 @@ class PaperTalkService {
     const bundled = path.join(this.resourcesDir, 'bin', 'papervid');
     try {
       fs.accessSync(bundled, fs.constants.X_OK);
-      if (spawnSync(bundled, ['version'], { encoding: 'utf8', timeout: 3000 }).stdout?.trim() === 'papervid 3') return bundled;
+      if (spawnSync(bundled, ['version'], { encoding: 'utf8', timeout: 3000 }).stdout?.trim() === 'papervid 4') return bundled;
     } catch { /* Build the matching source if the installed renderer is older. */ }
     // Never silently reuse the old template after a renderer upgrade.
-    const versioned = path.join(this.userDataDir, 'papervid-v3');
+    const versioned = path.join(this.userDataDir, 'papervid-v4');
     const src = path.join(__dirname, 'native', 'papervid.swift');
     if (fs.existsSync(src)) {
       const hash = require('node:crypto').createHash('sha256').update(fs.readFileSync(src)).digest('hex');
@@ -315,7 +316,7 @@ class PaperTalkService {
     const pv = this.papervidPath();
     const work = fs.mkdtempSync(path.join(os.tmpdir(), 'ptalk-'));
     const W = 1600, H = 900;
-    const segs = [], timeline = [];
+    const segs = [], timeline = [], subtitles = [];
     const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
     const frames = path.join(this.outDir, `${stamp}.slides`);
     fs.mkdirSync(frames, { recursive: true });
@@ -326,47 +327,44 @@ class PaperTalkService {
     let cursor = 0;
     for (let i = 0; i < total; i++) {
       const s = script.segments[i];
+      let words = [];
       const voice = voices[s.speaker] || voices.A;
       const aiff = path.join(work, `a${i}.aiff`), m4a = path.join(work, `a${i}.m4a`), png = path.join(frames, `turn-${String(i + 1).padStart(2, '0')}.png`);
       this._progress('synth', `配音 + 画面 ${i + 1}/${total}`, 40 + Math.round((i / total) * 50));
       if (this.synthesizeVoice) {
         const mp3 = path.join(work, `a${i}.mp3`);
-        const audio = await this.synthesizeVoice({ segment: s, voiceMode, slide: byId.get(s.slideId) });
+        const spoken = await this.synthesizeVoice({ segment: s, voiceMode, slide: byId.get(s.slideId), withTimestamps: true });
+        const audio = Buffer.isBuffer(spoken) ? spoken : spoken.audio;
+        words = Buffer.isBuffer(spoken) ? [] : spoken.words;
         fs.writeFileSync(mp3, audio, { mode: 0o600 });
         await this._exec('/usr/bin/afconvert', [mp3, m4a, '-d', 'aac', '-f', 'm4af']);
       } else {
         await this._exec('/usr/bin/say', ['-v', voice, '-o', aiff, s.text]);
         await this._exec('/usr/bin/afconvert', [aiff, m4a, '-d', 'aac', '-f', 'm4af']);
       }
-      const speaker = s.speaker === 'B' ? '乙·讲解' : '甲·主持';
       const slide = byId.get(s.slideId);
       const spec = path.join(work, `page-${i}.json`);
-      fs.writeFileSync(spec, JSON.stringify({ ...slide, focus: s.focus, speaker, caption: s.subtitle }));
+      fs.writeFileSync(spec, JSON.stringify({ ...slide, focus: s.focus }));
       await this._exec(pv, ['page', spec, png]);
       const duration = Number((await this._exec(pv, ['duration', m4a])).trim());
       if (!(duration > 0)) throw new Error('配音时长无效');
-      timeline.push({ index: i + 1, slideId: s.slideId, speaker: s.speaker, text: s.text, start: cursor, end: cursor + duration, image: png });
+      const cues=timedCues(words,duration).map(c=>({...c,start:c.start+cursor,end:c.end+cursor}));
+      subtitles.push(...cues);
+      timeline.push({ index: i + 1, slideId: s.slideId, speaker: s.speaker, text: s.text, start: cursor, end: cursor + duration, image: png, subtitles:cues });
       cursor += duration;
       segs.push({ image: png, audio: m4a });
     }
     this._progress('mux', '合成 mp4 …', 92);
     const manifest = path.join(work, 'manifest.json');
-    fs.writeFileSync(manifest, JSON.stringify({ w: W, h: H, segments: segs }));
+    fs.writeFileSync(manifest, JSON.stringify({ w: W, h: H, segments: segs, subtitles }));
     const out = path.join(this.outDir, `${stamp}.mp4`);
     await this._exec(pv, ['mux', manifest, out]);
     const clock = seconds => { const ms = Math.round(seconds * 1000); return `${String(Math.floor(ms / 3600000)).padStart(2, '0')}:${String(Math.floor(ms / 60000) % 60).padStart(2, '0')}:${String(Math.floor(ms / 1000) % 60).padStart(2, '0')},${String(ms % 1000).padStart(3, '0')}`; };
     const srt = [];
-    for (const turn of timeline) {
-      const chunks = turn.text.match(/[^。！？；]+[。！？；]?/g) || [turn.text];
-      let at = turn.start;
-      for (const chunk of chunks) {
-        const end = at + (turn.end - turn.start) * chunk.length / turn.text.length;
-        srt.push(`${srt.length + 1}\n${clock(at)} --> ${clock(end)}\n${chunk}\n`); at = end;
-      }
-    }
+    for (const cue of subtitles)srt.push(`${srt.length+1}\n${clock(cue.start)} --> ${clock(cue.end)}\n${cue.text}\n`);
     fs.writeFileSync(out.replace(/\.mp4$/, '.srt'), srt.join('\n'));
     fs.writeFileSync(out.replace(/\.mp4$/, '.lesson.md'), lessonNotes(script));
-    fs.writeFileSync(out.replace(/\.mp4$/, '.timeline.json'), JSON.stringify({ title: script.title, renderer: 'research-v3', slides: script.slides, timeline }, null, 2));
+    fs.writeFileSync(out.replace(/\.mp4$/, '.timeline.json'), JSON.stringify({ title: script.title, renderer: 'research-v4', subtitles, slides: script.slides, timeline }, null, 2));
     try { fs.rmSync(work, { recursive: true, force: true }); } catch { /* */ }
     return out;
   }
@@ -395,7 +393,7 @@ class PaperTalkService {
       this._state={...this._state,mp4,title:script.title||paper.title};
       this._progress('done', '出片完成', 100);
       return { ok: true, mp4, title: script.title || paper.title, segments: script.segments.length, pages: script.slides.length,
-        lesson: mp4.replace(/\.mp4$/, '.lesson.md'), srt: mp4.replace(/\.mp4$/, '.srt') };
+        lesson: mp4.replace(/\.mp4$/, '.lesson.md'), srt: fs.statSync(mp4.replace(/\.mp4$/, '.srt')).size ? mp4.replace(/\.mp4$/, '.srt') : null };
     } catch (e) {
       this._progress('error', e.message, null);
       return { ok: false, error: e.message };

@@ -33,19 +33,21 @@ function redact(message, key) {
   if (key) text = text.split(key).join('[已隐藏]');
   return text.replace(/(?:X-Api-Key|authorization)\s*[:=]\s*\S+/gi, '[凭据已隐藏]').slice(0,500);
 }
-async function synthesizeSpeech({ apiKey, segment, voiceMode = 'mf', slide = {}, fetchFn = globalThis.fetch, timeoutMs = 120000 }) {
+async function synthesizeSpeech({ apiKey, segment, voiceMode = 'mf', slide = {}, withTimestamps = false, fetchFn = globalThis.fetch, timeoutMs = 120000 }) {
   if (!apiKey) throw new Error('尚未配置火山语音密钥，请在配音设置中保存');
   let reader;
   try {
+    const payload = payloadFor(segment,voiceMode,slide);
+    if(withTimestamps)payload.req_params.audio_params.enable_subtitle=true;
     const res = await fetchFn(ENDPOINT, { method: 'POST', redirect: 'error', signal: AbortSignal.timeout(timeoutMs),
       headers: { 'Content-Type':'application/json', 'X-Api-Key':apiKey, 'X-Api-Resource-Id':'seed-tts-2.0', 'X-Api-Request-Id':randomUUID() },
-      body: JSON.stringify(payloadFor(segment,voiceMode,slide)),
+      body: JSON.stringify(payload),
     });
     if (!res.ok) throw new Error(`火山语音 HTTP ${res.status}：${(await res.text()).slice(0,1000)}`);
     if (!res.body) throw new Error('火山语音未返回音频流');
     reader = res.body.getReader();
     const decoder = new TextDecoder();
-    const chunks = []; let pending = '', ended = false, total = 0;
+    const chunks = [], words = []; let pending = '', ended = false, total = 0;
     function line(value) {
       value = value.trim();
       if (!value || value.startsWith('event:') || value.startsWith(':')) return;
@@ -53,6 +55,7 @@ async function synthesizeSpeech({ apiKey, segment, voiceMode = 'mf', slide = {},
       let frame;
       try { frame = JSON.parse(value); } catch { throw new Error('火山语音响应格式异常'); }
       if (frame.code !== 0 && frame.code !== 20000000) throw new Error(`火山语音 ${frame.code}：${frame.message || '合成失败'}`);
+      if(withTimestamps && Array.isArray(frame.sentence?.words))words.push(...frame.sentence.words);
       if (typeof frame.data === 'string' && frame.data) {
         if (!/^[A-Za-z0-9+/]+={0,2}$/.test(frame.data)) throw new Error('火山语音音频编码异常');
         const chunk = Buffer.from(frame.data,'base64'); total += chunk.length;
@@ -72,8 +75,15 @@ async function synthesizeSpeech({ apiKey, segment, voiceMode = 'mf', slide = {},
     pending += decoder.decode(); if (pending.trim()) line(pending);
     if (!ended) throw new Error('火山语音连接中断，未收到合成完成确认，请重试');
     if (!total) throw new Error('火山语音未返回有效音频');
-    return Buffer.concat(chunks);
-  } catch (error) { throw new Error(redact(error.message,apiKey)); }
+    const audio=Buffer.concat(chunks);
+    return withTimestamps ? {audio,words} : audio;
+  } catch (error) {
+    if(withTimestamps && /subtitle|timestamp|字幕|时间戳/i.test(error.message) && /unsupported|not.support|unknown|invalid|不支持/i.test(error.message)) {
+      const audio=await synthesizeSpeech({apiKey,segment,voiceMode,slide,withTimestamps:false,fetchFn,timeoutMs});
+      return {audio,words:[]};
+    }
+    throw new Error(redact(error.message,apiKey));
+  }
   finally { if (reader) {try {await reader.cancel();} catch {} reader.releaseLock();} }
 }
 module.exports = { ENDPOINT, VOICES, direction, payloadFor, synthesizeSpeech };

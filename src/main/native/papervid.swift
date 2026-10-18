@@ -47,7 +47,6 @@ func teachingPage(specPath: String, out: String) {
     let takeaway = s["takeaway"] as? String ?? ""
     let pos = s["pageLabel"] as? String ?? ""
     textBlock(chapter, x: 70, top: 858, width: 1100, height: 30, size: 18, bold: true, color: teal)
-    textBlock(pos, x: 1425, top: 858, width: 105, height: 30, size: 18, color: muted)
     rule(70, 812, 1460)
     let points = s["points"] as? [[String: String]] ?? []
     let focus = s["focus"] as? Int ?? -1
@@ -133,10 +132,8 @@ func teachingPage(specPath: String, out: String) {
     let source = s["source"] as? String ?? ""
     rule(70, 157, 1460)
     textBlock("来源：\(source)", x: 70, top: 143, width: 1460, height: 45, size: 17, color: muted)
-    fill(NSRect(x: 0, y: 0, width: W, height: 88), rgb(0xEAF1F6))
-    let speaker = s["speaker"] as? String ?? ""
-    textBlock(speaker, x: 70, top: 60, width: 150, height: 43, size: 21, bold: true, color: teal)
-    textBlock(s["caption"] as? String ?? "", x: 240, top: 62, width: 1290, height: 52, size: 24)
+    // No static caption, speaker badge, or empty subtitle band on a teaching page.
+    // Spoken subtitles are composited later from the speech provider's timestamps.
     img.unlockFocus()
     guard let tiff = img.tiffRepresentation, let rep = NSBitmapImageRep(data: tiff), let png = rep.representation(using: .png, properties: [:]) else { exit(1) }
     try! png.write(to: URL(fileURLWithPath: out))
@@ -215,7 +212,7 @@ func renderSlide(out: String, w: Int, h: Int, speaker: String, title: String, su
 }
 
 // ---------- 合成 mp4 ----------
-func pixelBuffer(_ path: String, _ w: Int, _ h: Int) -> CVPixelBuffer {
+func pixelBuffer(_ path: String, _ w: Int, _ h: Int, cached: CGImage? = nil, caption: String = "", previous: String = "", progress: Double = 1) -> CVPixelBuffer {
     let attrs: [String: Any] = [kCVPixelBufferCGImageCompatibilityKey as String: true,
                                 kCVPixelBufferCGBitmapContextCompatibilityKey as String: true]
     var pb: CVPixelBuffer?
@@ -225,8 +222,22 @@ func pixelBuffer(_ path: String, _ w: Int, _ h: Int) -> CVPixelBuffer {
     let ctx = CGContext(data: CVPixelBufferGetBaseAddress(buf), width: w, height: h, bitsPerComponent: 8,
                         bytesPerRow: CVPixelBufferGetBytesPerRow(buf), space: CGColorSpaceCreateDeviceRGB(),
                         bitmapInfo: CGImageAlphaInfo.noneSkipFirst.rawValue)!
-    if let img = NSImage(contentsOfFile: path), let cg = img.cgImage(forProposedRect: nil, context: nil, hints: nil) {
+    let cg = cached ?? NSImage(contentsOfFile: path)?.cgImage(forProposedRect: nil, context: nil, hints: nil)
+    if let cg = cg {
         ctx.draw(cg, in: CGRect(x: 0, y: 0, width: w, height: h))
+    }
+    if !caption.isEmpty {
+        ctx.saveGState(); ctx.scaleBy(x: CGFloat(w) / 1600, y: CGFloat(h) / 900)
+        ctx.clip(to: CGRect(x: 0, y: 0, width: 1600, height: 88))
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = NSGraphicsContext(cgContext: ctx, flipped: false)
+        fill(NSRect(x: 0, y: 0, width: 1600, height: 88), rgb(0xEAF1F6))
+        let amount = CGFloat(min(1, max(0, progress)))
+        if !previous.isEmpty && amount < 1 {
+            textBlock(previous, x: 80, top: 63 + amount * 56, width: 1440, height: 60, size: 28, color: muted)
+        }
+        textBlock(caption, x: 80, top: 63 - (previous.isEmpty ? 0 : (1 - amount) * 56), width: 1440, height: 60, size: 28)
+        NSGraphicsContext.restoreGraphicsState(); ctx.restoreGState()
     }
     CVPixelBufferUnlockBaseAddress(buf, [])
     return buf
@@ -249,7 +260,7 @@ func mux(manifestPath: String, outPath: String) {
         }
         durs.append(dur); cursor = cursor + dur
     }
-    exportVideo(comp: comp, segs: segs, durs: durs, total: cursor, w: w, h: h, outPath: outPath)
+    exportVideo(comp: comp, segs: segs, durs: durs, total: cursor, w: w, h: h, outPath: outPath, subtitles: obj["subtitles"] as? [[String: Any]] ?? [])
 }
 
 // Restyle existing lessons without calling either the language or speech model again.
@@ -278,7 +289,7 @@ func restyle(manifestPath: String, outPath: String) {
     exportVideo(comp: comp, segs: segs, durs: durs, total: total, w: 1600, h: 900, outPath: outPath)
 }
 
-func exportVideo(comp: AVMutableComposition, segs: [[String: String]], durs: [CMTime], total: CMTime, w: Int, h: Int, outPath: String) {
+func exportVideo(comp: AVMutableComposition, segs: [[String: String]], durs: [CMTime], total: CMTime, w: Int, h: Int, outPath: String, subtitles: [[String: Any]] = []) {
     // 先写纯视频
     let vurl = URL(fileURLWithPath: NSTemporaryDirectory() + "pv_\(UUID().uuidString).mp4")
     let writer = try! AVAssetWriter(outputURL: vurl, fileType: .mp4)
@@ -289,15 +300,40 @@ func exportVideo(comp: AVMutableComposition, segs: [[String: String]], durs: [CM
         kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32ARGB,
         kCVPixelBufferWidthKey as String: w, kCVPixelBufferHeightKey as String: h])
     writer.add(vinput); writer.startWriting(); writer.startSession(atSourceTime: .zero)
-    var t = CMTime.zero
-    for (i, seg) in segs.enumerated() {
-        while !vinput.isReadyForMoreMediaData { usleep(5000) }
-        adaptor.append(pixelBuffer(seg["image"]!, w, h), withPresentationTime: t)
-        t = t + durs[i]
+    let ticks: Double = 60000, lastTick = max(Int64(0), Int64(total.seconds * ticks) - 1)
+    var times = Set<Int64>([0, max(0, lastTick - 2000)]), starts: [Double] = [], cursor = 0.0
+    for duration in durs { starts.append(cursor); times.insert(Int64((cursor * ticks).rounded())); cursor += duration.seconds }
+    let cues = subtitles.filter { cue in
+        guard let start = cue["start"] as? Double, let end = cue["end"] as? Double, let text = cue["text"] as? String else { return false }
+        return start.isFinite && end.isFinite && start >= 0 && end > start && end <= total.seconds + 0.05 && !text.isEmpty && text.count <= 38
+    }.sorted { ($0["start"] as! Double) < ($1["start"] as! Double) }
+    for cue in cues {
+        let start = cue["start"] as! Double, end = cue["end"] as! Double
+        times.insert(Int64((start * ticks).rounded())); times.insert(Int64((end * ticks).rounded()))
+        // Four transition frames move the previous spoken line up as the new line enters.
+        for step in 1...4 { let at = start + Double(step) * 0.04; if at < end { times.insert(Int64((at * ticks).rounded())) } }
     }
-    // 收尾再补一帧，保证最后一段完整显示
-    while !vinput.isReadyForMoreMediaData { usleep(5000) }
-    adaptor.append(pixelBuffer(segs.last!["image"]!, w, h), withPresentationTime: CMTimeSubtract(total, CMTime(value: 1, timescale: 30)))
+    var segmentIndex = 0, cueIndex = -1, cachedPath = "", cachedImage: CGImage?
+    for tick in times.filter({ $0 >= 0 && $0 <= lastTick }).sorted() {
+        let seconds = Double(tick) / ticks
+        while segmentIndex + 1 < starts.count && seconds >= starts[segmentIndex + 1] { segmentIndex += 1 }
+        while cueIndex + 1 < cues.count && seconds + 0.00002 >= cues[cueIndex + 1]["start"] as! Double { cueIndex += 1 }
+        let imagePath = segs[segmentIndex]["image"]!
+        if imagePath != cachedPath { cachedImage = NSImage(contentsOfFile: imagePath)?.cgImage(forProposedRect: nil, context: nil, hints: nil); cachedPath = imagePath }
+        var caption = "", previous = "", progress = 1.0
+        if cueIndex >= 0, seconds < cues[cueIndex]["end"] as! Double {
+            let start = cues[cueIndex]["start"] as! Double
+            caption = cues[cueIndex]["text"] as! String
+            if cueIndex > 0 && start - (cues[cueIndex - 1]["end"] as! Double) <= 0.25 && start > starts[segmentIndex] + 0.01 {
+                previous = cues[cueIndex - 1]["text"] as! String
+                progress = min(1, max(0, (seconds - start) / 0.16))
+            }
+        }
+        while !vinput.isReadyForMoreMediaData { usleep(5000) }
+        let appended = autoreleasepool { adaptor.append(pixelBuffer(imagePath, w, h, cached: cachedImage, caption: caption, previous: previous, progress: progress), withPresentationTime: CMTime(value: tick, timescale: 60000)) }
+        if !appended { FileHandle.standardError.write(Data("subtitle frame encoding failed\n".utf8)); exit(2) }
+    }
+    writer.endSession(atSourceTime: total)
     vinput.markAsFinished()
     let sem1 = DispatchSemaphore(value: 0)
     writer.finishWriting { sem1.signal() }; sem1.wait()
@@ -320,12 +356,21 @@ func exportVideo(comp: AVMutableComposition, segs: [[String: String]], durs: [CM
 let a = CommandLine.arguments
 switch a.count >= 2 ? a[1] : "" {
 case "version":
-    print("papervid 3")
+    print("papervid 4")
 case "page":
     teachingPage(specPath: a[2], out: a[3])
 case "duration":
     let asset = AVURLAsset(url: URL(fileURLWithPath: a[2]))
     print(asset.duration.seconds)
+case "frame":
+    let asset = AVURLAsset(url: URL(fileURLWithPath: a[2]))
+    let generator = AVAssetImageGenerator(asset: asset)
+    generator.appliesPreferredTrackTransform = true
+    generator.requestedTimeToleranceBefore = .zero
+    generator.requestedTimeToleranceAfter = .zero
+    let frame = try! generator.copyCGImage(at: CMTime(seconds: Double(a[3])!, preferredTimescale: 60000), actualTime: nil)
+    let rep = NSBitmapImageRep(cgImage: frame)
+    try! rep.representation(using: .png, properties: [:])!.write(to: URL(fileURLWithPath: a[4]))
 case "slide":
     renderSlide(out: a[2], w: Int(a[3])!, h: Int(a[4])!, speaker: a[5], title: a[6], subtitle: a[7],
                 figure: a.count > 8 && !a[8].isEmpty ? a[8] : nil)

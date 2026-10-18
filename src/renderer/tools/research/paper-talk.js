@@ -200,7 +200,7 @@ export function createPaperTalk(root, ctx) {
     if (!list.length) { historyWrap.append(h('div', { class: 'faint' }, '还没有产出。')); return; }
     for (const it of list.slice(0, 12)) {
       historyWrap.append(h('div', { class: 'pt__hist-row' },
-        h('span', { class: 'pt__hist-name', title: it.path }, `${it.renderer === 'research-v3' ? '新模板 · ' : ''}${it.name}`),
+        h('span', { class: 'pt__hist-name', title: it.path }, `${/^research-v[34]$/.test(it.renderer) ? '新模板 · ' : ''}${it.name}`),
         h('button', { class: 'btn btn--sm', onclick: () => api.open(it.path) }, '▶ 打开'),
         h('button', { class: 'btn btn--sm btn--primary', onclick: () => publish(it.path) }, '投稿'),
         h('button', { class: 'btn btn--sm btn--ghost', onclick: () => api.reveal(it.path) }, '📂')));

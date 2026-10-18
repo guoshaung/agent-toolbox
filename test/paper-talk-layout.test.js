@@ -6,10 +6,13 @@ const root=path.join(__dirname,'..'),bin=path.join(root,'resources/bin/papervid'
 const native=process.platform==='darwin' && fs.existsSync(bin);
 test('安装版要求新版模板引擎，不静默沿用旧模板',()=>{
   const source=fs.readFileSync(path.join(root,'src/main/paper-talk-service.js'),'utf8');
-  assert.match(source,/=== 'papervid 3'/);assert.match(source,/papervid-v3/);
+  assert.match(source,/=== 'papervid 4'/);assert.match(source,/papervid-v4/);
+  const nativeSource=fs.readFileSync(path.join(root,'src/main/native/papervid.swift'),'utf8');
+  assert.ok(!nativeSource.includes('textBlock(pos,'));
+  assert.ok(!nativeSource.includes('textBlock(s["caption"]'));
 });
 test('原生模板渲染封面、三栏讲解、四要点对比和表格，无溢出', {skip:!native},t=>{
-  assert.equal(cp.execFileSync(bin,['version'],{encoding:'utf8'}).trim(),'papervid 3');
+  assert.equal(cp.execFileSync(bin,['version'],{encoding:'utf8'}).trim(),'papervid 4');
   const dir=fs.mkdtempSync(path.join(os.tmpdir(),'paper-layout-'));t.after(()=>fs.rmSync(dir,{recursive:true,force:true}));
   const base={chapter:'方法',title:'序列多智能体系统的信息论隐私控制',takeaway:'用原文机制和证据解释方法，保留结论的适用边界',source:'Section 5 / 原文事实',speaker:'甲·主持',caption:'核心机制与证据需要对应',focus:0};
   const points=Array.from({length:4},(_,i)=>({heading:'方法要点'+i,detail:'这里保留完整的机制说明和证据，不只展示标题，也不会用空白页补足页数。'}));
