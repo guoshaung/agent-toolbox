@@ -136,7 +136,11 @@ class PaperTalkService {
       const env = { ...process.env, PATH: `${path.dirname(bin)}:${process.env.PATH || ''}` };
       // 剥掉会覆盖订阅代理的变量；并清掉 HTTP(S)_PROXY —— 订阅端点要直连，走代理会 ECONNREFUSED（实测）
       for (const k of Object.keys(env)) if (/^ANTHROPIC_|^CLAUDE_CODE_|^CLAUDECODE$|^CLAUDE_PID$|^CLAUDE_EFFORT$|^(HTTPS?|ALL)_PROXY$|^(https?|all)_proxy$|^NO_PROXY$|^no_proxy$/.test(k)) delete env[k];
-      const args = ['-p', String(prompt || ''), '--output-format', 'json', '--allowedTools', ''];
+      // 论文讲解走本机 Claude 订阅，不应继承用户给 cc-switch/中转配置的
+      // settings.json。该配置可能指向已经停止的 127.0.0.1 端口，表现为
+      // ECONNREFUSED；空 setting source 仍保留 CLI 自己的登录态，但跳过
+      // user/project/local settings（尤其是 ANTHROPIC_BASE_URL）。
+      const args = ['--setting-sources', '', '-p', String(prompt || ''), '--output-format', 'json', '--allowedTools', ''];
       const child = spawn(bin, args, { env, stdio: ['ignore', 'pipe', 'pipe'], detached: process.platform !== 'win32' });
       let out = '', err = '';
       const killer = setTimeout(() => { try { process.kill(-child.pid, 'SIGKILL'); } catch { child.kill(); } }, 8 * 60 * 1000);
