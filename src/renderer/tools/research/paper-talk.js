@@ -2,7 +2,7 @@ import { h, toast } from '../../core/ui.js';
 
 /**
  * 论文讲解：贴一个 arXiv 链接，出一条「组会式」对话讲解 mp4（甲主持 + 乙专家）。
- * 读论文、写脚本走配置的 AI 接口；配音用 macOS 系统中文嗓；
+ * 读论文、写脚本走配置的 AI 接口；配音默认火山语音 2.0；
  * 画面 + 合成用随包的 papervid（AVFoundation，不依赖 ffmpeg）。
  */
 const STYLE = `
@@ -42,9 +42,9 @@ export function createPaperTalk(root, ctx) {
   const input = h('input', { class: 'field', type: 'text', placeholder: 'arXiv 链接或编号，如 1706.03762 或 https://arxiv.org/abs/1706.03762',
     value: config.get('research.papertalk.last', '') });
   const voiceSel = h('select', { class: 'field pt__voice' },
-    h('option', { value: 'mf' }, '配音：男女（Li-mu + 婷婷）'),
-    h('option', { value: 'ff' }, '配音：女女（婷婷 + 雨舒）'),
-    h('option', { value: 'mm' }, '配音：男男（需另下中文男声）'));
+    h('option', { value: 'mf' }, '火山男女声：云舟 + 小何'),
+    h('option', { value: 'ff' }, '火山女女声：小何 + Vivi'),
+    h('option', { value: 'mm' }, '火山男男声：云舟 + 小天'));
   voiceSel.value = config.get('research.papertalk.voice', 'mf');
   const cg = h('textarea', { class: 'field pt__cg', rows: '3',
     placeholder: 'CogniGuard 一句话简介（可留空）：它解决什么问题、核心方法——用于片尾「CogniGuard 视角」点评',
@@ -69,6 +69,23 @@ export function createPaperTalk(root, ctx) {
   const publishPanel = h('div', { class: 'pt__publication' });
   const outline = h('details', { open: '', style: 'border-top:1px solid var(--line);padding-top:10px' });
   const historyWrap = h('div', { class: 'pt__history' });
+  const voiceInfo = h('div', {class:'faint',style:'font-size:12px'}, '火山语音 2.0 · 男女独立音色 · 重点重音与自然停顿');
+  const voiceKey = h('input',{class:'field',type:'password',autocomplete:'off',placeholder:'火山语音 API Key（仅本机加密保存）','aria-label':'火山语音密钥'});
+  const voicePlayers = h('div', {class:'pt__row'});
+  const saveVoice = h('button',{class:'btn btn--sm',onclick:async()=>{
+    saveVoice.disabled=true;
+    try {const r=await api.voiceSave(voiceKey.value); if(r.ok){voiceKey.value='';voiceInfo.textContent='火山语音已配置 · 男主持云舟 2.0 / 女讲解小何 2.0 · 密钥仅在本机密钥箱';} else toast(r.error);}
+    catch(e){toast(e.message);} finally{saveVoice.disabled=false;}
+  }},'加密保存语音密钥');
+  const previewVoice = h('button',{class:'btn btn--sm',onclick:async()=>{
+    previewVoice.disabled=true;voiceInfo.textContent='正在合成男女声试听（使用火山语音额度）…';
+    try {const r=await api.voicePreview();if(!r.ok)throw new Error(r.error);voicePlayers.innerHTML='';
+      for(const item of r.files)voicePlayers.append(h('label',{},item.speaker==='A'?'男主持 · 云舟':'女讲解 · 小何',h('audio',{controls:'',src:'file://'+item.file+'?t='+Date.now()})));
+      voiceInfo.textContent='试听已生成。重点页略放慢，提问、解释与结论采用不同语气。';
+    }catch(e){voiceInfo.textContent='试听失败：'+e.message;}finally{previewVoice.disabled=false;}
+  }},'试听男女声');
+  const voiceSettings=h('details',{},h('summary',{},'内置配音 · 火山语音 2.0'),voiceInfo,h('div',{class:'pt__row'},voiceKey,saveVoice,previewVoice),voicePlayers);
+  api.voiceStatus?.().then(r=>{if(r.configured)voiceInfo.textContent='火山语音已配置 · 男主持云舟 2.0 / 女讲解小何 2.0 · 密钥仅在本机密钥箱';}).catch(()=>{});
 
   function renderPlan(slides) {
     if (!slides?.length) return;
@@ -85,7 +102,7 @@ export function createPaperTalk(root, ctx) {
       h('strong', {}, '论文讲解'),
       h('span', { class: 'faint' }, '组会式 · 甲主持 + 乙专家 · 一条 mp4')),
     h('div', { class: 'pt__row' }, input, voiceSel, goBtn, testBtn),
-    cg,
+    voiceSettings, cg,
     barWrap, status, publishPanel, outline, result,
     h('div', { class: 'pt__head', style: 'margin-top:14px' }, h('strong', {}, '历史'), h('span', { class: 'faint' }, '都在 userData/paper-talk/')),
     historyWrap));

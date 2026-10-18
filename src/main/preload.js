@@ -750,6 +750,9 @@ contextBridge.exposeInMainWorld('toolbox', {
   },
 
   paperTalk: {
+    voiceStatus: () => ipcRenderer.invoke('papertalk:voiceStatus'),
+    voiceSave: (key) => ipcRenderer.invoke('papertalk:voiceSave', key),
+    voicePreview: () => ipcRenderer.invoke('papertalk:voicePreview'),
     run: (payload) => ipcRenderer.invoke('papertalk:run', payload),
     test: () => ipcRenderer.invoke('papertalk:test'),
     plan: (input) => ipcRenderer.invoke('papertalk:plan', input),

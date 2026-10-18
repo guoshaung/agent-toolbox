@@ -2054,14 +2054,17 @@ function registerIpc() {
     console.error('[orchestrator] 未加载（文件可能未打包）：', err.message);
   }
 
-  // ---- 论文讲解：宿主侧出片（arXiv → Claude 写对话脚本 → say + papervid 合成 mp4；依赖 macOS，不进容器）----
+  // ---- 论文讲解：分层教学页 + 火山双人配音 + papervid ----
   try {
     const { PaperTalkService } = require('./paper-talk-service');
     const { resolveClaude } = require('./orchestrator-service');
+    const voiceConfig = require('./paper-talk-voice-config').createVoiceConfig({ vault, store });
+    const synthesizeVoice = options => require('./paper-talk-tts').synthesizeSpeech({ ...options, apiKey:voiceConfig.credential() });
     const paperTalk = new PaperTalkService({
       userDataDir: app.getPath('userData'),
       resourcesDir: app.isPackaged ? process.resourcesPath : path.join(__dirname, '..', '..', 'resources'),
       resolveClaude,
+      synthesizeVoice,
       generateScript: async (prompt) => {
         const cfg = store.get('research.papertalk.api', {});
         const credential = cfg.vaultId ? vault.keyOf(String(cfg.vaultId)) : { ok: true, key: readApiKey() };
@@ -2077,7 +2080,31 @@ function registerIpc() {
       },
       emit: (e) => { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('papertalk:progress', e); },
     });
-    ipcMain.handle('papertalk:run', (_e, payload) => paperTalk.run(payload || {}));
+    ipcMain.handle('papertalk:run', (_e, payload) => {
+      try { voiceConfig.credential(); return paperTalk.run(payload || {}); }
+      catch (e) { return {ok:false,error:e.message}; }
+    });
+    ipcMain.handle('papertalk:voiceStatus', () => voiceConfig.status());
+    ipcMain.handle('papertalk:voiceSave', (_e, key) => voiceConfig.save(key));
+    let previewBusy = false;
+    ipcMain.handle('papertalk:voicePreview', async () => {
+      if (previewBusy) return {ok:false,error:'正在生成试听，请稍候'};
+      previewBusy = true;
+      try {
+        const key = voiceConfig.credential();
+        const files = [];
+        for (const [speaker,text,delivery] of [
+          ['A','等一下，这篇论文真正想解决的，究竟是什么问题？我们先抓住最关键的一点。','curious'],
+          ['B','关键不在于模型答对了多少题，而在于：当多个智能体开始协作，风险会怎样一步步出现。这才是我们要重点看的。','emphasize'],
+        ]) {
+          const audio = await require('./paper-talk-tts').synthesizeSpeech({apiKey:key,voiceMode:'mf',segment:{speaker,text,delivery,focus:0},slide:{emphasis:'core',points:[{heading:'多智能体协作中的风险机制'}]}});
+          const file = path.join(paperTalk.outDir,`voice-preview-${speaker}.mp3`);
+          fs.writeFileSync(file,audio,{mode:0o600}); files.push({speaker,file});
+        }
+        return {ok:true,files};
+      } catch (e) {return {ok:false,error:e.message};}
+      finally {previewBusy=false;}
+    });
     ipcMain.handle('papertalk:test', async () => {
       try {
         await paperTalk.generateScript('只回复 OK，不要其他内容。');

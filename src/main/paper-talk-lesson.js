@@ -64,7 +64,8 @@ function normalizeNarration(raw, plan) {
     lastIndex = index;
     const focus = Number.isInteger(s.focus) && s.focus >= 0 && s.focus < slide.points.length ? s.focus : -1;
     used.set(slideId, (used.get(slideId) || 0) + 1);
-    return { slideId, speaker: s.speaker === 'B' ? 'B' : 'A', text, focus,
+    const delivery = ['curious', 'explain', 'emphasize', 'reflect'].includes(s.delivery) ? s.delivery : '';
+    return { slideId, speaker: s.speaker === 'B' ? 'B' : 'A', text, focus, delivery,
       title: slide.title, subtitle: String(s.caption || slide.takeaway).slice(0, 72) };
   });
   for (const slide of plan.slides) if ((used.get(slide.id) || 0) < 2) throw new Error(`「${slide.title}」需要至少两轮对话，不能一句话换一页`);
