@@ -57,10 +57,10 @@ class PaperTalkService {
     const bundled = path.join(this.resourcesDir, 'bin', 'papervid');
     try {
       fs.accessSync(bundled, fs.constants.X_OK);
-      if (spawnSync(bundled, ['version'], { encoding: 'utf8', timeout: 3000 }).stdout?.trim() === 'papervid 2') return bundled;
+      if (spawnSync(bundled, ['version'], { encoding: 'utf8', timeout: 3000 }).stdout?.trim() === 'papervid 3') return bundled;
     } catch { /* Build the matching source if the installed renderer is older. */ }
-    // The v2 page renderer needs its matching binary, rather than an old bundled title-card renderer.
-    const versioned = path.join(this.userDataDir, 'papervid-v2');
+    // Never silently reuse the old template after a renderer upgrade.
+    const versioned = path.join(this.userDataDir, 'papervid-v3');
     const src = path.join(__dirname, 'native', 'papervid.swift');
     if (fs.existsSync(src)) {
       const hash = require('node:crypto').createHash('sha256').update(fs.readFileSync(src)).digest('hex');
@@ -334,7 +334,7 @@ class PaperTalkService {
     }
     fs.writeFileSync(out.replace(/\.mp4$/, '.srt'), srt.join('\n'));
     fs.writeFileSync(out.replace(/\.mp4$/, '.lesson.md'), lessonNotes(script));
-    fs.writeFileSync(out.replace(/\.mp4$/, '.timeline.json'), JSON.stringify({ title: script.title, slides: script.slides, timeline }, null, 2));
+    fs.writeFileSync(out.replace(/\.mp4$/, '.timeline.json'), JSON.stringify({ title: script.title, renderer: 'research-v3', slides: script.slides, timeline }, null, 2));
     try { fs.rmSync(work, { recursive: true, force: true }); } catch { /* */ }
     return out;
   }
@@ -382,7 +382,11 @@ class PaperTalkService {
   list() {
     try {
       return fs.readdirSync(this.outDir).filter((f) => f.endsWith('.mp4'))
-        .map((f) => ({ name: f, path: path.join(this.outDir, f), at: fs.statSync(path.join(this.outDir, f)).mtimeMs }))
+        .map((f) => {
+          let renderer = '';
+          try {renderer=JSON.parse(fs.readFileSync(path.join(this.outDir,f.replace(/\.mp4$/,'.timeline.json')),'utf8')).renderer||'';}catch{}
+          return {name:f,path:path.join(this.outDir,f),at:fs.statSync(path.join(this.outDir,f)).mtimeMs,renderer};
+        })
         .sort((a, b) => b.at - a.at);
     } catch { return []; }
   }

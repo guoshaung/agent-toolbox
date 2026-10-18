@@ -6,16 +6,25 @@ import Foundation
 import AVFoundation
 import AppKit
 
-// V2: complete teaching pages. Narration turns share a page; only emphasis changes.
-let ink = NSColor(srgbRed: 0.13, green: 0.18, blue: 0.24, alpha: 1)
-let blue = NSColor(srgbRed: 0.08, green: 0.38, blue: 0.66, alpha: 1)
+// V3: research editorial theme. One stable composition per teaching page.
+func rgb(_ hex: UInt32) -> NSColor {
+    NSColor(srgbRed: CGFloat((hex >> 16) & 255) / 255, green: CGFloat((hex >> 8) & 255) / 255, blue: CGFloat(hex & 255) / 255, alpha: 1)
+}
+let ink = rgb(0x162D43), blue = rgb(0x245B87), teal = rgb(0x087F82)
+let secondary = rgb(0x526678), muted = rgb(0x6E8293), ruleColor = rgb(0xDCE6EE)
+let paperColor = rgb(0xF7FAFC)
+
+func fill(_ box: NSRect, _ color: NSColor) { color.setFill(); box.fill() }
+func rule(_ x: CGFloat, _ y: CGFloat, _ width: CGFloat, _ color: NSColor = ruleColor) {
+    fill(NSRect(x: x, y: y, width: width, height: 1.5), color)
+}
 
 @discardableResult
 func textBlock(_ text: String, x: CGFloat, top: CGFloat, width: CGFloat, height: CGFloat,
                size: CGFloat, bold: Bool = false, color: NSColor = ink) -> CGFloat {
-    let para = NSMutableParagraphStyle(); para.lineSpacing = 6
+    let para = NSMutableParagraphStyle(); para.lineSpacing = 5
     for fontSize in stride(from: size, through: max(17, size - 3), by: -1) {
-        let font = NSFont.systemFont(ofSize: fontSize, weight: bold ? .semibold : .regular)
+        let font = NSFont(name: bold ? "PingFangSC-Semibold" : "PingFangSC-Regular", size: fontSize) ?? NSFont.systemFont(ofSize: fontSize, weight: bold ? .semibold : .regular)
         let attr: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: color, .paragraphStyle: para]
         let s = NSAttributedString(string: text, attributes: attr)
         let measured = s.boundingRect(with: NSSize(width: width, height: 10000), options: [.usesLineFragmentOrigin, .usesFontLeading]).height
@@ -32,77 +41,102 @@ func teachingPage(specPath: String, out: String) {
     let s = try! JSONSerialization.jsonObject(with: data) as! [String: Any]
     let W: CGFloat = 1600, H: CGFloat = 900
     let img = NSImage(size: NSSize(width: W, height: H)); img.lockFocus()
-    NSColor.white.setFill(); NSRect(x: 0, y: 0, width: W, height: H).fill()
-    NSColor(srgbRed: 0.18, green: 0.23, blue: 0.30, alpha: 1).setFill()
-    NSRect(x: 0, y: H - 105, width: W, height: 105).fill()
+    fill(NSRect(x: 0, y: 0, width: W, height: H), paperColor)
     let chapter = s["chapter"] as? String ?? "论文讲解"
-    textBlock("【\(chapter)】\(s["title"] as? String ?? "")", x: 54, top: H - 28, width: 1450, height: 67, size: 39, bold: true, color: .white)
-    textBlock(s["takeaway"] as? String ?? "", x: 60, top: H - 135, width: 1480, height: 90, size: 29, bold: true, color: blue)
-
+    let title = s["title"] as? String ?? ""
+    let takeaway = s["takeaway"] as? String ?? ""
+    let pos = s["pageLabel"] as? String ?? ""
+    textBlock(chapter, x: 70, top: 858, width: 1100, height: 30, size: 18, bold: true, color: teal)
+    textBlock(pos, x: 1425, top: 858, width: 105, height: 30, size: 18, color: muted)
+    rule(70, 812, 1460)
     let points = s["points"] as? [[String: String]] ?? []
     let focus = s["focus"] as? Int ?? -1
     let layout = s["layout"] as? String ?? "outline"
-    let top: CGFloat = 670, bottom: CGFloat = 175, contentH = top - bottom
+    let top: CGFloat = 615, bottom: CGFloat = 185, contentH = top - bottom
     let figurePath = s["figurePath"] as? String ?? ""
     let figure = figurePath.isEmpty ? nil : NSImage(contentsOfFile: figurePath)
+    let introductory = pos.split(separator: "/").first?.trimmingCharacters(in: .whitespaces) == "1" && figure == nil && layout != "table"
+    if !introductory {
+        textBlock(title, x: 70, top: 787, width: 1460, height: 77, size: 41, bold: true)
+        textBlock(takeaway, x: 73, top: 710, width: 1450, height: 75, size: 26, bold: true, color: blue)
+    }
 
-    func drawPoints(x: CGFloat, width: CGFloat, start: Int = 0, end: Int? = nil, yTop: CGFloat = 670, availableH: CGFloat = 495) {
+    func point(_ i: Int, x: CGFloat, y: CGFloat, width: CGFloat, height: CGFloat, compact: Bool = false) {
+        let active = i == focus
+        let heading = points[i]["heading"] ?? "", detail = points[i]["detail"] ?? ""
+        let font: CGFloat = compact ? 23 : 28
+        let headingH = textBlock(heading, x: x, top: y, width: width, height: min(height * 0.42, 90), size: font, bold: true, color: active ? teal : ink)
+        let underlineW = min(width, CGFloat(heading.count) * font)
+        if active { fill(NSRect(x: x, y: y - headingH - 6, width: underlineW, height: 3), teal.withAlphaComponent(0.5)) }
+        let gap: CGFloat = compact ? 9 : 18
+        textBlock(detail, x: x, top: y - headingH - gap, width: width, height: height - headingH - gap - 3, size: compact ? 21 : 25, color: secondary)
+    }
+    func drawPoints(x: CGFloat, width: CGFloat, start: Int = 0, end: Int? = nil, yTop: CGFloat = 615, availableH: CGFloat = 430) {
         let stop = min(end ?? points.count, points.count)
         guard stop > start else { return }
         let rowH = availableH / CGFloat(stop - start)
         for i in start..<stop {
             let y = yTop - CGFloat(i - start) * rowH
-            let active = i == focus
-            if active {
-                blue.setFill(); NSRect(x: x - 16, y: y - rowH + 18, width: 4, height: rowH - 23).fill()
-            }
-            let label = "\(i + 1). " + (points[i]["heading"] ?? "")
-            let hh = textBlock(label, x: x, top: y, width: width, height: rowH * 0.45, size: 26, bold: true, color: active ? blue : ink)
-            textBlock(points[i]["detail"] ?? "", x: x + 30, top: y - hh - 11, width: width - 30, height: rowH - hh - 23, size: 23,
-                      color: NSColor(srgbRed: 0.27, green: 0.31, blue: 0.36, alpha: 1))
+            point(i, x: x, y: y, width: width, height: rowH - 7, compact: true)
+            if i < stop - 1 { rule(x, y - rowH + 3, width) }
         }
+    }
+    func drawFigure(_ fig: NSImage, _ box: NSRect) {
+        fill(box, .white)
+        let inner = box.insetBy(dx: 16, dy: 12)
+        let scale = min(inner.width / fig.size.width, inner.height / fig.size.height)
+        let size = NSSize(width: fig.size.width * scale, height: fig.size.height * scale)
+        fig.draw(in: NSRect(x: inner.midX - size.width / 2, y: inner.midY - size.height / 2, width: size.width, height: size.height))
     }
 
-    if layout == "table", let table = s["table"] as? [String: Any], let cols = table["columns"] as? [String], let rows = table["rows"] as? [[String]], !cols.isEmpty {
-        let x: CGFloat = 55, width: CGFloat = 980, rowH = contentH / CGFloat(rows.count + 1), colW = width / CGFloat(cols.count)
+    if introductory {
+        // Title and explanatory points form one composition, rather than an empty cover.
+        textBlock(title, x: 72, top: 748, width: 700, height: 230, size: 55, bold: true)
+        textBlock(takeaway, x: 74, top: 482, width: 700, height: 200, size: 32, color: blue)
+        fill(NSRect(x: 850, y: 198, width: 2, height: 545), ruleColor)
+        drawPoints(x: 910, width: 620, yTop: 743, availableH: 545)
+    } else if layout == "table", let table = s["table"] as? [String: Any], let cols = table["columns"] as? [String], let rows = table["rows"] as? [[String]], !cols.isEmpty {
+        let x: CGFloat = 70, width: CGFloat = 960, rowH = contentH / CGFloat(rows.count + 1), colW = width / CGFloat(cols.count)
         for r in 0...rows.count {
             let y = top - CGFloat(r) * rowH
-            if r == 0 { blue.setFill() } else { (r % 2 == 0 ? NSColor(white: 0.96, alpha: 1) : NSColor.white).setFill() }
-            NSRect(x: x, y: y - rowH, width: width, height: rowH).fill()
+            fill(NSRect(x: x, y: y - rowH, width: width, height: rowH), r == 0 ? blue : r % 2 == 0 ? rgb(0xEDF3F8) : .white)
             let values = r == 0 ? cols : rows[r - 1]
             for c in 0..<cols.count {
-                textBlock(values[c], x: x + CGFloat(c) * colW + 12, top: y - 12, width: colW - 24, height: rowH - 22, size: r == 0 ? 23 : 21, bold: r == 0, color: r == 0 ? .white : ink)
+                textBlock(values[c], x: x + CGFloat(c) * colW + 16, top: y - 14, width: colW - 32, height: rowH - 25, size: r == 0 ? 22 : 21, bold: r == 0, color: r == 0 ? .white : ink)
             }
         }
-        drawPoints(x: 1080, width: 455)
+        drawPoints(x: 1080, width: 450)
     } else if let fig = figure, fig.size.width / fig.size.height > 2.2 {
-        let box = NSRect(x: 60, y: 355, width: 1480, height: 315)
-        let scale = min(box.width / fig.size.width, box.height / fig.size.height)
-        let size = NSSize(width: fig.size.width * scale, height: fig.size.height * scale)
-        fig.draw(in: NSRect(x: box.midX - size.width / 2, y: box.midY - size.height / 2, width: size.width, height: size.height))
-        let colW = 1480 / CGFloat(max(points.count, 1))
-        for i in 0..<points.count { drawPoints(x: 65 + CGFloat(i) * colW, width: colW - 35, start: i, end: i + 1, yTop: 325, availableH: 150) }
+        drawFigure(fig, NSRect(x: 70, y: 370, width: 1460, height: 225))
+        let colW = 1490 / CGFloat(max(points.count, 1))
+        for i in 0..<points.count { point(i, x: 70 + CGFloat(i) * colW, y: 334, width: colW - 30, height: 155, compact: true) }
     } else if let fig = figure {
-        let box = NSRect(x: 55, y: bottom + 5, width: 930, height: contentH - 10)
-        let scale = min(box.width / fig.size.width, box.height / fig.size.height)
-        let size = NSSize(width: fig.size.width * scale, height: fig.size.height * scale)
-        fig.draw(in: NSRect(x: box.midX - size.width / 2, y: box.midY - size.height / 2, width: size.width, height: size.height))
-        drawPoints(x: 1050, width: 485)
-    } else if layout == "comparison", points.count == 4 {
-        NSColor(white: 0.85, alpha: 1).setFill(); NSRect(x: 795, y: bottom, width: 1, height: contentH).fill()
-        drawPoints(x: 65, width: 665, start: 0, end: 2)
-        drawPoints(x: 860, width: 665, start: 2, end: 4)
+        drawFigure(fig, NSRect(x: 70, y: bottom, width: 920, height: contentH + 10))
+        drawPoints(x: 1050, width: 480)
+    } else if points.count == 4 {
+        let colW: CGFloat = 680, rowH: CGFloat = 205
+        for i in 0..<4 {
+            let col = layout == "comparison" ? i / 2 : i % 2
+            let row = layout == "comparison" ? i % 2 : i / 2
+            let x: CGFloat = col == 0 ? 70 : 850
+            let y = top - CGFloat(row) * rowH
+            if row == 1 { rule(x, y + 23, colW) }
+            point(i, x: x, y: y, width: colW, height: rowH - 32)
+        }
     } else {
-        drawPoints(x: 75, width: 1440)
+        let count = max(points.count, 1), colW = 1490 / CGFloat(count)
+        for i in 0..<points.count {
+            let x = 70 + CGFloat(i) * colW
+            point(i, x: x, y: 565, width: colW - 50, height: 335)
+        }
     }
     let source = s["source"] as? String ?? ""
-    let pos = s["pageLabel"] as? String ?? ""
-    textBlock("来源：\(source)", x: 55, top: 146, width: 1340, height: 48, size: 17, color: .gray)
-    textBlock(pos, x: 1430, top: 146, width: 120, height: 48, size: 18, color: .gray)
-    NSColor(white: 0.96, alpha: 1).setFill(); NSRect(x: 0, y: 0, width: W, height: 88).fill()
+    rule(70, 157, 1460)
+    textBlock("来源：\(source)", x: 70, top: 143, width: 1460, height: 45, size: 17, color: muted)
+    fill(NSRect(x: 0, y: 0, width: W, height: 88), rgb(0xEAF1F6))
     let speaker = s["speaker"] as? String ?? ""
-    textBlock(speaker, x: 55, top: 64, width: 150, height: 43, size: 23, bold: true, color: blue)
-    textBlock(s["caption"] as? String ?? "", x: 220, top: 66, width: 1320, height: 50, size: 25)
+    textBlock(speaker, x: 70, top: 60, width: 150, height: 43, size: 21, bold: true, color: teal)
+    textBlock(s["caption"] as? String ?? "", x: 240, top: 62, width: 1290, height: 52, size: 24)
     img.unlockFocus()
     guard let tiff = img.tiffRepresentation, let rep = NSBitmapImageRep(data: tiff), let png = rep.representation(using: .png, properties: [:]) else { exit(1) }
     try! png.write(to: URL(fileURLWithPath: out))
@@ -215,8 +249,36 @@ func mux(manifestPath: String, outPath: String) {
         }
         durs.append(dur); cursor = cursor + dur
     }
-    let total = cursor
+    exportVideo(comp: comp, segs: segs, durs: durs, total: cursor, w: w, h: h, outPath: outPath)
+}
 
+// Restyle existing lessons without calling either the language or speech model again.
+func restyle(manifestPath: String, outPath: String) {
+    let obj = try! JSONSerialization.jsonObject(with: Data(contentsOf: URL(fileURLWithPath: manifestPath))) as! [String: Any]
+    let original = obj["video"] as! String
+    guard !FileManager.default.fileExists(atPath: outPath), URL(fileURLWithPath: original).standardizedFileURL != URL(fileURLWithPath: outPath).standardizedFileURL else {
+        FileHandle.standardError.write(Data("restyle requires a new output path\n".utf8)); exit(2)
+    }
+    let frames = obj["frames"] as! [[String: Any]]
+    let source = AVURLAsset(url: URL(fileURLWithPath: original))
+    let total = source.duration
+    guard !frames.isEmpty, let audio = source.tracks(withMediaType: .audio).first else { exit(2) }
+    let comp = AVMutableComposition()
+    let track = comp.addMutableTrack(withMediaType: .audio, preferredTrackID: kCMPersistentTrackID_Invalid)!
+    try! track.insertTimeRange(CMTimeRange(start: .zero, duration: total), of: audio, at: .zero)
+    var durs: [CMTime] = [], segs: [[String: String]] = []
+    for (i, frame) in frames.enumerated() {
+        let image = frame["image"] as! String
+        guard FileManager.default.fileExists(atPath: image) else { exit(2) }
+        let start = CMTime(seconds: frame["start"] as! Double, preferredTimescale: 60000)
+        let end = i + 1 < frames.count ? CMTime(seconds: frames[i + 1]["start"] as! Double, preferredTimescale: 60000) : total
+        guard CMTimeCompare(end, start) > 0 else { exit(2) }
+        durs.append(CMTimeSubtract(end, start)); segs.append(["image": image])
+    }
+    exportVideo(comp: comp, segs: segs, durs: durs, total: total, w: 1600, h: 900, outPath: outPath)
+}
+
+func exportVideo(comp: AVMutableComposition, segs: [[String: String]], durs: [CMTime], total: CMTime, w: Int, h: Int, outPath: String) {
     // 先写纯视频
     let vurl = URL(fileURLWithPath: NSTemporaryDirectory() + "pv_\(UUID().uuidString).mp4")
     let writer = try! AVAssetWriter(outputURL: vurl, fileType: .mp4)
@@ -258,7 +320,7 @@ func mux(manifestPath: String, outPath: String) {
 let a = CommandLine.arguments
 switch a.count >= 2 ? a[1] : "" {
 case "version":
-    print("papervid 2")
+    print("papervid 3")
 case "page":
     teachingPage(specPath: a[2], out: a[3])
 case "duration":
@@ -270,6 +332,8 @@ case "slide":
     print("OK \(a[2])")
 case "mux":
     mux(manifestPath: a[2], outPath: a[3])
+case "restyle":
+    restyle(manifestPath: a[2], outPath: a[3])
 default:
     print("usage: papervid slide out.png W H speaker title subtitle [fig.png] | papervid mux manifest.json out.mp4")
 }
