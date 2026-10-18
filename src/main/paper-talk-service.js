@@ -20,7 +20,8 @@ const VOICE_SETS = {
 };
 
 class PaperTalkService {
-  constructor({ userDataDir, resourcesDir, resolveClaude, generateScript, synthesizeVoice, emit } = {}) {
+  constructor({ userDataDir, resourcesDir, resolveClaude, generateScript, synthesizeVoice, emit, ensureRelay } = {}) {
+    this.ensureRelay = typeof ensureRelay === 'function' ? ensureRelay : () => this._ensureRelay();
     this.userDataDir = userDataDir || path.join(os.homedir(), '.agent-toolbox');
     this.resourcesDir = resourcesDir || path.join(__dirname, '..', '..', 'resources');
     this.resolveClaude = resolveClaude || (() => null);
@@ -134,7 +135,15 @@ class PaperTalkService {
     if (this.generateScript) return this.generateScript(prompt, { jsonMode:true });
     const bin = this.resolveClaude();
     if (!bin) throw new Error('请先配置论文讲解 AI 接口');
-    return this._claude(bin, prompt);
+    try {
+      return await this._claude(bin, prompt);
+    } catch (e) {
+      // 跳过 settings 后 CLI 没有自己的订阅登录态（这台机器的 claude 一直靠 CC Switch 中转）：
+      // 拉起 settings.json 指向的本机中转，再带 settings 重试一次。别的错误原样抛。
+      if (!/Not logged in|\/login|Invalid API key|authentication/i.test(e.message)) throw e;
+      await this.ensureRelay();
+      return this._claude(bin, prompt, { useSettings: true });
+    }
   }
 
   _paperContext(paper, cg) {
@@ -213,7 +222,7 @@ class PaperTalkService {
 
   // 按 orchestrator 验证过的可用写法：prompt 当参数 + --output-format json（一次性非交互，
   // 不走 stream-json 初始化，避开桥接版 claude 的挂起）；env 剥掉污染变量、PATH 前置 claude 目录，走订阅、不要 key。
-  _claude(bin, prompt) {
+  _claude(bin, prompt, { useSettings = false } = {}) {
     return new Promise((resolve, reject) => {
       const env = { ...process.env, PATH: `${path.dirname(bin)}:${process.env.PATH || ''}` };
       // 剥掉会覆盖订阅代理的变量；并清掉 HTTP(S)_PROXY —— 订阅端点要直连，走代理会 ECONNREFUSED（实测）
@@ -222,7 +231,7 @@ class PaperTalkService {
       // settings.json。该配置可能指向已经停止的 127.0.0.1 端口，表现为
       // ECONNREFUSED；空 setting source 仍保留 CLI 自己的登录态，但跳过
       // user/project/local settings（尤其是 ANTHROPIC_BASE_URL）。
-      const args = ['--setting-sources', '', '-p', String(prompt || ''), '--output-format', 'json', '--allowedTools', ''];
+      const args = [...(useSettings ? [] : ['--setting-sources', '']), '-p', String(prompt || ''), '--output-format', 'json', '--allowedTools', ''];
       const child = spawn(bin, args, { env, stdio: ['ignore', 'pipe', 'pipe'], detached: process.platform !== 'win32' });
       let out = '', err = '';
       const killer = setTimeout(() => { try { process.kill(-child.pid, 'SIGKILL'); } catch { child.kill(); } }, 8 * 60 * 1000);
@@ -237,6 +246,29 @@ class PaperTalkService {
         if (code === 0 && text) resolve(text);
         else reject(new Error('claude 失败：' + ((err.trim() || '退出码 ' + code)).slice(0, 300)));
       });
+    });
+  }
+
+  // settings.json 若把 ANTHROPIC_BASE_URL 指到本机中转（这台是 CC Switch 的 127.0.0.1:15721），
+  // 中转没开时 claude 只会报 ECONNREFUSED：先探端口，没开就 open -a "CC Switch" 并等它起来。
+  async _ensureRelay() {
+    let base = '';
+    try { const s = JSON.parse(fs.readFileSync(path.join(os.homedir(), '.claude', 'settings.json'), 'utf8')); base = (s.env && s.env.ANTHROPIC_BASE_URL) || ''; } catch { /* 没配 */ }
+    const m = String(base).match(/^https?:\/\/(127\.0\.0\.1|localhost):(\d+)/i);
+    if (!m) return;
+    const port = Number(m[2]);
+    if (await this._portOpen(port)) return;
+    this._progress && this._progress('script', `claude 的本机中转 ${port} 没开，正在启动 CC Switch…`, 22);
+    try { spawnSync('open', ['-a', 'CC Switch']); } catch { /* */ }
+    for (let i = 0; i < 30; i += 1) { await new Promise((r) => setTimeout(r, 1000)); if (await this._portOpen(port)) return; }
+    throw new Error(`本机 claude 没登录订阅，要经 CC Switch（127.0.0.1:${port}）转发，但 CC Switch 没在运行。打开 CC Switch，或在论文讲解里配 API key 后再试。`);
+  }
+
+  _portOpen(port) {
+    return new Promise((resolve) => {
+      const sock = require('node:net').connect(port, '127.0.0.1');
+      const done = (v) => { try { sock.destroy(); } catch { /* */ } resolve(v); };
+      sock.once('connect', () => done(true)); sock.once('error', () => done(false)); setTimeout(() => done(false), 1500);
     });
   }
 
