@@ -49,6 +49,7 @@ export function createPaperTalk(root, ctx) {
   const cg = h('textarea', { class: 'field pt__cg', rows: '3',
     placeholder: 'CogniGuard 一句话简介（可留空）：它解决什么问题、核心方法——用于片尾「CogniGuard 视角」点评',
     value: config.get('research.papertalk.cg', '') });
+  cg.value = config.get('research.papertalk.cg', '');
   const goBtn = h('button', { class: 'btn btn--primary', onclick: run }, '🎬 生成讲解视频');
   const testBtn = h('button', { class: 'btn btn--ghost', onclick: async () => {
     if (busy) return;
@@ -112,6 +113,7 @@ export function createPaperTalk(root, ctx) {
     const d = r.draft; publicationId = d.id;
     const title = h('input', { class: 'field', value: d.title, maxlength: '80', 'aria-label': '投稿标题' });
     const desc = h('textarea', { class: 'field', rows: '8', value: d.description, maxlength: '2000', 'aria-label': '投稿简介' });
+    desc.value = d.description;
     const tags = h('input', { class: 'field', value: d.tags.join('，'), 'aria-label': '投稿标签' });
     const consent = h('input', { type: 'checkbox' });
     const note = h('div', { class: 'faint', style: 'font-size:12px;line-height:1.7' },
