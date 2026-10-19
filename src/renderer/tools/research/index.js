@@ -13,6 +13,7 @@ import { createAutoResearch } from './autoresearch.js';
 import { createZoteroPanel } from './zotero.js';
 import { createInnovation } from './innovation.js';
 import { createPaper } from './paper.js';
+import { createPaperTalk } from './paper-talk.js';
 import { applyResearchTheme } from './theme.js';
 
 export const SUB_SECTIONS = [
@@ -27,6 +28,7 @@ export const SUB_SECTIONS = [
   { id: 'library', label: '文献库', icon: 'archive' },
   { id: 'innovation', label: '创新图谱', icon: 'branch' },
   { id: 'paper', label: '论文', icon: 'pen' },
+  { id: 'papertalk', label: '论文讲解', icon: 'bot' },
   { id: 'zotero', label: 'Zotero', icon: 'book' },
   { id: 'autoresearch', label: '自动科研', icon: 'bot' },
 ];
@@ -76,6 +78,7 @@ export default {
       zotero: createZoteroPanel,
       innovation: createInnovation,
       paper: createPaper,
+      papertalk: createPaperTalk,
     };
 
     function selectSub(id) {

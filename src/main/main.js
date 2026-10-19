@@ -109,6 +109,7 @@ const PARTITIONS = {
   literature: 'persist:literature-download',
   focus: 'persist:focus',
   bilibili: 'persist:bilibili-study',
+  dsh: 'persist:dsh',
 };
 
 let store;
@@ -864,6 +865,7 @@ function createWindow(showOnReady = true) {
     const bilibiliSession = session.fromPartition(PARTITIONS.bilibili);
     const feishuSession = session.fromPartition(PARTITIONS.feishu);
     const researchSession = session.fromPartition(PARTITIONS.research);
+    const dshSession = session.fromPartition(PARTITIONS.dsh);
 
     // Windows Precision Touchpad 的双指捏合由 Chromium 在 WebContents 层消费，
     // guest 页面里的 wheel/touch 监听收不到。拦住整页缩放，转成视频播放器缩放。
@@ -959,6 +961,30 @@ function createWindow(showOnReady = true) {
             backgroundColor: '#ffffff',
             webPreferences: {
               partition: PARTITIONS.feishu,
+              contextIsolation: true,
+              nodeIntegration: false,
+              sandbox: process.platform !== 'darwin',
+            },
+          },
+        };
+      }
+
+      // DSH 面板里点「star 仓库 / GitHub 登录」是 window.open 弹窗（解锁 EAC 模型需要）。
+      // 默认分支会 deny 掉、转成文档工具的开标签事件 → DSH 这边没人接 = 点了不弹页面。
+      // 给它一个真窗口，并显式用同一个 persist:dsh partition —— 否则 GitHub 登录/授权的
+      // cookie 落在别的会话里，DSH 面板还是认为你没登录、star 不生效。
+      if (guest.session === dshSession) {
+        return {
+          action: 'allow',
+          overrideBrowserWindowOptions: {
+            width: 640,
+            height: 780,
+            parent: mainWindow,
+            autoHideMenuBar: true,
+            title: 'GitHub 授权 / Star',
+            backgroundColor: '#ffffff',
+            webPreferences: {
+              partition: PARTITIONS.dsh,
               contextIsolation: true,
               nodeIntegration: false,
               sandbox: process.platform !== 'darwin',
@@ -1890,7 +1916,13 @@ function registerIpc() {
     getUserDataPath: () => app.getPath('userData'), getMainWindow: () => mainWindow,
   });
   // 「代码」里内嵌的 VS Code（本地 code-server）；默认工作区 = 容器
-  registerVscodeIpc(ipcMain, { getUserDataPath: () => app.getPath('userData'), defaultFolder: () => containerRoot(() => app.getPath('userData')), getMainWindow: () => mainWindow });
+  registerVscodeIpc(ipcMain, {
+    getUserDataPath: () => app.getPath('userData'),
+    defaultFolder: () => containerRoot(() => app.getPath('userData')),
+    getMainWindow: () => mainWindow,
+    loadLastFolder: () => store.get('vscode.lastFolder', ''),
+    saveLastFolder: (f) => store.set('vscode.lastFolder', f),
+  });
   // 剪贴板历史：只在内存里留最近 30 条文字（不落盘 —— 剪贴板里常有密码），⌘K 里能搜回来
   const clipHistory = [];
   let clipLast = '';
@@ -2020,6 +2052,65 @@ function registerIpc() {
     });
   } catch (err) {
     console.error('[orchestrator] 未加载（文件可能未打包）：', err.message);
+  }
+
+  // ---- 论文讲解：宿主侧出片（arXiv → Claude 写对话脚本 → say + papervid 合成 mp4；依赖 macOS，不进容器）----
+  try {
+    const { PaperTalkService } = require('./paper-talk-service');
+    const { resolveClaude } = require('./orchestrator-service');
+    const paperTalk = new PaperTalkService({
+      userDataDir: app.getPath('userData'),
+      resourcesDir: app.isPackaged ? process.resourcesPath : path.join(__dirname, '..', '..', 'resources'),
+      resolveClaude,
+      emit: (e) => { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('papertalk:progress', e); },
+    });
+    ipcMain.handle('papertalk:run', (_e, payload) => paperTalk.run(payload || {}));
+    ipcMain.handle('papertalk:list', () => paperTalk.list());
+    ipcMain.handle('papertalk:reveal', (_e, p) => { shell.showItemInFolder(String(p || '')); return { ok: true }; });
+    ipcMain.handle('papertalk:open', (_e, p) => shell.openPath(String(p || '')));
+  } catch (err) {
+    console.error('[paper-talk] 未加载：', err.message);
+  }
+
+  // ---- LocalSend：局域网里的工具箱互相发现、互传文件/文字（UDP 53318 发现 + HTTP 传输；对方点接受才收）----
+  try {
+    const { LocalSendService } = require('./localsend-service');
+    const localSend = new LocalSendService({
+      userDataDir: app.getPath('userData'),
+      recvDir: path.join(app.getPath('downloads'), 'LocalSend'),
+      emit: (e) => {
+        if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('localsend:event', e);
+        if (e.type === 'incoming') {
+          try {
+            const what = e.files.length ? `${e.files.length} 个文件${e.text ? ' + 文字' : ''}` : '一段文字';
+            const n = new Notification({ title: `LocalSend：${e.from.name || e.from.ip}（#${e.from.code || '?'}）`, body: `想发给你 ${what}，点这里查看并接受` });
+            n.on('click', () => ensureMainWindow({ show: true }).webContents.send('app:navigate-tool', { id: 'localsend' }));
+            n.show();
+          } catch { /* */ }
+        }
+        if (e.type === 'file-received' && e.done) {
+          try { const n = new Notification({ title: 'LocalSend 收好了', body: `来自 ${e.from} · 在 下载/LocalSend` }); n.on('click', () => shell.showItemInFolder(e.path)); n.show(); } catch { /* */ }
+        }
+      },
+    });
+    localSend.start();
+    ipcMain.handle('localsend:info', () => localSend.info());
+    ipcMain.handle('localsend:peers', () => localSend.listPeers());
+    ipcMain.handle('localsend:pending', () => localSend.pendingList());
+    ipcMain.handle('localsend:history', () => localSend.getHistory());
+    ipcMain.handle('localsend:setName', (_e, name) => localSend.setName(name));
+    ipcMain.handle('localsend:addIp', (_e, ip) => localSend.addByIp(ip));
+    ipcMain.handle('localsend:send', (_e, payload) => localSend.send(payload || {}));
+    ipcMain.handle('localsend:respond', (_e, offerId, accept) => localSend.respond(offerId, accept));
+    ipcMain.handle('localsend:openFolder', () => shell.openPath(localSend.recvDir));
+    ipcMain.handle('localsend:reveal', (_e, p) => { shell.showItemInFolder(String(p || '')); return { ok: true }; });
+    ipcMain.handle('localsend:pickFiles', async () => {
+      const r = await dialog.showOpenDialog(mainWindow || undefined, { title: '选要发送的文件', properties: ['openFile', 'multiSelections'] });
+      return r.canceled ? [] : r.filePaths;
+    });
+    app.on('before-quit', () => { try { localSend.stop(); } catch { /* */ } });
+  } catch (err) {
+    console.error('[localsend] 未加载：', err.message);
   }
 
   // ---- 表情包管理：本地库在 userData/stickers/，Tenor Key 用 safeStorage 加密，同步只往私有仓库 ----
@@ -2386,6 +2477,8 @@ function registerIpc() {
   ipcMain.handle('dsh:status', () => dshService.status());
   ipcMain.handle('dsh:start', () => dshService.start());
   ipcMain.handle('dsh:stop', () => dshService.stop());
+  ipcMain.handle('dsh:botEnabled', () => dshService.botEnabled());
+  ipcMain.handle('dsh:setBot', (_event, enabled) => dshService.setBot(enabled));
   ipcMain.handle('tavern:status', () => tavernService.status());
   ipcMain.handle('tavern:start', () => tavernService.start());
   ipcMain.handle('tavern:stop', () => tavernService.stop());

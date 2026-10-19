@@ -28,11 +28,51 @@ function bundlePathFromExe(exe) {
   return path.posix.dirname(path.posix.dirname(path.posix.dirname(p)));
 }
 
-/** 等 pid 退出 → 换包 → 去掉隔离标记 → 重新打开。写成脚本是因为换包时本进程必须已经退出。 */
-function swapScript({ pid, target, newApp, open = true }) {
+const SIGN_IDENTITY = 'Agent Toolbox Self-Signed';
+
+/**
+ * 换包前给新包重签一个「稳定身份」。
+ * CI 出的包是 ad-hoc 签名，每个版本 cdhash 都不同；而 safeStorage 的钥匙串条目（agent-toolbox Safe Storage）
+ * 认的是签名身份，于是每次更新完都会弹「输入登录密码」。改成用本机一张固定的自签代码签名证书来签，
+ * 指定要求就绑在证书上而不是 cdhash 上，「始终允许」点一次以后都认。
+ * - 本机没有这张证书就现场生成（LibreSSL 配置文件 + 带密码的 p12，空密码 p12 macOS 会拒）。
+ * - 签的是还没换上去的临时副本，live app 永远不会处在签一半的状态。
+ * - 第一次用这把私钥 codesign 会弹钥匙串框等用户点，最多等 3 分钟；签失败/超时就清掉 .cstemp 残片、
+ *   回退成 ad-hoc 签名，保证新包一定能打开。
+ */
+function resignLines(q, newApp) {
+  return [
+    `IDN=${q(SIGN_IDENTITY)}`,
+    'KC="$HOME/Library/Keychains/login.keychain-db"',
+    `NEW=${q(newApp)}`,
+    'if ! security find-certificate -c "$IDN" "$KC" >/dev/null 2>&1; then',
+    '  T=$(mktemp -d)',
+    '  printf "[req]\\ndistinguished_name=dn\\nx509_extensions=ext\\nprompt=no\\n[dn]\\nCN=%s\\n[ext]\\nbasicConstraints=critical,CA:FALSE\\nkeyUsage=critical,digitalSignature\\nextendedKeyUsage=critical,codeSigning\\n" "$IDN" > "$T/c.cnf"',
+    '  /usr/bin/openssl req -x509 -newkey rsa:2048 -keyout "$T/k.pem" -out "$T/c.pem" -days 7300 -nodes -config "$T/c.cnf" -extensions ext >/dev/null 2>&1 \\',
+    '    && /usr/bin/openssl pkcs12 -export -inkey "$T/k.pem" -in "$T/c.pem" -out "$T/i.p12" -passout pass:atbsign -name "$IDN" >/dev/null 2>&1 \\',
+    '    && security import "$T/i.p12" -k "$KC" -P atbsign -T /usr/bin/codesign -A >/dev/null 2>&1',
+    '  rm -rf "$T"',
+    'fi',
+    'SIGN_OK=0',
+    'if security find-certificate -c "$IDN" "$KC" >/dev/null 2>&1; then',
+    '  /usr/bin/codesign --force --deep --sign "$IDN" "$NEW" >/dev/null 2>&1 &',
+    '  CS=$!',
+    '  for i in $(seq 1 720); do kill -0 $CS 2>/dev/null || break; sleep 0.25; done',
+    '  if kill -0 $CS 2>/dev/null; then kill $CS 2>/dev/null; sleep 1; else wait $CS && SIGN_OK=1; fi',
+    'fi',
+    'if [ "$SIGN_OK" != 1 ] || ! /usr/bin/codesign -v --deep --strict "$NEW" >/dev/null 2>&1; then',
+    '  find "$NEW" -name "*.cstemp" -delete 2>/dev/null',
+    '  /usr/bin/codesign --force --deep --sign - "$NEW" >/dev/null 2>&1',
+    'fi',
+  ];
+}
+
+/** （可选重签）→ 等 pid 退出 → 换包 → 去掉隔离标记 → 重新打开。写成脚本是因为换包时本进程必须已经退出。 */
+function swapScript({ pid, target, newApp, open = true, resign = true }) {
   const q = (s) => `'${String(s).replace(/'/g, `'\\''`)}'`;
   return [
     '#!/bin/bash',
+    ...(resign ? resignLines(q, newApp) : []),
     `for i in $(seq 1 200); do kill -0 ${Number(pid)} 2>/dev/null || break; sleep 0.25; done`,
     `rm -rf ${q(target)}`,
     `mv ${q(newApp)} ${q(target)}`,

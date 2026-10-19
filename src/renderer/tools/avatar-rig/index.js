@@ -147,6 +147,16 @@ export default {
       });
     }
     mode.addEventListener('change', update);
+    // 非 Windows（如这台 Apple Silicon Mac）跑不了 3D 重建引擎：一键安装脚本只支持 Windows，
+    // 且引擎依赖 NVIDIA CUDA 显卡。这里讲清楚，免得用户以为是「点按钮没反应」的 bug。
+    const platformWarn = h('section', {
+      class: 'avatar-rig__card avatar-rig__platform-warn',
+      hidden: window.toolbox.platform === 'win32',
+    },
+      h('strong', {}, '⚠️ 当前系统跑不了 3D 建模引擎'),
+      h('p', {}, '「图片建模」的重建引擎（Hunyuan3D-2mv / TripoSR）依赖 Windows + NVIDIA CUDA 显卡，一键安装脚本也只支持 Windows。这台 Mac（Apple Silicon）没有 CUDA，无法安装或运行——所以下面「安装所选环境」会报“只支持 Windows”，「重建并导出 VRM」会一直是灰的。这不是故障，是硬件/平台限制。'),
+      h('p', { class: 'faint' }, '要用这个功能，请在带 NVIDIA 显卡的 Windows 电脑上打开本工具。'),
+    );
     root.append(
       h('div', { class: 'bar bar--drag' }, h('strong', {}, '图片建模'), h('span', { class: 'faint' }, '单图 / 三视图 → VRM / GLB')),
       h('div', { class: 'avatar-rig__body' },
@@ -154,6 +164,7 @@ export default {
           h('div', {}, h('span', { class: 'avatar-rig__eyebrow' }, 'AVATAR RIG STUDIO'),
             h('h2', {}, '让三维角色，拥有侧面。'),
             h('p', { class: 'faint' }, '用正面、左侧和背面共同约束形状，再生成贴图与初步骨骼。单图模式保留为快速草模入口。')), environmentLabel),
+        platformWarn,
         h('div', { class: 'avatar-rig__toolbar' }, mode, name),
         singlePanel, multiviewPanel,
         torsoCloth,

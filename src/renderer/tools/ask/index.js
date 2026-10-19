@@ -44,6 +44,8 @@ export default {
       // 弹出的窗口由主进程的 setWindowOpenHandler 管控：只放行 https，
       // 且强制同 partition + 关掉 Node 能力。
       allowpopups: true,
+      // 切到别的工具时别把这个 webview 节流/休眠，否则切回来要等它重新唤醒+重绘（白屏延迟）。
+      webpreferences: 'backgroundThrottling=no',
     });
 
     const quick = h('input', {
