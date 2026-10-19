@@ -26,7 +26,7 @@ test('粘贴收藏保留原文，重新打开仍可安装，拒绝错误输入�
   await open();
   const source = nodes.find((node) => node.tag === 'textarea');
   const add = nodes.find((node) => node.children.includes('加入我喜欢的'));
-  source.value = 'bad input';
+  source.value = '   ';
   await add.onclick();
   assert.equal(state['skills.favorites'], undefined);
   const content = '---\nname: demo\ndescription: My workflow\nallowed-tools: Read\n---\n\n# Demo\nKeep this instruction.';
@@ -43,4 +43,29 @@ test('粘贴收藏保留原文，重新打开仍可安装，拒绝错误输入�
   await nodes.find((node) => node.children.includes('移除收藏')).onclick();
   assert.equal(state['skills.favorites'].length, 0);
   assert.equal(writes.length, 1, '移除收藏不修改安装文件');
+});
+
+test('宽松粘贴支持中文提示词、缺失或不合规头部，并保留正文和合法原文', () => {
+  const code = fs.readFileSync(path.join(__dirname, '../src/renderer/tools/skills/index.js'), 'utf8')
+    .replace(/^import .*;\r?\n/gm, '').replace('export default', 'globalThis.component =');
+  const context = { TextEncoder };
+  vm.runInNewContext(code, context);
+  const parse = context.favoriteFromPaste;
+  const plain = '# 论文审阅\n逐步分析论文，列出证据和局限。';
+  const favorite = parse(plain);
+  assert.equal(favorite.title, '论文审阅');
+  assert.match(favorite.name, /^skill-[a-f0-9]+$/);
+  assert.ok(favorite.files['SKILL.md'].endsWith(plain));
+  assert.equal(parse(plain).name, favorite.name);
+  assert.equal(parse(plain, '中文名称').title, '中文名称');
+  for (const text of ['---\nname: 中文名称\n---\n正文', '---\nname: demo\ndescription:\n---\n正文', 'name: demo\n请按这一步执行', '```md\n只有提示词\n```']) {
+    const result = parse(text);
+    assert.match(result.name, /^[a-z0-9]+(?:-[a-z0-9]+)*$/);
+    assert.ok(result.blurb);
+    assert.match(result.files['SKILL.md'], /^---\nname: /);
+  }
+  const original = '---\nname: demo\ndescription: Original description\nallowed-tools: Read\n---\n\n# Demo\nDo this.';
+  assert.equal(parse(original).files['SKILL.md'], original);
+  assert.throws(() => parse(''), /先粘贴/);
+  assert.throws(() => parse('a'.repeat(512 * 1024 + 1)), /512KB/);
 });
