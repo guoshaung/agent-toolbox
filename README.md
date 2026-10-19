@@ -16,6 +16,8 @@
 
 开发者：克隆仓库后从源码启动；开发模式不检查更新。
 
+收藏自己的 Skill：打开「Skill 工厂 → 我喜欢的」，把完整的 `SKILL.md`（包含 `name` 和 `description`）粘贴到「粘贴添加 Skill」，点击「加入我喜欢的」，再选择输出目录并点击「装到目录」。正文原样保存，收藏留在本机配置中；同名收藏可以更新，移除收藏不删除已安装文件。引用的脚本、图片等附属文件需另外复制到安装目录。
+
 ```bash
 git clone https://github.com/guoshaung/agent-toolbox.git
 cd agent-toolbox

@@ -407,7 +407,41 @@ export default {
      */
     function makeFavorites() {
       const picker = targetPicker(targetsPromise, targetRegistry);
-      const cards = FAVORITES.map((fav) => {
+      const saved = config.get('skills.favorites', []);
+      let personal = Array.isArray(saved) ? saved : [];
+      const grid = h('div', { class: 'skills__fav-grid' });
+      const source = h('textarea', { class: 'field skills__source', placeholder: '把完整 SKILL.md 粘贴到这里，包含顶部的 name 和 description。也可以连同 ```md 代码围栏一起复制。' });
+      const feedback = h('span', { class: 'faint', role: 'status' });
+      const add = h('button', { class: 'btn btn--primary', onclick: async () => {
+        const content = cleanMarkdown(source.value);
+        const meta = metaFromMarkdown(content);
+        if (!/^---\r?\n[\s\S]*?\r?\n---(?:\r?\n|$)/.test(content)) return toast('请粘贴完整 SKILL.md，包含顶部 --- 包围的名称和描述', 'info');
+        if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(meta.name) || meta.name.length > 64) return toast('name 需要是小写字母、数字和连字符，最多 64 字符', 'info');
+        if (!meta.description) return toast('请在顶部填写 description: 描述', 'info');
+        if (new TextEncoder().encode(content).length > 512 * 1024) return toast('Skill 内容超过 512KB', 'bad');
+        const exists = personal.some((fav) => fav.name === meta.name);
+        if (exists && !window.confirm(`收藏中已有「${meta.name}」，更新正文吗？`)) return;
+        const fav = { name: meta.name, title: meta.name, blurb: meta.description, usage: `/${meta.name}`, files: { 'SKILL.md': content } };
+        const next = [...personal.filter((item) => item.name !== meta.name), fav];
+        add.disabled = true;
+        try {
+          await config.set('skills.favorites', next);
+          personal = next;
+          source.value = '';
+          feedback.textContent = `已收藏 ${meta.name}，可在下方选择目录安装`;
+          renderCards();
+          toast('已加入我喜欢的 Skill', 'good');
+        } catch (err) { toast(`收藏失败：${err.message}`, 'bad'); }
+        finally { add.disabled = false; }
+      } }, '加入我喜欢的');
+      const importer = h('div', { class: 'card' },
+        h('h3', {}, '粘贴添加 Skill'),
+        h('p', { class: 'faint' }, '复制喜欢的 SKILL.md → 粘贴 → 加入收藏 → 装到目录。正文原样保留；引用的脚本、图片等附属文件需要另行复制到安装目录。'),
+        source,
+        h('div', { class: 'skills__actions' }, add, feedback),
+      );
+      function renderCards() {
+      const cards = [...FAVORITES.filter((fav) => !personal.some((item) => item.name === fav.name)), ...personal].map((fav) => {
         const status = h('span', { class: 'faint skills__fav-status' });
         const install = h('button', { class: 'btn btn--sm btn--primary', onclick: async () => {
           const directory = picker.getDirectory();
@@ -447,13 +481,26 @@ export default {
           ),
           h('p', { class: 'skills__fav-blurb' }, fav.blurb),
           view,
-          h('div', { class: 'skills__fav-actions' }, install, copy, status),
+          h('div', { class: 'skills__fav-actions' }, install, copy, status,
+            personal.includes(fav) ? h('button', { class: 'btn btn--sm btn--ghost', onclick: async () => {
+              if (!window.confirm(`从收藏移除「${fav.name}」？已安装的文件会保留。`)) return;
+              try {
+                const next = personal.filter((item) => item.name !== fav.name);
+                await config.set('skills.favorites', next);
+                personal = next;
+                renderCards();
+              } catch (err) { toast(`移除失败：${err.message}`, 'bad'); }
+            } }, '移除收藏') : null),
         );
       });
+      grid.replaceChildren(...cards);
+      }
+      renderCards();
       return h('div', { class: 'skills__panel skills__favorites' },
         sectionHead('FAVORITES', '我喜欢的 Skill', '看视频、刷帖子收来的好东西。选好目录，一键装进去。'),
+        importer,
         picker.root,
-        h('div', { class: 'skills__fav-grid' }, ...cards),
+        grid,
       );
     }
 
