@@ -6,6 +6,7 @@ import { createAvatarCapture } from './capture.mjs';
 const elements = {
   camera: document.getElementById('camera'), refreshCameras: document.getElementById('refresh-cameras'),
   pickModel: document.getElementById('pick-model'), modelName: document.getElementById('model-name'),
+  recentModels: document.getElementById('recent-models'),
   backgroundColor: document.getElementById('background-color'), alwaysOnTop: document.getElementById('always-on-top'),
   frameless: document.getElementById('frameless'), closeWindow: document.getElementById('close-window'),
   toggleSettings: document.getElementById('toggle-settings'),
@@ -20,6 +21,45 @@ const avatarRenderer = createAvatarRenderer({ canvas: elements.canvas });
 let loadedModelPath = '';
 let avatarCapture = null;
 let unsubscribeCapture = null;
+let libraryModels = [];
+let selectingModel = false;
+let modelLoadSequence = 0;
+
+function renderLibrary() {
+  const host = document.getElementById('model-library');
+  host.replaceChildren();
+  for (const model of libraryModels) {
+    const selected = settings?.modelPath === model.path;
+    const card = document.createElement('button');
+    card.className = 'model-card';
+    card.type = 'button';
+    card.disabled = selectingModel;
+    card.setAttribute('aria-pressed', String(selected));
+    card.title = `${model.name} · ${model.author} · ${model.license}`;
+    const image = document.createElement('img');
+    image.src = new URL(`../../assets/avatar-model-thumbnails/${model.thumbnail}`, import.meta.url).href;
+    image.alt = model.name;
+    const title = document.createElement('strong'); title.textContent = model.name;
+    const hint = document.createElement('small');
+    hint.textContent = selected ? '使用中' : (model.ready ? '点击使用' : `下载使用 · ${Math.ceil(model.bytes / 1024 / 1024)} MB`);
+    card.append(image, title, hint);
+    card.addEventListener('click', async () => {
+      if (selectingModel || selected) return;
+      selectingModel = true;
+      elements.pickModel.disabled = true;
+      elements.recentModels.disabled = true;
+      renderLibrary();
+      setStatus(model.ready ? `正在切换到 ${model.name}…` : `正在下载 ${model.name}，请稍候…`);
+      try {
+        applySettings(await window.avatar.selectModel(model.id));
+        model.ready = true;
+        setStatus(`已选择 ${model.name}`);
+      } catch (error) { setStatus(`切换失败：${error.message}`, true); }
+      finally { selectingModel = false; elements.pickModel.disabled = false; elements.recentModels.disabled = false; renderLibrary(); }
+    });
+    host.append(card);
+  }
+}
 
 function stopCapture() {
   unsubscribeCapture?.();
@@ -58,6 +98,8 @@ async function restartCapture() {
 }
 
 async function loadConfiguredModel() {
+  const sequence = ++modelLoadSequence;
+  const modelPath = settings.modelPath;
   if (!settings.modelPath) {
     loadedModelPath = '';
     elements.renderState.textContent = '等待选择 VRM 模型';
@@ -69,10 +111,12 @@ async function loadConfiguredModel() {
   try {
     const modelUrl = await window.avatar.getModelUrl();
     if (!modelUrl) throw new Error('配置的模型不是 .vrm 文件');
-    await avatarRenderer.loadModel(modelUrl);
-    loadedModelPath = settings.modelPath;
+    await avatarRenderer.loadModel(modelUrl, { relaxedArms: libraryModels.some((model) => model.path === modelPath) });
+    if (sequence !== modelLoadSequence) return;
+    loadedModelPath = modelPath;
     elements.renderState.textContent = 'VRM 已加载 · 等待面部追踪';
   } catch (error) {
+    if (sequence !== modelLoadSequence) return;
     elements.renderState.dataset.error = 'true';
     elements.renderState.textContent = `加载失败：${error.message}`;
     throw error;
@@ -86,16 +130,24 @@ function setStatus(message, isError = false) {
 function modelName(filePath) { return filePath ? filePath.split(/[\\/]/).pop() : '尚未选择'; }
 function applySettings(next) {
   const cameraChanged = !settings || settings.cameraId !== next.cameraId;
+  const modelChanged = !settings || settings.modelPath !== next.modelPath;
   settings = next;
-  elements.modelName.textContent = modelName(next.modelPath);
+  elements.modelName.textContent = libraryModels.find((model) => model.path === next.modelPath)?.name || modelName(next.modelPath);
   elements.modelName.title = next.modelPath || '';
+  elements.recentModels.replaceChildren(new Option('最近用过的皮套…', ''));
+  for (const filePath of next.recentModelPaths || []) {
+    const name = libraryModels.find((model) => model.path === filePath)?.name || `${modelName(filePath)} · ${filePath.split(/[\\/]/).at(-2) || ''}`;
+    elements.recentModels.add(new Option(name, filePath));
+  }
+  elements.recentModels.value = next.modelPath;
   elements.backgroundColor.value = next.backgroundColor;
   elements.backgroundColor.disabled = next.backgroundMode !== 'solid';
   elements.alwaysOnTop.checked = next.alwaysOnTop;
   elements.frameless.checked = next.frameless;
   document.querySelector(`input[name="background"][value="${next.backgroundMode}"]`).checked = true;
   rootStyle.setProperty('--stage-background', next.backgroundMode === 'solid' ? next.backgroundColor : 'transparent');
-  loadConfiguredModel().catch((error) => setStatus(`模型加载失败：${error.message}`, true));
+  if (modelChanged) loadConfiguredModel().catch((error) => setStatus(`模型加载失败：${error.message}`, true));
+  renderLibrary();
   if (cameraChanged) restartCapture().catch((error) => setStatus(`摄像头启动失败：${error.message}`, true));
 }
 async function save(patch, message = '设置已保存') {
@@ -128,6 +180,9 @@ elements.pickModel.addEventListener('click', async () => {
   const file = await window.avatar.pickModel();
   if (file) save({ modelPath: file.path }, `已选择 ${file.name}`);
 });
+elements.recentModels.addEventListener('change', () => {
+  if (elements.recentModels.value) save({ modelPath: elements.recentModels.value }, '已切换皮套');
+});
 document.querySelectorAll('input[name="background"]').forEach((input) => input.addEventListener('change', () => {
   if (input.checked) save({ backgroundMode: input.value });
 }));
@@ -141,7 +196,12 @@ elements.toggleSettings.addEventListener('click', () => {
 });
 window.avatar.onSettingsChanged(applySettings);
 window.avatar.getSettings()
-  .then((initialSettings) => { applySettings(initialSettings); return refreshCameras(false); })
+  .then(async (initialSettings) => {
+    try { libraryModels = await window.avatar.listModels(); }
+    catch (error) { document.getElementById('model-library').textContent = `皮套库读取失败：${error.message}`; }
+    applySettings(initialSettings);
+    return refreshCameras(false);
+  })
   .catch((error) => setStatus(`初始化失败：${error.message}`, true));
 window.addEventListener('pagehide', () => {
   stopCapture();
