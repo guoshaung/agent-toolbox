@@ -274,7 +274,7 @@ export default {
       search.addEventListener('input', render);
       refreshLibrary = refresh;
       const panel = h('div', { class: 'skills__panel skills__library' },
-        h('div', { class: 'skills__library-top' }, sectionHead('LIBRARY', '我的 Skills', '扫描项目和个人目录，选中后可直接查看全文。'), h('div', { class: 'skills__actions' }, search, h('button', { class: 'btn btn--sm btn--primary', onclick: refresh }, '刷新'))),
+        h('div', { class: 'skills__library-top' }, sectionHead('LIBRARY', '我的 Skills', '扫描项目、个人目录及 DSH 技能；REA 和 reverse-skill 可在这里搜索查看。'), h('div', { class: 'skills__actions' }, search, h('button', { class: 'btn btn--sm btn--primary', onclick: refresh }, '刷新'))),
         h('div', { class: 'skills__library-workspace' }, list, detail),
       );
       refresh();
