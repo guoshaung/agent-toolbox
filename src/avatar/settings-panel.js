@@ -135,7 +135,6 @@ elements.backgroundColor.addEventListener('input', () => rootStyle.setProperty('
 elements.backgroundColor.addEventListener('change', () => save({ backgroundColor: elements.backgroundColor.value }));
 elements.alwaysOnTop.addEventListener('change', () => save({ alwaysOnTop: elements.alwaysOnTop.checked }));
 elements.frameless.addEventListener('change', () => save({ frameless: elements.frameless.checked }, '窗口样式已保存'));
-elements.closeWindow.addEventListener('click', () => window.avatar.close());
 elements.toggleSettings.addEventListener('click', () => {
   const hidden = document.body.classList.toggle('settings-hidden');
   elements.toggleSettings.setAttribute('aria-label', hidden ? '显示设置' : '隐藏设置');
