@@ -2185,6 +2185,73 @@ function registerIpc() {
     console.error('[localsend] 未加载：', err.message);
   }
 
+  // ---- DeepSeek 路由 MCP：把简单活交给 DeepSeek 省 Claude 额度。key 只在主进程里过，写进客户端 MCP 配置的 env ----
+  try {
+    const DSR_NAME = 'deepseek-router';
+    const dsrScript = path.join(__dirname, 'deepseek-router-mcp.js');
+    const dsrLog = path.join(app.getPath('userData'), 'deepseek-router', 'usage.jsonl');
+    const dsrTargets = () => mcpFactory.mcpTargets({ homeDir: app.getPath('home'), platform: process.platform }).filter((t) => t.format === 'claude');
+    const dsrKey = ({ vaultId, apiKey } = {}) => {
+      if (apiKey && String(apiKey).trim()) return { ok: true, key: String(apiKey).trim() };
+      if (!vaultId) return { ok: false, error: '先选保险箱里的 DeepSeek key，或直接粘贴一个' };
+      return vault.keyOf(String(vaultId));
+    };
+    const dsrPing = async (key, model) => {
+      const res = await fetch('https://api.deepseek.com/chat/completions', {
+        method: 'POST', headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ model, messages: [{ role: 'user', content: '只回两个字：收到' }], max_tokens: 10 }),
+        signal: AbortSignal.timeout(30000),
+      });
+      const t = await res.text();
+      if (!res.ok) return { ok: false, error: `DeepSeek HTTP ${res.status}：${t.split(key).join('[已隐藏]').slice(0, 200)}` };
+      const j = JSON.parse(t);
+      return { ok: true, reply: j.choices?.[0]?.message?.content || '', model: j.model || model };
+    };
+    ipcMain.handle('dsr:status', () => {
+      const targets = dsrTargets().map((t) => {
+        let installed = false;
+        try { installed = mcpFactory.listMcpServers(t).includes(DSR_NAME); } catch { /* 读不了当没装 */ }
+        return { id: t.id, label: t.label, path: t.path, exists: t.exists, installed };
+      });
+      let rows = [];
+      try { rows = fs.readFileSync(dsrLog, 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l)); } catch { /* 还没用过 */ }
+      const today = new Date().toISOString().slice(0, 10);
+      const sum = (list) => list.reduce((a, r) => ({ n: a.n + 1, i: a.i + (r.in || 0), o: a.o + (r.out || 0) }), { n: 0, i: 0, o: 0 });
+      return { ok: true, targets, usage: { today: sum(rows.filter((r) => String(r.at).startsWith(today))), all: sum(rows) }, script: dsrScript };
+    });
+    ipcMain.handle('dsr:test', async (_e, payload = {}) => {
+      const k = dsrKey(payload); if (!k.ok) return k;
+      try { return await dsrPing(k.key, payload.model || 'deepseek-chat'); } catch (err) { return { ok: false, error: '连不上 DeepSeek：' + err.message }; }
+    });
+    ipcMain.handle('dsr:install', async (_e, payload = {}) => {
+      const k = dsrKey(payload); if (!k.ok) return k;
+      const model = payload.model || 'deepseek-chat';
+      let ping; try { ping = await dsrPing(k.key, model); } catch (err) { return { ok: false, error: '连不上 DeepSeek：' + err.message }; }
+      if (!ping.ok) return ping;
+      const want = new Set(Array.isArray(payload.targets) ? payload.targets : []);
+      const results = [];
+      for (const target of dsrTargets().filter((t) => want.has(t.id))) {
+        try {
+          const r = mcpFactory.writeMcpServer({ target, overwrite: true, definition: {
+            name: DSR_NAME, transport: 'stdio', command: process.execPath, args: [dsrScript],
+            env: { ELECTRON_RUN_AS_NODE: '1', DEEPSEEK_API_KEY: k.key, DEEPSEEK_MODEL: model, DEEPSEEK_ROUTER_LOG: dsrLog },
+          } });
+          results.push({ id: target.id, label: target.label, ok: r.ok !== false, error: r.error || '' });
+        } catch (err) { results.push({ id: target.id, label: target.label, ok: false, error: err.message }); }
+      }
+      return { ok: results.length > 0 && results.every((r) => r.ok), results, model: ping.model };
+    });
+    ipcMain.handle('dsr:uninstall', (_e, payload = {}) => {
+      const want = new Set(Array.isArray(payload.targets) ? payload.targets : []);
+      return { ok: true, results: dsrTargets().filter((t) => want.has(t.id)).map((target) => {
+        try { const r = mcpFactory.removeMcpServer({ target, name: DSR_NAME }); return { id: target.id, ok: r.ok !== false, error: r.error || '' }; }
+        catch (err) { return { id: target.id, ok: false, error: err.message }; }
+      }) };
+    });
+  } catch (err) {
+    console.error('[deepseek-router] 未加载：', err.message);
+  }
+
   // ---- 表情包管理：本地库在 userData/stickers/，Tenor Key 用 safeStorage 加密，同步只往私有仓库 ----
   const stickers = new StickersService({
     store, safeStorage, clipboard, shell, dialog, userDataDir: app.getPath('userData'), getWindow: () => mainWindow, execFileAsync,

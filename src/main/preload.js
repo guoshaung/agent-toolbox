@@ -784,6 +784,13 @@ contextBridge.exposeInMainWorld('toolbox', {
     onEvent: (callback) => { const handler = (_event, e) => callback(e); ipcRenderer.on('localsend:event', handler); return () => ipcRenderer.removeListener('localsend:event', handler); },
   },
 
+  deepseekRouter: {
+    status: () => ipcRenderer.invoke('dsr:status'),
+    test: (payload) => ipcRenderer.invoke('dsr:test', payload),
+    install: (payload) => ipcRenderer.invoke('dsr:install', payload),
+    uninstall: (payload) => ipcRenderer.invoke('dsr:uninstall', payload),
+  },
+
   zotero: {
     detect: () => ipcRenderer.invoke('zotero:detect'),
     snapshot: (force) => ipcRenderer.invoke('zotero:snapshot', force),
