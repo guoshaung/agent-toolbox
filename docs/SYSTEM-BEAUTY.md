@@ -30,6 +30,10 @@
 
 扫描跳过符号链接、目录联接，不沿它们递归。预览计划只在主进程内存中保存路径，renderer 仅持有随机 ID；15 分钟失效、单次使用，可取消或重新选择。导入前重新检查根目录身份、逐层链接及文件身份/大小/修改时间，读文件描述符后再次检查，文件被替换或改变则跳过。预览样本不带绝对路径。逐张持久化成功结果，单张失败继续其他图片，报告新增/重复/失败；不修改源文件、主配置或系统外观。文件夹导入不负责归档解压或 GIF 动画播放。
 
+批量导入显示处理数量、当前图片与进度条，可在忙态下点击“停止后续导入”。当前图片解码与落盘完成后才停止，已经成功导入的素材保留，剩余数量另行显示。取消排队中的任务可在第一张之前停止。关闭或离开发起页面也停止后续处理；重启应用仍能读到之前逐张保存的结果。
+
+`beauty-folder-jobs.js` 只保留一个活动/最近任务和一个预览。预览使用、进度查询和停止都绑定发起 WebContents/进程/帧及本地页面 URL，其他页面即使知道计划 ID 也不能读进度或停止。renderer 每 300 ms 仅轮询自己的任务，没有广播文件名；完成和销毁时停止轮询，进度更新只替换小面板。并发导入被拒绝，不打断现有导入；停止不删除源文件或已导入素材。
+
 主进程实现：`src/main/system-beauty.js`。原生桥：`src/main/system-beauty-native.ps1`。renderer：`src/renderer/tools/system-beauty/index.js`。原生桥为短时隐藏 PowerShell 子进程，不加载原版 DLL，也不安装服务或注册 COM。
 
 恢复功能覆盖单张桌面壁纸。还没有实现多显示器独立壁纸、幻灯片或 Windows 聚焦模式的完整状态恢复。
@@ -90,7 +94,7 @@
 
 ## 验证
 
-`node --test test/system-beauty.test.js test/beauty-folder-import.test.js test/beauty-ini.test.js test/beauty-personalization.test.js test/beauty-native-preview.test.js test/beauty-window-appearance.test.js test/app-controls.test.js`
+`node --test test/system-beauty.test.js test/beauty-folder-import.test.js test/beauty-folder-jobs.test.js test/beauty-ini.test.js test/beauty-personalization.test.js test/beauty-native-preview.test.js test/beauty-window-appearance.test.js test/app-controls.test.js`
 
 测试覆盖素材重复导入与并发、错误图片、字段白名单、应用前备份、连续应用后的恢复、失败时保留恢复记录、空壁纸恢复、原生调用参数隔离及 IPC 来源校验。另有本机隔离 Electron 预览检查，覆盖真实图片解码、导入、保存、切换画面和布局；不触发实际壁纸写入。
 

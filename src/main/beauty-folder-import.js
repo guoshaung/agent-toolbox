@@ -80,16 +80,21 @@ class BeautyFolderImport {
       return buffer;
     } finally { await handle.close(); }
   }
-  async consume(id, store) {
+  async consume(id, store, { shouldStop = () => false, onProgress = () => {} } = {}) {
     const plan = this.plan;
     if (!plan || typeof id !== 'string' || plan.id !== id || this.now() - plan.createdAt > 15 * 60 * 1000) throw new Error('文件夹预览已失效，请重新选择文件夹');
     this.plan = null; // Single-use plan: a repeated click cannot replay an import.
-    const imported = [], errors = [];
+    const imported = [], errors = []; let completed = 0, stopped = false;
+    const progress = current => { try { onProgress({ total: plan.entries.length, completed, imported: imported.length, failed: errors.length, current }); } catch {} };
+    progress('');
     for (const entry of plan.entries) {
+      if (shouldStop()) { stopped = true; break; }
+      progress(entry.name);
       try { imported.push(await store(await this.readEntry(plan, entry), entry.name)); }
       catch (error) { errors.push({ name: entry.name, error: error.message }); }
+      completed++; progress('');
     }
-    return { imported, errors, attempted: plan.entries.length };
+    return { imported, errors, attempted: completed, total: plan.entries.length, unprocessed: plan.entries.length - completed, stopped };
   }
 }
 module.exports = { BeautyFolderImport, FOLDER_LIMITS };

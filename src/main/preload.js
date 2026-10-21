@@ -14,6 +14,8 @@ contextBridge.exposeInMainWorld('toolbox', {
     scanImageFolder: () => ipcRenderer.invoke('systemBeauty:scanImageFolder'),
     cancelImageFolder: (id) => ipcRenderer.invoke('systemBeauty:cancelImageFolder', id),
     importImageFolder: (id) => ipcRenderer.invoke('systemBeauty:importImageFolder', id),
+    imageFolderProgress: (id) => ipcRenderer.invoke('systemBeauty:imageFolderProgress', id),
+    stopImageFolderImport: (id) => ipcRenderer.invoke('systemBeauty:stopImageFolderImport', id),
     generateBackground: (payload) => ipcRenderer.invoke('systemBeauty:generateBackground', payload),
     prepareThumbnails: () => ipcRenderer.invoke('systemBeauty:prepareThumbnails'),
     saveProfile: (profile) => ipcRenderer.invoke('systemBeauty:saveProfile', profile),

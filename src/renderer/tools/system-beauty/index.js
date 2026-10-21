@@ -11,6 +11,7 @@ export default {
     let windowTarget = '', windowStatus = '先刷新窗口列表，再选择一个窗口。';
     let windowRecovery = null;
     let folderPreview = null, folderImportResult = null;
+    let folderJobId = '', folderProgress = null;
     const windowOptions = { dark: 'keep', corners: 'keep', material: 'keep' };
     const body = h('div', { class: 'beauty__body' });
     root.append(h('div', { class: 'bar bar--drag' }, h('strong', {}, '系统美化'), h('span', { class: 'faint' }, '你的图片，你的桌面')), body);
@@ -27,6 +28,18 @@ export default {
     };
     const fresh = preset => ({ ...preset, id: crypto.randomUUID(), preset: preset.id, backgroundId: '' });
     const button = (label, fn, props = {}) => h('button', { class: 'btn', onclick: () => action(fn), ...props }, label);
+    const progressContents = () => folderProgress ? [
+      h('p', { role: 'status' }, `正在导入 ${folderProgress.completed} / ${folderProgress.total} 张：新增 ${folderProgress.added} 张，重复 ${folderProgress.imported - folderProgress.added} 张，失败 ${folderProgress.failed} 张。`),
+      h('progress', { max: Math.max(1, folderProgress.total), value: folderProgress.completed, 'aria-label': '文件夹导入进度' }),
+      h('p', { class: 'faint' }, folderProgress.cancelRequested ? '正在停止，当前这张图片处理完成后结束，已导入的素材会保留。' : folderProgress.current || '正在准备图片…'),
+      h('button', { class: 'btn beauty__stop-import', disabled: !!folderProgress.cancelRequested, onclick: async () => {
+        const id = folderJobId;
+        folderProgress.cancelRequested = true; paintFolderProgress();
+        try { await invoke('stopImageFolderImport', id); }
+        catch (error) { if (folderJobId === id && !disposed) toast(error.message, 'bad'); }
+      } }, folderProgress.cancelRequested ? '正在停止…' : '停止后续导入'),
+    ] : [];
+    const paintFolderProgress = () => { if (!disposed) body.querySelector('.beauty__import-progress')?.replaceChildren(...progressContents()); };
 
     function preview() {
       const preset = library.presets.find(p => p.id === draft.preset) || library.presets[0];
@@ -144,13 +157,30 @@ export default {
         folderPreview = result; folderImportResult = null; render();
       };
       const importFolder = async () => {
-        const id = folderPreview.id; folderPreview = null; render();
+        const id = folderPreview.id; folderJobId = id;
+        folderProgress = { total: folderPreview.count, completed: 0, added: 0, imported: 0, failed: 0, current: '', cancelRequested: false };
+        folderPreview = null; folderImportResult = null; render();
+        let finished = false;
+        const poll = async () => {
+          while (!finished && !disposed) {
+            await new Promise(resolve => setTimeout(resolve, 300));
+            if (finished || disposed) break;
+            try {
+              const state = await invoke('imageFolderProgress', id);
+              if (!finished && folderJobId === id) {
+                const requested = folderProgress.cancelRequested;
+                folderProgress = { ...state, cancelRequested: requested || state.cancelRequested }; paintFolderProgress();
+              }
+            } catch { /* The final import reply reports any terminal error. */ }
+          }
+        };
+        void poll();
         try {
           const result = await invoke('importImageFolder', id);
-          library = result; folderImportResult = { attempted: result.attempted, added: result.added, imported: result.imported, errors: result.errors };
+          library = result; folderImportResult = { attempted: result.attempted, added: result.added, imported: result.imported, errors: result.errors, stopped: result.stopped, unprocessed: result.unprocessed };
           assetQuery = ''; assetPage = 0;
           if (result.imported.length) draft.backgroundId = result.imported[0];
-        } finally { library = await invoke('list'); render(); }
+        } finally { finished = true; folderJobId = ''; folderProgress = null; if (!disposed) { library = await invoke('list'); render(); } }
       };
       const profiles = h('div', { class: 'beauty__profile-list' }, ...library.profiles.map(p => button(p.name, async () => {
         library = await invoke('selectProfile', p.id); draft = { ...p };
@@ -227,8 +257,10 @@ export default {
             h('ul', {}, ...folderPreview.samples.map(name => h('li', {}, name))),
             h('div', { class: 'beauty__row' }, button('导入预览中的图片', importFolder, { disabled: !folderPreview.count }),
               button('取消文件夹导入', async () => { await invoke('cancelImageFolder', folderPreview.id); folderPreview = null; render(); }))) : null,
+          folderProgress ? h('div', { class: 'beauty__folder-preview beauty__import-progress' }, ...progressContents()) : null,
           folderImportResult ? h('div', { class: 'beauty__folder-preview', role: 'status' },
             h('p', {}, `已处理 ${folderImportResult.attempted} 张：新增 ${folderImportResult.added} 张，重复 ${folderImportResult.imported.length - folderImportResult.added} 张，失败 ${folderImportResult.errors.length} 张。`),
+            folderImportResult.stopped ? h('p', {}, `已停止后续导入，剩余 ${folderImportResult.unprocessed} 张尚未处理。已导入素材和原文件均保留。`) : null,
             ...folderImportResult.errors.slice(0, 20).map(item => h('p', {}, `${item.name}：${item.error}`)),
             folderImportResult.errors.length > 20 ? h('p', {}, `另有 ${folderImportResult.errors.length - 20} 项未显示，可检查原文件后重新选择文件夹。`) : null) : null,
           assetSearch, assets, pageControls),
@@ -280,6 +312,6 @@ export default {
       if (selected && !library.presets.slice(0, 4).some(preset => preset.id === selected.preset)) showAllPresets = true;
       render();
     });
-    return { dispose() { disposed = true; if (folderPreview) api.cancelImageFolder(folderPreview.id).catch(() => {}); } };
+    return { dispose() { disposed = true; if (folderPreview) api.cancelImageFolder(folderPreview.id).catch(() => {}); if (folderJobId) api.stopImageFolderImport(folderJobId).catch(() => {}); } };
   },
 };

@@ -15,6 +15,7 @@ const { normalizeWindowsOptions, personalizationPlan, validatePersonalizationVal
 const { BeautyNativePreview } = require('./beauty-native-preview');
 const { WindowAppearance } = require('./beauty-window-appearance');
 const { BeautyFolderImport } = require('./beauty-folder-import');
+const { BeautyFolderJobs } = require('./beauty-folder-jobs');
 const MAX_IMAGE = 25 * 1024 * 1024;
 const MAX_BUNDLE = Math.ceil(MAX_IMAGE * 4 / 3) + 256 * 1024;
 const ASSET_ID = /^[a-f0-9]{64}$/;
@@ -142,7 +143,7 @@ class SystemBeauty {
       return { imported, errors, ...this.list() };
     });
   }
-  importFolder(id) {
+  importFolder(id, controls = {}) {
     return this.serial(async () => {
       let data = this.read(); const previous = data.assets.length;
       const result = await this.folderImport.consume(id, async (input, name) => {
@@ -151,7 +152,7 @@ class SystemBeauty {
         this.write(next); // Keep completed images if a later file or process fails.
         data = next;
         return asset.id;
-      });
+      }, { ...controls, onProgress: state => controls.onProgress?.({ ...state, added: data.assets.length - previous }) });
       return { ...result, added: data.assets.length - previous, ...this.list() };
     });
   }
@@ -371,12 +372,17 @@ class WindowsBeautyBridge {
 function registerSystemBeautyIpc(ipcMain, { getUserDataPath, dialog, getWindow, shell }) {
   const beauty = new SystemBeauty({ root: path.join(getUserDataPath(), 'system-beauty') });
   const rendererRoot = pathToFileURL(path.join(__dirname, '..', 'renderer') + path.sep).href;
-  function handle(name, fn) {
+  const folderJobs = new BeautyFolderJobs();
+  const folderOwner = event => {
+    const frame = event.senderFrame, url = frame.url;
+    return { key: `${event.sender.id}:${frame.processId}:${frame.routingId}:${url}`, alive: () => !frame.isDestroyed() && frame.url === url };
+  };
+  function handle(name, fn, withEvent = false) {
     ipcMain.handle(`systemBeauty:${name}`, async (event, ...args) => {
       try {
         const url = new URL(event.senderFrame.url);
         if (url.protocol !== 'file:' || !url.href.startsWith(rendererRoot) || !url.pathname.endsWith('.html')) throw new Error('仅允许工具箱本地页面访问');
-        return { ok: true, data: await fn(...args) };
+        return { ok: true, data: await (withEvent ? fn(event, ...args) : fn(...args)) };
       } catch (error) { return { ok: false, error: error.message }; }
     });
   }
@@ -388,12 +394,17 @@ function registerSystemBeautyIpc(ipcMain, { getUserDataPath, dialog, getWindow, 
     return result.canceled ? { canceled: true } : beauty.importImages(result.filePaths);
   });
   handle('saveProfile', p => beauty.saveProfile(p));
-  handle('scanImageFolder', async () => {
+  handle('scanImageFolder', async event => {
+    const owner = folderOwner(event);
     const selected = await dialog.showOpenDialog(getWindow(), { title: '选择美化素材文件夹（先预览，再导入）', properties: ['openDirectory'] });
-    return selected.canceled || !selected.filePaths?.length ? { canceled: true } : beauty.folderImport.scan(selected.filePaths[0]);
-  });
-  handle('cancelImageFolder', id => beauty.folderImport.cancel(id));
-  handle('importImageFolder', id => beauty.importFolder(id));
+    if (selected.canceled || !selected.filePaths?.length) return { canceled: true };
+    const preview = await beauty.folderImport.scan(selected.filePaths[0]);
+    folderJobs.bind(preview, owner); return preview;
+  }, true);
+  handle('cancelImageFolder', (event, id) => { folderJobs.checkPreview(id, folderOwner(event)); return beauty.folderImport.cancel(id); }, true);
+  handle('importImageFolder', (event, id) => folderJobs.run(id, folderOwner(event), controls => beauty.importFolder(id, controls)), true);
+  handle('imageFolderProgress', (event, id) => folderJobs.status(id, folderOwner(event)), true);
+  handle('stopImageFolderImport', (event, id) => folderJobs.stop(id, folderOwner(event)), true);
   handle('deleteProfile', id => beauty.deleteProfile(id));
   handle('selectProfile', id => beauty.selectProfile(id));
   handle('deleteAsset', id => beauty.deleteAsset(id));

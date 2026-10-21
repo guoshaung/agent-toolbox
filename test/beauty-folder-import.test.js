@@ -91,3 +91,27 @@ test('folder import persists successful files and isolates disk failure from add
   assert.equal(result.added, 1); assert.equal(result.imported.length, 1); assert.equal(result.errors.length, 1);
   assert.equal(beauty.read().assets.length, 1); assert.match(result.errors[0].error, /disk failure/);
 });
+
+test('stopping during the current image finishes it and persists it, then skips later originals', async t => {
+  const { root, source, write } = fixture(t); for (let i = 0; i < 3; i++) write(`${i}.png`, `image-${i}`);
+  const beauty = new SystemBeauty({ root: path.join(root, 'library'), decodeImage: async buffer => buffer, thumbnailImage: async () => ({ buffer: PNG, width: 1, height: 1 }) });
+  let stop = false; const progress = [];
+  beauty.decodeImage = async buffer => { stop = true; return buffer; };
+  const preview = await beauty.folderImport.scan(source);
+  const result = await beauty.importFolder(preview.id, { shouldStop: () => stop, onProgress: state => progress.push(state) });
+  assert.equal(result.stopped, true); assert.equal(result.attempted, 1); assert.equal(result.total, 3); assert.equal(result.unprocessed, 2);
+  assert.equal(result.added, 1); assert.equal(beauty.read().assets.length, 1); assert.equal(progress.at(-1).completed, 1); assert.equal(progress.at(-1).added, 1);
+  assert.ok(!JSON.stringify(progress).includes(source));
+  for (let i = 0; i < 3; i++) assert.equal(fs.readFileSync(path.join(source, `${i}.png`), 'utf8'), `image-${i}`);
+});
+
+test('stop before the first image writes nothing and progress listener failures do not lose imports', async t => {
+  const { root, source, write } = fixture(t); write('one.png');
+  const beauty = new SystemBeauty({ root: path.join(root, 'library'), decodeImage: async buffer => buffer, thumbnailImage: async () => ({ buffer: PNG, width: 1, height: 1 }) });
+  let preview = await beauty.folderImport.scan(source);
+  let result = await beauty.importFolder(preview.id, { shouldStop: () => true });
+  assert.equal(result.unprocessed, 1); assert.equal(result.attempted, 0); assert.equal(fs.existsSync(beauty.file), false);
+  preview = await beauty.folderImport.scan(source);
+  result = await beauty.importFolder(preview.id, { onProgress: () => { throw new Error('listener gone'); } });
+  assert.equal(result.stopped, false); assert.equal(result.added, 1); assert.equal(result.errors.length, 0);
+});

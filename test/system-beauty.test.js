@@ -99,7 +99,7 @@ test('IPC rejects remote pages before accessing filesystem or dialogs', async ()
   assert.equal(result.ok, false); assert.match(result.error, /本地/);
   const merge = await handlers['systemBeauty:exportMergedRecipe']({ senderFrame: { url: 'https://example.com/index.html' } });
   assert.equal(merge.ok, false); assert.match(merge.error, /本地/);
-  for (const method of ['scanImageFolder', 'cancelImageFolder', 'importImageFolder']) {
+  for (const method of ['scanImageFolder', 'cancelImageFolder', 'importImageFolder', 'imageFolderProgress', 'stopImageFolderImport']) {
     const result = await handlers[`systemBeauty:${method}`]({ senderFrame: { url: 'https://example.com/index.html' } }, 'arbitrary-path');
     assert.equal(result.ok, false); assert.match(result.error, /本地/);
   }
