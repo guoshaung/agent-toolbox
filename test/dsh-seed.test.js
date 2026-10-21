@@ -42,7 +42,7 @@ test('DSH 种子：仓库自带的真种子包能解到任意 DSH_HOME，插件�
   assert.ok(fs.existsSync(REAL_SEED), 'dsh-seed/dsh-web-profile.tgz 必须随仓库提交');
   const home = tmpHome();
   const first = seedWebProfile(REAL_SEED, home);
-  assert.equal(first.ok, true);
+  assert.equal(first.ok, true, `种子没解开：${first.reason}`);
   assert.equal(first.seeded, true);
   assert.equal(first.reason, 'no-profile');
   assert.equal(first.backup, '');
@@ -92,7 +92,7 @@ test('DSH 种子：已有但不完整的 profile 先整个备份再替换，用�
   writeProfile(home, ['@deepseek-ai/dsh-base']);
   fs.writeFileSync(path.join(home, 'profiles', 'web', 'user-note.txt'), 'mine');
   const result = seedWebProfile(REAL_SEED, home);
-  assert.equal(result.seeded, true);
+  assert.equal(result.seeded, true, `种子没解开：${result.reason}`);
   assert.match(path.basename(result.backup), /^web\.bak-/);
   assert.equal(fs.readFileSync(path.join(result.backup, 'user-note.txt'), 'utf8'), 'mine');
   assert.equal(webProfileNeedsSeed(home).needed, false);

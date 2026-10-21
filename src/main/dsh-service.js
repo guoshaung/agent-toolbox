@@ -74,7 +74,11 @@ function seedWebProfile(seedTgz, dshHome = dshHomeDir()) {
     }
     fs.mkdirSync(dshHome, { recursive: true });
     // 选项全部放在 -f 之前，bsdtar（macOS / Win10+ 自带）和 GNU tar 都认
-    execFileSync('tar', ['-x', '-z', '--strip-components=1', '-f', seedTgz, '-C', dshHome], { stdio: 'ignore', timeout: 120000 });
+    // Windows 上指定系统自带的 bsdtar：PATH 里排前面的常是 Git 带的 GNU tar，它会把 D:\\… 当成「主机:路径」
+    // 去连远程（GitHub windows 镜像 20261015 起就这样，种子全挂）。没有 System32\\tar.exe 再退回 PATH 里的 tar。
+    const sysTar = process.platform === 'win32' ? path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'tar.exe') : '';
+    const tarBin = sysTar && fs.existsSync(sysTar) ? sysTar : 'tar';
+    execFileSync(tarBin, ['-x', '-z', '--strip-components=1', '-f', seedTgz, '-C', dshHome], { stdio: 'ignore', timeout: 120000 });
     if (!fs.existsSync(path.join(web, 'package.json'))) throw new Error('解包后没有 profiles/web/package.json');
     return { ok: true, seeded: true, reason: check.reason, backup };
   } catch (error) {
