@@ -5,6 +5,8 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { SystemBeauty, WindowsBeautyBridge, normalizeProfile, registerSystemBeautyIpc } = require('../src/main/system-beauty');
+const { makeNativeRecipe } = require('../src/main/beauty-recipes');
+const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aZQAAAABJRU5ErkJggg==', 'base64');
 
 function fixture(t, options = {}) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'toolbox-beauty-'));
@@ -93,4 +95,73 @@ test('IPC rejects remote pages before accessing filesystem or dialogs', async ()
   registerSystemBeautyIpc({ handle: (key, fn) => { handlers[key] = fn; } }, { getUserDataPath: () => os.tmpdir(), dialog: { showOpenDialog: () => { throw new Error('should not run'); } }, getWindow: () => null });
   const result = await handlers['systemBeauty:importImages']({ senderFrame: { url: 'https://example.com/index.html' } });
   assert.equal(result.ok, false); assert.match(result.error, /本地/);
+});
+
+test('portable bundle round trip carries background bytes but no local paths, keys or recovery state', async t => {
+  const source = fixture(t), target = fixture(t);
+  const result = await source.importImages([image(source, 'photo.png', PNG)]);
+  await source.saveProfile({ id: 'theme-one', name: '图片主题', backgroundId: result.imported[0], tint: '#123456', opacity: 50 });
+  const exported = source.exportBundle(source.list().profiles[0]);
+  assert.ok(!exported.includes(source.root)); assert.ok(!exported.includes('recovery'));
+  const imported = await target.importBundle(exported);
+  assert.notEqual(imported.importedProfileId, 'theme-one');
+  assert.equal(imported.profiles[0].tint, '#123456');
+  assert.equal(fs.readFileSync(target.assetPath(imported.profiles[0].backgroundId)).equals(PNG), true);
+  await target.importBundle(exported);
+  assert.equal(target.list().assets.length, 1); assert.equal(target.list().profiles.length, 2);
+});
+test('invalid bundle versions, SVG payloads, noncanonical base64 and external path fields cannot mutate storage', async t => {
+  const beauty = fixture(t);
+  const valid = { format: 'agent-toolbox-beauty', version: 1, theme: { id: 'old', name: 'test' } };
+  await assert.rejects(beauty.importBundle('{'), /JSON/);
+  await assert.rejects(beauty.importBundle(JSON.stringify({ ...valid, version: 200 })), /版本/);
+  await assert.rejects(beauty.importBundle(JSON.stringify({ ...valid, background: { mime: 'image/png', base64: Buffer.from('<svg/>').toString('base64') } })), /PNG/);
+  await assert.rejects(beauty.importBundle(JSON.stringify({ ...valid, background: { mime: 'image/png', base64: 'a=aa' } })), /编码/);
+  assert.equal(fs.existsSync(beauty.file), false);
+  await beauty.importBundle(JSON.stringify({ ...valid, theme: { ...valid.theme, backgroundId: 'C:/private.png', font: 'malicious', apiKey: 'secret' }, recovery: { original: 'private' } }));
+  const saved = beauty.list().profiles[0];
+  assert.equal(saved.backgroundId, ''); assert.equal(saved.apiKey, undefined); assert.equal(saved.font, undefined); assert.equal(beauty.read().recovery, null);
+});
+test('real image decoder rejects SVG disguised as PNG before rasterization', async t => {
+  const beauty = fixture(t, { decodeImage: undefined });
+  const result = await beauty.importImages([image(beauty, 'not-a-png.png', '<svg xmlns="http://www.w3.org/2000/svg"/>')]);
+  assert.equal(result.imported.length, 0); assert.match(result.errors[0].error, /真实/);
+});
+test('remembered theme survives reopening and deletion moves selection to an existing theme', async t => {
+  const beauty = fixture(t);
+  await beauty.saveProfile({ id: 'one' }); await beauty.saveProfile({ id: 'two' }); await beauty.selectProfile('one');
+  const reopened = new SystemBeauty({ root: beauty.root });
+  assert.equal(reopened.list().activeProfileId, 'one');
+  await beauty.deleteProfile('one'); assert.equal(reopened.list().activeProfileId, 'two');
+  await assert.rejects(beauty.selectProfile('missing'), /不存在/);
+});
+test('asset removal refuses theme and wallpaper references, then removes unused file only', async t => {
+  const beauty = fixture(t, { native: { wallpaper: async () => '', setWallpaper: async () => {} } });
+  const result = await beauty.importImages([image(beauty)]), id = result.imported[0];
+  await beauty.saveProfile({ id: 'one', backgroundId: id });
+  await assert.rejects(beauty.deleteAsset(id), /主题/);
+  await beauty.deleteProfile('one'); await beauty.applyWallpaper(id);
+  await assert.rejects(beauty.deleteAsset(id), /壁纸/);
+  await beauty.restoreWallpaper(); await beauty.deleteAsset(id);
+  assert.equal(beauty.list().assets.length, 0); assert.equal(fs.existsSync(beauty.assetPath(id)), false);
+});
+test('native recipes use documented effect enums and Windows COLORREF channel ordering', () => {
+  const profile = normalizeProfile({ id: 'theme', effect: 'acrylic', tint: '#123456', opacity: 50, blur: 30 });
+  const recipe = makeNativeRecipe('dwm', profile);
+  assert.match(recipe.text, /effectType=2\r\n/);
+  assert.match(recipe.text, new RegExp(`activeBlendColor=${0x80563412}\\r\\n`));
+  assert.match(recipe.text, /blurMethod=0/); assert.match(recipe.text, /applyglobal=false/);
+  const explorer = makeNativeRecipe('explorer', profile);
+  assert.match(explorer.text, /effect=1/); assert.match(explorer.text, /r=18\r\ng=52\r\nb=86\r\na=128/);
+  assert.throws(() => makeNativeRecipe('explorer', { ...profile, effect: 'solid' }), /不支持纯色/);
+  assert.throws(() => makeNativeRecipe('unknown', profile), /不支持/);
+});
+
+test('Windows INI API reads exported Unicode recipes with exact effect and color values', { skip: process.platform !== 'win32' }, t => {
+  const beauty = fixture(t), file = path.join(beauty.root, 'native.ini');
+  const recipe = makeNativeRecipe('dwm', normalizeProfile({ id: 'theme', effect: 'mica', tint: '#123456', opacity: 50 }));
+  fs.writeFileSync(file, Buffer.concat([Buffer.from([255, 254]), Buffer.from(recipe.text, 'utf16le')]));
+  const script = `$ProgressPreference='SilentlyContinue'; Add-Type @'\nusing System;using System.Text;using System.Runtime.InteropServices;public class IniRead {[DllImport("kernel32.dll",CharSet=CharSet.Unicode)] public static extern int GetPrivateProfileString(string section,string key,string fallback,StringBuilder result,int size,string file);}\n'@\n$f=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('${Buffer.from(file).toString('base64')}'));$a=[Text.StringBuilder]::new(100);$b=[Text.StringBuilder]::new(100);[void][IniRead]::GetPrivateProfileString('config','effectType','missing',$a,100,$f);[void][IniRead]::GetPrivateProfileString('config','activeBlendColor','missing',$b,100,$f);@{effect=$a.ToString();color=$b.ToString()}|ConvertTo-Json -Compress`;
+  const raw = require('node:child_process').execFileSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-EncodedCommand', Buffer.from(script, 'utf16le').toString('base64')], { windowsHide: true, timeout: 20000, encoding: 'utf8' });
+  const actual = JSON.parse(raw); assert.equal(actual.effect, '3'); assert.equal(Number(actual.color), 0x80563412);
 });

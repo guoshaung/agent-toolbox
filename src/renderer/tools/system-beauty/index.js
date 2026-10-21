@@ -80,7 +80,20 @@ export default {
         render();
         toast(result.errors.length ? `导入 ${result.imported.length} 张；${result.errors.map(e => `${e.name}：${e.error}`).join('；')}` : `已导入 ${result.imported.length} 张素材`, result.errors.length ? 'info' : 'good', 6000);
       };
-      const profiles = h('div', { class: 'beauty__profile-list' }, ...library.profiles.map(p => button(p.name, async () => { draft = { ...p }; render(); }, { class: `btn${draft.id === p.id ? ' btn--primary' : ''}` })));
+      const profiles = h('div', { class: 'beauty__profile-list' }, ...library.profiles.map(p => button(p.name, async () => {
+        library = await invoke('selectProfile', p.id); draft = { ...p }; render();
+      }, { class: `btn${draft.id === p.id ? ' btn--primary' : ''}` })));
+      const importBundle = async () => {
+        const result = await invoke('importBundle');
+        if (result.canceled) return;
+        library = result;
+        draft = { ...result.profiles.find(p => p.id === result.importedProfileId) };
+        render(); toast('主题和背景图片已导入', 'good');
+      };
+      const exportRecipe = engine => async () => {
+        const result = await invoke('exportRecipe', { engine, profile: draft });
+        if (!result.canceled) toast('配方已导出，请在对应原生引擎中手动导入', 'good', 5000);
+      };
       const nativeStatus = h('p', { class: 'faint', role: 'status' }, '可读取本机原版 2.1.0 宿主的运行状态。');
       body.replaceChildren(
         h('section', { class: 'beauty__hero' }, h('div', {}, h('span', { class: 'tag' }, '本地素材 · 独立主题库'), h('h2', {}, '给桌面换一种心情'), h('p', { class: 'faint' }, '先搭配背景与窗口质感，保存成自己的主题。桌面壁纸可直接应用；资源管理器和开始菜单当前为效果预览。')), presetStrip),
@@ -95,10 +108,16 @@ export default {
               button('另存一份', async () => { const copy = { ...draft, id: crypto.randomUUID(), name: `${draft.name} 副本` }; library = await invoke('saveProfile', copy); draft = copy; render(); })),
             h('p', { class: 'faint' }, '保存主题只保存这里的搭配，不会切换系统设置。')),
         ),
-        h('section', { class: 'card' }, h('div', { class: 'beauty__row' }, h('h3', {}, '我的素材'), button('＋ 导入图片', importImages), button('使用渐变背景', async () => { draft.backgroundId = ''; render(); })), assets),
-        h('section', { class: 'card' }, h('h3', {}, '我的主题'), profiles, !library.profiles.length ? h('p', { class: 'faint' }, '搭配好后点“保存主题”，下次可以接着用。') : null,
+        h('section', { class: 'card' }, h('div', { class: 'beauty__row' }, h('h3', {}, '我的素材'), button('＋ 导入图片', importImages), button('使用渐变背景', async () => { draft.backgroundId = ''; render(); }),
+          button('删除所选素材', async () => { const id = draft.backgroundId; library = await invoke('deleteAsset', id); draft.backgroundId = ''; render(); toast('素材已从库中删除', 'good'); }, { disabled: !draft.backgroundId })), assets),
+        h('section', { class: 'card' }, h('div', { class: 'beauty__row' }, h('h3', {}, '我的主题'), button('导入主题包', importBundle), button('导出当前主题', async () => {
+          const result = await invoke('exportBundle', draft); if (!result.canceled) toast('主题包已导出，包含当前背景图片', 'good');
+        })), profiles, !library.profiles.length ? h('p', { class: 'faint' }, '搭配好后点“保存主题”，下次可以接着用。') : null,
           library.profiles.some(p => p.id === draft.id) ? button('删除当前主题', async () => { library = await invoke('deleteProfile', draft.id); draft = fresh(library.presets[0]); render(); }) : null),
-        h('section', { class: 'card' }, h('h3', {}, '原生效果接入'), h('p', { class: 'faint' }, '系统窗口背景与全局标题栏效果正在接入。此版本可以检查原版宿主状态；原版主题包暂不支持导入。'), nativeStatus,
+        h('section', { class: 'card' }, h('h3', {}, '原生效果接入'),
+          h('p', { class: 'faint' }, '把当前颜色、透明度和质感导出成开源引擎配方，再在对应引擎里手动导入。配方不包含背景图片；系统效果与这里的预览可能有差异。'),
+          h('div', { class: 'beauty__row' }, button('导出标题栏配方 · DWMBlurGlass', exportRecipe('dwm')), button('导出资源管理器配方 · ExplorerBlurMica', exportRecipe('explorer'))),
+          h('p', { class: 'faint' }, '此处不会安装或启用原生引擎。原版 MToolBox 的专用主题包暂不支持导入。'), nativeStatus,
           h('div', { class: 'beauty__row' }, button('检查宿主状态', async () => {
             const state = await invoke('probe');
             if (disposed) return;
@@ -109,7 +128,7 @@ export default {
 
     body.append(h('p', { class: 'faint' }, '正在读取本地素材库…'));
     action(async () => {
-      library = await invoke('list'); draft = library.profiles.length ? { ...library.profiles[0] } : fresh(library.presets[0]); render();
+      library = await invoke('list'); const selected = library.profiles.find(p => p.id === library.activeProfileId) || library.profiles[0]; draft = selected ? { ...selected } : fresh(library.presets[0]); render();
     });
     return { dispose() { disposed = true; } };
   },
