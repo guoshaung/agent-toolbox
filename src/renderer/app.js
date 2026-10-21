@@ -219,7 +219,7 @@ const WHEEL_GROUPS = [
   { id: 'make', label: '写作代码', icon: 'pen', color: '#ff9a6b', tools: ['notebook', 'notes', 'git', 'api', 'appgen', 'aipexbase', 'netlog', 'webtools'] },
   { id: 'ai', label: 'AI 伙伴', icon: 'bot', color: '#c9a7ff', tools: ['ask', 'tavern', 'voicebox', 'digital-human', 'avatar-rig', 'voice', 'gesture', 'monologue'] },
   { id: 'life', label: '生活效率', icon: 'bowl', color: '#f0b93d', tools: ['home', 'tasks', 'focus', 'game', 'flylab', 'stickers', 'tidy', 'container', 'eat', 'history', 'video', 'vault'] },
-  { id: 'device', label: '设备外观', icon: 'smartphone', color: '#7aa8ff', tools: ['remote', 'dsh', 'controls', 'dock', 'pet', 'appearance'] },
+  { id: 'device', label: '设备外观', icon: 'smartphone', color: '#7aa8ff', tools: ['remote', 'dsh', 'controls', 'dock', 'pet', 'appearance', 'system-beauty'] },
 ];
 {
   // 登记表里新加的、上面没分组的，自动落到「其他」；没有就不显示这一类

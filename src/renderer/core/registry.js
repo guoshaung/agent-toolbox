@@ -24,6 +24,7 @@ import voicebox from '../tools/voicebox/index.js';
 import digitalHuman from '../tools/digital-human/index.js';
 import controls from '../tools/controls/index.js';
 import appearance from '../tools/appearance/index.js';
+import systemBeauty from '../tools/system-beauty/index.js';
 import voice from '../tools/voice/index.js';
 import gesture from '../tools/gesture/index.js';
 import avatarRig from '../tools/avatar-rig/index.js';
@@ -50,4 +51,4 @@ import gameagent from '../tools/gameagent/index.js';
  * 加一个工具：写 tools/<id>/index.js，默认导出 { id, title, icon, create(root, ctx) }，
  * 然后在这个数组里加一行。详见 docs/ADD-A-TOOL.md。
  */
-export const TOOLS = [home, ask, docs, typing, focus, game, flylab, study, notebook, notes, tidy, stickers, webtools, vault, chatAnalyze, api, git, netlog, monologue, eat, container, dsh, aipexbase, appgen, tavern, voicebox, digitalHuman, avatarRig, pet, history, video, research, coach, terms, dock, skills, remote, controls, appearance, voice, gesture, gameagent, tasks, featureLab, localsend, mcpTool, settings];
+export const TOOLS = [home, ask, docs, typing, focus, game, flylab, study, notebook, notes, tidy, stickers, webtools, vault, chatAnalyze, api, git, netlog, monologue, eat, container, dsh, aipexbase, appgen, tavern, voicebox, digitalHuman, avatarRig, pet, history, video, research, coach, terms, dock, skills, remote, controls, appearance, systemBeauty, voice, gesture, gameagent, tasks, featureLab, localsend, mcpTool, settings];

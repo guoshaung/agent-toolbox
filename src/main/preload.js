@@ -8,6 +8,17 @@ const { contextBridge, ipcRenderer, webUtils } = require('electron');
 contextBridge.exposeInMainWorld('toolbox', {
   platform: process.platform,
 
+  systemBeauty: {
+    list: () => ipcRenderer.invoke('systemBeauty:list'),
+    importImages: () => ipcRenderer.invoke('systemBeauty:importImages'),
+    saveProfile: (profile) => ipcRenderer.invoke('systemBeauty:saveProfile', profile),
+    deleteProfile: (id) => ipcRenderer.invoke('systemBeauty:deleteProfile', id),
+    applyWallpaper: (id) => ipcRenderer.invoke('systemBeauty:applyWallpaper', id),
+    restoreWallpaper: () => ipcRenderer.invoke('systemBeauty:restoreWallpaper'),
+    probe: () => ipcRenderer.invoke('systemBeauty:probe'),
+    openFolder: () => ipcRenderer.invoke('systemBeauty:openFolder'),
+  },
+
   config: {
     all: () => ipcRenderer.invoke('config:all'),
     get: (key, fallback) => ipcRenderer.invoke('config:get', key, fallback),
