@@ -10,6 +10,7 @@ export default {
     let personalizationStatus = '可先读取当前设置，再选择需要更改的项目。';
     let windowTarget = '', windowStatus = '先刷新窗口列表，再选择一个窗口。';
     let windowRecovery = null;
+    let folderPreview = null, folderImportResult = null;
     const windowOptions = { dark: 'keep', corners: 'keep', material: 'keep' };
     const body = h('div', { class: 'beauty__body' });
     root.append(h('div', { class: 'bar bar--drag' }, h('strong', {}, '系统美化'), h('span', { class: 'faint' }, '你的图片，你的桌面')), body);
@@ -135,6 +136,22 @@ export default {
         render();
         toast(result.errors.length ? `导入 ${result.imported.length} 张；${result.errors.map(e => `${e.name}：${e.error}`).join('；')}` : `已导入 ${result.imported.length} 张素材`, result.errors.length ? 'info' : 'good', 6000);
       };
+      const scanFolder = async () => {
+        if (folderPreview) await invoke('cancelImageFolder', folderPreview.id);
+        folderPreview = null; render();
+        const result = await invoke('scanImageFolder');
+        if (result.canceled) return;
+        folderPreview = result; folderImportResult = null; render();
+      };
+      const importFolder = async () => {
+        const id = folderPreview.id; folderPreview = null; render();
+        try {
+          const result = await invoke('importImageFolder', id);
+          library = result; folderImportResult = { attempted: result.attempted, added: result.added, imported: result.imported, errors: result.errors };
+          assetQuery = ''; assetPage = 0;
+          if (result.imported.length) draft.backgroundId = result.imported[0];
+        } finally { library = await invoke('list'); render(); }
+      };
       const profiles = h('div', { class: 'beauty__profile-list' }, ...library.profiles.map(p => button(p.name, async () => {
         library = await invoke('selectProfile', p.id); draft = { ...p };
         if (!library.presets.slice(0, 4).some(preset => preset.id === p.preset)) showAllPresets = true;
@@ -198,10 +215,22 @@ export default {
               button('另存一份', async () => { const copy = { ...draft, id: crypto.randomUUID(), name: `${draft.name} 副本` }; library = await invoke('saveProfile', copy); draft = copy; render(); })),
             h('p', { class: 'faint' }, '保存主题只保存这里的搭配，不会切换系统设置。')),
         ),
-        h('section', { class: 'card' }, h('div', { class: 'beauty__row' }, h('h3', {}, '我的素材'), button('＋ 导入图片', importImages), button('使用渐变背景', async () => { draft.backgroundId = ''; render(); }),
+        h('section', { class: 'card' }, h('div', { class: 'beauty__row' }, h('h3', {}, '我的素材'), button('＋ 导入图片', importImages), button('从文件夹导入', scanFolder), button('使用渐变背景', async () => { draft.backgroundId = ''; render(); }),
           button('删除所选素材', async () => { const id = draft.backgroundId; library = await invoke('deleteAsset', id); draft.backgroundId = ''; render(); toast('素材已从库中删除', 'good'); }, { disabled: !draft.backgroundId })),
           h('div', { class: 'beauty__row beauty__asset-tools' }, sizeSelect, button('生成渐变壁纸', async () => { await generateBackground(); toast('壁纸已加入素材库，桌面尚未切换', 'good'); }),
             button('优化素材加载', async () => { const result = await invoke('prepareThumbnails'); library = result; render(); toast(result.errors.length ? `已优化 ${result.prepared} 张，${result.errors.length} 张无法读取` : `已优化 ${result.prepared} 张素材，原图保持不变`, result.errors.length ? 'info' : 'good'); })),
+          folderPreview ? h('div', { class: 'beauty__folder-preview', role: 'status' },
+            h('strong', {}, `文件夹预览 · ${folderPreview.name}`),
+            h('p', {}, `${folderPreview.count} 张候选图片 · ${(folderPreview.bytes / 1024 / 1024).toFixed(1)} MB。导入时验证图片内容，重复图片自动合并，原文件保留。`),
+            h('p', { class: 'faint' }, `包括最多 ${folderPreview.limits.depth} 层子文件夹；每次最多 ${folderPreview.limits.files} 张、${Math.round(folderPreview.limits.bytes / 1024 / 1024)} MB。跳过：非图片 ${folderPreview.skipped.unsupported}、链接 ${folderPreview.skipped.links}、过大 ${folderPreview.skipped.oversized}、无法读取 ${folderPreview.skipped.unreadable}、更深目录 ${folderPreview.skipped.depth}。`),
+            folderPreview.reached.length ? h('p', {}, '已达到本次扫描上限，只列出部分素材。可选择更小的子文件夹继续导入。') : null,
+            h('ul', {}, ...folderPreview.samples.map(name => h('li', {}, name))),
+            h('div', { class: 'beauty__row' }, button('导入预览中的图片', importFolder, { disabled: !folderPreview.count }),
+              button('取消文件夹导入', async () => { await invoke('cancelImageFolder', folderPreview.id); folderPreview = null; render(); }))) : null,
+          folderImportResult ? h('div', { class: 'beauty__folder-preview', role: 'status' },
+            h('p', {}, `已处理 ${folderImportResult.attempted} 张：新增 ${folderImportResult.added} 张，重复 ${folderImportResult.imported.length - folderImportResult.added} 张，失败 ${folderImportResult.errors.length} 张。`),
+            ...folderImportResult.errors.slice(0, 20).map(item => h('p', {}, `${item.name}：${item.error}`)),
+            folderImportResult.errors.length > 20 ? h('p', {}, `另有 ${folderImportResult.errors.length - 20} 项未显示，可检查原文件后重新选择文件夹。`) : null) : null,
           assetSearch, assets, pageControls),
         h('section', { class: 'card' }, h('div', { class: 'beauty__row' }, h('h3', {}, '我的主题'), button('导入主题包', importBundle), button('导出当前主题', async () => {
           const result = await invoke('exportBundle', draft); if (!result.canceled) toast('主题包已导出，包含当前背景图片', 'good');
@@ -251,6 +280,6 @@ export default {
       if (selected && !library.presets.slice(0, 4).some(preset => preset.id === selected.preset)) showAllPresets = true;
       render();
     });
-    return { dispose() { disposed = true; } };
+    return { dispose() { disposed = true; if (folderPreview) api.cancelImageFolder(folderPreview.id).catch(() => {}); } };
   },
 };

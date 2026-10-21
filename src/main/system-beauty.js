@@ -14,6 +14,7 @@ const { PRESETS, WALLPAPER_SIZES, renderBackground } = require('./beauty-backgro
 const { normalizeWindowsOptions, personalizationPlan, validatePersonalizationValues } = require('./beauty-personalization');
 const { BeautyNativePreview } = require('./beauty-native-preview');
 const { WindowAppearance } = require('./beauty-window-appearance');
+const { BeautyFolderImport } = require('./beauty-folder-import');
 const MAX_IMAGE = 25 * 1024 * 1024;
 const MAX_BUNDLE = Math.ceil(MAX_IMAGE * 4 / 3) + 256 * 1024;
 const ASSET_ID = /^[a-f0-9]{64}$/;
@@ -64,6 +65,7 @@ class SystemBeauty {
     this.platform = platform;
     this.preview = new BeautyNativePreview({ platform });
     this.windowAppearance = new WindowAppearance({ root: path.join(root, 'window-appearance'), platform });
+    this.folderImport = new BeautyFolderImport();
     this.pending = Promise.resolve();
   }
   serial(action) {
@@ -138,6 +140,19 @@ class SystemBeauty {
       }
       this.write(data);
       return { imported, errors, ...this.list() };
+    });
+  }
+  importFolder(id) {
+    return this.serial(async () => {
+      let data = this.read(); const previous = data.assets.length;
+      const result = await this.folderImport.consume(id, async (input, name) => {
+        const next = { ...data, assets: data.assets.map(asset => ({ ...asset })) };
+        const asset = await this.storeAsset(await this.decodeImage(input), { name }, next);
+        this.write(next); // Keep completed images if a later file or process fails.
+        data = next;
+        return asset.id;
+      });
+      return { ...result, added: data.assets.length - previous, ...this.list() };
     });
   }
   generateBackground(payload = {}) {
@@ -373,6 +388,12 @@ function registerSystemBeautyIpc(ipcMain, { getUserDataPath, dialog, getWindow, 
     return result.canceled ? { canceled: true } : beauty.importImages(result.filePaths);
   });
   handle('saveProfile', p => beauty.saveProfile(p));
+  handle('scanImageFolder', async () => {
+    const selected = await dialog.showOpenDialog(getWindow(), { title: '选择美化素材文件夹（先预览，再导入）', properties: ['openDirectory'] });
+    return selected.canceled || !selected.filePaths?.length ? { canceled: true } : beauty.folderImport.scan(selected.filePaths[0]);
+  });
+  handle('cancelImageFolder', id => beauty.folderImport.cancel(id));
+  handle('importImageFolder', id => beauty.importFolder(id));
   handle('deleteProfile', id => beauty.deleteProfile(id));
   handle('selectProfile', id => beauty.selectProfile(id));
   handle('deleteAsset', id => beauty.deleteAsset(id));

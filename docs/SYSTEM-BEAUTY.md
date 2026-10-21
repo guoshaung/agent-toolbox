@@ -26,6 +26,10 @@
 
 `thumbnails/` 只存列表用的小图。原图和缩略图按内容寻址且原子创建，重复导入不覆盖使用中的文件。每次新的壁纸应用周期创建独立备份，恢复后再次应用不会复制同一文件到自身。旧版本恢复记录仍可读取。
 
+“从文件夹导入”先只读扫描并展示候选数、总大小、跳过项及最多 12 个相对文件名；用户点击“导入预览中的图片”后才写自己的素材库。扫描包含最多 3 层子目录，每次最多 120 张、源数据 256 MB、单张 25 MB；另有 4096 个目录项和 64 个目录的遍历上限。达到上限会明确提示只扫描了部分素材，可选择子目录继续。只接受 PNG/JPEG/WebP，实际图片签名与解码在导入时验证。
+
+扫描跳过符号链接、目录联接，不沿它们递归。预览计划只在主进程内存中保存路径，renderer 仅持有随机 ID；15 分钟失效、单次使用，可取消或重新选择。导入前重新检查根目录身份、逐层链接及文件身份/大小/修改时间，读文件描述符后再次检查，文件被替换或改变则跳过。预览样本不带绝对路径。逐张持久化成功结果，单张失败继续其他图片，报告新增/重复/失败；不修改源文件、主配置或系统外观。文件夹导入不负责归档解压或 GIF 动画播放。
+
 主进程实现：`src/main/system-beauty.js`。原生桥：`src/main/system-beauty-native.ps1`。renderer：`src/renderer/tools/system-beauty/index.js`。原生桥为短时隐藏 PowerShell 子进程，不加载原版 DLL，也不安装服务或注册 COM。
 
 恢复功能覆盖单张桌面壁纸。还没有实现多显示器独立壁纸、幻灯片或 Windows 聚焦模式的完整状态恢复。
@@ -86,7 +90,7 @@
 
 ## 验证
 
-`node --test test/system-beauty.test.js test/beauty-ini.test.js test/beauty-personalization.test.js test/beauty-native-preview.test.js test/beauty-window-appearance.test.js test/app-controls.test.js`
+`node --test test/system-beauty.test.js test/beauty-folder-import.test.js test/beauty-ini.test.js test/beauty-personalization.test.js test/beauty-native-preview.test.js test/beauty-window-appearance.test.js test/app-controls.test.js`
 
 测试覆盖素材重复导入与并发、错误图片、字段白名单、应用前备份、连续应用后的恢复、失败时保留恢复记录、空壁纸恢复、原生调用参数隔离及 IPC 来源校验。另有本机隔离 Electron 预览检查，覆盖真实图片解码、导入、保存、切换画面和布局；不触发实际壁纸写入。
 
