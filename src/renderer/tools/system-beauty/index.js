@@ -8,6 +8,8 @@ export default {
     let library, draft, scene = 'explorer', disposed = false, busy = false;
     let showAllPresets = false, wallpaperSize = 'fhd', assetQuery = '', assetPage = 0;
     let personalizationStatus = '可先读取当前设置，再选择需要更改的项目。';
+    let windowTarget = '', windowStatus = '先刷新窗口列表，再选择一个窗口。';
+    const windowOptions = { dark: 'keep', corners: 'keep', material: 'keep' };
     const body = h('div', { class: 'beauty__body' });
     root.append(h('div', { class: 'bar bar--drag' }, h('strong', {}, '系统美化'), h('span', { class: 'faint' }, '你的图片，你的桌面')), body);
     const invoke = async (name, ...args) => {
@@ -149,6 +151,25 @@ export default {
         if (!result.canceled) toast('配方已导出，请在对应原生引擎中手动导入', 'good', 5000);
       };
       const nativeStatus = h('p', { class: 'faint', role: 'status' }, '可读取本机原版 2.1.0 宿主的运行状态。');
+      const windows = library.windowAppearance || { supported: false, candidates: [], records: [] };
+      if (!windows.candidates.some(item => item.id === windowTarget)) windowTarget = '';
+      const targetSelect = h('select', { class: 'field', 'aria-label': '目标窗口' }, h('option', { value: '' }, '请选择窗口'),
+        ...windows.candidates.map(item => h('option', { value: item.id, selected: item.id === windowTarget }, `${item.title || '无标题'} · ${item.processName}`)));
+      targetSelect.addEventListener('change', () => { windowTarget = targetSelect.value; render(); });
+      const windowFields = h('div', { class: 'beauty__row' }, ...[
+        ['dark', '窗口标题栏深色', [['keep', '保持当前'], ['on', '跟随系统深色'], ['off', '浅色标题栏']]],
+        ['corners', '窗口圆角', [['keep', '保持当前'], ['default', '系统默认'], ['square', '直角'], ['round', '圆角'], ['small', '小圆角']]],
+        ['material', '窗口背景材质', [['keep', '保持当前'], ['auto', '系统默认'], ['none', '无材质'], ['mica', '云母'], ['acrylic', '亚克力'], ['tabbed', '云母 Alt']]],
+      ].map(([key, label, options]) => {
+        const select = h('select', { class: 'field', 'aria-label': label }, ...options.map(([value, name]) => h('option', { value, selected: windowOptions[key] === value }, name)));
+        select.addEventListener('change', () => { windowOptions[key] = select.value; render(); });
+        return h('label', { class: 'beauty__field' }, label, select);
+      }));
+      const changeWindow = async (method, payload) => {
+        try { library = await invoke(method, payload); windowStatus = method === 'applyWindowAppearance' ? '已应用到所选窗口，原值已备份。' : '窗口恢复记录已更新。'; }
+        catch (error) { windowStatus = error.message; throw error; }
+        finally { library = await invoke('list'); render(); }
+      };
       body.replaceChildren(
         h('section', { class: 'beauty__hero' }, h('div', {}, h('span', { class: 'tag' }, '本地素材 · 独立主题库'), h('h2', {}, '给桌面换一种心情'), h('p', { class: 'faint' }, '先搭配背景与窗口质感，保存成自己的主题。桌面壁纸可直接应用；资源管理器和开始菜单当前为效果预览。')),
           presetStrip, h('div', { class: 'beauty__row' }, button(showAllPresets ? '收起配色' : `全部 ${library.presets.length} 套配色`, async () => { showAllPresets = !showAllPresets; render(); }, { class: 'btn btn--sm' }))),
@@ -188,6 +209,14 @@ export default {
           button('应用 Windows 外观', () => changePersonalization(false), { class: 'btn btn--primary', disabled: !library.supported || !Object.values(draft.windows).some(value => value !== 'keep') }),
           button('恢复 Windows 外观', () => changePersonalization(true), { disabled: !library.supported || !library.personalizationRecovery })),
           h('p', { class: 'faint' }, '应用前会保存所改项目的原值；透明效果的实际呈现取决于 Windows 和应用。此处不会改变字体。')),
+        h('section', { class: 'card beauty__window-controls' }, h('h3', {}, '指定窗口外观'),
+          h('p', { class: 'faint' }, '选择一个正在运行的窗口，手动调整圆角、标题栏与材质。只作用于这个窗口；自绘界面或不透明背景可能不显示材质效果。'),
+          h('div', { class: 'beauty__row' }, button('刷新窗口列表', async () => { library = await invoke('refreshWindows'); windowStatus = `找到 ${library.windowAppearance.candidates.length} 个窗口。`; render(); }, { disabled: !windows.supported }), targetSelect),
+          windowFields, h('p', { class: 'faint', role: 'status' }, windowStatus),
+          h('div', { class: 'beauty__row' }, button('应用到所选窗口', () => changeWindow('applyWindowAppearance', { targetId: windowTarget, options: windowOptions }), { class: 'btn btn--primary', disabled: !windows.supported || !windowTarget || !Object.values(windowOptions).some(value => value !== 'keep') })),
+          ...windows.records.map(record => h('div', { class: 'beauty__row' }, h('span', {}, `${record.title} · ${record.processName}`),
+            button('恢复此窗口', () => changeWindow('restoreWindowAppearance', record.id)), button('清理已关闭窗口记录', () => changeWindow('forgetClosedWindow', record.id)))),
+          !windows.supported ? h('p', { class: 'faint' }, windows.reason || '需要 Windows 11 22H2 或更新版本') : null),
         h('section', { class: 'card' }, h('h3', {}, '原生效果接入'),
           h('p', { class: 'faint' }, '把当前颜色、透明度和质感导出成开源引擎配方，再在对应引擎里手动导入。配方不包含背景图片；系统效果与这里的预览可能有差异。'),
           h('div', { class: 'beauty__row' }, button('导出标题栏配方 · DWMBlurGlass', exportRecipe('dwm')), button('导出资源管理器配方 · ExplorerBlurMica', exportRecipe('explorer'))),

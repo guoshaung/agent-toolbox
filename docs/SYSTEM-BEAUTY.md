@@ -15,6 +15,7 @@
 - Windows 桌面壁纸手动应用与恢复；第一次应用前持久化原图备份，连续应用保留最初的恢复点。恢复操作成功后才清除恢复记录。
 - Windows 应用深浅色、系统深浅色和透明效果的手动应用与恢复。三项默认“保持当前”，保存/导入/选择主题不触发系统写入；主题包可携带这些选择。
 - Windows 11 22H2+ 可打开独立的原生云母/亚克力预览窗，使用当前底色与不透明度，关闭即退出；纯色用于对照。
+- 刷新并选择普通应用窗口，手动应用或恢复圆角、标题栏深色与系统材质；不注入代码。窗口关闭后可清理对应恢复记录。
 - 只读检测原版 MToolBox 2.1.0 宿主，验证宿主 SHA-256 后才查询协议与状态。
 
 窗口质感、资源管理器和开始菜单目前是画面预览，没有向这些系统进程注入代码。壁纸应用使用 Windows `SystemParametersInfoW`，不会改字体、凭据或工具箱主题。
@@ -45,6 +46,18 @@
 
 本机已在隐藏隔离预览窗上读取 `DWMWA_SYSTEMBACKDROP_TYPE=38`，确认亚克力/云母/纯色分别得到 `3/2/1`，与微软的 [DWM_SYSTEMBACKDROP_TYPE](https://learn.microsoft.com/en-us/windows/win32/api/dwmapi/ne-dwmapi-dwm_systembackdrop_type) 一致。该检查验证材质请求被系统接受，实际视觉仍取决于系统透明效果、节能状态和窗口环境，不能据此声称资源管理器或全局窗口美化已生效。
 
+### 指定窗口外观
+
+`beauty-window-appearance.js` 与 `beauty-window-native.ps1` 只读写可读回的 DWM 属性 `20/33/38`（深色标题栏、圆角、系统材质）。依据微软 [DWMWINDOWATTRIBUTE](https://learn.microsoft.com/en-us/windows/win32/api/dwmapi/ne-dwmapi-dwmwindowattribute) 与 [DwmSetWindowAttribute](https://learn.microsoft.com/en-us/windows/win32/api/dwmapi/nf-dwmapi-dwmsetwindowattribute)。本机无法可靠读回 `34/35/36` 的颜色原值，因此没有提供这些属性的应用操作。
+
+界面只接收主进程枚举的候选 ID。每次操作校验窗口句柄、PID、进程创建时间、进程名和窗口类；首次绑定还核对标题，之后使用固定属性名和随机值标记窗口，防止恢复时误用已经复用的句柄。标记通过微软 [SetPropW](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-setpropw) / [GetPropW](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-getpropw) / [RemovePropW](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-removepropw) 管理，只删除自己的标记。更高完整性级别的窗口可能拒绝操作，不自动提权。
+
+窗口恢复数据单独保存在 `userData/system-beauty/window-appearance/windows.json`，最多 32 条，包含原值与窗口身份，不进入便携主题包或主配置。写原值与绑定意图落盘后才改变窗口；连续应用保留初始值并追加新字段。恢复成功后先持久化 `restored` 阶段，再删除标记和记录，磁盘失败后重试不会重新写其他窗口。原生失败保留备份，未绑定且属性未变的失败操作可直接结束恢复。
+
+窗口列表排除桌面、任务栏、安全/系统宿主；Explorer 仅允许文件窗口类。窗口自绘、非透明客户端或应用主动重置外观可能使材质不明显。这些操作不创建自动重应用规则、不注册 DLL、不绘制 Explorer 客户端背景，不等同于完整全局美化引擎。
+
+原生助手从 asar 复制到每次调用独立的临时目录，用 base64 JSON 参数运行；完成后清理，不触碰系统配置。夜间真实写入只在新建的隐藏 Electron 测试窗口上进行，并验证原值恢复、标记清除、错误标记拒绝与已关闭窗口记录清理。
+
 ## 后续原生效果
 
 本机用户提供的 2.1.0 经 REA/Ghidra 静态分析，已确认消息窗口 `MHostProcess`：协议查询 `0x8048` 返回 2；状态查询 `0x804b`；`WM_COPYDATA` 的 `dwData=1001, cbData=0` 触发配置重载。读写配置使用 DMResV2 容器，尚未完成字段级编解码往返验证，因此没有暴露“应用原版主题”的按钮。不能把协议线索当作已经运行验证的集成。
@@ -69,7 +82,7 @@
 
 ## 验证
 
-`node --test test/system-beauty.test.js test/beauty-personalization.test.js test/beauty-native-preview.test.js test/app-controls.test.js`
+`node --test test/system-beauty.test.js test/beauty-personalization.test.js test/beauty-native-preview.test.js test/beauty-window-appearance.test.js test/app-controls.test.js`
 
 测试覆盖素材重复导入与并发、错误图片、字段白名单、应用前备份、连续应用后的恢复、失败时保留恢复记录、空壁纸恢复、原生调用参数隔离及 IPC 来源校验。另有本机隔离 Electron 预览检查，覆盖真实图片解码、导入、保存、切换画面和布局；不触发实际壁纸写入。
 
