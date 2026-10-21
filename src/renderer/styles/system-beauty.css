@@ -48,5 +48,7 @@
 .beauty--busy button { pointer-events:none; opacity:.65; }
 @media(max-width:1000px) { .beauty__layout { grid-template-columns:1fr; } .beauty__preview { height:400px; } .beauty__editor { grid-template-columns:1fr 1fr; } .beauty__editor h3,.beauty__editor>.beauty__row,.beauty__editor>p { grid-column:1/-1; } }
 @media(max-width:650px) { .beauty__body { padding:14px; } .beauty__presets { grid-template-columns:1fr 1fr; } .beauty__editor { grid-template-columns:1fr; } .beauty__preview { padding:50px 12px 60px; } .beauty__explorer { grid-template-columns:95px 1fr; } }
-.beauty__window-controls select[aria-label="目标窗口"] { min-width: 0; max-width: 100%; flex: 1 1 300px; }
+.beauty__window-controls { grid-template-columns: minmax(0, 1fr); }
+.beauty__window-controls .beauty__row { min-width: 0; max-width: 100%; }
+.beauty__window-controls select[aria-label="目标窗口"] { width: 0; min-width: 0; max-width: 100%; flex: 1 1 300px; }
 .beauty__window-controls .beauty__row > span { min-width: 0; overflow-wrap: anywhere; }
