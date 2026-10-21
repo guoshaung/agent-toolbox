@@ -25,6 +25,7 @@ contextBridge.exposeInMainWorld('toolbox', {
     personalization: () => ipcRenderer.invoke('systemBeauty:personalization'),
     applyPersonalization: (options) => ipcRenderer.invoke('systemBeauty:applyPersonalization', options),
     restorePersonalization: () => ipcRenderer.invoke('systemBeauty:restorePersonalization'),
+    previewNative: (profile) => ipcRenderer.invoke('systemBeauty:previewNative', profile),
     probe: () => ipcRenderer.invoke('systemBeauty:probe'),
     openFolder: () => ipcRenderer.invoke('systemBeauty:openFolder'),
   },

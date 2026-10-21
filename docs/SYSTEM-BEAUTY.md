@@ -14,6 +14,7 @@
 - 生成 DWMBlurGlass 标题栏配方和 ExplorerBlurMica 资源管理器配方；使用 UTF-16LE BOM 的 INI 文件供对应引擎手动导入，不自动安装或启用引擎。
 - Windows 桌面壁纸手动应用与恢复；第一次应用前持久化原图备份，连续应用保留最初的恢复点。恢复操作成功后才清除恢复记录。
 - Windows 应用深浅色、系统深浅色和透明效果的手动应用与恢复。三项默认“保持当前”，保存/导入/选择主题不触发系统写入；主题包可携带这些选择。
+- Windows 11 22H2+ 可打开独立的原生云母/亚克力预览窗，使用当前底色与不透明度，关闭即退出；纯色用于对照。
 - 只读检测原版 MToolBox 2.1.0 宿主，验证宿主 SHA-256 后才查询协议与状态。
 
 窗口质感、资源管理器和开始菜单目前是画面预览，没有向这些系统进程注入代码。壁纸应用使用 Windows `SystemParametersInfoW`，不会改字体、凭据或工具箱主题。
@@ -35,6 +36,14 @@
 应用前将所改字段的原值持久化到独立素材库的 `personalizationRecovery`。备份包含原 DWORD 类型与完整无符号值，原来不存在的值在恢复时删除；遇到不支持的原类型会在写入前停止。连续应用保留最早的恢复点，新更改字段追加各自的初始值，恢复只涉及这些字段。原生写入或恢复失败时保留记录以便重试。不会删除注册表键或改变其他键值。
 
 修改后使用有超时的 `ImmersiveColorSet` 广播，不重启 Explorer。不处理系统策略、强制应用主题或每个应用的私有主题；部分窗口可能需要重新打开，透明效果也取决于系统与应用。夜间开发只在模拟接口和独立临时注册表键中测试写入，没有变更用户真实配色或透明效果。
+
+### 独立原生材质预览
+
+`beauty-native-preview.js` 使用安装版本 Electron 33.4.11 的 [`BrowserWindow.setBackgroundMaterial`](https://www.electronjs.org/docs/latest/api/browser-window#winsetbackgroundmaterialmaterial-windows)，只控制自己创建的预览窗口。亚克力/云母/纯色分别请求对应的 Windows 合成器材质；玻璃配方用亚克力进行原生对照，模糊强度由系统控制。所选背景图片仅显示在原搭配画面，原生材质使用 Windows 当前桌面环境。
+
+预览不改主窗口、全局 `nativeTheme`、字体配置或其他进程；不加载第三方 DLL。新页面开启沙箱，没有 preload、Node 或 Toolbox API，拒绝新窗口、导航和权限请求；主题名称通过 `textContent` 显示。只复用一个预览窗口，失败时清理，窗口可独立关闭。
+
+本机已在隐藏隔离预览窗上读取 `DWMWA_SYSTEMBACKDROP_TYPE=38`，确认亚克力/云母/纯色分别得到 `3/2/1`，与微软的 [DWM_SYSTEMBACKDROP_TYPE](https://learn.microsoft.com/en-us/windows/win32/api/dwmapi/ne-dwmapi-dwm_systembackdrop_type) 一致。该检查验证材质请求被系统接受，实际视觉仍取决于系统透明效果、节能状态和窗口环境，不能据此声称资源管理器或全局窗口美化已生效。
 
 ## 后续原生效果
 
@@ -60,7 +69,7 @@
 
 ## 验证
 
-`node --test test/system-beauty.test.js test/beauty-personalization.test.js test/app-controls.test.js`
+`node --test test/system-beauty.test.js test/beauty-personalization.test.js test/beauty-native-preview.test.js test/app-controls.test.js`
 
 测试覆盖素材重复导入与并发、错误图片、字段白名单、应用前备份、连续应用后的恢复、失败时保留恢复记录、空壁纸恢复、原生调用参数隔离及 IPC 来源校验。另有本机隔离 Electron 预览检查，覆盖真实图片解码、导入、保存、切换画面和布局；不触发实际壁纸写入。
 
@@ -69,3 +78,5 @@
 渐变生成测试使用真实 Sharp 编码与解码检查尺寸、格式和内容去重；旧库补小图时验证原图与主题引用保留。壁纸重复应用/恢复、失败恢复测试使用模拟原生接口，真实桌面不参与写入。界面检查另覆盖 70 张素材的分页和搜索，以及窄窗口布局。
 
 原生外观测试覆盖分项应用、多次应用后的初始值保留、缺失值恢复、DWORD 边界、并发、磁盘失败、部分原生失败、备份篡改、主题包隔离与界面失败恢复。PowerShell 注册表适配器在唯一临时测试键中验证真实类型与缺失值往返，保留非目标值并拒绝未知字段，完成后删除临时键；该测试不发送全局主题通知。
+
+原生预览测试覆盖系统版本判断、参数白名单、并发窗口复用、权限隔离、关闭与失败清理；隔离 Electron 检查还验证 DWM 属性、无特权页面、主题名称无 HTML 执行及关闭按钮。

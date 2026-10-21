@@ -11,6 +11,7 @@ const execFileAsync = promisify(execFile);
 const { makeNativeRecipe } = require('./beauty-recipes');
 const { PRESETS, WALLPAPER_SIZES, renderBackground } = require('./beauty-backgrounds');
 const { normalizeWindowsOptions, personalizationPlan, validatePersonalizationValues } = require('./beauty-personalization');
+const { BeautyNativePreview } = require('./beauty-native-preview');
 const MAX_IMAGE = 25 * 1024 * 1024;
 const MAX_BUNDLE = Math.ceil(MAX_IMAGE * 4 / 3) + 256 * 1024;
 const ASSET_ID = /^[a-f0-9]{64}$/;
@@ -59,6 +60,7 @@ class SystemBeauty {
     this.decodeImage = decodeImage || decodeRaster;
     this.thumbnailImage = thumbnailImage || makeThumbnail;
     this.platform = platform;
+    this.preview = new BeautyNativePreview({ platform });
     this.pending = Promise.resolve();
   }
   serial(action) {
@@ -108,7 +110,7 @@ class SystemBeauty {
   }
   list() {
     const data = this.read();
-    return { supported: this.platform === 'win32', presets: PRESETS, wallpaperSizes: WALLPAPER_SIZES,
+    return { supported: this.platform === 'win32', nativePreview: this.preview.capability, presets: PRESETS, wallpaperSizes: WALLPAPER_SIZES,
       assets: data.assets.map(a => ({ ...a, url: pathToFileURL(this.assetPath(a.id)).href,
         thumbnailUrl: pathToFileURL(fs.existsSync(this.thumbnailPath(a.id)) ? this.thumbnailPath(a.id) : this.assetPath(a.id)).href })),
       profiles: data.profiles, activeProfileId: data.activeProfileId || '', recovery: data.recovery ? { available: true, at: data.recovery.at } : null,
@@ -397,6 +399,7 @@ function registerSystemBeautyIpc(ipcMain, { getUserDataPath, dialog, getWindow, 
   handle('personalization', async () => ({ values: await beauty.native.personalization() }));
   handle('applyPersonalization', options => beauty.applyPersonalization(options));
   handle('restorePersonalization', () => beauty.restorePersonalization());
+  handle('previewNative', profile => beauty.preview.open(normalizeProfile(profile)));
   handle('probe', () => beauty.native.probe());
   handle('openFolder', async () => { fs.mkdirSync(beauty.root, { recursive: true }); const error = await shell.openPath(beauty.root); if (error) throw new Error(error); return {}; });
   return beauty;
