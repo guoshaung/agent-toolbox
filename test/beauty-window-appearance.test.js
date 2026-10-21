@@ -119,6 +119,15 @@ test('bulk recovery isolates malformed values and refuses duplicate IDs before a
   assert.equal(service.read().records.length, 4);
 });
 
+test('applying a new change refuses duplicate backup IDs before losing another window record', async t => {
+  const { service, states, refresh } = setupMany(t), ids = await refresh();
+  await service.apply(ids[0], { dark: 'on' }); await service.apply(ids[1], { corners: 'round' });
+  const data = service.read(); data.records[1].id = data.records[0].id; service.write(data);
+  const before = service.read();
+  await assert.rejects(service.apply(ids[0], { material: 'mica' }), /ID 重复/);
+  assert.deepEqual(service.read(), before); assert.equal(states[0].values[38], 0);
+});
+
 test('window appearance plans whitelist readable reversible attributes only', () => {
   assert.deepEqual(windowPlan({}), {});
   assert.deepEqual(windowPlan({ dark: 'on', corners: 'small', material: 'mica', captionColor: '#123456' }), { 20: 1, 33: 3, 38: 2 });

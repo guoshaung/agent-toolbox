@@ -93,6 +93,12 @@ class WindowAppearance {
       if (!target) throw new Error('请刷新并选择目标窗口');
       if (!Object.keys(plan).length) throw new Error('请选择需要更改的窗口外观项');
       const data = this.read();
+      const recordIds = new Set();
+      for (const item of data.records) {
+        if (typeof item?.id !== 'string' || !UUID.test(item.id)) throw new Error('窗口恢复记录 ID 无效，请先检查备份');
+        if (recordIds.has(item.id)) throw new Error('窗口恢复记录 ID 重复，已停止操作并保留全部备份');
+        recordIds.add(item.id);
+      }
       let record = data.records.find(item => item.target?.hwnd === target.hwnd && item.target?.pid === target.pid && item.target?.started === target.started);
       if (record) {
         record = validRecord(record);

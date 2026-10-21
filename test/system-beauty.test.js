@@ -81,6 +81,29 @@ test('can restore originally empty wallpaper, and invalid asset never invokes na
   await beauty.applyWallpaper(result.imported[0]); await beauty.restoreWallpaper();
   assert.equal(calls.at(-1), '');
 });
+
+test('incomplete wallpaper recovery records never clear the desktop or discard recovery state', async t => {
+  const calls = [], beauty = fixture(t, { native: { setWallpaper: async file => calls.push(file) } });
+  for (const recovery of [
+    { original: 'C:/images/original.jpg', copy: '' },
+    { original: 'C:/images/original.jpg' },
+    { copy: '' },
+    { original: null, copy: '' },
+    { original: '', copy: 'unexpected-backup' },
+  ]) {
+    beauty.write({ ...beauty.read(), recovery });
+    await assert.rejects(beauty.restoreWallpaper(), /壁纸备份.*无效/);
+    assert.deepEqual(beauty.read().recovery, recovery);
+  }
+  assert.equal(calls.length, 0);
+});
+
+test('unrecognized current wallpaper response prevents application before backup or OS writes', async t => {
+  const calls = [], beauty = fixture(t, { native: { wallpaper: async () => undefined, setWallpaper: async file => calls.push(file) } });
+  const imported = await beauty.importImages([image(beauty)]);
+  await assert.rejects(beauty.applyWallpaper(imported.imported[0]), /无法识别/);
+  assert.equal(beauty.read().recovery, null); assert.equal(calls.length, 0);
+});
 test('native bridge encodes user paths strictly as data and works without an OS-visible asar script', async () => {
   const file = 'C:\\images\\$(private) `a`.png';
   const bridge = new WindowsBeautyBridge({ platform: 'win32', exec: async (command, args, options) => {

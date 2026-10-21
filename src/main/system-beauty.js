@@ -277,6 +277,7 @@ class SystemBeauty {
       if (!data.assets.some(a => a.id === id) || !fs.existsSync(asset)) throw new Error('请先导入背景图片');
       if (!data.recovery) {
         const original = await this.native.wallpaper();
+        if (typeof original !== 'string') throw new Error('无法识别当前壁纸路径，已停止应用');
         const recoveryId = crypto.randomUUID();
         // Persist the baseline before calling any mutating Windows API, even if it fails.
         let copy = '';
@@ -302,6 +303,8 @@ class SystemBeauty {
       const data = this.read(), recovery = data.recovery;
       if (!recovery) throw new Error('还没有可恢复的壁纸备份');
       // Refuse malformed persisted paths before touching the OS.
+      if (typeof recovery.original !== 'string' || typeof recovery.copy !== 'string' ||
+        (!!recovery.original !== !!recovery.copy)) throw new Error('壁纸备份记录无效，请保留恢复记录');
       if (recovery.id && !/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(recovery.id)) throw new Error('壁纸备份 ID 无效');
       const backupName = recovery.id ? `wallpaper-${recovery.id}` : 'wallpaper';
       const expectedCopy = path.join(this.root, 'recovery', `${backupName}${path.extname(recovery.original || '').slice(0, 12) || '.bmp'}`);
