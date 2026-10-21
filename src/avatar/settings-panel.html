@@ -10,7 +10,7 @@
     {
       "imports": {
         "three": "../../node_modules/three/build/three.module.js",
-        "three/addons/": "../../node_modules/three/examples/jsm/",
+        "three/addons/": "../../assets/avatar-three-addons/",
         "@pixiv/three-vrm": "../../node_modules/@pixiv/three-vrm/lib/three-vrm.module.js",
         "@mediapipe/tasks-vision": "../../node_modules/@mediapipe/tasks-vision/vision_bundle.mjs"
       }
@@ -36,6 +36,12 @@
 
     <aside class="settings" aria-label="虚拟形象设置">
       <header><p class="eyebrow">OUTPUT SETTINGS</p><h1>虚拟形象</h1></header>
+      <section class="wardrobe" aria-label="皮套库">
+        <h2>换个皮套</h2>
+        <p class="wardrobe-hint">点选切换；首次下载后可离线使用。</p>
+        <div id="model-library" class="model-library" role="group" aria-label="可选皮套">正在读取皮套…</div>
+        <p class="wardrobe-credit">VRoid β · pixiv · CC0</p>
+      </section>
       <label class="field">
         <span>摄像头</span>
         <select id="camera"><option value="">正在读取设备…</option></select>
@@ -44,8 +50,9 @@
       <div class="field">
         <span>VRM 模型</span>
         <button id="pick-model" class="file-picker" type="button">
-          <strong id="model-name">尚未选择</strong><small>选择 .vrm 文件</small>
+          <strong id="model-name">尚未选择</strong><small>导入自己的 .vrm 皮套</small>
         </button>
+        <select id="recent-models" aria-label="最近用过的皮套"><option value="">最近用过的皮套…</option></select>
       </div>
       <fieldset>
         <legend>背景</legend>
@@ -58,6 +65,6 @@
       <p id="status" class="status" role="status">设置会自动保存；录制前可点左上角齿轮隐藏面板</p>
     </aside>
   </main>
-  <script type="module" src="settings-panel.js"></script>
+  <script type="module" src="settings-bootstrap.mjs"></script>
 </body>
 </html>

@@ -3,7 +3,8 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
-const { app, BrowserWindow, dialog, ipcMain, session } = require('electron');
+const { app, BrowserWindow, dialog, ipcMain, session, net } = require('electron');
+const { createModelLibrary } = require('./model-library');
 
 const PARTITION = 'persist:avatar-output';
 const SETTINGS_FILE = 'avatar-output-settings.json';
@@ -16,6 +17,7 @@ function sanitizeSettings(value = {}) {
   return {
     cameraId: typeof value.cameraId === 'string' ? value.cameraId : '',
     modelPath: typeof value.modelPath === 'string' ? value.modelPath : '',
+    recentModelPaths: Array.isArray(value.recentModelPaths) ? [...new Set(value.recentModelPaths.filter((item) => typeof item === 'string' && path.extname(item).toLowerCase() === '.vrm'))].slice(0, 12) : [],
     backgroundMode: value.backgroundMode === 'solid' ? 'solid' : 'transparent',
     backgroundColor: /^#[0-9a-f]{6}$/i.test(value.backgroundColor) ? value.backgroundColor : DEFAULT_SETTINGS.backgroundColor,
     alwaysOnTop: value.alwaysOnTop === undefined ? DEFAULT_SETTINGS.alwaysOnTop : Boolean(value.alwaysOnTop),
@@ -28,6 +30,10 @@ function createAvatarWindowController({ getMainWindow = () => null } = {}) {
   let avatarWindow = null;
   let bounds = null;
   let settings = loadSettings();
+  const modelLibrary = createModelLibrary({
+    directory: path.join(app.getPath('userData'), 'avatar-models'),
+    fetcher: (url, options) => net.fetch(url, options),
+  });
 
   const avatarSession = session.fromPartition(PARTITION);
   avatarSession.setPermissionRequestHandler((webContents, permission, callback, details) => {
@@ -101,6 +107,9 @@ function createAvatarWindowController({ getMainWindow = () => null } = {}) {
   }
   function updateSettings(patch = {}) {
     const previousFrameless = settings.frameless;
+    if (typeof patch.modelPath === 'string' && patch.modelPath !== settings.modelPath) {
+      patch = { ...patch, recentModelPaths: [patch.modelPath, settings.modelPath, ...(settings.recentModelPaths || [])].filter(Boolean) };
+    }
     settings = sanitizeSettings({ ...settings, ...patch });
     saveSettings();
     if (avatarWindow && !avatarWindow.isDestroyed()) {
@@ -123,6 +132,16 @@ function createAvatarWindowController({ getMainWindow = () => null } = {}) {
   ipcMain.handle('avatar:settings:update', (event, patch) => {
     if (!isAvatarSender(event)) throw new Error('Avatar settings are only available to the avatar window');
     return updateSettings(patch);
+  });
+  ipcMain.handle('avatar:models:list', (event) => {
+    if (!isAvatarSender(event)) throw new Error('Avatar models are only available to the avatar window');
+    return modelLibrary.list();
+  });
+  ipcMain.handle('avatar:models:select', async (event, id) => {
+    if (!isAvatarSender(event)) throw new Error('Avatar models are only available to the avatar window');
+    const modelPath = await modelLibrary.ensure(id);
+    if (!isAvatarSender(event)) throw new Error('虚拟形象窗口已关闭，请重新打开');
+    return updateSettings({ modelPath });
   });
   ipcMain.handle('avatar:model:pick', async (event) => {
     if (!isAvatarSender(event)) throw new Error('Avatar model selection is only available to the avatar window');

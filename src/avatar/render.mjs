@@ -170,7 +170,7 @@ export function createAvatarRenderer(options) {
     renderer.render(scene, camera);
   }
 
-  async function loadModel(modelUrl) {
+  async function loadModel(modelUrl, { relaxedArms = false } = {}) {
     if (typeof modelUrl !== 'string' || modelUrl.trim() === '') {
       throw new TypeError('modelUrl must be a non-empty string');
     }
@@ -190,6 +190,13 @@ export function createAvatarRenderer(options) {
     disposeScene(vrm?.scene);
     vrm = loadedVrm;
     scene.add(vrm.scene);
+    if (relaxedArms) {
+      const leftArm = vrm.humanoid?.getNormalizedBoneNode('leftUpperArm');
+      const rightArm = vrm.humanoid?.getNormalizedBoneNode('rightUpperArm');
+      if (leftArm) leftArm.rotation.z = Math.PI * 0.38;
+      if (rightArm) rightArm.rotation.z = -Math.PI * 0.38;
+      vrm.update(0);
+    }
     head = vrm.humanoid?.getNormalizedBoneNode('head') ?? null;
     restHeadQuaternion = head?.quaternion.clone() ?? null;
 

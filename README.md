@@ -16,6 +16,12 @@
 
 开发者：克隆仓库后从源码启动；开发模式不检查更新。
 
+收藏自己的 Skill：打开「Skill 工厂 → 我喜欢的」，直接粘贴提示词、操作步骤或 `SKILL.md`，名称可选填（支持中文），缺少的名称、描述和头部格式会自动补齐。点击「加入我喜欢的」，再选择输出目录并点击「装到目录」。完整 `SKILL.md` 原样保存；兜底生成的文件保留粘贴的正文。收藏留在本机配置中，同名收藏可以更新，移除收藏不删除已安装文件。引用的脚本、图片等附属文件需另外复制到安装目录。
+
+虚拟形象换皮套：打开「形象输出 → 换个皮套」，点击缩略图即可切换。皮套库提供 7 套 VRoid β 样例，首次选择下载并校验文件，之后从本机缓存离线加载；原有 VRM 导入入口保留，「最近用过的皮套」可切回之前的模型。新增皮套使用自然垂臂的半身预览，切换仅更新形象设置，不改变字体、背景或摄像头选择。[模型来源与授权](assets/avatar-model-thumbnails/README.md)。
+
+逆向工具在「DSH」对话里使用：REA 是 `rea` MCP 服务，工具箱优先使用本机 `userData/dsh-runtime/node_modules/rea-agents`；REA 和额外安装的 reverse-skill 入口也可在「Skill 工厂 → 技能库」中搜索，技能库会扫描 `~/.dsh/skills`。reverse-skill 是多文件工作流包，安装时需保留其脚本和参考资料，不能仅粘贴主 `SKILL.md`。
+
 ```bash
 git clone https://github.com/guoshaung/agent-toolbox.git
 cd agent-toolbox

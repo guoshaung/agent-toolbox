@@ -1,0 +1,86 @@
+[
+  {
+    "id": "sendagaya-shino",
+    "name": "千驮谷篠 · 长发",
+    "author": "pixiv / VRoid Studio β",
+    "license": "CC0",
+    "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+    "source": "https://github.com/madjin/vrm-samples/blob/e16eb187100149a315ad92c3c9968f1d5baa6c7d/vroid/beta/Sendagaya_Shino.vrm",
+    "url": "https://api.github.com/repos/madjin/vrm-samples/contents/vroid/beta/Sendagaya_Shino.vrm?ref=e16eb187100149a315ad92c3c9968f1d5baa6c7d",
+    "bytes": 15074328,
+    "sha256": "1e177c1a7b14f783a9c48395831db8616260d3bddd4154cb2784b779adca49b5",
+    "thumbnail": "sendagaya-shino.png"
+  },
+  {
+    "id": "sendagaya-shibu",
+    "name": "千驮谷涩 · 短发",
+    "author": "pixiv / VRoid Studio β",
+    "license": "CC0",
+    "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+    "source": "https://github.com/madjin/vrm-samples/blob/e16eb187100149a315ad92c3c9968f1d5baa6c7d/vroid/beta/Sendagaya_Shibu.vrm",
+    "url": "https://api.github.com/repos/madjin/vrm-samples/contents/vroid/beta/Sendagaya_Shibu.vrm?ref=e16eb187100149a315ad92c3c9968f1d5baa6c7d",
+    "bytes": 17049284,
+    "sha256": "b7bcad5e5890abc4d7c65f9afc31da2445db03197d44f1ec10447f9db5abeaff",
+    "thumbnail": "sendagaya-shibu.png"
+  },
+  {
+    "id": "sakurada-fumiriya",
+    "name": "樱田史利矢 · 男角色",
+    "author": "pixiv / VRoid Studio β",
+    "license": "CC0",
+    "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+    "source": "https://github.com/madjin/vrm-samples/blob/e16eb187100149a315ad92c3c9968f1d5baa6c7d/vroid/beta/Sakurada_Fumiriya.vrm",
+    "url": "https://api.github.com/repos/madjin/vrm-samples/contents/vroid/beta/Sakurada_Fumiriya.vrm?ref=e16eb187100149a315ad92c3c9968f1d5baa6c7d",
+    "bytes": 19342280,
+    "sha256": "d8fb05f33e377df028cb6b9d58c441ce68326c41fa23f6c735d40c65ae3dc710",
+    "thumbnail": "sakurada-fumiriya.png"
+  },
+  {
+    "id": "victoria-rubin",
+    "name": "维多利亚 · 礼服",
+    "author": "pixiv / VRoid Studio β",
+    "license": "CC0",
+    "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+    "source": "https://github.com/madjin/vrm-samples/blob/e16eb187100149a315ad92c3c9968f1d5baa6c7d/vroid/beta/Victoria_Rubin.vrm",
+    "url": "https://api.github.com/repos/madjin/vrm-samples/contents/vroid/beta/Victoria_Rubin.vrm?ref=e16eb187100149a315ad92c3c9968f1d5baa6c7d",
+    "bytes": 15479480,
+    "sha256": "b1372131bdbf233f46320146d565f342a7e4f6f4b8f2aefb301f1a283ec07e1e",
+    "thumbnail": "victoria-rubin.png"
+  },
+  {
+    "id": "vita",
+    "name": "Vita · 奇幻",
+    "author": "pixiv / VRoid Studio β",
+    "license": "CC0",
+    "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+    "source": "https://github.com/madjin/vrm-samples/blob/e16eb187100149a315ad92c3c9968f1d5baa6c7d/vroid/beta/Vita.vrm",
+    "url": "https://api.github.com/repos/madjin/vrm-samples/contents/vroid/beta/Vita.vrm?ref=e16eb187100149a315ad92c3c9968f1d5baa6c7d",
+    "bytes": 14359044,
+    "sha256": "f2bf78f28a24e2f75f5ca0b6c3b646654c394e4b03592dfaa0d0633ef0972b4d",
+    "thumbnail": "vita.png"
+  },
+  {
+    "id": "vivi",
+    "name": "Vivi · 休闲",
+    "author": "pixiv / VRoid Studio β",
+    "license": "CC0",
+    "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+    "source": "https://github.com/madjin/vrm-samples/blob/e16eb187100149a315ad92c3c9968f1d5baa6c7d/vroid/beta/Vivi.vrm",
+    "url": "https://api.github.com/repos/madjin/vrm-samples/contents/vroid/beta/Vivi.vrm?ref=e16eb187100149a315ad92c3c9968f1d5baa6c7d",
+    "bytes": 18089136,
+    "sha256": "eaf902e041a7a810f1423599ae75682f61184ab6ef0206da9a8ed9caa8ec3a9d",
+    "thumbnail": "vivi.png"
+  },
+  {
+    "id": "darkness-shibu",
+    "name": "暗黑涩 · 哥特",
+    "author": "pixiv / VRoid Studio β",
+    "license": "CC0",
+    "licenseUrl": "https://creativecommons.org/publicdomain/zero/1.0/",
+    "source": "https://github.com/madjin/vrm-samples/blob/e16eb187100149a315ad92c3c9968f1d5baa6c7d/vroid/beta/Darkness_Shibu.vrm",
+    "url": "https://api.github.com/repos/madjin/vrm-samples/contents/vroid/beta/Darkness_Shibu.vrm?ref=e16eb187100149a315ad92c3c9968f1d5baa6c7d",
+    "bytes": 20423112,
+    "sha256": "0b50573d2d054d98c0a6fc5a5ce872e1b2c8bff8718476ff72a9a68c48674fd8",
+    "thumbnail": "darkness-shibu.png"
+  }
+]
