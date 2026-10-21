@@ -71,6 +71,8 @@
 - DWMBlurGlass 使用其 [Common.cpp 配置读取器](https://github.com/Maplespe/DWMBlurGlass/blob/e3a160c849c35415a4b959462815eebc6870270b/Common/Common.cpp) 与 [Common.h 枚举](https://github.com/Maplespe/DWMBlurGlass/blob/e3a160c849c35415a4b959462815eebc6870270b/Common/Common.h) 的字段约定：效果 `-1/0/2/3`、`blurMethod=0`、颜色为十进制 `0xAABBGGRR`。导出的 `applyglobal=false` 保持上游默认的作用范围。
 - ExplorerBlurMica 使用 [公开 INI 说明](https://github.com/Maplespe/ExplorerBlurMica/blob/5fd0b0b83b3564f7d51c9be966ec190f5e70f0f9/README_ZH.md)：玻璃映射 `Blur(Clear)=3`、亚克力 `1`、云母 `2`；不支持纯色配方。
 - 配方只映射颜色、不透明度、模糊程度和质感，不导出背景图片；浏览器 CSS 预览与原生渲染不能保证逐像素一致。
+- “合并已有 INI”只读原配置，将当前主题的视觉字段合并后另存新文件；源文件及所有已有文件均无法被该操作覆盖（独占创建也拒绝硬链接、符号链接）。未知键、其他段、注释、字体等自定义项原文保留；`applyglobal`、`disableOnBattery`、`crossFade`、`blurMethod` 和 Explorer 工具栏开关等运行选项保留原值。
+- 合并器 `src/main/beauty-ini.js` 接受严格 UTF-8（有/无 BOM）及带 BOM 的 UTF-16LE，保留编码与原有行尾。超过 1 MB、无 `[config]`、结构或编码无法可靠识别时拒绝，不猜测 ANSI/GBK。UTF-8 文件中非 ASCII 字段能否被第三方引擎正确读取取决于该引擎；需要 Win32 Unicode INI 的场景应事先使用 UTF-16LE。重复目标键全部更新，缺失项补到第一个匹配段，已通过 Win32 INI API 验证。
 - INI 的 Windows API 读取已验证；本机没有安装或启用这些引擎，Windows 25H2 上的实际注入和画面效果尚未验证。
 - 2026-10-22 检查的 ExplorerBlurMica 公开仓库缺少项目文件引用的部分核心实现，不能据此声称可以直接重编译完整引擎。
 
@@ -82,7 +84,7 @@
 
 ## 验证
 
-`node --test test/system-beauty.test.js test/beauty-personalization.test.js test/beauty-native-preview.test.js test/beauty-window-appearance.test.js test/app-controls.test.js`
+`node --test test/system-beauty.test.js test/beauty-ini.test.js test/beauty-personalization.test.js test/beauty-native-preview.test.js test/beauty-window-appearance.test.js test/app-controls.test.js`
 
 测试覆盖素材重复导入与并发、错误图片、字段白名单、应用前备份、连续应用后的恢复、失败时保留恢复记录、空壁纸恢复、原生调用参数隔离及 IPC 来源校验。另有本机隔离 Electron 预览检查，覆盖真实图片解码、导入、保存、切换画面和布局；不触发实际壁纸写入。
 

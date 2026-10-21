@@ -97,6 +97,28 @@ test('IPC rejects remote pages before accessing filesystem or dialogs', async ()
   registerSystemBeautyIpc({ handle: (key, fn) => { handlers[key] = fn; } }, { getUserDataPath: () => os.tmpdir(), dialog: { showOpenDialog: () => { throw new Error('should not run'); } }, getWindow: () => null });
   const result = await handlers['systemBeauty:importImages']({ senderFrame: { url: 'https://example.com/index.html' } });
   assert.equal(result.ok, false); assert.match(result.error, /本地/);
+  const merge = await handlers['systemBeauty:exportMergedRecipe']({ senderFrame: { url: 'https://example.com/index.html' } });
+  assert.equal(merge.ok, false); assert.match(merge.error, /本地/);
+});
+
+test('INI merge IPC supports cancel at each dialog and never overwrites the source', async t => {
+  const beauty = fixture(t), source = path.join(beauty.root, 'original.ini'), target = path.join(beauty.root, 'new.ini');
+  const original = Buffer.from('[config]\neffectType=0\nfont=custom\n'); fs.writeFileSync(source, original);
+  const handlers = {}; let cancelOpen = true, cancelSave = false, savePath = target, saves = 0;
+  registerSystemBeautyIpc({ handle: (key, fn) => { handlers[key] = fn; } }, {
+    getUserDataPath: () => beauty.root, getWindow: () => null,
+    dialog: { showOpenDialog: async () => ({ canceled: cancelOpen, filePaths: [source] }), showSaveDialog: async () => { saves++; return { canceled: cancelSave, filePath: savePath }; } },
+  });
+  const event = { senderFrame: { url: require('node:url').pathToFileURL(path.join(__dirname, '../src/renderer/index.html')).href } };
+  const invoke = () => handlers['systemBeauty:exportMergedRecipe'](event, { engine: 'dwm', profile: { id: 'merge', effect: 'mica' } });
+  assert.deepEqual((await invoke()).data, { canceled: true }); assert.equal(saves, 0);
+  cancelOpen = false; cancelSave = true;
+  assert.deepEqual((await invoke()).data, { canceled: true }); assert.equal(fs.existsSync(target), false);
+  cancelSave = false; savePath = source;
+  assert.equal((await invoke()).ok, false); assert.deepEqual(fs.readFileSync(source), original);
+  savePath = target; const result = await invoke(); assert.equal(result.ok, true);
+  assert.equal(result.data.encoding, 'utf8'); assert.match(fs.readFileSync(target, 'utf8'), /font=custom/);
+  assert.deepEqual(fs.readFileSync(source), original);
 });
 
 test('portable bundle round trip carries background bytes but no local paths, keys or recovery state', async t => {

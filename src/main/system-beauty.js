@@ -9,6 +9,7 @@ const { execFile } = require('node:child_process');
 const { promisify } = require('node:util');
 const execFileAsync = promisify(execFile);
 const { makeNativeRecipe } = require('./beauty-recipes');
+const { mergeNativeIni, readIni, writeNewIni } = require('./beauty-ini');
 const { PRESETS, WALLPAPER_SIZES, renderBackground } = require('./beauty-backgrounds');
 const { normalizeWindowsOptions, personalizationPlan, validatePersonalizationValues } = require('./beauty-personalization');
 const { BeautyNativePreview } = require('./beauty-native-preview');
@@ -395,6 +396,16 @@ function registerSystemBeautyIpc(ipcMain, { getUserDataPath, dialog, getWindow, 
     if (selected.canceled || !selected.filePath) return { canceled: true };
     fs.writeFileSync(selected.filePath, Buffer.concat([Buffer.from([0xff, 0xfe]), Buffer.from(recipe.text, 'utf16le')]));
     return { path: selected.filePath, engine: recipe.engine };
+  });
+  handle('exportMergedRecipe', async payload => {
+    const recipe = makeNativeRecipe(payload?.engine, normalizeProfile(payload?.profile));
+    const source = await dialog.showOpenDialog(getWindow(), { title: '读取已有引擎 INI（只读）', properties: ['openFile'], filters: [{ name: '原生引擎配置', extensions: ['ini'] }] });
+    if (source.canceled || !source.filePaths?.length) return { canceled: true };
+    const merged = mergeNativeIni(readIni(source.filePaths[0]), recipe);
+    const target = await dialog.showSaveDialog(getWindow(), { title: '另存合并版 INI（请选择新文件名）', defaultPath: path.join(path.dirname(source.filePaths[0]), recipe.fileName.replace('.ini', '-merged.ini')), filters: [{ name: '原生引擎配置', extensions: ['ini'] }] });
+    if (target.canceled || !target.filePath) return { canceled: true };
+    writeNewIni(target.filePath, merged.buffer);
+    return { path: target.filePath, engine: recipe.engine, encoding: merged.encoding };
   });
   handle('applyWallpaper', id => beauty.applyWallpaper(id));
   handle('restoreWallpaper', () => beauty.restoreWallpaper());

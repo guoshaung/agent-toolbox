@@ -20,6 +20,7 @@ contextBridge.exposeInMainWorld('toolbox', {
     exportBundle: (profile) => ipcRenderer.invoke('systemBeauty:exportBundle', profile),
     importBundle: () => ipcRenderer.invoke('systemBeauty:importBundle'),
     exportRecipe: (payload) => ipcRenderer.invoke('systemBeauty:exportRecipe', payload),
+    exportMergedRecipe: (payload) => ipcRenderer.invoke('systemBeauty:exportMergedRecipe', payload),
     applyWallpaper: (id) => ipcRenderer.invoke('systemBeauty:applyWallpaper', id),
     restoreWallpaper: () => ipcRenderer.invoke('systemBeauty:restoreWallpaper'),
     personalization: () => ipcRenderer.invoke('systemBeauty:personalization'),

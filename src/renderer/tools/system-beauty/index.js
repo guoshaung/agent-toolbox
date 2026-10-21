@@ -150,6 +150,10 @@ export default {
         const result = await invoke('exportRecipe', { engine, profile: draft });
         if (!result.canceled) toast('配方已导出，请在对应原生引擎中手动导入', 'good', 5000);
       };
+      const mergeRecipe = engine => async () => {
+        const result = await invoke('exportMergedRecipe', { engine, profile: draft });
+        if (!result.canceled) toast('合并版已另存，原文件保留；请在对应引擎中手动导入', 'good', 6000);
+      };
       const nativeStatus = h('p', { class: 'faint', role: 'status' }, '可读取本机原版 2.1.0 宿主的运行状态。');
       const windows = library.windowAppearance || { supported: false, candidates: [], records: [] };
       if (!windows.candidates.some(item => item.id === windowTarget)) windowTarget = '';
@@ -220,6 +224,8 @@ export default {
         h('section', { class: 'card' }, h('h3', {}, '原生效果接入'),
           h('p', { class: 'faint' }, '把当前颜色、透明度和质感导出成开源引擎配方，再在对应引擎里手动导入。配方不包含背景图片；系统效果与这里的预览可能有差异。'),
           h('div', { class: 'beauty__row' }, button('导出标题栏配方 · DWMBlurGlass', exportRecipe('dwm')), button('导出资源管理器配方 · ExplorerBlurMica', exportRecipe('explorer'))),
+          h('div', { class: 'beauty__row' }, button('合并已有 INI · DWMBlurGlass', mergeRecipe('dwm')), button('合并已有 INI · ExplorerBlurMica', mergeRecipe('explorer'))),
+          h('p', { class: 'faint' }, '合并只更新颜色、模糊与材质字段，保留其他参数、注释和编码，另存新文件。原文件不变，手动导入引擎后生效。'),
           h('p', { class: 'faint' }, '此处不会安装或启用原生引擎。原版 MToolBox 的专用主题包暂不支持导入。'), nativeStatus,
           h('div', { class: 'beauty__row' }, button('检查宿主状态', async () => {
             const state = await invoke('probe');
