@@ -9,6 +9,7 @@ const { execFile } = require('node:child_process');
 const { promisify } = require('node:util');
 const execFileAsync = promisify(execFile);
 const { makeNativeRecipe } = require('./beauty-recipes');
+const { PRESETS, WALLPAPER_SIZES, renderBackground } = require('./beauty-backgrounds');
 const MAX_IMAGE = 25 * 1024 * 1024;
 const MAX_BUNDLE = Math.ceil(MAX_IMAGE * 4 / 3) + 256 * 1024;
 const ASSET_ID = /^[a-f0-9]{64}$/;
@@ -21,12 +22,21 @@ async function decodeRaster(buffer) {
   if (!png && !jpeg && !webp) throw new Error('只接受真实的 PNG、JPEG 或 WebP 图片');
   return require('sharp')(buffer, { limitInputPixels: 40_000_000 }).rotate().png().toBuffer();
 }
-const PRESETS = [
-  { id: 'aurora', name: '极光夜航', accent: '#8fb4ff', tint: '#1a2442', effect: 'acrylic', opacity: 72, blur: 22, gradient: 'linear-gradient(135deg, #142d4e, #534082 55%, #bd78a1)' },
-  { id: 'forest', name: '雨后森林', accent: '#8fe3b6', tint: '#17372e', effect: 'glass', opacity: 62, blur: 16, gradient: 'linear-gradient(135deg, #153c37, #347d69 55%, #afc58b)' },
-  { id: 'sakura', name: '樱色晨光', accent: '#f59fb8', tint: '#563644', effect: 'mica', opacity: 88, blur: 28, gradient: 'linear-gradient(135deg, #8c7299, #d4a8b9 55%, #f7d9ba)' },
-  { id: 'ocean', name: '海盐蓝', accent: '#87deef', tint: '#17384a', effect: 'glass', opacity: 55, blur: 12, gradient: 'linear-gradient(135deg, #123047, #2c8098 55%, #b6ddd8)' },
-];
+async function makeThumbnail(buffer) {
+  const sharp = require('sharp');
+  const image = sharp(buffer, { limitInputPixels: 40_000_000 });
+  const metadata = await image.metadata();
+  const thumbnail = await image.resize({ width: 384, height: 216, fit: 'inside', withoutEnlargement: true }).webp({ quality: 75, effort: 3 }).toBuffer();
+  return { buffer: thumbnail, width: metadata.width, height: metadata.height };
+}
+function writeImmutable(file, buffer) {
+  if (fs.existsSync(file)) return;
+  const temporary = `${file}.${crypto.randomUUID()}.tmp`;
+  try {
+    fs.writeFileSync(temporary, buffer, { flag: 'wx' });
+    if (!fs.existsSync(file)) fs.renameSync(temporary, file);
+  } finally { if (fs.existsSync(temporary)) fs.unlinkSync(temporary); }
+}
 
 function normalizeProfile(input) {
   if (!input || !PROFILE_ID.test(input.id || '')) throw new Error('主题 ID 无效');
@@ -41,11 +51,12 @@ function normalizeProfile(input) {
 }
 
 class SystemBeauty {
-  constructor({ root, native, decodeImage, platform = process.platform }) {
+  constructor({ root, native, decodeImage, thumbnailImage, platform = process.platform }) {
     this.root = root;
     this.file = path.join(root, 'library.json');
     this.native = native || new WindowsBeautyBridge();
     this.decodeImage = decodeImage || decodeRaster;
+    this.thumbnailImage = thumbnailImage || makeThumbnail;
     this.platform = platform;
     this.pending = Promise.resolve();
   }
@@ -72,10 +83,33 @@ class SystemBeauty {
     if (!ASSET_ID.test(id || '')) throw new Error('素材 ID 无效');
     return path.join(this.root, 'assets', `${id}.png`);
   }
+  thumbnailPath(id) {
+    if (!ASSET_ID.test(id || '')) throw new Error('素材 ID 无效');
+    return path.join(this.root, 'thumbnails', `${id}.webp`);
+  }
+  async storeAsset(buffer, metadata, data) {
+    if (buffer.length > MAX_IMAGE) throw new Error('图片超过 25 MB，请缩小图片后重试');
+    const id = crypto.createHash('sha256').update(buffer).digest('hex');
+    const thumbnail = await this.thumbnailImage(buffer);
+    fs.mkdirSync(path.join(this.root, 'assets'), { recursive: true });
+    fs.mkdirSync(path.join(this.root, 'thumbnails'), { recursive: true });
+    // Content-addressed images are immutable. Windows and libvips can hold read handles;
+    // a duplicate import must never truncate a file currently displayed or used as wallpaper.
+    writeImmutable(this.assetPath(id), buffer);
+    writeImmutable(this.thumbnailPath(id), thumbnail.buffer);
+    let asset = data.assets.find(item => item.id === id);
+    if (!asset) {
+      asset = { id, name: String(metadata.name).slice(0, 120), kind: metadata.kind || 'imported', addedAt: new Date().toISOString() };
+      data.assets.push(asset);
+    }
+    Object.assign(asset, { width: thumbnail.width, height: thumbnail.height, bytes: buffer.length });
+    return asset;
+  }
   list() {
     const data = this.read();
-    return { supported: this.platform === 'win32', presets: PRESETS,
-      assets: data.assets.map(a => ({ ...a, url: pathToFileURL(this.assetPath(a.id)).href })),
+    return { supported: this.platform === 'win32', presets: PRESETS, wallpaperSizes: WALLPAPER_SIZES,
+      assets: data.assets.map(a => ({ ...a, url: pathToFileURL(this.assetPath(a.id)).href,
+        thumbnailUrl: pathToFileURL(fs.existsSync(this.thumbnailPath(a.id)) ? this.thumbnailPath(a.id) : this.assetPath(a.id)).href })),
       profiles: data.profiles, activeProfileId: data.activeProfileId || '', recovery: data.recovery ? { available: true, at: data.recovery.at } : null };
   }
   importImages(paths) {
@@ -91,16 +125,41 @@ class SystemBeauty {
           const input = fs.readFileSync(file);
           if (input.length > MAX_IMAGE) throw new Error('图片不能超过 25 MB');
           const buffer = await this.decodeImage(input);
-          if (buffer.length > MAX_IMAGE) throw new Error('解码后的图片超过 25 MB，请缩小图片后重试');
-          const id = crypto.createHash('sha256').update(buffer).digest('hex');
-          fs.mkdirSync(path.join(this.root, 'assets'), { recursive: true });
-          fs.writeFileSync(this.assetPath(id), buffer);
-          if (!data.assets.some(a => a.id === id)) data.assets.push({ id, name: path.basename(file), addedAt: new Date().toISOString() });
-          imported.push(id);
+          const asset = await this.storeAsset(buffer, { name: path.basename(file) }, data);
+          imported.push(asset.id);
         } catch (error) { errors.push({ name: path.basename(String(file)), error: error.message }); }
       }
       this.write(data);
       return { imported, errors, ...this.list() };
+    });
+  }
+  generateBackground(payload = {}) {
+    return this.serial(async () => {
+      const background = await renderBackground(payload.preset, payload.size || 'fhd');
+      const data = this.read();
+      const asset = await this.storeAsset(background.buffer, { name: background.name, kind: 'generated' }, data);
+      this.write(data);
+      return { generatedAssetId: asset.id, ...this.list() };
+    });
+  }
+  prepareThumbnails() {
+    return this.serial(async () => {
+      const data = this.read(), errors = [];
+      let prepared = 0;
+      for (const asset of data.assets) {
+        try {
+          if (fs.existsSync(this.thumbnailPath(asset.id))) continue;
+          const file = this.assetPath(asset.id);
+          if (fs.statSync(file).size > MAX_IMAGE) throw new Error('图片超过大小限制');
+          const thumbnail = await this.thumbnailImage(fs.readFileSync(file));
+          fs.mkdirSync(path.join(this.root, 'thumbnails'), { recursive: true });
+          writeImmutable(this.thumbnailPath(asset.id), thumbnail.buffer);
+          Object.assign(asset, { width: thumbnail.width, height: thumbnail.height });
+          prepared++;
+        } catch (error) { errors.push({ name: asset.name, error: error.message }); }
+      }
+      this.write(data);
+      return { prepared, errors, ...this.list() };
     });
   }
   saveProfile(input) {
@@ -142,6 +201,7 @@ class SystemBeauty {
       this.write(data);
       // Manifest first: if interrupted, an orphan image is harmless; a dangling reference is not.
       if (fs.existsSync(file)) fs.unlinkSync(file);
+      if (fs.existsSync(this.thumbnailPath(id))) fs.unlinkSync(this.thumbnailPath(id));
       return this.list();
     });
   }
@@ -164,7 +224,7 @@ class SystemBeauty {
       try { bundle = JSON.parse(text.replace(/^\uFEFF/, '')); } catch { throw new Error('主题包不是有效的 JSON 文件'); }
       if (!bundle || bundle.format !== 'agent-toolbox-beauty' || bundle.version !== 1 || !bundle.theme || typeof bundle.theme !== 'object' || Array.isArray(bundle.theme)) throw new Error('不支持的主题包格式或版本');
       const profile = normalizeProfile({ ...bundle.theme, id: crypto.randomUUID(), backgroundId: '' });
-      let buffer, asset;
+      let buffer;
       if (bundle.background != null) {
         const background = bundle.background;
         if (background.mime !== 'image/png' || typeof background.base64 !== 'string' || background.base64.length > Math.ceil(MAX_IMAGE * 4 / 3)) throw new Error('主题包中的图片格式无效');
@@ -175,14 +235,11 @@ class SystemBeauty {
         if (!input.subarray(0, 8).equals(PNG_SIGNATURE)) throw new Error('主题包中的图片必须是真实 PNG');
         buffer = await this.decodeImage(input);
         if (buffer.length > MAX_IMAGE) throw new Error('主题包中的图片过大');
-        profile.backgroundId = crypto.createHash('sha256').update(buffer).digest('hex');
-        asset = { id: profile.backgroundId, name: path.basename(String(background.name || '主题背景.png')).slice(0, 120), addedAt: new Date().toISOString() };
       }
       const data = this.read();
-      if (asset) {
-        fs.mkdirSync(path.join(this.root, 'assets'), { recursive: true });
-        fs.writeFileSync(this.assetPath(asset.id), buffer);
-        if (!data.assets.some(a => a.id === asset.id)) data.assets.push(asset);
+      if (buffer) {
+        const asset = await this.storeAsset(buffer, { name: path.basename(String(bundle.background.name || '主题背景.png')) }, data);
+        profile.backgroundId = asset.id;
       }
       data.profiles.push(profile);
       data.activeProfileId = profile.id;
@@ -197,15 +254,16 @@ class SystemBeauty {
       if (!data.assets.some(a => a.id === id) || !fs.existsSync(asset)) throw new Error('请先导入背景图片');
       if (!data.recovery) {
         const original = await this.native.wallpaper();
+        const recoveryId = crypto.randomUUID();
         // Persist the baseline before calling any mutating Windows API, even if it fails.
         let copy = '';
         if (original) {
           if (!fs.existsSync(original)) throw new Error('原壁纸文件不存在，无法备份，已停止应用');
           fs.mkdirSync(path.join(this.root, 'recovery'), { recursive: true });
-          copy = path.join(this.root, 'recovery', `wallpaper${path.extname(original).slice(0, 12) || '.bmp'}`);
+          copy = path.join(this.root, 'recovery', `wallpaper-${recoveryId}${path.extname(original).slice(0, 12) || '.bmp'}`);
           fs.copyFileSync(original, copy);
         }
-        data.recovery = { original, copy, at: new Date().toISOString(), lastApplied: '' };
+        data.recovery = { id: recoveryId, original, copy, at: new Date().toISOString(), lastApplied: '' };
         this.write(data);
       }
       // Write intent first: a crash after the API must still leave a recoverable state.
@@ -221,7 +279,9 @@ class SystemBeauty {
       const data = this.read(), recovery = data.recovery;
       if (!recovery) throw new Error('还没有可恢复的壁纸备份');
       // Refuse malformed persisted paths before touching the OS.
-      const expectedCopy = path.join(this.root, 'recovery', `wallpaper${path.extname(recovery.original || '').slice(0, 12) || '.bmp'}`);
+      if (recovery.id && !/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(recovery.id)) throw new Error('壁纸备份 ID 无效');
+      const backupName = recovery.id ? `wallpaper-${recovery.id}` : 'wallpaper';
+      const expectedCopy = path.join(this.root, 'recovery', `${backupName}${path.extname(recovery.original || '').slice(0, 12) || '.bmp'}`);
       if (recovery.copy && path.resolve(recovery.copy) !== path.resolve(expectedCopy)) throw new Error('壁纸备份路径无效');
       // Restore the bytes captured at first apply; Spotlight may replace its original path.
       const original = !recovery.original ? '' : recovery.copy;
@@ -265,6 +325,8 @@ function registerSystemBeautyIpc(ipcMain, { getUserDataPath, dialog, getWindow, 
     });
   }
   handle('list', () => beauty.list());
+  handle('generateBackground', payload => beauty.generateBackground(payload));
+  handle('prepareThumbnails', () => beauty.prepareThumbnails());
   handle('importImages', async () => {
     const result = await dialog.showOpenDialog(getWindow(), { title: '导入美化背景素材', properties: ['openFile', 'multiSelections'], filters: [{ name: '图片', extensions: ['png', 'jpg', 'jpeg', 'webp'] }] });
     return result.canceled ? { canceled: true } : beauty.importImages(result.filePaths);

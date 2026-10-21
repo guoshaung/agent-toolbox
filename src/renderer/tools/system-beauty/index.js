@@ -6,6 +6,7 @@ export default {
   create(root) {
     const api = window.toolbox.systemBeauty;
     let library, draft, scene = 'explorer', disposed = false, busy = false;
+    let showAllPresets = false, wallpaperSize = 'fhd', assetQuery = '', assetPage = 0;
     const body = h('div', { class: 'beauty__body' });
     root.append(h('div', { class: 'bar bar--drag' }, h('strong', {}, '系统美化'), h('span', { class: 'faint' }, '你的图片，你的桌面')), body);
     const invoke = async (name, ...args) => {
@@ -54,7 +55,7 @@ export default {
 
     function render() {
       if (disposed) return;
-      const presetStrip = h('div', { class: 'beauty__presets' }, ...library.presets.map(p => button(p.name, async () => { draft = fresh(p); render(); }, {
+      const presetStrip = h('div', { class: 'beauty__presets' }, ...(showAllPresets ? library.presets : library.presets.slice(0, 4)).map(p => button(p.name, async () => { draft = fresh(p); render(); }, {
         class: `beauty__preset${draft.preset === p.id ? ' is-active' : ''}`, style: { backgroundImage: p.gradient },
       })));
       const previewHost = h('div', {}, preview());
@@ -68,20 +69,51 @@ export default {
       const effect = h('select', { class: 'field', 'aria-label': '窗口质感' }, ...[['glass', '透明玻璃'], ['acrylic', '亚克力磨砂'], ['mica', '云母'], ['solid', '纯色']].map(([value, label]) => h('option', { value, selected: value === draft.effect }, label)));
       effect.addEventListener('change', () => { draft.effect = effect.value; updatePreview(); });
       const profileName = input('主题名称', 'name', { type: 'text', class: 'field', maxlength: 60 });
-      const assets = h('div', { class: 'beauty__assets' }, ...library.assets.map(a => button(a.name, async () => { draft.backgroundId = a.id; render(); }, {
-        class: `beauty__asset${draft.backgroundId === a.id ? ' is-active' : ''}`, title: a.name, style: { backgroundImage: `url("${a.url}")` },
-      })));
-      if (!library.assets.length) assets.append(h('p', { class: 'faint' }, '导入喜欢的壁纸、插画或照片。支持批量选择 PNG、JPEG、WebP，每张不超过 25 MB。'));
+      const assets = h('div', { class: 'beauty__assets' });
+      const pageControls = h('div', { class: 'beauty__row beauty__pages' });
+      const drawAssets = () => {
+        const matching = library.assets.filter(a => String(a.name).toLowerCase().includes(assetQuery.toLowerCase()));
+        const pages = Math.max(1, Math.ceil(matching.length / 48));
+        assetPage = Math.min(assetPage, pages - 1);
+        assets.replaceChildren(...matching.slice(assetPage * 48, (assetPage + 1) * 48).map(a => button([
+          h('img', { src: a.thumbnailUrl || a.url, alt: '', loading: 'lazy', decoding: 'async' }),
+          h('span', {}, a.name),
+        ], async () => { draft.backgroundId = a.id; render(); }, {
+          class: `beauty__asset${draft.backgroundId === a.id ? ' is-active' : ''}`,
+          title: a.width && a.height ? `${a.name} · ${a.width} × ${a.height}` : a.name,
+        })));
+        if (!matching.length) assets.append(h('p', { class: 'faint' }, library.assets.length ? '没有找到匹配的素材。' : '导入喜欢的壁纸、插画或照片。支持批量选择 PNG、JPEG、WebP，每张不超过 25 MB。'));
+        pageControls.replaceChildren(h('span', { class: 'faint' }, `${matching.length} 张素材 · ${assetPage + 1} / ${pages} 页`),
+          button('上一页', async () => { assetPage--; drawAssets(); }, { class: 'btn btn--sm', disabled: assetPage === 0 }),
+          button('下一页', async () => { assetPage++; drawAssets(); }, { class: 'btn btn--sm', disabled: assetPage >= pages - 1 }));
+      };
+      drawAssets();
+      const assetSearch = h('input', { type: 'search', class: 'field', placeholder: '搜索素材名称', value: assetQuery, 'aria-label': '搜索素材名称' });
+      assetSearch.addEventListener('input', () => { assetQuery = assetSearch.value; assetPage = 0; drawAssets(); });
+      const sizeSelect = h('select', { class: 'field', 'aria-label': '壁纸尺寸' }, ...(library.wallpaperSizes || []).map(size => h('option', { value: size.id, selected: size.id === wallpaperSize }, size.name)));
+      sizeSelect.addEventListener('change', () => { wallpaperSize = sizeSelect.value; });
+      const generateBackground = async () => {
+        library = await invoke('generateBackground', { preset: draft.preset, size: wallpaperSize });
+        draft.backgroundId = library.generatedAssetId; assetQuery = ''; assetPage = 0; render();
+      };
+      const applyBackground = async () => {
+        if (!draft.backgroundId) await generateBackground();
+        try { await invoke('applyWallpaper', draft.backgroundId); toast('桌面壁纸已应用，原壁纸已备份', 'good'); }
+        finally { library = await invoke('list'); render(); }
+      };
       const importImages = async () => {
         const result = await invoke('importImages');
         if (result.canceled) return;
         library = result;
+        assetQuery = ''; assetPage = 0;
         if (result.imported.length) draft.backgroundId = result.imported[0];
         render();
         toast(result.errors.length ? `导入 ${result.imported.length} 张；${result.errors.map(e => `${e.name}：${e.error}`).join('；')}` : `已导入 ${result.imported.length} 张素材`, result.errors.length ? 'info' : 'good', 6000);
       };
       const profiles = h('div', { class: 'beauty__profile-list' }, ...library.profiles.map(p => button(p.name, async () => {
-        library = await invoke('selectProfile', p.id); draft = { ...p }; render();
+        library = await invoke('selectProfile', p.id); draft = { ...p };
+        if (!library.presets.slice(0, 4).some(preset => preset.id === p.preset)) showAllPresets = true;
+        render();
       }, { class: `btn${draft.id === p.id ? ' btn--primary' : ''}` })));
       const importBundle = async () => {
         const result = await invoke('importBundle');
@@ -96,11 +128,12 @@ export default {
       };
       const nativeStatus = h('p', { class: 'faint', role: 'status' }, '可读取本机原版 2.1.0 宿主的运行状态。');
       body.replaceChildren(
-        h('section', { class: 'beauty__hero' }, h('div', {}, h('span', { class: 'tag' }, '本地素材 · 独立主题库'), h('h2', {}, '给桌面换一种心情'), h('p', { class: 'faint' }, '先搭配背景与窗口质感，保存成自己的主题。桌面壁纸可直接应用；资源管理器和开始菜单当前为效果预览。')), presetStrip),
+        h('section', { class: 'beauty__hero' }, h('div', {}, h('span', { class: 'tag' }, '本地素材 · 独立主题库'), h('h2', {}, '给桌面换一种心情'), h('p', { class: 'faint' }, '先搭配背景与窗口质感，保存成自己的主题。桌面壁纸可直接应用；资源管理器和开始菜单当前为效果预览。')),
+          presetStrip, h('div', { class: 'beauty__row' }, button(showAllPresets ? '收起配色' : `全部 ${library.presets.length} 套配色`, async () => { showAllPresets = !showAllPresets; render(); }, { class: 'btn btn--sm' }))),
         h('div', { class: 'beauty__layout' },
           h('section', { class: 'card beauty__preview-card' }, h('div', { class: 'beauty__row' }, ...[['explorer', '资源管理器'], ['start', '开始菜单'], ['desktop', '桌面']].map(([id, name]) => button(name, async () => { scene = id; render(); }, { class: `btn btn--sm${scene === id ? ' btn--primary' : ''}` }))), previewHost,
             h('p', { class: 'faint' }, '预览中的磨砂、云母、色彩和布局只作用于此画面。'),
-            h('div', { class: 'beauty__row' }, button('应用这张桌面壁纸', async () => { library = await invoke('applyWallpaper', draft.backgroundId); render(); toast('桌面壁纸已应用，原壁纸已备份', 'good'); }, { class: 'btn btn--primary', disabled: !library.supported || !draft.backgroundId }),
+            h('div', { class: 'beauty__row' }, button(draft.backgroundId ? '应用这张桌面壁纸' : '应用当前渐变壁纸', applyBackground, { class: 'btn btn--primary', disabled: !library.supported }),
               button('恢复原壁纸', async () => { library = await invoke('restoreWallpaper'); render(); toast('已恢复应用前的桌面壁纸', 'good'); }, { disabled: !library.supported || !library.recovery }))),
           h('section', { class: 'card beauty__editor' }, h('h3', {}, '搭配主题'), profileName, h('label', { class: 'beauty__field' }, '窗口质感', effect),
             input('强调色', 'accent', { type: 'color' }), input('窗口底色', 'tint', { type: 'color' }), input('窗口不透明度', 'opacity', { type: 'range', min: 15, max: 100 }), input('背景模糊', 'blur', { type: 'range', min: 0, max: 40 }),
@@ -109,7 +142,10 @@ export default {
             h('p', { class: 'faint' }, '保存主题只保存这里的搭配，不会切换系统设置。')),
         ),
         h('section', { class: 'card' }, h('div', { class: 'beauty__row' }, h('h3', {}, '我的素材'), button('＋ 导入图片', importImages), button('使用渐变背景', async () => { draft.backgroundId = ''; render(); }),
-          button('删除所选素材', async () => { const id = draft.backgroundId; library = await invoke('deleteAsset', id); draft.backgroundId = ''; render(); toast('素材已从库中删除', 'good'); }, { disabled: !draft.backgroundId })), assets),
+          button('删除所选素材', async () => { const id = draft.backgroundId; library = await invoke('deleteAsset', id); draft.backgroundId = ''; render(); toast('素材已从库中删除', 'good'); }, { disabled: !draft.backgroundId })),
+          h('div', { class: 'beauty__row beauty__asset-tools' }, sizeSelect, button('生成渐变壁纸', async () => { await generateBackground(); toast('壁纸已加入素材库，桌面尚未切换', 'good'); }),
+            button('优化素材加载', async () => { const result = await invoke('prepareThumbnails'); library = result; render(); toast(result.errors.length ? `已优化 ${result.prepared} 张，${result.errors.length} 张无法读取` : `已优化 ${result.prepared} 张素材，原图保持不变`, result.errors.length ? 'info' : 'good'); })),
+          assetSearch, assets, pageControls),
         h('section', { class: 'card' }, h('div', { class: 'beauty__row' }, h('h3', {}, '我的主题'), button('导入主题包', importBundle), button('导出当前主题', async () => {
           const result = await invoke('exportBundle', draft); if (!result.canceled) toast('主题包已导出，包含当前背景图片', 'good');
         })), profiles, !library.profiles.length ? h('p', { class: 'faint' }, '搭配好后点“保存主题”，下次可以接着用。') : null,
@@ -128,7 +164,9 @@ export default {
 
     body.append(h('p', { class: 'faint' }, '正在读取本地素材库…'));
     action(async () => {
-      library = await invoke('list'); const selected = library.profiles.find(p => p.id === library.activeProfileId) || library.profiles[0]; draft = selected ? { ...selected } : fresh(library.presets[0]); render();
+      library = await invoke('list'); const selected = library.profiles.find(p => p.id === library.activeProfileId) || library.profiles[0]; draft = selected ? { ...selected } : fresh(library.presets[0]);
+      if (selected && !library.presets.slice(0, 4).some(preset => preset.id === selected.preset)) showAllPresets = true;
+      render();
     });
     return { dispose() { disposed = true; } };
   },

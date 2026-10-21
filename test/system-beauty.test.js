@@ -6,6 +6,7 @@ const os = require('node:os');
 const path = require('node:path');
 const { SystemBeauty, WindowsBeautyBridge, normalizeProfile, registerSystemBeautyIpc } = require('../src/main/system-beauty');
 const { makeNativeRecipe } = require('../src/main/beauty-recipes');
+const { PRESETS, makeBackgroundSvg } = require('../src/main/beauty-backgrounds');
 const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aZQAAAABJRU5ErkJggg==', 'base64');
 
 function fixture(t, options = {}) {
@@ -15,7 +16,8 @@ function fixture(t, options = {}) {
     assert.ok(path.basename(root).startsWith('toolbox-beauty-'));
     fs.rmSync(root, { recursive: true, force: true });
   });
-  return new SystemBeauty({ root, platform: 'win32', decodeImage: async b => b, ...options });
+  return new SystemBeauty({ root, platform: 'win32', decodeImage: async b => b,
+    thumbnailImage: async () => ({ buffer: PNG, width: 1, height: 1 }), ...options });
 }
 function image(service, name = 'photo.png', contents = 'a') {
   const file = path.join(service.root, name); fs.writeFileSync(file, contents); return file;
@@ -164,4 +166,56 @@ test('Windows INI API reads exported Unicode recipes with exact effect and color
   const script = `$ProgressPreference='SilentlyContinue'; Add-Type @'\nusing System;using System.Text;using System.Runtime.InteropServices;public class IniRead {[DllImport("kernel32.dll",CharSet=CharSet.Unicode)] public static extern int GetPrivateProfileString(string section,string key,string fallback,StringBuilder result,int size,string file);}\n'@\n$f=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('${Buffer.from(file).toString('base64')}'));$a=[Text.StringBuilder]::new(100);$b=[Text.StringBuilder]::new(100);[void][IniRead]::GetPrivateProfileString('config','effectType','missing',$a,100,$f);[void][IniRead]::GetPrivateProfileString('config','activeBlendColor','missing',$b,100,$f);@{effect=$a.ToString();color=$b.ToString()}|ConvertTo-Json -Compress`;
   const raw = require('node:child_process').execFileSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-EncodedCommand', Buffer.from(script, 'utf16le').toString('base64')], { windowsHide: true, timeout: 20000, encoding: 'utf8' });
   const actual = JSON.parse(raw); assert.equal(actual.effect, '3'); assert.equal(Number(actual.color), 0x80563412);
+});
+
+test('built-in backgrounds render real FHD PNGs, generate small thumbnails and deduplicate without OS writes', async t => {
+  let nativeCalls = 0;
+  const beauty = fixture(t, { thumbnailImage: undefined, native: { setWallpaper: async () => nativeCalls++ } });
+  const result = await beauty.generateBackground({ preset: 'aurora', size: 'fhd' });
+  const asset = result.assets[0], sharp = require('sharp');
+  const full = await sharp(fs.readFileSync(beauty.assetPath(asset.id))).metadata();
+  const thumbnail = await sharp(fs.readFileSync(beauty.thumbnailPath(asset.id))).metadata();
+  assert.equal(full.width, 1920); assert.equal(full.height, 1080); assert.equal(full.format, 'png');
+  assert.ok(thumbnail.width <= 384 && thumbnail.height <= 216); assert.equal(thumbnail.format, 'webp');
+  assert.equal(asset.kind, 'generated'); assert.equal(asset.width, 1920); assert.equal(nativeCalls, 0);
+  assert.ok(asset.thumbnailUrl.endsWith('.webp'));
+  await beauty.generateBackground({ preset: 'aurora', size: 'fhd' });
+  assert.equal(beauty.list().assets.length, 1);
+  const second = await beauty.generateBackground({ preset: 'forest', size: 'fhd' });
+  assert.notEqual(second.generatedAssetId, result.generatedAssetId);
+});
+test('gradient render rejects arbitrary SVG, dimensions and unknown palettes before writing storage', async t => {
+  const beauty = fixture(t);
+  assert.equal(PRESETS.length, 12);
+  assert.throws(() => makeBackgroundSvg('<script/>', 'fhd'), /不存在/);
+  await assert.rejects(beauty.generateBackground({ preset: 'aurora', size: '90000x90000' }), /尺寸/);
+  assert.equal(fs.existsSync(beauty.file), false);
+});
+test('legacy thumbnail backfill preserves original image bytes and saved theme references', async t => {
+  const beauty = fixture(t);
+  const result = await beauty.importImages([image(beauty, 'photo.png', PNG)]), id = result.imported[0];
+  await beauty.saveProfile({ id: 'one', backgroundId: id });
+  fs.unlinkSync(beauty.thumbnailPath(id));
+  assert.equal(beauty.list().assets[0].thumbnailUrl, beauty.list().assets[0].url);
+  const repaired = await beauty.prepareThumbnails();
+  assert.equal(repaired.prepared, 1); assert.deepEqual(repaired.errors, []);
+  assert.equal(fs.readFileSync(beauty.assetPath(id)).equals(PNG), true);
+  assert.equal(repaired.profiles[0].backgroundId, id);
+  await beauty.deleteProfile('one'); await beauty.deleteAsset(id);
+  assert.equal(fs.existsSync(beauty.thumbnailPath(id)), false);
+});
+
+test('wallpaper can be applied and restored repeatedly when Windows points to our previous backup', async t => {
+  let current;
+  const beauty = fixture(t, { native: { wallpaper: async () => current, setWallpaper: async value => { current = value; } } });
+  current = image(beauty, 'original.jpg', 'original');
+  const imported = await beauty.importImages([image(beauty)]);
+  await beauty.applyWallpaper(imported.imported[0]);
+  const firstBackup = beauty.read().recovery.copy;
+  await beauty.restoreWallpaper(); assert.equal(current, firstBackup);
+  await beauty.applyWallpaper(imported.imported[0]);
+  const secondBackup = beauty.read().recovery.copy;
+  assert.notEqual(firstBackup, secondBackup);
+  await beauty.restoreWallpaper();
+  assert.equal(fs.readFileSync(current, 'utf8'), 'original');
 });
