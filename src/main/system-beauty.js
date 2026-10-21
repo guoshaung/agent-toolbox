@@ -10,6 +10,7 @@ const { promisify } = require('node:util');
 const execFileAsync = promisify(execFile);
 const { makeNativeRecipe } = require('./beauty-recipes');
 const { PRESETS, WALLPAPER_SIZES, renderBackground } = require('./beauty-backgrounds');
+const { normalizeWindowsOptions, personalizationPlan, validatePersonalizationValues } = require('./beauty-personalization');
 const MAX_IMAGE = 25 * 1024 * 1024;
 const MAX_BUNDLE = Math.ceil(MAX_IMAGE * 4 / 3) + 256 * 1024;
 const ASSET_ID = /^[a-f0-9]{64}$/;
@@ -47,7 +48,7 @@ function normalizeProfile(input) {
     effect: ['glass', 'acrylic', 'mica', 'solid'].includes(input.effect) ? input.effect : 'acrylic',
     opacity: number(input.opacity, 15, 100, 72), blur: number(input.blur, 0, 40, 22),
     backgroundId: ASSET_ID.test(input.backgroundId || '') ? input.backgroundId : '',
-    preset: PRESETS.some(p => p.id === input.preset) ? input.preset : 'aurora' };
+    preset: PRESETS.some(p => p.id === input.preset) ? input.preset : 'aurora', windows: normalizeWindowsOptions(input.windows) };
 }
 
 class SystemBeauty {
@@ -110,7 +111,8 @@ class SystemBeauty {
     return { supported: this.platform === 'win32', presets: PRESETS, wallpaperSizes: WALLPAPER_SIZES,
       assets: data.assets.map(a => ({ ...a, url: pathToFileURL(this.assetPath(a.id)).href,
         thumbnailUrl: pathToFileURL(fs.existsSync(this.thumbnailPath(a.id)) ? this.thumbnailPath(a.id) : this.assetPath(a.id)).href })),
-      profiles: data.profiles, activeProfileId: data.activeProfileId || '', recovery: data.recovery ? { available: true, at: data.recovery.at } : null };
+      profiles: data.profiles, activeProfileId: data.activeProfileId || '', recovery: data.recovery ? { available: true, at: data.recovery.at } : null,
+      personalizationRecovery: data.personalizationRecovery ? { available: true, at: data.personalizationRecovery.at, fields: Object.keys(data.personalizationRecovery.values || {}) } : null };
   }
   importImages(paths) {
     return this.serial(async () => {
@@ -292,16 +294,48 @@ class SystemBeauty {
       return this.list();
     });
   }
+  applyPersonalization(options) {
+    return this.serial(async () => {
+      if (this.platform !== 'win32') throw new Error('Windows 外观仅支持 Windows');
+      const plan = personalizationPlan(options);
+      if (!Object.keys(plan).length) throw new Error('请先选择需要更改的 Windows 外观项');
+      const data = this.read();
+      if (data.personalizationRecovery && data.personalizationRecovery.version !== 1) throw new Error('Windows 外观备份版本无法识别');
+      const saved = data.personalizationRecovery ? validatePersonalizationValues(data.personalizationRecovery.values) : {};
+      const current = await this.native.personalization();
+      const original = { ...saved };
+      for (const key of Object.keys(plan)) {
+        if (!Object.hasOwn(original, key)) original[key] = current[key];
+      }
+      // Capture only touched fields, including missing values. Refuse unexpected types before any OS mutation.
+      const values = validatePersonalizationValues(original);
+      data.personalizationRecovery = { version: 1, at: data.personalizationRecovery?.at || new Date().toISOString(), values };
+      this.write(data);
+      const result = await this.native.setPersonalization(plan);
+      return { ...this.list(), personalizationNotified: result?.notified !== false };
+    });
+  }
+  restorePersonalization() {
+    return this.serial(async () => {
+      if (this.platform !== 'win32') throw new Error('Windows 外观仅支持 Windows');
+      const data = this.read(), recovery = data.personalizationRecovery;
+      if (!recovery || recovery.version !== 1) throw new Error('还没有可恢复的 Windows 外观备份');
+      const result = await this.native.setPersonalization(validatePersonalizationValues(recovery.values));
+      data.personalizationRecovery = null;
+      this.write(data);
+      return { ...this.list(), personalizationNotified: result?.notified !== false };
+    });
+  }
 }
 
 class WindowsBeautyBridge {
   constructor({ exec = execFileAsync, platform = process.platform } = {}) { this.exec = exec; this.platform = platform; }
   async run(operation, file = '') {
     if (this.platform !== 'win32') throw new Error('原生桥接仅支持 Windows');
-    if (!['wallpaper', 'set-wallpaper', 'probe'].includes(operation)) throw new Error('原生操作无效');
+    if (!['wallpaper', 'set-wallpaper', 'probe', 'personalization', 'set-personalization'].includes(operation)) throw new Error('原生操作无效');
     const script = path.join(__dirname, 'system-beauty-native.ps1');
     // Read through Electron's asar filesystem; PowerShell cannot open a path inside app.asar.
-    // The sole user string is UTF-8 base64 data, never interpolated as PowerShell code.
+    // User paths or JSON are UTF-8 base64 data, never interpolated as PowerShell code.
     const encodedPath = Buffer.from(file, 'utf8').toString('base64');
     const command = `& {\n${fs.readFileSync(script, 'utf8')}\n} -Operation '${operation}' -ImagePath ([Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('${encodedPath}')))`;
     const { stdout } = await this.exec('powershell.exe', ['-NoLogo', '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-EncodedCommand', Buffer.from(command, 'utf16le').toString('base64')], { windowsHide: true, timeout: 20_000, maxBuffer: 512 * 1024 });
@@ -309,6 +343,8 @@ class WindowsBeautyBridge {
   }
   async wallpaper() { return (await this.run('wallpaper')).path; }
   async setWallpaper(file) { return this.run('set-wallpaper', file); }
+  async personalization() { return this.run('personalization'); }
+  async setPersonalization(values) { return this.run('set-personalization', JSON.stringify(validatePersonalizationValues(values))); }
   async probe() { return this.platform === 'win32' ? this.run('probe') : { supported: false, running: false }; }
 }
 
@@ -358,6 +394,9 @@ function registerSystemBeautyIpc(ipcMain, { getUserDataPath, dialog, getWindow, 
   });
   handle('applyWallpaper', id => beauty.applyWallpaper(id));
   handle('restoreWallpaper', () => beauty.restoreWallpaper());
+  handle('personalization', async () => ({ values: await beauty.native.personalization() }));
+  handle('applyPersonalization', options => beauty.applyPersonalization(options));
+  handle('restorePersonalization', () => beauty.restorePersonalization());
   handle('probe', () => beauty.native.probe());
   handle('openFolder', async () => { fs.mkdirSync(beauty.root, { recursive: true }); const error = await shell.openPath(beauty.root); if (error) throw new Error(error); return {}; });
   return beauty;

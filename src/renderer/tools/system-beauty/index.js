@@ -2,11 +2,12 @@ import { h, toast } from '../../core/ui.js';
 
 export default {
   id: 'system-beauty', title: '系统美化', icon: 'palette',
-  hint: '导入图片、保存主题、预览窗口质感，应用与恢复桌面壁纸',
+  hint: '导入图片、保存主题，预览窗口质感，应用与恢复壁纸和 Windows 外观',
   create(root) {
     const api = window.toolbox.systemBeauty;
     let library, draft, scene = 'explorer', disposed = false, busy = false;
     let showAllPresets = false, wallpaperSize = 'fhd', assetQuery = '', assetPage = 0;
+    let personalizationStatus = '可先读取当前设置，再选择需要更改的项目。';
     const body = h('div', { class: 'beauty__body' });
     root.append(h('div', { class: 'bar bar--drag' }, h('strong', {}, '系统美化'), h('span', { class: 'faint' }, '你的图片，你的桌面')), body);
     const invoke = async (name, ...args) => {
@@ -55,6 +56,27 @@ export default {
 
     function render() {
       if (disposed) return;
+      draft.windows ||= { apps: 'keep', system: 'keep', transparency: 'keep' };
+      const windowsOptions = h('div', { class: 'beauty__row' }, ...[
+        ['apps', '应用配色', [['keep', '保持当前'], ['light', '浅色'], ['dark', '深色']]],
+        ['system', 'Windows 配色', [['keep', '保持当前'], ['light', '浅色'], ['dark', '深色']]],
+        ['transparency', 'Windows 透明效果', [['keep', '保持当前'], ['on', '开启'], ['off', '关闭']]],
+      ].map(([key, label, options]) => {
+        const select = h('select', { class: 'field', 'aria-label': label }, ...options.map(([value, name]) => h('option', { value, selected: draft.windows[key] === value }, name)));
+        select.addEventListener('change', () => { draft.windows[key] = select.value; render(); });
+        return h('label', { class: 'beauty__field' }, label, select);
+      }));
+      const changePersonalization = async restore => {
+        try {
+          const result = await invoke(restore ? 'restorePersonalization' : 'applyPersonalization', draft.windows);
+          personalizationStatus = restore ? '已恢复本次更改前的 Windows 外观。' : '已应用所选项目，原设置已备份。';
+          if (!result.personalizationNotified) personalizationStatus += ' 部分窗口可能需要重新打开才能更新。';
+          toast(personalizationStatus, 'good', 6000);
+        } catch (error) {
+          personalizationStatus = '操作未完成，请检查错误信息；已有备份会保留。';
+          throw error;
+        } finally { library = await invoke('list'); render(); }
+      };
       const presetStrip = h('div', { class: 'beauty__presets' }, ...(showAllPresets ? library.presets : library.presets.slice(0, 4)).map(p => button(p.name, async () => { draft = fresh(p); render(); }, {
         class: `beauty__preset${draft.preset === p.id ? ' is-active' : ''}`, style: { backgroundImage: p.gradient },
       })));
@@ -150,6 +172,19 @@ export default {
           const result = await invoke('exportBundle', draft); if (!result.canceled) toast('主题包已导出，包含当前背景图片', 'good');
         })), profiles, !library.profiles.length ? h('p', { class: 'faint' }, '搭配好后点“保存主题”，下次可以接着用。') : null,
           library.profiles.some(p => p.id === draft.id) ? button('删除当前主题', async () => { library = await invoke('deleteProfile', draft.id); draft = fresh(library.presets[0]); render(); }) : null),
+        h('section', { class: 'card' }, h('h3', {}, 'Windows 原生外观'),
+          h('p', { class: 'faint' }, '更改当前 Windows 用户的应用配色、系统配色与透明效果。选择“保持当前”的项目不会改动；保存主题只记录选择，点击应用后才生效。'),
+          windowsOptions,
+          h('p', { class: 'faint', role: 'status' }, personalizationStatus),
+          h('div', { class: 'beauty__row' }, button('读取 Windows 外观', async () => {
+            const { values } = await invoke('personalization');
+            const describe = (key, off, on) => !values[key]?.exists ? '系统默认' : values[key].kind !== 'DWord' ? '值类型暂不支持' : values[key].value === 0 ? off : values[key].value === 1 ? on : '自定义值';
+            personalizationStatus = `应用：${describe('AppsUseLightTheme', '深色', '浅色')}；Windows：${describe('SystemUsesLightTheme', '深色', '浅色')}；透明效果：${describe('EnableTransparency', '关闭', '开启')}。`;
+            render();
+          }, { disabled: !library.supported }),
+          button('应用 Windows 外观', () => changePersonalization(false), { class: 'btn btn--primary', disabled: !library.supported || !Object.values(draft.windows).some(value => value !== 'keep') }),
+          button('恢复 Windows 外观', () => changePersonalization(true), { disabled: !library.supported || !library.personalizationRecovery })),
+          h('p', { class: 'faint' }, '应用前会保存所改项目的原值；透明效果的实际呈现取决于 Windows 和应用。此处不会改变字体。')),
         h('section', { class: 'card' }, h('h3', {}, '原生效果接入'),
           h('p', { class: 'faint' }, '把当前颜色、透明度和质感导出成开源引擎配方，再在对应引擎里手动导入。配方不包含背景图片；系统效果与这里的预览可能有差异。'),
           h('div', { class: 'beauty__row' }, button('导出标题栏配方 · DWMBlurGlass', exportRecipe('dwm')), button('导出资源管理器配方 · ExplorerBlurMica', exportRecipe('explorer'))),

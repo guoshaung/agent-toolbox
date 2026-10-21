@@ -1,8 +1,9 @@
 param(
-  [ValidateSet('wallpaper','set-wallpaper','probe')][string]$Operation,
+  [ValidateSet('wallpaper','set-wallpaper','probe','personalization','set-personalization')][string]$Operation,
   [AllowEmptyString()][string]$ImagePath = ''
 )
 $ErrorActionPreference = 'Stop'
+$ProgressPreference = 'SilentlyContinue'
 [Console]::OutputEncoding = [Text.UTF8Encoding]::new($false)
 Add-Type @'
 using System;
@@ -14,9 +15,63 @@ public static class ToolboxBeautyNative {
   [DllImport("user32.dll",CharSet=CharSet.Unicode)] public static extern IntPtr FindWindowEx(IntPtr parent,IntPtr after,string cls,string title);
   [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr h,out uint pid);
   [DllImport("user32.dll",SetLastError=true)] public static extern IntPtr SendMessageTimeout(IntPtr h,uint msg,IntPtr w,IntPtr l,uint flags,uint timeout,out UIntPtr result);
+  [DllImport("user32.dll",CharSet=CharSet.Unicode,EntryPoint="SendMessageTimeoutW")] public static extern IntPtr SendSettingsMessage(IntPtr h,uint msg,IntPtr w,string l,uint flags,uint timeout,out UIntPtr result);
 }
 '@
+# Helpers take an already-open key so tests can use an isolated temporary registry namespace.
+# Production callers below always use the fixed current-user Personalize key.
+function Get-ToolboxPersonalizationValues($Key) {
+  $values = @{}
+  foreach ($name in @('AppsUseLightTheme','SystemUsesLightTheme','EnableTransparency')) {
+    if ($null -eq $Key -or $Key.GetValueNames() -notcontains $name) { $values[$name] = @{ exists=$false }; continue }
+    $kind = $Key.GetValueKind($name).ToString()
+    $entry = @{ exists=$true; kind=$kind }
+    if ($kind -eq 'DWord') { $entry.value = [uint32]([int64]$Key.GetValue($name) -band 0xffffffffL) }
+    $values[$name] = $entry
+  }
+  return $values
+}
+function Assert-ToolboxPersonalizationValues($Values) {
+  $properties = @($Values.PSObject.Properties)
+  if ($properties.Count -lt 1 -or $properties.Count -gt 3) { throw 'Invalid personalization values' }
+  foreach ($property in $properties) {
+    if (@('AppsUseLightTheme','SystemUsesLightTheme','EnableTransparency') -notcontains $property.Name) { throw 'Unknown personalization field' }
+    $entry = $property.Value
+    if ($null -eq $entry -or $entry.exists -isnot [bool]) { throw 'Invalid personalization record' }
+    if ($entry.exists) {
+      $number = $entry.value
+      if ($entry.kind -cne 'DWord' -or ($number -isnot [int] -and $number -isnot [long] -and $number -isnot [double]) -or $number -lt 0 -or $number -gt 4294967295L -or [Math]::Floor([double]$number) -ne $number) { throw 'Unsupported personalization value type' }
+    }
+  }
+}
+function Set-ToolboxPersonalizationValues($Key, $Values) {
+  Assert-ToolboxPersonalizationValues $Values
+  foreach ($property in $Values.PSObject.Properties) {
+    if ($property.Value.exists) {
+      $signed = [BitConverter]::ToInt32([BitConverter]::GetBytes([uint32]$property.Value.value),0)
+      $Key.SetValue($property.Name,$signed,[Microsoft.Win32.RegistryValueKind]::DWord)
+    } else { $Key.DeleteValue($property.Name,$false) }
+  }
+  $Key.Flush()
+}
+$personalizePath = 'Software\Microsoft\Windows\CurrentVersion\Themes\Personalize'
 switch ($Operation) {
+  'personalization' {
+    $key = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey($personalizePath,$false)
+    try { Get-ToolboxPersonalizationValues $key | ConvertTo-Json -Depth 5 -Compress }
+    finally { if ($null -ne $key) { $key.Dispose() } }
+  }
+  'set-personalization' {
+    if ($ImagePath.Length -gt 4096) { throw 'Personalization payload too large' }
+    $values = $ImagePath | ConvertFrom-Json
+    Assert-ToolboxPersonalizationValues $values
+    $key = [Microsoft.Win32.Registry]::CurrentUser.CreateSubKey($personalizePath)
+    try { Set-ToolboxPersonalizationValues $key $values }
+    finally { $key.Dispose() }
+    [UIntPtr]$reply = [UIntPtr]::Zero
+    $sent = [ToolboxBeautyNative]::SendSettingsMessage([IntPtr]0xffff,0x1a,[IntPtr]::Zero,'ImmersiveColorSet',2,100,[ref]$reply)
+    @{ applied=$true; notified=($sent -ne [IntPtr]::Zero) } | ConvertTo-Json -Compress
+  }
   'wallpaper' {
     $buffer = [Text.StringBuilder]::new(32768)
     if (-not [ToolboxBeautyNative]::SystemParametersInfo(0x73,$buffer.Capacity,$buffer,0)) { throw 'Windows could not read the current wallpaper' }
