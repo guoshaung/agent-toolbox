@@ -32,9 +32,9 @@ function parseLines(text) {
     if (!trimmed || trimmed.startsWith(';')) return { raw, body, eol, section };
     const header = /^\[([^\[\]]+)\]$/.exec(trimmed);
     if (header) { section = header[1].trim().toLowerCase(); return { raw, body, eol, section, header: true }; }
-    const entry = /^(\s*([^=\s][^=]*?)\s*=)(.*)$/.exec(body);
-    if (!entry || trimmed.startsWith('[')) throw new Error('INI 结构无法可靠合并，请使用标准 [段名] 和 key=value 格式');
-    return { raw, body, eol, section, key: entry[2].trim().toLowerCase(), prefix: entry[1] };
+    const equal = body.indexOf('='), key = body.slice(0, equal).trim();
+    if (equal < 1 || !key || trimmed.startsWith('[')) throw new Error('INI 结构无法可靠合并，请使用标准 [段名] 和 key=value 格式');
+    return { raw, body, eol, section, key: key.toLowerCase(), prefix: body.slice(0, equal + 1) };
   });
 }
 

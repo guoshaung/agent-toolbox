@@ -54,7 +54,8 @@ test('duplicate keys and sections get consistent values and missing keys go in t
 
 test('invalid encodings, binary, malformed sections and oversized inputs are rejected', () => {
   for (const buffer of [Buffer.alloc(0), Buffer.from([0xc3,0x28]), Buffer.from('[config]\n\0bad=1'), Buffer.from([0xfe,0xff,0,1]), Buffer.from([0xff,0xfe,0x00,0xd8]), Buffer.from([0xff,0xfe,0x41]), Buffer.alloc(MAX_INI + 1)]) assert.throws(() => mergeNativeIni(buffer, recipe('dwm')));
-  for (const text of ['{}', '[other]\nx=1', '[config]\n[bad]suffix\nx=1', '[config]\nmissing-equals']) assert.throws(() => mergeNativeIni(Buffer.from(text), recipe('dwm')));
+  for (const text of ['{}', '[other]\nx=1', '[config]\n[bad]suffix\nx=1', '[config]\nmissing-equals', '[config]\nx' + ' '.repeat(65536)]) assert.throws(() => mergeNativeIni(Buffer.from(text), recipe('dwm')));
+  assert.match(decodeIni(mergeNativeIni(Buffer.from('[config]\n[constructor]\n__proto__=preserve\n'), recipe('dwm')).buffer).text, /\[constructor\]\n__proto__=preserve/);
   assert.throws(() => mergeNativeIni(Buffer.from('[config]'), { engine: '__proto__', text: '' }));
 });
 
