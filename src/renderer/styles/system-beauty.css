@@ -52,3 +52,4 @@
 .beauty__window-controls .beauty__row { min-width: 0; max-width: 100%; }
 .beauty__window-controls select[aria-label="目标窗口"] { width: 0; min-width: 0; max-width: 100%; flex: 1 1 300px; }
 .beauty__window-controls .beauty__row > span { min-width: 0; overflow-wrap: anywhere; }
+.beauty__restore-summary { min-width: 0; padding: 12px; border: 1px solid var(--line, #ffffff26); border-radius: 8px; overflow-wrap: anywhere; }

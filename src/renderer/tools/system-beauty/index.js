@@ -9,6 +9,7 @@ export default {
     let showAllPresets = false, wallpaperSize = 'fhd', assetQuery = '', assetPage = 0;
     let personalizationStatus = '可先读取当前设置，再选择需要更改的项目。';
     let windowTarget = '', windowStatus = '先刷新窗口列表，再选择一个窗口。';
+    let windowRecovery = null;
     const windowOptions = { dark: 'keep', corners: 'keep', material: 'keep' };
     const body = h('div', { class: 'beauty__body' });
     root.append(h('div', { class: 'bar bar--drag' }, h('strong', {}, '系统美化'), h('span', { class: 'faint' }, '你的图片，你的桌面')), body);
@@ -170,7 +171,13 @@ export default {
         return h('label', { class: 'beauty__field' }, label, select);
       }));
       const changeWindow = async (method, payload) => {
-        try { library = await invoke(method, payload); windowStatus = method === 'applyWindowAppearance' ? '已应用到所选窗口，原值已备份。' : '窗口恢复记录已更新。'; }
+        windowRecovery = null;
+        if (method === 'restoreAllWindowAppearances') { windowStatus = '正在逐个恢复窗口，请稍候…'; render(); }
+        try {
+          library = await invoke(method, payload);
+          windowRecovery = library.windowRestoreSummary || null;
+          windowStatus = windowRecovery ? `已恢复 ${windowRecovery.restored.length} / ${windowRecovery.attempted} 个窗口；剩余 ${windowRecovery.remaining} 条记录。` : method === 'applyWindowAppearance' ? '已应用到所选窗口，原值已备份。' : '窗口恢复记录已更新。';
+        }
         catch (error) { windowStatus = error.message; throw error; }
         finally { library = await invoke('list'); render(); }
       };
@@ -213,10 +220,13 @@ export default {
           button('应用 Windows 外观', () => changePersonalization(false), { class: 'btn btn--primary', disabled: !library.supported || !Object.values(draft.windows).some(value => value !== 'keep') }),
           button('恢复 Windows 外观', () => changePersonalization(true), { disabled: !library.supported || !library.personalizationRecovery })),
           h('p', { class: 'faint' }, '应用前会保存所改项目的原值；透明效果的实际呈现取决于 Windows 和应用。此处不会改变字体。')),
-        h('section', { class: 'card beauty__window-controls' }, h('h3', {}, '指定窗口外观'),
+        h('section', { class: 'card beauty__window-controls' }, h('div', { class: 'beauty__row' }, h('h3', {}, '指定窗口外观'),
+          button('恢复全部已调整窗口', () => changeWindow('restoreAllWindowAppearances'), { disabled: !windows.supported || !windows.records.length })),
           h('p', { class: 'faint' }, '选择一个正在运行的窗口，手动调整圆角、标题栏与材质。只作用于这个窗口；自绘界面或不透明背景可能不显示材质效果。'),
           h('div', { class: 'beauty__row' }, button('刷新窗口列表', async () => { library = await invoke('refreshWindows'); windowStatus = `找到 ${library.windowAppearance.candidates.length} 个窗口。`; render(); }, { disabled: !windows.supported }), targetSelect),
           windowFields, h('p', { class: 'faint', role: 'status' }, windowStatus),
+          windowRecovery?.failed.length ? h('div', { class: 'beauty__restore-summary', role: 'status' },
+            h('p', {}, '以下项目未完成，恢复记录已保留：'), ...windowRecovery.failed.map(item => h('p', {}, `${item.title}：${item.error}`))) : null,
           h('div', { class: 'beauty__row' }, button('应用到所选窗口', () => changeWindow('applyWindowAppearance', { targetId: windowTarget, options: windowOptions }), { class: 'btn btn--primary', disabled: !windows.supported || !windowTarget || !Object.values(windowOptions).some(value => value !== 'keep') })),
           ...windows.records.map(record => h('div', { class: 'beauty__row' }, h('span', {}, `${record.title} · ${record.processName}`),
             button('恢复此窗口', () => changeWindow('restoreWindowAppearance', record.id)), button('清理已关闭窗口记录', () => changeWindow('forgetClosedWindow', record.id)))),

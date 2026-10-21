@@ -30,6 +30,7 @@ contextBridge.exposeInMainWorld('toolbox', {
     refreshWindows: () => ipcRenderer.invoke('systemBeauty:refreshWindows'),
     applyWindowAppearance: (payload) => ipcRenderer.invoke('systemBeauty:applyWindowAppearance', payload),
     restoreWindowAppearance: (id) => ipcRenderer.invoke('systemBeauty:restoreWindowAppearance', id),
+    restoreAllWindowAppearances: () => ipcRenderer.invoke('systemBeauty:restoreAllWindowAppearances'),
     forgetClosedWindow: (id) => ipcRenderer.invoke('systemBeauty:forgetClosedWindow', id),
     probe: () => ipcRenderer.invoke('systemBeauty:probe'),
     openFolder: () => ipcRenderer.invoke('systemBeauty:openFolder'),

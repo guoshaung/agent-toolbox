@@ -32,6 +32,93 @@ function setup(t) {
   return { service, native, state, refresh };
 }
 
+function setupMany(t) {
+  const { service, native } = setup(t);
+  const targets = Array.from({ length: 3 }, (_, i) => ({ ...TARGET, hwnd: String(10001 + i), title: `Fixture ${i + 1}` }));
+  const states = targets.map(() => ({ values: { 20: 0, 33: 1, 38: 0 }, marker: 0, restored: 0, closed: false }));
+  const checked = (target, marker) => {
+    const index = targets.findIndex(item => item.hwnd === target.hwnd); assert.ok(index >= 0); assert.deepEqual(target, targets[index]);
+    const state = states[index]; if (state.closed) throw new Error('window closed');
+    if (marker !== undefined && state.marker !== marker) throw new Error('marker mismatch');
+    return state;
+  };
+  Object.assign(native, {
+    enumerate: async () => clone(targets),
+    capture: async (target, keys, marker) => { const state = checked(target, marker); return { marker: state.marker, values: Object.fromEntries(keys.map(key => [key, state.values[key]])) }; },
+    apply: async (target, values, marker, bind) => { const state = checked(target, bind ? undefined : marker); assert.ok(service.read().records.some(item => item.target.hwnd === target.hwnd)); if (bind) { assert.equal(state.marker, 0); state.marker = marker; } Object.assign(state.values, values); },
+    restore: async (target, values, marker) => { const state = checked(target, marker); Object.assign(state.values, values); state.restored++; },
+    clearMarker: async (target, marker) => { const state = checked(target); assert.equal(service.read().records.find(item => item.target.hwnd === target.hwnd).phase, 'restored'); if (state.marker) checked(target, marker); state.marker = 0; },
+    alive: async target => !states[targets.findIndex(item => item.hwnd === target.hwnd)].closed,
+  });
+  return { service, native, targets, states, refresh: async () => { await service.refresh(); return service.list().candidates.map(item => item.id); } };
+}
+
+test('restore all is read-only when empty and restores each window original values and marker', async t => {
+  const { service, states, refresh } = setupMany(t);
+  const empty = await service.restoreAll();
+  assert.deepEqual(empty.restoreSummary, { attempted: 0, restored: [], failed: [], remaining: 0 });
+  assert.equal(fs.existsSync(service.file), false);
+  const ids = await refresh();
+  await service.apply(ids[0], { dark: 'on', corners: 'round' }); await service.apply(ids[1], { material: 'mica' });
+  const result = await service.restoreAll();
+  assert.equal(result.restoreSummary.attempted, 2); assert.equal(result.restoreSummary.restored.length, 2);
+  assert.deepEqual(result.restoreSummary.failed, []); assert.equal(result.records.length, 0);
+  for (const state of states) { assert.deepEqual(state.values, { 20: 0, 33: 1, 38: 0 }); assert.equal(state.marker, 0); }
+  assert.equal(states[2].restored, 0);
+});
+
+test('bulk recovery preserves failed marker/closed records, continues others, and can retry', async t => {
+  const { service, states, refresh } = setupMany(t), ids = await refresh();
+  for (const id of ids) await service.apply(id, { material: 'acrylic' });
+  const marker = states[0].marker; states[0].marker++; states[1].closed = true;
+  const result = await service.restoreAll();
+  assert.equal(result.restoreSummary.restored.length, 1); assert.equal(result.restoreSummary.failed.length, 2);
+  assert.match(result.restoreSummary.failed[0].error, /marker/); assert.match(result.restoreSummary.failed[1].error, /closed/);
+  assert.equal(result.restoreSummary.remaining, 2); assert.equal(states[0].restored, 0); assert.equal(states[1].restored, 0);
+  assert.equal(states[2].marker, 0); states[0].marker = marker;
+  const retry = await service.restoreAll(); assert.equal(retry.restoreSummary.restored.length, 1); assert.equal(retry.restoreSummary.failed.length, 1);
+  assert.equal(retry.records.length, 1); assert.equal(states[0].marker, 0);
+  await service.forgetClosed(retry.records[0].id); assert.equal(service.list().records.length, 0);
+});
+
+test('bulk recovery and simultaneous new application serialize without restoring the new record', async t => {
+  const { service, native, states, refresh } = setupMany(t), ids = await refresh();
+  await service.apply(ids[0], { dark: 'on' }); await service.apply(ids[1], { corners: 'round' });
+  const restore = native.restore; let started, release;
+  const entered = new Promise(resolve => { started = resolve; }), gate = new Promise(resolve => { release = resolve; });
+  native.restore = async (...args) => { started(); await gate; return restore(...args); };
+  const restoring = service.restoreAll(); await entered;
+  const later = service.apply(ids[2], { material: 'mica' });
+  assert.equal(states[2].marker, 0); release();
+  const result = await restoring; await later;
+  assert.equal(result.restoreSummary.attempted, 2); assert.equal(result.restoreSummary.remaining, 0);
+  assert.equal(service.list().records.length, 1); assert.equal(states[2].values[38], 2); assert.equal(states[2].restored, 0);
+  await service.restoreAll(); assert.equal(states[2].marker, 0);
+});
+
+test('bulk recovery keeps disk-failed baseline and still restores independent windows', async t => {
+  const { service, states, refresh } = setupMany(t), ids = await refresh();
+  await service.apply(ids[0], { dark: 'on' }); await service.apply(ids[1], { material: 'mica' });
+  const write = service.write.bind(service); let fail = true;
+  service.write = data => { if (fail) { fail = false; throw new Error('disk full'); } write(data); };
+  const result = await service.restoreAll();
+  assert.equal(result.restoreSummary.restored.length, 1); assert.match(result.restoreSummary.failed[0].error, /disk full/);
+  assert.equal(service.read().records.length, 1); assert.equal(service.read().records[0].values[20], 0);
+  assert.notEqual(states[0].marker, 0); assert.equal(states[1].marker, 0);
+  const retry = await service.restoreAll(); assert.equal(retry.restoreSummary.failed.length, 0); assert.equal(states[0].marker, 0);
+});
+
+test('bulk recovery isolates malformed values and refuses duplicate IDs before any affected write', async t => {
+  const { service, states, refresh } = setupMany(t), ids = await refresh();
+  for (const id of ids) await service.apply(id, { dark: 'on' });
+  const data = service.read(); data.records[0].id = data.records[1].id; data.records[2].values[35] = 123; data.records.push(null); service.write(data);
+  const result = await service.restoreAll();
+  assert.equal(result.restoreSummary.failed.length, 4); assert.equal(result.restoreSummary.restored.length, 0);
+  assert.equal(service.read().records.length, 4); assert.ok(states.every(state => state.restored === 0));
+  states[0].closed = true; await assert.rejects(service.forgetClosed(data.records[0].id), /ID 重复/);
+  assert.equal(service.read().records.length, 4);
+});
+
 test('window appearance plans whitelist readable reversible attributes only', () => {
   assert.deepEqual(windowPlan({}), {});
   assert.deepEqual(windowPlan({ dark: 'on', corners: 'small', material: 'mica', captionColor: '#123456' }), { 20: 1, 33: 3, 38: 2 });
@@ -122,6 +209,7 @@ test('record count is bounded and unsupported versions cannot enumerate or apply
   await assert.rejects(service.apply(id, { dark: 'on' }), /清理/);
   service.capability.supported = false; service.capability.reason = 'unsupported OS';
   await assert.rejects(service.refresh(), /unsupported/);
+  await assert.rejects(service.restoreAll(), /unsupported/);
 });
 
 test('PowerShell transport keeps Unicode paths and JSON as data, cleans temporary scripts on success and failure', async () => {

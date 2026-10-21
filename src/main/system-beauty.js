@@ -416,6 +416,10 @@ function registerSystemBeautyIpc(ipcMain, { getUserDataPath, dialog, getWindow, 
   handle('refreshWindows', async () => { await beauty.windowAppearance.refresh(); return beauty.list(); });
   handle('applyWindowAppearance', async payload => { await beauty.windowAppearance.apply(payload?.targetId, payload?.options); return beauty.list(); });
   handle('restoreWindowAppearance', async id => { await beauty.windowAppearance.restore(id); return beauty.list(); });
+  handle('restoreAllWindowAppearances', async () => {
+    const result = await beauty.windowAppearance.restoreAll();
+    return { ...beauty.list(), windowRestoreSummary: result.restoreSummary };
+  });
   handle('forgetClosedWindow', async id => { await beauty.windowAppearance.forgetClosed(id); return beauty.list(); });
   handle('probe', () => beauty.native.probe());
   handle('openFolder', async () => { fs.mkdirSync(beauty.root, { recursive: true }); const error = await shell.openPath(beauty.root); if (error) throw new Error(error); return {}; });

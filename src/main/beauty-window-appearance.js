@@ -70,7 +70,7 @@ class WindowAppearance {
   }
   list() {
     return { ...this.capability, candidates: [...this.candidates].map(([id, target]) => ({ id, title: target.title, processName: target.processName })),
-      records: this.read().records.map(record => ({ id: record.id, title: record.target?.title || '窗口', processName: record.target?.processName || '', at: record.at, phase: record.phase })) };
+      records: this.read().records.map(record => ({ id: record?.id, title: String(record?.target?.title || '窗口').slice(0, 200), processName: String(record?.target?.processName || '').slice(0, 128), at: record?.at, phase: record?.phase })) };
   }
   refresh() {
     return this.serial(async () => {
@@ -113,31 +113,50 @@ class WindowAppearance {
     });
   }
   restore(id) {
+    return this.serial(() => this._restoreRecord(id));
+  }
+  async _restoreRecord(id) {
+    if (!this.capability.supported) throw new Error(this.capability.reason);
+    const data = this.read(), matches = data.records.filter(item => item?.id === id);
+    if (matches.length !== 1) throw new Error('窗口恢复记录缺失或 ID 重复，已停止操作');
+    const record = validRecord(matches[0]);
+    if (record.phase === 'pending') {
+      const snapshot = await this.native.capture(record.target, Object.keys(record.values));
+      if (snapshot.marker === 0 && isDeepStrictEqual(windowValues(snapshot.values), record.values)) {
+        data.records = data.records.filter(item => item?.id !== id); this.write(data); return this.list();
+      }
+    }
+    if (record.phase !== 'restored') {
+      await this.native.restore(record.target, record.values, record.marker);
+      record.phase = 'restored';
+      data.records = data.records.map(item => item?.id === id ? record : item); this.write(data);
+    }
+    // A durable restored phase makes marker removal and retry idempotent.
+    await this.native.clearMarker(record.target, record.marker);
+    data.records = data.records.filter(item => item?.id !== id); this.write(data);
+    return this.list();
+  }
+  restoreAll() {
     return this.serial(async () => {
       if (!this.capability.supported) throw new Error(this.capability.reason);
-      const data = this.read(), record = validRecord(data.records.find(item => item.id === id));
-      if (record.phase === 'pending') {
-        const snapshot = await this.native.capture(record.target, Object.keys(record.values));
-        if (snapshot.marker === 0 && isDeepStrictEqual(windowValues(snapshot.values), record.values)) {
-          data.records = data.records.filter(item => item.id !== id); this.write(data); return this.list();
-        }
+      // Snapshot the existing records under the same queue as apply/restore. New requests wait.
+      const records = this.read().records.map(record => ({ id: record?.id, title: String(record?.target?.title || '窗口').slice(0, 200) }));
+      const restored = [], failed = [];
+      for (const record of records) {
+        try { await this._restoreRecord(record.id); restored.push(record); }
+        catch (error) { failed.push({ ...record, error: error.message || '恢复失败，记录已保留' }); }
       }
-      if (record.phase !== 'restored') {
-        await this.native.restore(record.target, record.values, record.marker);
-        record.phase = 'restored';
-        data.records = data.records.map(item => item.id === id ? record : item); this.write(data);
-      }
-      // A durable restored phase makes marker removal and retry idempotent.
-      await this.native.clearMarker(record.target, record.marker);
-      data.records = data.records.filter(item => item.id !== id); this.write(data);
-      return this.list();
+      const state = this.list();
+      return { ...state, restoreSummary: { attempted: records.length, restored, failed, remaining: state.records.length } };
     });
   }
   forgetClosed(id) {
     return this.serial(async () => {
-      const data = this.read(), record = validRecord(data.records.find(item => item.id === id));
+      const data = this.read(), matches = data.records.filter(item => item?.id === id);
+      if (matches.length !== 1) throw new Error('窗口恢复记录缺失或 ID 重复，已停止清理');
+      const record = validRecord(matches[0]);
       if (await this.native.alive(record.target)) throw new Error('窗口仍在运行，恢复记录已保留');
-      data.records = data.records.filter(item => item.id !== id); this.write(data); return this.list();
+      data.records = data.records.filter(item => item?.id !== id); this.write(data); return this.list();
     });
   }
 }
