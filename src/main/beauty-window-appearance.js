@@ -50,16 +50,17 @@ function windowMarker(value) {
 }
 
 class WindowAppearance {
-  constructor({ root, native = new WindowAppearanceBridge(), platform = process.platform, release = os.release() } = {}) {
+  constructor({ root, native = new WindowAppearanceBridge(), platform = process.platform, release = os.release(), limit = 32 } = {}) {
     this.root = root; this.file = path.join(root, 'windows.json'); this.native = native;
     this.capability = previewCapability(platform, release); this.candidates = new Map(); this.pending = Promise.resolve();
+    this.limit=limit;
   }
   serial(fn) { const action = this.pending.then(fn); this.pending = action.catch(() => {}); return action; }
   read() {
     if (!fs.existsSync(this.file)) return { version: 1, records: [] };
     if (fs.statSync(this.file).size > 1024 * 1024) throw new Error('窗口恢复文件超过大小限制');
     const data = JSON.parse(fs.readFileSync(this.file, 'utf8'));
-    if (data.version !== 1 || !Array.isArray(data.records) || data.records.length > 32) throw new Error('窗口恢复文件格式无效');
+    if (data.version !== 1 || !Array.isArray(data.records) || data.records.length > this.limit) throw new Error('窗口恢复文件格式无效');
     return data;
   }
   write(data) {
@@ -103,8 +104,9 @@ class WindowAppearance {
       if (record) {
         record = validRecord(record);
         if (record.phase !== 'applied') throw new Error('请先恢复该窗口未完成的更改');
-      } else if (data.records.length >= 32) throw new Error('请先恢复或清理已有窗口记录');
+      } else if (data.records.length >= this.limit) throw new Error('请先恢复或清理已有窗口记录');
       const snapshot = await this.native.capture(target, Object.keys(plan), record?.marker);
+      if(!record&&snapshot.marker){const error=new Error('该窗口已有独立外观标记，请先恢复原有窗口调整');error.code='WINDOW_MARKER';throw error;}
       const baseline = { ...(record?.values || {}) };
       const captured = windowValues(snapshot.values);
       for (const key of Object.keys(plan)) if (!Object.hasOwn(baseline, key)) baseline[key] = captured[key];
@@ -170,17 +172,19 @@ class WindowAppearance {
 class WindowAppearanceBridge {
   constructor({ exec = promisify(execFile), platform = process.platform } = {}) { this.exec = exec; this.platform = platform; }
   async run(operation, payload = {}) {
-    if (this.platform !== 'win32' || !['enumerate', 'describe', 'capture', 'apply', 'restore', 'clear-marker', 'alive'].includes(operation)) throw new Error('窗口原生操作不可用');
+    if (this.platform !== 'win32' || !['enumerate', 'describe', 'capture', 'apply', 'restore', 'clear-marker', 'alive','capture-many','apply-many','restore-many','clear-marker-many'].includes(operation)) throw new Error('窗口原生操作不可用');
     const encoded = Buffer.from(JSON.stringify(payload), 'utf8').toString('base64');
     // This helper is larger than Windows' command-line limit once UTF16/base64 encoded.
     // Materialize our own script from asar, with per-call temporary paths and data-only arguments.
     const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'toolbox-beauty-window-'));
     const script = path.join(directory, 'native.ps1');
+    const requestFile=path.join(directory,'request.json');
     let stdout;
     try {
       fs.writeFileSync(script, Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), fs.readFileSync(path.join(__dirname, 'beauty-window-native.ps1'))]), { mode: 0o600 });
-      ({ stdout } = await this.exec('powershell.exe', ['-NoLogo', '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', script, '-Operation', operation, '-Payload', encoded], { windowsHide: true, timeout: 20000, maxBuffer: 1024 * 1024 }));
-    } finally { try { if (fs.existsSync(script)) fs.unlinkSync(script); fs.rmdirSync(directory); } catch {} }
+      const payloadArgs=encoded.length>6000?['-PayloadFile',requestFile]:['-Payload',encoded];if(encoded.length>6000)fs.writeFileSync(requestFile,JSON.stringify(payload));
+      ({ stdout } = await this.exec('powershell.exe', ['-NoLogo', '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', script, '-Operation', operation, ...payloadArgs], { windowsHide: true, timeout: 20000, maxBuffer: 1024 * 1024 }));
+    } finally { try { for(const file of [script,requestFile])if(fs.existsSync(file))fs.unlinkSync(file); fs.rmdirSync(directory); } catch {} }
     const result = JSON.parse(stdout.replace(/^\uFEFF/, '').trim());
     if (!result.ok) {
       const messages = { WINDOW_GONE: '目标窗口已关闭，可清理记录', WINDOW_IDENTITY: '窗口身份已变化，请重新选择', WINDOW_MARKER: '窗口身份标记不匹配，已停止操作', WINDOW_ACCESS: '当前权限无法修改此窗口', ATTRIBUTE_READ: '无法备份所选窗口属性，已停止操作', ATTRIBUTE_WRITE: '窗口属性未完整应用，恢复记录已保留' };
@@ -195,6 +199,15 @@ class WindowAppearanceBridge {
   restore(target, values, marker) { return this.run('restore', { target: windowIdentity(target), values: windowValues(values), marker: windowMarker(marker) }); }
   clearMarker(target, marker) { return this.run('clear-marker', { target: windowIdentity(target), marker: windowMarker(marker) }); }
   alive(target) { return this.run('alive', { target: windowIdentity(target) }); }
+  batch(operation,items){if(!['capture-many','apply-many','restore-many','clear-marker-many'].includes(operation)||!Array.isArray(items)||items.length>128)throw Error('批量窗口请求无效');
+    const clean=items.map(item=>{if(!UUID.test(item.id||''))throw Error('窗口请求ID无效');const value={id:item.id,target:windowIdentity(item.target)};
+      if(item.marker!==undefined)value.marker=windowMarker(item.marker);
+      if(item.values)value.values=windowValues(item.values);
+      if(item.attributes)value.attributes=Object.keys(windowValues(Object.fromEntries(item.attributes.map(key=>[key,0]))));
+      if(item.bind!==undefined){if(typeof item.bind!=='boolean')throw Error('窗口绑定选项无效');value.bind=item.bind;}
+      if(item.phase!==undefined){if(!['pending','applied','restored'].includes(item.phase))throw Error('窗口恢复阶段无效');value.phase=item.phase;}return value;});
+    return this.run(operation,{items:clean});
+  }
 }
 
-module.exports = { WindowAppearance, WindowAppearanceBridge, windowPlan, windowValues, windowIdentity };
+module.exports = { WindowAppearance, WindowAppearanceBridge, windowPlan, windowValues, windowIdentity, validRecord };

@@ -16,7 +16,8 @@ export default {
     let catalogStatus = '';
     let assetKind = 'all', assetSource = '', inspectedAsset = '', packagePage = 0;
     let engine = { registered: false }, themeMessage = '';
-    const themeOptions = { wallpaper: true, explorer: true, colors: true };
+    const themeOptions = { wallpaper: true, explorer: true, colors: true, windows: true, icons: true, cursors: true, shellColors: true, taskbar: true, desktopMotion:false,matchPalette:true };
+    const loadDraft=profile=>{draft={...profile};themeOptions.matchPalette=(!profile.accent||profile.accent==='#8fb4ff')&&(!profile.tint||profile.tint==='#1a2442');};
     const windowOptions = { dark: 'keep', corners: 'keep', material: 'keep' };
     const body = h('div', { class: 'beauty__body' });
     root.append(h('div', { class: 'bar bar--drag' }, h('strong', {}, '系统美化'), h('span', { class: 'faint' }, '你的图片，你的桌面')), body);
@@ -171,7 +172,7 @@ export default {
       const updatePreview = () => previewHost.replaceChildren(preview());
       const input = (label, key, props) => {
         const control = h('input', { ...props, value: draft[key] });
-        control.addEventListener('input', () => { draft[key] = props.type === 'range' ? Number(control.value) : control.value; updatePreview(); if (output) output.textContent = `${control.value}${key === 'opacity' ? '%' : ' px'}`; });
+        control.addEventListener('input', () => { draft[key] = props.type === 'range' ? Number(control.value) : control.value; if(key==='accent'||key==='tint'){themeOptions.matchPalette=false;const check=body.querySelector('[aria-label="窗口与图标跟随人物配色"]');if(check)check.checked=false;} updatePreview(); if (output) output.textContent = `${control.value}${key === 'opacity' ? '%' : ' px'}`; });
         const output = props.type === 'range' ? h('span', { class: 'faint' }, `${draft[key]}${key === 'opacity' ? '%' : ' px'}`) : null;
         return h('label', { class: 'beauty__field' }, h('span', {}, label), control, output);
       };
@@ -268,7 +269,7 @@ export default {
         } finally { finished = true; folderJobId = ''; folderProgress = null; if (!disposed) { library = await invoke('list'); render(); } }
       };
       const profiles = h('div', { class: 'beauty__profile-list' }, ...library.profiles.map(p => button(p.name, async () => {
-        library = await invoke('selectProfile', p.id); draft = { ...p };
+        library = await invoke('selectProfile', p.id); loadDraft(p);
         if (!library.presets.slice(0, 4).some(preset => preset.id === p.preset)) showAllPresets = true;
         render();
       }, { class: `btn${draft.id === p.id ? ' btn--primary' : ''}` })));
@@ -276,7 +277,7 @@ export default {
         const result = await invoke('importBundle');
         if (result.canceled) return;
         library = result;
-        draft = { ...result.profiles.find(p => p.id === result.importedProfileId) };
+        loadDraft(result.profiles.find(p => p.id === result.importedProfileId));
         render(); toast('主题和背景图片已导入', 'good');
       };
       const exportRecipe = engine => async () => {
@@ -319,7 +320,7 @@ export default {
         const items = library.assets.filter(a => pkg.assetIds.includes(a.id));
         return h('article', { class: 'beauty__catalog-card beauty__local-package' },
           button(h('img', { src: pkg.previewUrl || items[0]?.thumbnailUrl, alt: `${pkg.title} 原包预览`, loading: 'lazy' }), async () => {
-            const profile = library.profiles.find(p => p.id === pkg.profileId); if (profile) { library = await invoke('selectProfile', profile.id); draft = { ...profile }; }
+            const profile = library.profiles.find(p => p.id === pkg.profileId); if (profile) { library = await invoke('selectProfile', profile.id); loadDraft(profile); }
             assetSource = pkg.id; assetKind = 'all'; assetQuery = ''; assetPage = 0; render(); body.querySelector('.beauty__preview-card')?.scrollIntoView({ block: 'start', behavior: 'smooth' });
           }, { class: 'beauty__catalog-cover', 'aria-label': `使用预设 ${pkg.title}`, disabled: !library.profiles.some(p => p.id === pkg.profileId) }),
           h('div', { class: 'beauty__catalog-copy' }, h('span', { class: 'beauty__catalog-kind' }, pkg.failedCount ? `已解析 · ${pkg.failedCount} 项待重试` : '完整包已解析 · 本机可用'), h('h3', {}, pkg.title),
@@ -328,7 +329,7 @@ export default {
             button('应用这套电脑主题', async () => {
               const profile = library.profiles.find(p => p.id === pkg.profileId);
               if (!profile) throw new Error('预设尚未解析，请重新导入');
-              library = await invoke('selectProfile', profile.id); draft = { ...profile };
+              library = await invoke('selectProfile', profile.id); loadDraft(profile);
               await changeSystemTheme(false);
               body.querySelector('.beauty__system-apply')?.scrollIntoView({ block: 'start', behavior: 'smooth' });
             }, { class: 'btn btn--primary', 'aria-label': `应用 ${pkg.title} 电脑主题`, disabled: !library.supported || !library.profiles.some(p => p.id === pkg.profileId) })));
@@ -340,7 +341,7 @@ export default {
           themeMessage = restore ? '正在恢复应用前外观…' : '正在连接资源管理器并应用所选主题…'; render();
           library = await invoke(restore ? 'restoreSystemTheme' : 'applySystemTheme', ...(restore ? [] : [{ profile: draft, options: themeOptions }]));
           engine = library.explorerEngine || engine;
-          themeMessage = restore ? (library.restoreErrors.length ? `部分恢复失败：${library.restoreErrors.map(e => `${e.part}：${e.error}`).join('；')}` : '已撤销本次主题，恢复应用前的桌面和 Windows 配色。') : themeOptions.explorer && !engine.painted ? '所选主题已处理；资源管理器图片等待窗口重绘，请打开测试文件夹查看。' : '主题已应用到电脑；可随时恢复应用前外观。';
+          themeMessage = restore ? (library.restoreErrors.length ? `部分恢复失败：${library.restoreErrors.map(e => `${e.part}：${e.error}`).join('；')}` : '已恢复桌面、窗口外观、图标、鼠标指针与任务栏；首次应用前的原值已还原。') : themeOptions.explorer && !engine.painted ? '所选主题已处理；资源管理器图片等待窗口重绘，请打开测试文件夹查看。' : '主题已应用到电脑；可随时恢复应用前外观。';
           toast(themeMessage, library.restoreErrors?.length ? 'bad' : 'good', 7000);
         } catch (error) { themeMessage = error.message; throw error; }
         finally { library = await invoke('list'); render(); }
@@ -349,14 +350,15 @@ export default {
       body.replaceChildren(
         h('section', { class: 'card beauty__system-apply' }, h('h2', {}, '切换电脑主题'),
           h('p', {}, `当前搭配：${draft.name}。选择下方预设或素材，再应用到电脑。`),
+          h('label',{class:'beauty__theme-option'},h('input',{type:'checkbox',checked:themeOptions.matchPalette,'aria-label':'窗口与图标跟随人物配色',onchange:event=>{themeOptions.matchPalette=event.target.checked;}}),'窗口与图标跟随人物配色（手动选色时自动关闭）'),
           themeState?.phase === 'applied' ? h('p', { role: 'status' }, `电脑已应用：${themeState.name}。使用下方恢复按钮可撤销。`) : null,
-          h('div', { class: 'beauty__row' }, ...[['wallpaper', '桌面壁纸'], ['explorer', '资源管理器人物／背景'], ['colors', 'Windows 深浅色与透明效果']].map(([key, label]) => {
+          h('div', { class: 'beauty__row' }, ...[['wallpaper', '桌面壁纸'], ['explorer', '资源管理器人物／背景'], ['colors', 'Windows 深浅色与透明效果'], ['windows','窗口圆角／标题栏／材质'],['icons','配套系统图标'],['cursors','配套鼠标指针'],['shellColors','任务栏／开始菜单强调色'],['taskbar','任务栏透明／亚克力'],['desktopMotion','桌面轻动效（主屏立绘浮动／光效）']].map(([key, label]) => {
             const check = h('input', { type: 'checkbox', checked: themeOptions[key], 'aria-label': label }); check.addEventListener('change', () => { themeOptions[key] = check.checked; });
             return h('label', { class: 'beauty__theme-option' }, check, label);
           })),
           h('p', { class: 'faint', role: 'status' }, engine.error ? `组件检测：${engine.error}` : engine.registered ? engine.enabled && engine.painted ? '资源管理器组件：已启用，已实际绘制图片' : engine.ready ? '资源管理器组件：已加载；主题图片尚未应用或绘制' : '资源管理器组件：已注册但尚未加载，图片未生效' : '资源管理器组件：未启用。首次启用会请求 Windows 管理员授权。'),
           h('div', { class: 'beauty__row' }, button('应用主题到电脑', () => changeSystemTheme(false), { class: 'btn btn--primary', disabled: !library.supported }),
-            button('恢复应用前电脑外观', () => changeSystemTheme(true), { disabled: !library.supported || !(themeState || library.recovery || library.personalizationRecovery || engine.enabled) }),
+            button('恢复应用前电脑外观', () => changeSystemTheme(true), { disabled: !library.supported || !(themeState || library.recovery || library.personalizationRecovery || engine.enabled || library.shellAssets?.recoveryAvailable || library.themeWindows?.records.length || library.taskbarStyle?.session) }),
             !engine.registered ? button('启用资源管理器组件', async () => { themeMessage = '等待 Windows 授权…'; library = await invoke('installExplorerEngine'); engine = library.explorerEngine; themeMessage = '组件已注册；选好搭配后点击“应用主题到电脑”。'; render(); }, { disabled: !library.supported }) : null,
             button('打开测试文件夹', async () => { await invoke('openExplorerThemeTest'); }, { disabled: !engine.registered }),
             button('检查生效', async () => { engine = await invoke('explorerEngineStatus'); render(); }),
@@ -364,7 +366,19 @@ export default {
             engine.registered || engine.machineRegistered || engine.userRegistered ? button('移除资源管理器组件', async () => { library = await invoke('uninstallExplorerEngine'); engine = library.explorerEngine; render(); }, { disabled: !library.supported }) : null),
           themeMessage ? h('p', { role: 'status' }, themeMessage) : null,
           themeState?.error ? h('p', { class: 'faint', role: 'alert' }, `上次操作未完成：${themeState.error}。恢复备份已保留。`) : null,
-          h('p', { class: 'faint' }, '人物会绘制到实际资源管理器文件区域；图标目前仅作素材查看。此入口不会修改字体、Key 或 Toolbox 偏好。恢复会停止图片绘制并还原首次应用前的桌面与配色；移除组件需要另一次 Windows 授权。')),
+          themeState?.windowSummary ? h('p', { role:'status' }, `窗口外观：${themeState.windowSummary.applied.length} 个已应用，${themeState.windowSummary.skipped.length} 个跳过；主题启用期间新窗口也会跟随。`) : null,
+          themeState?.windowSummary?.skipped.length ? h('details', {},h('summary', {},'查看未应用窗口'),...themeState.windowSummary.skipped.map(x=>h('p', {class:'faint'},`${x.title}：${x.error}`))) : null,
+          themeState?.shellSummary ? h('p', { role:'status' }, `系统图标 ${themeState.shellSummary.icons} 项；鼠标指针 ${themeState.shellSummary.cursors} 项（忙碌指针含动画）；缺少原包图标时按人物与配色生成。`) : null,
+          themeState?.taskbarSummary?.running ? h('p',{role:'status'},`任务栏材质：${themeState.taskbarSummary.material==='opaque'?'纯色':'透明亚克力'}，已随当前主题应用。`) : null,
+          themeState?.desktopSummary ? h('p', { role:'status' },themeState.desktopSummary.running?'桌面轻动效已挂到桌面图标下方，恢复或退出工具箱即可关闭。':`桌面轻动效未开启，静态壁纸保留：${themeState.desktopSummary.error}`) : null,
+          h('details', { class:'beauty__icon-mapping' },h('summary', {},'配套系统图标 · 选择原包素材'),
+            h('p', {class:'faint'},'默认按当前人物与主题配色生成。也可以指定已导入的图标，保存主题后随整套应用。'),
+            ...[['computer','此电脑'],['documents','文档'],['network','网络'],['recycleEmpty','空回收站'],['recycleFull','满回收站'],['folder','普通文件夹']].map(([slot,label])=>{
+              const select=h('select', {class:'field','aria-label':`配套图标 ${label}`},h('option',{value:''},'按人物与主题配色生成'),...library.assets.filter(a=>a.kind==='icon'||a.kind==='imported').map(a=>h('option',{value:a.id,selected:draft.iconAssets?.[slot]===a.id},a.name)));
+              select.addEventListener('change',()=>{draft.iconAssets={...draft.iconAssets};if(select.value)draft.iconAssets[slot]=select.value;else delete draft.iconAssets[slot];});
+              return h('label', {class:'beauty__field'},label,select);
+            })),
+          h('p', { class: 'faint' }, '窗口外观跟随当前主题质感和深浅色；应用自绘或不透明内容可能遮住材质。图标覆盖此电脑、文档、网络、回收站与普通文件夹，自定义文件夹图标可能保留原样。任务栏材质首次使用下载官方 TranslucentTB 独立便携组件；开始菜单与右键菜单跟随 Windows 配色，不替换其布局。恢复会撤销上述已记录项目，不改字体、Key 或 Toolbox 偏好。')),
         packageItems.length ? h('section', { class: 'card beauty__local-packages' }, h('div', { class: 'beauty__row' }, h('h2', {}, `已解析的完整预设 · ${packageItems.length} 套`),
           h('span', { class: 'faint' }, '人物、底图与图标分开收纳，保留来源')), packageCards,
           h('div', { class: 'beauty__row beauty__pages' }, h('span', { class: 'faint' }, `第 ${packagePage + 1} / ${Math.ceil(packageItems.length / 8)} 页`),
@@ -455,7 +469,7 @@ export default {
     action(async () => {
       library = await invoke('list'); catalog = await invoke('catalog');
       engine = await invoke('explorerEngineStatus');
-      const selected = library.profiles.find(p => p.id === library.activeProfileId) || library.profiles[0]; draft = selected ? { ...selected } : fresh(library.presets[0]);
+      const selected = library.profiles.find(p => p.id === library.activeProfileId) || library.profiles[0]; loadDraft(selected || fresh(library.presets[0]));
       if (!selected) draft.characterId = library.assets.find(a => a.kind === 'character')?.id || '';
       if (selected && !library.presets.slice(0, 4).some(preset => preset.id === selected.preset)) showAllPresets = true;
       render();

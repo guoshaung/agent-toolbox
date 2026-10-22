@@ -56,3 +56,13 @@ test('a loader failure stops the complete theme before wallpaper, color or sessi
   await assert.rejects(beauty.applySystemTheme(payload), /loader unavailable/);
   assert.deepEqual(state.calls, []); assert.deepEqual(beauty.read(), initial);
 });
+test('one theme coordinates window materials, icons, animated cursors, shell colors and taskbar recovery',async t=>{
+ const {beauty,state,payload}=await fixture(t),calls=[];
+ beauty.themeWindows={stop:()=>calls.push('stop-follow'),list:()=>({records:[]}),apply:async()=>{calls.push('windows');return {applied:[{title:'Window'}],skipped:[]};},watch:()=>calls.push('follow'),restore:async()=>{calls.push('restore-windows');return {failed:[]};}};
+ beauty.shellAssets={prepare:async()=>{calls.push('prepare-shell');return {plan:{}};},native:{run:async()=>calls.push('validate-shell')},apply:async()=>{calls.push('shell');return {icons:6,cursors:15};},restore:async()=>calls.push('restore-shell'),list:()=>({})};
+ beauty.taskbarStyle={prepare:async()=>calls.push('prepare-taskbar'),apply:async()=>{calls.push('taskbar');return {running:true};},restore:async()=>calls.push('restore-taskbar'),list:()=>({})};
+ await beauty.applySystemTheme({...payload,options:{...payload.options,windows:true,icons:true,cursors:true,shellColors:true,taskbar:true}});
+ assert.deepEqual(calls.slice(0,4),['stop-follow','prepare-shell','validate-shell','prepare-taskbar']);assert.ok(calls.includes('windows')&&calls.includes('follow')&&calls.includes('shell')&&calls.includes('taskbar'));assert.equal(beauty.read().themeSession.profile.name,payload.profile.name);
+ const restored=await beauty.restoreSystemTheme();assert.deepEqual(restored.restoreErrors,[]);for(const part of ['restore-windows','restore-shell','restore-taskbar'])assert.ok(calls.includes(part));
+ assert.equal(state.enabled,false);
+});

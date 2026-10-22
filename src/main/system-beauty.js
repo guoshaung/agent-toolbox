@@ -20,6 +20,10 @@ const { BeautyCatalog } = require('./beauty-catalog');
 const { PreparedBeautyPackages } = require('./beauty-prepared-packages');
 const { ExplorerBeautyEngine } = require('./beauty-explorer-engine');
 const { SystemThemeSession } = require('./beauty-system-theme');
+const { ThemeWindows } = require('./beauty-theme-windows');
+const { ShellAssets, iconAssets, ICON_SLOTS } = require('./beauty-shell-assets');
+const { TaskbarStyle } = require('./beauty-taskbar');
+const { DesktopScene } = require('./beauty-desktop-scene');
 const MAX_IMAGE = 25 * 1024 * 1024;
 const MAX_BUNDLE = 2 * Math.ceil(MAX_IMAGE * 4 / 3) + 256 * 1024;
 const ASSET_ID = /^[a-f0-9]{64}$/;
@@ -59,7 +63,7 @@ function normalizeProfile(input) {
     opacity: number(input.opacity, 15, 100, 72), blur: number(input.blur, 0, 40, 22),
     backgroundId: ASSET_ID.test(input.backgroundId || '') ? input.backgroundId : '',
     characterId: ASSET_ID.test(input.characterId || '') ? input.characterId : '',
-    preset: PRESETS.some(p => p.id === input.preset) ? input.preset : 'aurora', windows: normalizeWindowsOptions(input.windows) };
+    preset: PRESETS.some(p => p.id === input.preset) ? input.preset : 'aurora', windows: normalizeWindowsOptions(input.windows), iconAssets: iconAssets(input.iconAssets) };
 }
 
 class SystemBeauty {
@@ -72,12 +76,21 @@ class SystemBeauty {
     this.platform = platform;
     this.preview = new BeautyNativePreview({ platform });
     this.windowAppearance = new WindowAppearance({ root: path.join(root, 'window-appearance'), platform });
+    this.themeWindows = new ThemeWindows({ root: path.join(root, 'theme-window-appearance'), platform });
+    this.shellAssets = new ShellAssets({ root: path.join(root, 'shell-assets') });
+    this.taskbarStyle = new TaskbarStyle({ root: path.join(root, 'taskbar-component') });
+    this.desktopScene = new DesktopScene();
     this.folderImport = new BeautyFolderImport();
     this.catalog = new BeautyCatalog({ root: path.join(root, 'catalog') });
     this.prepared = new PreparedBeautyPackages(root);
     this.explorerEngine = explorerEngine || new ExplorerBeautyEngine({ root: path.join(root, 'explorer-engine'), platform });
     this.systemTheme = new SystemThemeSession(this, normalizeProfile);
     this.pending = Promise.resolve();
+    // Resume only the window-follow rule the user explicitly enabled in an
+    // applied theme. A new installation or a failed application never enables it.
+    if(process.type==='browser'){
+      try{const session=this.read().themeSession;if(session?.phase==='applied'&&session.options?.windows&&session.profile)this.themeWindows.watch(normalizeProfile(session.profile),fn=>this.serial(fn));}catch{}
+    }
   }
   serial(action) {
     const result = this.pending.then(action);
@@ -136,7 +149,7 @@ class SystemBeauty {
       assets: data.assets.map(a => ({ ...a, url: pathToFileURL(this.assetPath(a.id)).href,
         thumbnailUrl: pathToFileURL(fs.existsSync(this.thumbnailPath(a.id)) ? this.thumbnailPath(a.id) : this.assetPath(a.id)).href })),
       profiles: data.profiles, packages: (data.packages || []).map(p => ({ ...p, previewUrl: p.preview && /^[a-f0-9]{64}$/.test(p.preview) ? pathToFileURL(path.join(this.root, 'package-previews', p.preview + '.webp')).href : '' })),
-      activeProfileId: data.activeProfileId || '', themeSession: data.themeSession || null, recovery: data.recovery ? { available: true, at: data.recovery.at } : null,
+      activeProfileId: data.activeProfileId || '', themeSession: data.themeSession || null, themeWindows: this.themeWindows.list(), shellAssets: this.shellAssets.list(), taskbarStyle: this.taskbarStyle.list(), desktopScene:this.desktopScene.list(), recovery: data.recovery ? { available: true, at: data.recovery.at } : null,
       personalizationRecovery: data.personalizationRecovery ? { available: true, at: data.personalizationRecovery.at, fields: Object.keys(data.personalizationRecovery.values || {}) } : null };
   }
   applySystemTheme(payload) { return this.serial(() => this.systemTheme.apply(payload)); }
@@ -304,7 +317,7 @@ class SystemBeauty {
   deleteAsset(id) {
     return this.serial(() => {
       const file = this.assetPath(id), data = this.read();
-      if (data.profiles.some(p => p.backgroundId === id || p.characterId === id)) throw new Error('这张图片正被已保存主题使用，请先更换主题背景或删除主题');
+      if (data.profiles.some(p => p.backgroundId === id || p.characterId === id || Object.values(p.iconAssets||{}).includes(id))) throw new Error('这张图片正被已保存主题使用，请先更换主题背景或删除主题');
       if ((data.packages || []).some(p => p.assetIds.includes(id))) throw new Error('这张素材属于已导入预设，请保留预设素材');
       if (data.recovery?.lastApplied === file) throw new Error('这张图片正作为桌面壁纸使用，请先恢复原壁纸');
       data.assets = data.assets.filter(a => a.id !== id);
@@ -317,8 +330,8 @@ class SystemBeauty {
   }
   exportBundle(input) {
     const profile = normalizeProfile(input), data = this.read();
-    const bundle = { format: 'agent-toolbox-beauty', version: 1, theme: { ...profile, backgroundId: '', characterId: '' } };
-    for (const [field, id] of [['background', profile.backgroundId], ['character', profile.characterId]]) if (id) {
+    const bundle = { format: 'agent-toolbox-beauty', version: 1, theme: { ...profile, backgroundId: '', characterId: '', iconAssets:{} } };
+    for (const [field, id] of [['background', profile.backgroundId], ['character', profile.characterId],...Object.entries(profile.iconAssets).map(([slot,id])=>['icon.'+slot,id])]) if (id) {
       const asset = data.assets.find(a => a.id === id);
       if (!asset) throw new Error('背景素材不存在');
       const file = this.assetPath(asset.id);
@@ -328,7 +341,7 @@ class SystemBeauty {
       if (asset.source?.packageId && /^https:\/\/winmoes\.com\/workshop\/packages\/[a-z0-9]{1,32}$/.test(asset.source.url || '')) bundle[field].sourcePackage = {
         packageId: asset.source.packageId, title: String(asset.source.title || '').slice(0, 100), author: String(asset.source.author || '').slice(0, 80), url: asset.source.url };
     }
-    return JSON.stringify(bundle, null, 2);
+    const text=JSON.stringify(bundle, null, 2);if(Buffer.byteLength(text)>MAX_BUNDLE)throw Error('主题包图片总量过大，请缩小图标或底图后导出');return text;
   }
   importBundle(text) {
     return this.serial(async () => {
@@ -336,9 +349,9 @@ class SystemBeauty {
       let bundle;
       try { bundle = JSON.parse(text.replace(/^\uFEFF/, '')); } catch { throw new Error('主题包不是有效的 JSON 文件'); }
       if (!bundle || bundle.format !== 'agent-toolbox-beauty' || bundle.version !== 1 || !bundle.theme || typeof bundle.theme !== 'object' || Array.isArray(bundle.theme)) throw new Error('不支持的主题包格式或版本');
-      const profile = normalizeProfile({ ...bundle.theme, id: crypto.randomUUID(), backgroundId: '', characterId: '' });
+      const profile = normalizeProfile({ ...bundle.theme, id: crypto.randomUUID(), backgroundId: '', characterId: '', iconAssets:{} });
       const decoded = [];
-      for (const field of ['background', 'character']) if (bundle[field] != null) {
+      for (const field of ['background', 'character',...ICON_SLOTS.map(slot=>'icon.'+slot)]) if (bundle[field] != null) {
         const background = bundle[field];
         if (background.mime !== 'image/png' || typeof background.base64 !== 'string' || background.base64.length > Math.ceil(MAX_IMAGE * 4 / 3)) throw new Error('主题包中的图片格式无效');
         const base64 = background.base64;
@@ -356,9 +369,10 @@ class SystemBeauty {
         const sourcePackage = background.sourcePackage;
         const packageSource = sourcePackage && /^[a-z0-9]{1,32}$/.test(sourcePackage.packageId || '') && sourcePackage.url === `https://winmoes.com/workshop/packages/${sourcePackage.packageId}`
           ? { packageId: sourcePackage.packageId, url: sourcePackage.url, title: String(sourcePackage.title || '').slice(0, 100), author: String(sourcePackage.author || '').slice(0, 80) } : undefined;
-        const asset = await this.storeAsset(buffer, { name: path.basename(String(background.name || '主题背景.png')), kind: field === 'character' || background.kind === 'character' ? 'character' : 'imported',
+        const asset = await this.storeAsset(buffer, { name: path.basename(String(background.name || '主题背景.png')), kind: field.startsWith('icon.')?'icon':field === 'character' || background.kind === 'character' ? 'character' : 'imported',
           source: item ? { articleId: item.id, url: item.url, author: item.author } : packageSource }, data);
-        profile[field === 'character' ? 'characterId' : 'backgroundId'] = asset.id;
+        if(field.startsWith('icon.'))profile.iconAssets[field.slice(5)]=asset.id;
+        else profile[field === 'character' ? 'characterId' : 'backgroundId'] = asset.id;
       }
       data.profiles.push(profile);
       data.activeProfileId = profile.id;

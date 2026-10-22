@@ -1,9 +1,10 @@
-param([ValidateSet('enumerate','describe','capture','apply','restore','clear-marker','alive')][string]$Operation,[string]$Payload)
+param([ValidateSet('enumerate','describe','capture','apply','restore','clear-marker','alive','capture-many','apply-many','restore-many','clear-marker-many')][string]$Operation,[string]$Payload,[string]$PayloadFile)
 $ErrorActionPreference='Stop'
 $ProgressPreference='SilentlyContinue'
 [Console]::OutputEncoding=[Text.UTF8Encoding]::new($false)
 try {
-  $request=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($Payload))|ConvertFrom-Json
+  if($PayloadFile){if((Get-Item -LiteralPath $PayloadFile).Length -gt 1048576){throw 'Request too large'};$request=Get-Content -LiteralPath $PayloadFile -Raw -Encoding UTF8|ConvertFrom-Json}
+  else{$request=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String($Payload))|ConvertFrom-Json}
   Add-Type @'
 using System;
 using System.Text;
@@ -20,6 +21,7 @@ public static class BeautyWindowNative {
  [DllImport("user32.dll")] static extern bool EnumWindows(EnumProc p,IntPtr l);
  [DllImport("user32.dll")] static extern bool IsWindow(IntPtr h);
  [DllImport("user32.dll")] static extern bool IsWindowVisible(IntPtr h);
+ [DllImport("user32.dll",EntryPoint="GetWindowLongPtrW")] static extern IntPtr GetWindowLongPtr(IntPtr h,int index);
  [DllImport("user32.dll")] static extern IntPtr GetWindow(IntPtr h,uint cmd);
  [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr h,out uint pid);
  [DllImport("user32.dll",CharSet=CharSet.Unicode)] static extern int GetClassName(IntPtr h,StringBuilder b,int n);
@@ -42,7 +44,11 @@ public static class BeautyWindowNative {
  }
  public static BeautyWindowInfo[] List() {
   var result=new List<BeautyWindowInfo>();
-  EnumWindows((h,l)=>{if(result.Count>=256)return false;if(!IsWindowVisible(h)||GetWindow(h,4)!=IntPtr.Zero)return true;try{var w=Describe(h);if(w.title.Length>0)result.Add(w);}catch{}return true;},IntPtr.Zero);
+  EnumWindows((h,l)=>{if(result.Count>=256)return false;if(!IsWindowVisible(h)||GetWindow(h,4)!=IntPtr.Zero)return true;
+   // Do not skin desktop widgets, layered overlays, no-activate/tool windows or
+   // the IME. Describe/Check still admit a previously tracked window for restore.
+   long ex=GetWindowLongPtr(h,-20).ToInt64();if((ex&(0x80L|0x80000L|0x08000000L))!=0)return true;
+   try{var w=Describe(h);if(w.processName.Equals("Rainmeter",StringComparison.OrdinalIgnoreCase)||w.processName.Equals("TextInputHost",StringComparison.OrdinalIgnoreCase)||w.processName.Equals("TranslucentTB",StringComparison.OrdinalIgnoreCase))return true;if(w.title.Length>0)result.Add(w);}catch{}return true;},IntPtr.Zero);
   return result.ToArray();
  }
  public static IntPtr Check(string hwnd,uint pid,string started,string cls,string processName) {
@@ -60,6 +66,38 @@ public static class BeautyWindowNative {
 '@
   if($Operation -eq 'enumerate') { @{ok=$true;data=@([BeautyWindowNative]::List())}|ConvertTo-Json -Depth 8 -Compress; exit }
   if($Operation -eq 'describe') { @{ok=$true;data=[BeautyWindowNative]::Describe([IntPtr]([long]$request.hwnd))}|ConvertTo-Json -Depth 8 -Compress; exit }
+  if($Operation.EndsWith('-many')) {
+    $items=@($request.items);if($items.Count -gt 128){throw 'WINDOW_ACCESS:Too many batch entries'}
+    $ranges=@{'20'=1;'33'=3;'38'=4};$results=@()
+    foreach($item in $items){$bound=$false;try{
+      $target=$item.target;$handle=[BeautyWindowNative]::Check($target.hwnd,[uint32]$target.pid,$target.started,$target.className,$target.processName)
+      if($Operation -eq 'capture-many'){
+        if($null -ne $item.marker){[BeautyWindowNative]::CheckMarker($handle,[int]$item.marker)}
+        $values=@{};$unsupported=@();if(@($item.attributes).Count -lt 1 -or @($item.attributes).Count -gt 3){throw 'ATTRIBUTE_READ:Invalid attributes'}
+        foreach($attribute in $item.attributes){$key=[string]$attribute;if(-not $ranges.ContainsKey($key)){throw 'ATTRIBUTE_READ:Unknown attribute'}
+          try{$value=[BeautyWindowNative]::Read($handle,[uint32]$attribute);if($value -gt $ranges[$key]){throw 'Unsupported original value'};$values[$key]=$value}catch{$unsupported+=$key}}
+        if($values.Count -eq 0){throw 'ATTRIBUTE_READ:No readable attributes'}
+        $result=@{values=$values;marker=[BeautyWindowNative]::Marker($handle);unsupported=$unsupported}
+      }else{
+        if(($item.marker -isnot [int] -and $item.marker -isnot [long]) -or $item.marker -lt 1 -or $item.marker -gt 2147483646){throw 'WINDOW_MARKER:Invalid marker'}
+        if($Operation -eq 'clear-marker-many'){[BeautyWindowNative]::Clear($handle,[int]$item.marker);$result=@{cleared=$true}}
+        else{
+          $fields=@($item.values.PSObject.Properties);if($fields.Count -lt 1 -or $fields.Count -gt 3){throw 'ATTRIBUTE_WRITE:Invalid attributes'}
+          foreach($field in $fields){if(-not $ranges.ContainsKey($field.Name) -or ($field.Value -isnot [int] -and $field.Value -isnot [long]) -or $field.Value -lt 0 -or $field.Value -gt $ranges[$field.Name]){throw 'ATTRIBUTE_WRITE:Invalid attribute value'}}
+          $untouched=$false
+          if($Operation -eq 'restore-many' -and $item.phase -eq 'pending' -and [BeautyWindowNative]::Marker($handle) -eq 0){$untouched=$true;foreach($field in $fields){if([BeautyWindowNative]::Read($handle,[uint32]$field.Name) -ne [uint32]$field.Value){$untouched=$false;break}}}
+          if(-not $untouched -and $item.phase -ne 'restored'){
+            if($Operation -eq 'apply-many' -and $item.bind -eq $true){[BeautyWindowNative]::Bind($handle,[int]$item.marker,$target.title)}else{[BeautyWindowNative]::CheckMarker($handle,[int]$item.marker)}
+            $bound=$true
+            foreach($field in $fields){[BeautyWindowNative]::Write($handle,[uint32]$field.Name,[uint32]$field.Value,[int]$item.marker)}
+          }
+          $result=@{applied=$true}
+        }
+      }
+      $results+=@{id=$item.id;ok=$true;data=$result}
+    }catch{$message=$_.Exception.GetBaseException().Message;$code=if($message -match '^([A-Z_]+):'){$Matches[1]}else{'WINDOW_ACCESS'};$results+=@{id=$item.id;ok=$false;bound=$bound;code=$code;error=$message}}}
+    @{ok=$true;data=@($results)}|ConvertTo-Json -Depth 12 -Compress;exit
+  }
   $target=$request.target
   try { $handle=[BeautyWindowNative]::Check($target.hwnd,[uint32]$target.pid,$target.started,$target.className,$target.processName) }
   catch { if($Operation -eq 'alive' -and $_.Exception.GetBaseException().Message -match '^WINDOW_(GONE|IDENTITY):') { @{ok=$true;data=$false}|ConvertTo-Json -Compress; exit }; throw }
