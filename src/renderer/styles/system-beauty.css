@@ -84,6 +84,13 @@
 .beauty__preview--character .beauty__files { padding-right:35%; gap:24px 12px; grid-template-columns:repeat(2,minmax(0,1fr)); }
 .beauty__preview--character .beauty__desktop-note { width:60%; }
 .beauty__asset:has(img[src]) { background-color:#263344; }
+.beauty__asset--character img,.beauty__asset--icon img { object-fit:contain; }
+.beauty__asset--icon img { padding:8px 8px 24px; }
+.beauty__asset-filters input { flex:1 1 220px; min-width:0; }
+.beauty__asset-filters select { flex:1 1 150px; width:auto; min-width:0; }
+.beauty__asset-detail { display:flex; align-items:center; gap:18px; padding:14px; border:1px solid var(--line,#ffffff26); border-radius:12px; overflow-wrap:anywhere; }
+.beauty__asset-detail>img { width:120px; height:120px; object-fit:contain; flex-shrink:0; }
+.beauty__local-packages h2 { font-size:22px; }
 @media(max-width:1150px) { .beauty__catalog-grid { grid-template-columns:repeat(3,minmax(0,1fr)); } }
 @media(max-width:800px) { .beauty__catalog-grid { grid-template-columns:repeat(2,minmax(0,1fr)); } .beauty__catalog-detail { grid-template-columns:1fr; } }
 @media(max-width:450px) { .beauty__catalog-grid { grid-template-columns:1fr; } }

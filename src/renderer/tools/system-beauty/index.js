@@ -14,6 +14,7 @@ export default {
     let folderJobId = '', folderProgress = null;
     let catalog = { entries: [] }, catalogQuery = '', catalogCategory = '全部', catalogPage = 0, catalogSelection = '';
     let catalogStatus = '';
+    let assetKind = 'all', assetSource = '', inspectedAsset = '', packagePage = 0;
     const windowOptions = { dark: 'keep', corners: 'keep', material: 'keep' };
     const body = h('div', { class: 'beauty__body' });
     root.append(h('div', { class: 'bar bar--drag' }, h('strong', {}, '系统美化'), h('span', { class: 'faint' }, '你的图片，你的桌面')), body);
@@ -46,7 +47,7 @@ export default {
     async function importCharacters(id) {
       const result = await invoke('importCatalogMaterials', id);
       library = result;
-      if (result.imported.length) draft.backgroundId = result.imported[0];
+      if (result.imported.length) draft.characterId = result.imported[0];
       catalogStatus = `新增 ${result.added} 张公开人物原图，失败 ${result.errors.length} 张。完整包仍需从原站获取。`;
       render(); body.querySelector('.beauty__preview-card')?.scrollIntoView({ block: 'start', behavior: 'smooth' });
       toast(catalogStatus, result.errors.length ? 'info' : 'good', 6000);
@@ -102,6 +103,7 @@ export default {
     function preview() {
       const preset = library.presets.find(p => p.id === draft.preset) || library.presets[0];
       const asset = library.assets.find(a => a.id === draft.backgroundId);
+      const character = library.assets.find(a => a.id === draft.characterId) || (asset?.kind === 'character' ? asset : null);
       const surface = h('div', { class: `beauty__preview beauty__preview--${draft.effect}`, 'aria-label': '桌面与窗口效果预览', style: {
         backgroundImage: asset && asset.kind !== 'character' ? `url("${asset.url}")` : preset.gradient,
       } });
@@ -125,8 +127,8 @@ export default {
       );
       else windowBody.append(h('div', { class: 'beauty__desktop-note' }, h('strong', {}, draft.name), h('p', {}, '选一张喜欢的图片，把桌面留给自己。')));
       windowBody.classList.toggle('beauty__window--desktop', scene === 'desktop');
-      if (asset?.kind === 'character') {
-        const picture = h('img', { class: 'beauty__character', src: asset.url, alt: asset.name });
+      if (character) {
+        const picture = h('img', { class: 'beauty__character', src: character.url, alt: character.name });
         if (scene === 'desktop') surface.append(picture); else windowBody.append(picture);
         surface.classList.add('beauty__preview--character');
       }
@@ -136,6 +138,9 @@ export default {
 
     function render() {
       if (disposed) return;
+      if (!draft.characterId && library.assets.find(a => a.id === draft.backgroundId)?.kind === 'character') {
+        draft.characterId = draft.backgroundId; draft.backgroundId = '';
+      }
       draft.windows ||= { apps: 'keep', system: 'keep', transparency: 'keep' };
       const windowsOptions = h('div', { class: 'beauty__row' }, ...[
         ['apps', '应用配色', [['keep', '保持当前'], ['light', '浅色'], ['dark', '深色']]],
@@ -174,17 +179,20 @@ export default {
       const assets = h('div', { class: 'beauty__assets' });
       const pageControls = h('div', { class: 'beauty__row beauty__pages' });
       const drawAssets = () => {
-        const matching = library.assets.filter(a => String(a.name).toLowerCase().includes(assetQuery.toLowerCase()));
+        const source = (library.packages || []).find(p => p.id === assetSource);
+        const matching = library.assets.filter(a => (!source || source.assetIds.includes(a.id)) && (assetKind === 'all' || a.kind === assetKind) &&
+          `${a.name} ${(a.sources || []).map(s => s.title || '').join(' ')}`.toLowerCase().includes(assetQuery.toLowerCase()));
         const pages = Math.max(1, Math.ceil(matching.length / 48));
         assetPage = Math.min(assetPage, pages - 1);
         assets.replaceChildren(...matching.slice(assetPage * 48, (assetPage + 1) * 48).map(a => button([
           h('img', { src: a.thumbnailUrl || a.url, alt: '', loading: 'lazy', decoding: 'async' }),
           h('span', {}, a.name),
-        ], async () => { draft.backgroundId = a.id; render(); body.querySelector('.beauty__preview-card')?.scrollIntoView({ block: 'start', behavior: 'smooth' }); }, {
-          class: `beauty__asset${draft.backgroundId === a.id ? ' is-active' : ''}`,
+        ], async () => { inspectedAsset = a.id; if (a.kind === 'character') draft.characterId = a.id; else if (a.kind !== 'icon') draft.backgroundId = a.id;
+          render(); body.querySelector(a.kind === 'icon' ? '.beauty__asset-detail' : '.beauty__preview-card')?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); }, {
+          class: `beauty__asset beauty__asset--${a.kind}${[draft.backgroundId, draft.characterId, inspectedAsset].includes(a.id) ? ' is-active' : ''}`,
           title: a.width && a.height ? `${a.name} · ${a.width} × ${a.height}` : a.name,
         })));
-        if (!matching.length) assets.append(h('p', { class: 'faint' }, library.assets.length ? '没有找到匹配的素材。' : '导入喜欢的壁纸、插画或照片。支持批量选择 PNG、JPEG、WebP，每张不超过 25 MB。'));
+        if (!matching.length) assets.append(h('p', { class: 'faint' }, library.assets.length ? '没有找到匹配的素材。' : '导入喜欢的壁纸、插画或图标。支持 PNG、JPEG、WebP、ICO、CUR，每张不超过 25 MB。'));
         pageControls.replaceChildren(h('span', { class: 'faint' }, `${matching.length} 张素材 · ${assetPage + 1} / ${pages} 页`),
           button('上一页', async () => { assetPage--; drawAssets(); }, { class: 'btn btn--sm', disabled: assetPage === 0 }),
           button('下一页', async () => { assetPage++; drawAssets(); }, { class: 'btn btn--sm', disabled: assetPage >= pages - 1 }));
@@ -192,6 +200,10 @@ export default {
       drawAssets();
       const assetSearch = h('input', { type: 'search', class: 'field', placeholder: '搜索素材名称', value: assetQuery, 'aria-label': '搜索素材名称' });
       assetSearch.addEventListener('input', () => { assetQuery = assetSearch.value; assetPage = 0; drawAssets(); });
+      const kindSelect = h('select', { class: 'field', 'aria-label': '本地素材类型' }, ...[['all', '全部类型'], ['character', '人物立绘'], ['wallpaper', '壁纸底图'], ['icon', '系统图标'], ['imported', '自行导入'], ['generated', '生成的壁纸']].map(([value, text]) => h('option', { value, selected: assetKind === value }, text)));
+      kindSelect.addEventListener('change', () => { assetKind = kindSelect.value; assetPage = 0; drawAssets(); });
+      const sourceSelect = h('select', { class: 'field', 'aria-label': '本地预设来源' }, h('option', { value: '', selected: !assetSource }, '全部预设'), ...(library.packages || []).map(p => h('option', { value: p.id, selected: assetSource === p.id }, p.title)));
+      sourceSelect.addEventListener('change', () => { assetSource = sourceSelect.value; assetPage = 0; drawAssets(); });
       const sizeSelect = h('select', { class: 'field', 'aria-label': '壁纸尺寸' }, ...(library.wallpaperSizes || []).map(size => h('option', { value: size.id, selected: size.id === wallpaperSize }, size.name)));
       sizeSelect.addEventListener('change', () => { wallpaperSize = sizeSelect.value; });
       const generateBackground = async () => {
@@ -199,10 +211,10 @@ export default {
         draft.backgroundId = library.generatedAssetId; assetQuery = ''; assetPage = 0; render();
       };
       const applyBackground = async () => {
-        if (!draft.backgroundId) await generateBackground();
+        if (!draft.backgroundId && !draft.characterId) await generateBackground();
         let wallpaperId = draft.backgroundId;
-        if (library.assets.find(a => a.id === wallpaperId)?.kind === 'character') {
-          const composed = await invoke('composeCharacterWallpaper', { id: wallpaperId, preset: draft.preset, size: wallpaperSize });
+        if (draft.characterId) {
+          const composed = await invoke('composeCharacterWallpaper', { id: draft.characterId, backgroundId: draft.backgroundId, preset: draft.preset, size: wallpaperSize });
           wallpaperId = composed.generatedAssetId;
         }
         try { await invoke('applyWallpaper', wallpaperId); toast('桌面壁纸已应用，原壁纸已备份', 'good'); }
@@ -213,7 +225,10 @@ export default {
         if (result.canceled) return;
         library = result;
         assetQuery = ''; assetPage = 0;
-        if (result.imported.length) draft.backgroundId = result.imported[0];
+        const first = result.assets.find(a => a.id === result.imported[0]);
+        if (first?.kind === 'icon') inspectedAsset = first.id;
+        else if (first?.kind === 'character') draft.characterId = first.id;
+        else if (first) draft.backgroundId = first.id;
         render();
         toast(result.errors.length ? `导入 ${result.imported.length} 张；${result.errors.map(e => `${e.name}：${e.error}`).join('；')}` : `已导入 ${result.imported.length} 张素材`, result.errors.length ? 'info' : 'good', 6000);
       };
@@ -296,7 +311,27 @@ export default {
         catch (error) { windowStatus = error.message; throw error; }
         finally { library = await invoke('list'); render(); }
       };
+      const packageItems = library.packages || [];
+      packagePage = Math.min(packagePage, Math.max(0, Math.ceil(packageItems.length / 8) - 1));
+      const packageCards = h('div', { class: 'beauty__catalog-grid' }, ...packageItems.slice(packagePage * 8, packagePage * 8 + 8).map(pkg => {
+        const items = library.assets.filter(a => pkg.assetIds.includes(a.id));
+        return h('article', { class: 'beauty__catalog-card beauty__local-package' },
+          button(h('img', { src: pkg.previewUrl || items[0]?.thumbnailUrl, alt: `${pkg.title} 原包预览`, loading: 'lazy' }), async () => {
+            const profile = library.profiles.find(p => p.id === pkg.profileId); if (profile) { library = await invoke('selectProfile', profile.id); draft = { ...profile }; }
+            assetSource = pkg.id; assetKind = 'all'; assetQuery = ''; assetPage = 0; render(); body.querySelector('.beauty__preview-card')?.scrollIntoView({ block: 'start', behavior: 'smooth' });
+          }, { class: 'beauty__catalog-cover', 'aria-label': `使用预设 ${pkg.title}`, disabled: !library.profiles.some(p => p.id === pkg.profileId) }),
+          h('div', { class: 'beauty__catalog-copy' }, h('span', { class: 'beauty__catalog-kind' }, pkg.failedCount ? `已解析 · ${pkg.failedCount} 项待重试` : '完整包已解析 · 本机可用'), h('h3', {}, pkg.title),
+            h('p', { class: 'faint' }, `${items.filter(a => a.kind === 'character').length} 张人物 · ${items.filter(a => a.kind === 'wallpaper').length} 张底图 · ${items.filter(a => a.kind === 'icon').length} 个图标`),
+            h('p', { class: 'faint' }, '点击载入素材搭配；系统设置需手动应用')));
+      }));
+      const inspected = library.assets.find(a => a.id === inspectedAsset);
+      const deleteId = inspectedAsset || draft.characterId || draft.backgroundId;
       body.replaceChildren(
+        packageItems.length ? h('section', { class: 'card beauty__local-packages' }, h('div', { class: 'beauty__row' }, h('h2', {}, `已解析的完整预设 · ${packageItems.length} 套`),
+          h('span', { class: 'faint' }, '人物、底图与图标分开收纳，保留来源')), packageCards,
+          h('div', { class: 'beauty__row beauty__pages' }, h('span', { class: 'faint' }, `第 ${packagePage + 1} / ${Math.ceil(packageItems.length / 8)} 页`),
+            button('上一组预设', async () => { packagePage--; render(); }, { disabled: packagePage === 0 }),
+            button('下一组预设', async () => { packagePage++; render(); }, { disabled: packagePage >= Math.ceil(packageItems.length / 8) - 1 }))) : null,
         gallery(),
         h('section', { class: 'beauty__hero' }, h('div', {}, h('h2', {}, '人物与窗口搭配'), h('p', { class: 'faint' }, '选择下方人物原图，再搭配底色与窗口质感。人物会贴在窗口右下角；桌面壁纸会先合成完整背景。资源管理器和开始菜单当前为效果预览。')),
           presetStrip, h('div', { class: 'beauty__row' }, button(showAllPresets ? '收起配色' : `全部 ${library.presets.length} 套配色`, async () => { showAllPresets = !showAllPresets; render(); }, { class: 'btn btn--sm' }))),
@@ -306,7 +341,7 @@ export default {
             h('div', { class: 'beauty__row' }, button('打开 Windows 原生材质预览', async () => {
               await invoke('previewNative', draft);
             }, { disabled: !library.nativePreview?.supported }), h('span', { class: 'faint' }, library.nativePreview?.supported ? '另开窗口预览云母或亚克力；模糊由 Windows 控制。' : library.nativePreview?.reason || '需要 Windows 11 22H2 或更新版本')),
-            h('div', { class: 'beauty__row' }, button(draft.backgroundId ? '应用这张桌面壁纸' : '应用当前渐变壁纸', applyBackground, { class: 'btn btn--primary', disabled: !library.supported }),
+            h('div', { class: 'beauty__row' }, button(draft.backgroundId || draft.characterId ? '应用这张桌面壁纸' : '应用当前渐变壁纸', applyBackground, { class: 'btn btn--primary', disabled: !library.supported }),
               button('恢复原壁纸', async () => { library = await invoke('restoreWallpaper'); render(); toast('已恢复应用前的桌面壁纸', 'good'); }, { disabled: !library.supported || !library.recovery }))),
           h('section', { class: 'card beauty__editor' }, h('h3', {}, '搭配主题'), profileName, h('label', { class: 'beauty__field' }, '窗口质感', effect),
             input('强调色', 'accent', { type: 'color' }), input('窗口底色', 'tint', { type: 'color' }), input('窗口不透明度', 'opacity', { type: 'range', min: 15, max: 100 }), input('背景模糊', 'blur', { type: 'range', min: 0, max: 40 }),
@@ -315,7 +350,8 @@ export default {
             h('p', { class: 'faint' }, '保存主题只保存这里的搭配，不会切换系统设置。')),
         ),
         h('section', { class: 'card' }, h('div', { class: 'beauty__row' }, h('h3', {}, '我的素材'), button('＋ 导入图片', importImages), button('从文件夹导入', scanFolder), button('使用渐变背景', async () => { draft.backgroundId = ''; render(); }),
-          button('删除所选素材', async () => { const id = draft.backgroundId; library = await invoke('deleteAsset', id); draft.backgroundId = ''; render(); toast('素材已从库中删除', 'good'); }, { disabled: !draft.backgroundId })),
+          button('移除预览人物', async () => { draft.characterId = ''; render(); }, { disabled: !draft.characterId }),
+          button('删除所选素材', async () => { library = await invoke('deleteAsset', deleteId); if (draft.backgroundId === deleteId) draft.backgroundId = ''; if (draft.characterId === deleteId) draft.characterId = ''; inspectedAsset = ''; render(); toast('素材已从库中删除', 'good'); }, { disabled: !deleteId })),
           h('div', { class: 'beauty__row beauty__asset-tools' }, sizeSelect, button('生成渐变壁纸', async () => { await generateBackground(); toast('壁纸已加入素材库，桌面尚未切换', 'good'); }),
             button('优化素材加载', async () => { const result = await invoke('prepareThumbnails'); library = result; render(); toast(result.errors.length ? `已优化 ${result.prepared} 张，${result.errors.length} 张无法读取` : `已优化 ${result.prepared} 张素材，原图保持不变`, result.errors.length ? 'info' : 'good'); })),
           folderPreview ? h('div', { class: 'beauty__folder-preview', role: 'status' },
@@ -332,7 +368,9 @@ export default {
             folderImportResult.stopped ? h('p', {}, `已停止后续导入，剩余 ${folderImportResult.unprocessed} 张尚未处理。已导入素材和原文件均保留。`) : null,
             ...folderImportResult.errors.slice(0, 20).map(item => h('p', {}, `${item.name}：${item.error}`)),
             folderImportResult.errors.length > 20 ? h('p', {}, `另有 ${folderImportResult.errors.length - 20} 项未显示，可检查原文件后重新选择文件夹。`) : null) : null,
-          assetSearch, assets, pageControls),
+          h('div', { class: 'beauty__row beauty__asset-filters' }, assetSearch, kindSelect, sourceSelect),
+          inspected ? h('div', { class: 'beauty__asset-detail' }, h('img', { src: inspected.url, alt: inspected.name }), h('div', {}, h('strong', {}, inspected.name), h('p', { class: 'faint' }, `${inspected.width} × ${inspected.height} · ${inspected.kind === 'icon' ? '图标素材预览，未应用系统图标' : inspected.kind === 'character' ? '人物图层，与底图独立选择' : '背景素材'}`))) : null,
+          assets, pageControls),
         h('section', { class: 'card' }, h('div', { class: 'beauty__row' }, h('h3', {}, '我的主题'), button('导入主题包', importBundle), button('导出当前主题', async () => {
           const result = await invoke('exportBundle', draft); if (!result.canceled) toast('主题包已导出，包含当前背景图片', 'good');
         })), profiles, !library.profiles.length ? h('p', { class: 'faint' }, '搭配好后点“保存主题”，下次可以接着用。') : null,
@@ -366,7 +404,7 @@ export default {
           h('div', { class: 'beauty__row' }, button('导出标题栏配方 · DWMBlurGlass', exportRecipe('dwm')), button('导出资源管理器配方 · ExplorerBlurMica', exportRecipe('explorer'))),
           h('div', { class: 'beauty__row' }, button('合并已有 INI · DWMBlurGlass', mergeRecipe('dwm')), button('合并已有 INI · ExplorerBlurMica', mergeRecipe('explorer'))),
           h('p', { class: 'faint' }, '合并只更新颜色、模糊与材质字段，保留其他参数、注释和编码，另存新文件。原文件不变，手动导入引擎后生效。'),
-          h('p', { class: 'faint' }, '此处不会安装或启用原生引擎。原版 MToolBox 的专用主题包暂不支持导入。'), nativeStatus,
+          h('p', { class: 'faint' }, '已解析的原包图片在顶部本地预设中使用；这里不会套用原软件的字体、账户或系统配置。'), nativeStatus,
           h('div', { class: 'beauty__row' }, button('检查宿主状态', async () => {
             const state = await invoke('probe');
             if (disposed) return;
@@ -379,7 +417,7 @@ export default {
     action(async () => {
       library = await invoke('list'); catalog = await invoke('catalog');
       const selected = library.profiles.find(p => p.id === library.activeProfileId) || library.profiles[0]; draft = selected ? { ...selected } : fresh(library.presets[0]);
-      if (!selected) draft.backgroundId = library.assets.find(a => a.kind === 'character')?.id || '';
+      if (!selected) draft.characterId = library.assets.find(a => a.kind === 'character')?.id || '';
       if (selected && !library.presets.slice(0, 4).some(preset => preset.id === selected.preset)) showAllPresets = true;
       render();
     });

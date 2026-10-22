@@ -9,6 +9,7 @@ contextBridge.exposeInMainWorld('toolbox', {
   platform: process.platform,
 
   systemBeauty: {
+    importPreparedPackages: () => ipcRenderer.invoke('systemBeauty:importPreparedPackages'),
     catalog: () => ipcRenderer.invoke('systemBeauty:catalog'),
     cacheCatalogCovers: () => ipcRenderer.invoke('systemBeauty:cacheCatalogCovers'),
     importCatalogMaterials: (id) => ipcRenderer.invoke('systemBeauty:importCatalogMaterials', id),
