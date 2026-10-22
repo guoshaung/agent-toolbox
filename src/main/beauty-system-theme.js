@@ -11,6 +11,7 @@ class SystemThemeSession {
     const data = b.read();
     for (const id of [profile.backgroundId, profile.characterId].filter(Boolean)) if (!data.assets.some(x => x.id === id) || !fs.existsSync(b.assetPath(id))) throw new Error('主题素材缺失，请重新选择');
     if (options.explorer && !(await b.explorerEngine.status()).registered) throw new Error('请先点击“启用资源管理器组件”并完成 Windows 授权；尚未更改电脑主题');
+    if (options.explorer && b.explorerEngine.ensureLoaded) await b.explorerEngine.ensureLoaded();
     // Prepare and decode both layers before touching any Windows state.
     let explorerBuffer;
     const sharp = require('sharp');

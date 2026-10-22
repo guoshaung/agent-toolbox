@@ -150,6 +150,20 @@ test('Explorer folder IPC resolves the userData junction without changing settin
   assert.equal(result.ok, false); assert.equal(result.error, shellError);
 });
 
+test('wallpaper recovery created through the old data junction restores from the same physical backup', async t => {
+  let current;
+  const beauty = fixture(t, { native: { wallpaper: async () => current, setWallpaper: async file => { current = file; } } });
+  current = image(beauty, 'original.png', 'original-wallpaper');
+  const imported = await beauty.importImages([image(beauty, 'chosen.png', PNG)]);
+  await beauty.applyWallpaper(imported.imported[0]);
+  const data = beauty.read(), expected = data.recovery.copy;
+  const alias = path.join(beauty.root, 'legacy-alias'); fs.symlinkSync(beauty.root, alias, process.platform === 'win32' ? 'junction' : 'dir');
+  data.recovery.copy = path.join(alias, 'recovery', path.basename(expected)); beauty.write(data);
+  await beauty.restoreWallpaper();
+  assert.equal(current, expected); assert.equal(fs.readFileSync(current, 'utf8'), 'original-wallpaper');
+  assert.equal(beauty.read().recovery, null);
+});
+
 test('INI merge IPC supports cancel at each dialog and never overwrites the source', async t => {
   const beauty = fixture(t), source = path.join(beauty.root, 'original.ini'), target = path.join(beauty.root, 'new.ini');
   const original = Buffer.from('[config]\neffectType=0\nfont=custom\n'); fs.writeFileSync(source, original);

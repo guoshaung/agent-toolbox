@@ -48,3 +48,11 @@ test('invalid component choices and missing layer reject before native writes', 
   await assert.rejects(beauty.applySystemTheme({ ...payload, options: { wallpaper: false, colors: false, explorer: false, unrelated: true } }), /请选择/);
   await assert.rejects(beauty.applySystemTheme({ ...payload, profile: { ...payload.profile, backgroundId: 'f'.repeat(64) } }), /素材缺失/); assert.deepEqual(state.calls, []);
 });
+
+test('a loader failure stops the complete theme before wallpaper, color or session writes', async t => {
+  const { beauty, state, payload } = await fixture(t);
+  const initial = beauty.read();
+  beauty.explorerEngine.ensureLoaded = async () => { throw Error('loader unavailable'); };
+  await assert.rejects(beauty.applySystemTheme(payload), /loader unavailable/);
+  assert.deepEqual(state.calls, []); assert.deepEqual(beauty.read(), initial);
+});

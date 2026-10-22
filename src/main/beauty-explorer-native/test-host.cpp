@@ -32,7 +32,11 @@ int main() {
     HWND root=CreateWindowW(L"ToolboxBeautyTestRoot",L"Native renderer isolated test",WS_OVERLAPPEDWINDOW,0,0,430,350,nullptr,nullptr,instance,nullptr);
     HWND shell=CreateWindowW(L"SHELLDLL_DefView",L"",WS_CHILD|WS_VISIBLE,0,0,400,300,root,nullptr,instance,nullptr);
     HWND view=CreateWindowW(L"DirectUIHWND",L"",WS_CHILD|WS_VISIBLE,0,0,400,300,shell,nullptr,instance,nullptr);
-    const HWND control=FindWindowExW(HWND_MESSAGE,nullptr,L"AgentToolboxBeautyExplorerV1",nullptr);
+    HWND control=nullptr, candidate=nullptr;
+    while ((candidate=FindWindowExW(HWND_MESSAGE,candidate,L"AgentToolboxBeautyExplorerV1",nullptr))) {
+      DWORD owner=0;GetWindowThreadProcessId(candidate,&owner);
+      if(owner==GetCurrentProcessId()){control=candidate;break;}
+    }
     if (!control || (SendMessageW(control,WM_APP+271,0,0)&0xffff)!=0xb001) throw std::runtime_error("Native status missing");
     SendMessageW(view,WM_PAINT,0,0);
     if (pixel!=RGB(255,0,0)) throw std::runtime_error("Actual GDI artwork was not painted");

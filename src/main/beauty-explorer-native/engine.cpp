@@ -232,6 +232,15 @@ public:
 };
 STDAPI DllGetClassObject(REFCLSID cls, REFIID id, void** out) { Trace("get-class\r\n"); if (cls != BEAUTY_CLSID) { Trace("class-mismatch\r\n"); return CLASS_E_CLASSNOTAVAILABLE; } auto factory = new Factory(); HRESULT result = factory->QueryInterface(id, out); factory->Release(); return result; }
 STDAPI DllCanUnloadNow() { return S_FALSE; }
+extern "C" LRESULT CALLBACK ToolboxBeautyAttach(int code, WPARAM w, LPARAM l) {
+  if (code >= 0 && l) {
+    const auto message = reinterpret_cast<const CWPSTRUCT*>(l);
+    if (message->message == WM_APP + 274 && message->wParam == 0xB001 && message->lParam == 0) {
+      try { Initialize(); } catch (...) {}
+    }
+  }
+  return CallNextHookEx(nullptr, code, w, l);
+}
 BOOL WINAPI DllMain(HINSTANCE instance, DWORD reason, void*) {
   if (reason == DLL_PROCESS_ATTACH) {
     moduleHandle = instance; DisableThreadLibraryCalls(instance);

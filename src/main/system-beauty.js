@@ -403,9 +403,10 @@ class SystemBeauty {
       if (recovery.id && !/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i.test(recovery.id)) throw new Error('壁纸备份 ID 无效');
       const backupName = recovery.id ? `wallpaper-${recovery.id}` : 'wallpaper';
       const expectedCopy = path.join(this.root, 'recovery', `${backupName}${path.extname(recovery.original || '').slice(0, 12) || '.bmp'}`);
-      if (recovery.copy && path.resolve(recovery.copy) !== path.resolve(expectedCopy)) throw new Error('壁纸备份路径无效');
+      if (recovery.copy && path.resolve(recovery.copy) !== path.resolve(expectedCopy) &&
+        (!fs.existsSync(recovery.copy) || !fs.existsSync(expectedCopy) || fs.realpathSync(recovery.copy) !== fs.realpathSync(expectedCopy))) throw new Error('壁纸备份路径无效');
       // Restore the bytes captured at first apply; Spotlight may replace its original path.
-      const original = !recovery.original ? '' : recovery.copy;
+      const original = !recovery.original ? '' : expectedCopy;
       if (original && !fs.existsSync(original)) throw new Error('壁纸备份丢失，请保留恢复记录');
       await this.native.setWallpaper(original);
       data.recovery = null;
@@ -491,6 +492,7 @@ function registerSystemBeautyIpc(ipcMain, { getUserDataPath, dialog, getWindow, 
     if (error) throw new Error(error);
     return {};
   }
+  beauty.explorerEngine.openFolder = () => openLocalFolder('theme-test');
   handle('list', () => beauty.list());
   handle('explorerEngineStatus', () => beauty.explorerEngine.status());
   handle('restartExplorerEngine', () => beauty.serial(async () => ({ ...beauty.list(), explorerEngine: await beauty.explorerEngine.restart() })));

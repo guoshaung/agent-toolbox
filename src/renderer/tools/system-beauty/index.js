@@ -330,11 +330,13 @@ export default {
       const deleteId = inspectedAsset || draft.characterId || draft.backgroundId;
       const changeSystemTheme = async restore => {
         try {
+          themeMessage = restore ? '正在恢复应用前外观…' : '正在连接资源管理器并应用所选主题…'; render();
           library = await invoke(restore ? 'restoreSystemTheme' : 'applySystemTheme', ...(restore ? [] : [{ profile: draft, options: themeOptions }]));
           engine = library.explorerEngine || engine;
-          themeMessage = restore ? (library.restoreErrors.length ? `部分恢复失败：${library.restoreErrors.map(e => `${e.part}：${e.error}`).join('；')}` : '已撤销本次主题，恢复应用前的桌面和 Windows 配色。') : themeOptions.explorer && !engine.painted ? '已处理所选桌面与配色；资源管理器图片尚未确认生效。请打开测试文件夹并检查加载状态，必要时手动重启资源管理器。' : '主题已应用到电脑；可随时恢复应用前外观。';
+          themeMessage = restore ? (library.restoreErrors.length ? `部分恢复失败：${library.restoreErrors.map(e => `${e.part}：${e.error}`).join('；')}` : '已撤销本次主题，恢复应用前的桌面和 Windows 配色。') : themeOptions.explorer && !engine.painted ? '所选主题已处理；资源管理器图片等待窗口重绘，请打开测试文件夹查看。' : '主题已应用到电脑；可随时恢复应用前外观。';
           toast(themeMessage, library.restoreErrors?.length ? 'bad' : 'good', 7000);
-        } finally { library = await invoke('list'); render(); }
+        } catch (error) { themeMessage = error.message; throw error; }
+        finally { library = await invoke('list'); render(); }
       };
       const themeState = library.themeSession;
       body.replaceChildren(

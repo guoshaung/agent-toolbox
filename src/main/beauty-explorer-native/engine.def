@@ -2,3 +2,4 @@ LIBRARY ToolboxBeautyExplorer
 EXPORTS
 DllGetClassObject PRIVATE
 DllCanUnloadNow PRIVATE
+ToolboxBeautyAttach PRIVATE

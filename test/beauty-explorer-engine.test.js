@@ -84,3 +84,29 @@ test('an installed DLL reached through a junction keeps its version and migrates
   assert.ok(!state.operations.slice(before).some(([, elevated]) => elevated));
   await engine.uninstall(); assert.equal(state.machine, false);
 });
+
+test('explicit loading opens a folder when needed and requires a real control reply', async t => {
+  const { engine, state } = fixture(t); await engine.install();
+  const run = engine.run; let attempts = 0, opened = 0;
+  engine.openFolder = async () => { opened++; };
+  engine.run = async (...args) => {
+    if (args[0] !== 'attach') return run(...args);
+    attempts++;
+    if (attempts === 1) return { noFolderWindow: true, targets: [] };
+    state.live = [{ responded: true, result: 0x4b001 }];
+    return { noFolderWindow: false, targets: [{ connected: true }] };
+  };
+  assert.equal((await engine.ensureLoaded()).ready, true); assert.equal(opened, 1);
+  assert.match(fs.readFileSync(path.join(engine.location(), 'config.ini')).toString('utf16le'), /enabled=0/);
+  state.live = []; engine.run = async (...args) => args[0] === 'attach' ? { targets: [{ connected: false }] } : run(...args);
+  await assert.rejects(engine.ensureLoaded(), /连接失败/);
+});
+
+test('repairing an unloaded legacy native version retains machine ownership and its old files', async t => {
+  const { engine, state, bundle } = fixture(t); await engine.install(); const old = engine.dll(), before = state.operations.length;
+  const bytes = Buffer.from('MZ-native-loader-update'); fs.writeFileSync(path.join(bundle, 'ToolboxBeautyExplorer.dll'), bytes);
+  fs.writeFileSync(path.join(bundle, 'build.json'), JSON.stringify({ sha256: crypto.createHash('sha256').update(bytes).digest('hex') }));
+  assert.equal((await engine.install()).registered, true); assert.notEqual(engine.dll(), old); assert.equal(fs.existsSync(old), true);
+  assert.equal(JSON.parse(fs.readFileSync(engine.receiptPath)).machineAlreadyInstalled, false);
+  assert.ok(!state.operations.slice(before).some(([, elevated]) => elevated));
+});

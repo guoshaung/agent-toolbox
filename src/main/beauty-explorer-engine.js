@@ -33,9 +33,9 @@ class ExplorerBeautyEngine {
     return path.join(this.root, `v1-${hash.slice(0, 16)}`);
   }
   dll() { return path.join(this.location(), 'ToolboxBeautyExplorer.dll'); }
-  async run(operation, elevate = false) {
+  async run(operation, elevate = false, skipProcessIds = []) {
     if (this.platform !== 'win32') throw new Error('资源管理器原生组件仅支持 Windows x64');
-    if (!['status', 'install-machine', 'remove-machine', 'register-user', 'remove-user', 'reload', 'disable', 'restart'].includes(operation)) throw new Error('无效的组件操作');
+    if (!['status', 'install-machine', 'remove-machine', 'register-user', 'remove-user', 'reload', 'disable', 'restart', 'attach'].includes(operation)) throw new Error('无效的组件操作');
     if (elevate) {
       if (!['install-machine', 'remove-machine'].includes(operation)) throw new Error('该操作不能请求管理员权限');
       const machineScript = `$ErrorActionPreference='Stop';$p='Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Browser Helper Objects\\{70C21916-1316-4825-AF20-DEED801D7690}';$marker='AgentToolboxBeautyExplorerV1';$h=[Microsoft.Win32.Registry]::LocalMachine;$k=$h.OpenSubKey($p,$false);if($null -ne $k){try{$names=@($k.GetValueNames());if($k.SubKeyCount -ne 0 -or $names.Count -lt 1 -or $names.Count -gt 2 -or $k.GetValueKind('').ToString() -ne 'String' -or $k.GetValue('') -cne $marker -or @($names|Where-Object{$_ -ne '' -and $_ -ne 'NoInternetExplorer'}).Count -or ($names -contains 'NoInternetExplorer' -and ($k.GetValueKind('NoInternetExplorer').ToString() -ne 'DWord' -or $k.GetValue('NoInternetExplorer') -ne 1))){throw 'Component registration conflict'}}finally{$k.Dispose()}};${operation === 'install-machine' ? "$k=$h.CreateSubKey($p);try{$k.SetValue('',$marker,[Microsoft.Win32.RegistryValueKind]::String);$k.SetValue('NoInternetExplorer',1,[Microsoft.Win32.RegistryValueKind]::DWord);$k.Flush()}finally{$k.Dispose()}" : 'if($null -ne $k){$h.DeleteSubKey($p,$false)}'};exit 0`;
@@ -49,10 +49,11 @@ class ExplorerBeautyEngine {
     const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'toolbox-beauty-bridge-')), helper = path.join(directory, 'bridge.ps1');
     try {
       // -File keeps the long helper below Windows' command-line limit, including Unicode paths.
-      const source = fs.readFileSync(path.join(__dirname, operation === 'restart' ? 'beauty-explorer-restart.ps1' : 'beauty-explorer-native.ps1'));
+      const source = fs.readFileSync(path.join(__dirname, operation === 'restart' ? 'beauty-explorer-restart.ps1' : operation === 'attach' ? 'beauty-explorer-attach.ps1' : 'beauty-explorer-native.ps1'));
       fs.writeFileSync(helper, Buffer.concat([Buffer.from([239, 187, 191]), source]), { flag: 'wx' });
-      const argumentsList = operation === 'restart' ? [] : ['-Operation', operation, '-DllPath', this.dll()];
-      const { stdout } = await this.exec('powershell.exe', ['-NoLogo', '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', helper, ...argumentsList], { env: powershellEnvironment(), windowsHide: true, timeout: operation === 'restart' ? 45_000 : 20_000, maxBuffer: 128 * 1024 });
+      const skipped = skipProcessIds.filter(x => Number.isInteger(x) && x > 0 && x <= 0xffffffff).slice(0, 128);
+      const argumentsList = operation === 'restart' ? [] : operation === 'attach' ? ['-DllPath', this.dll(), '-ExpectedHash', digest(fs.readFileSync(this.dll())), ...(skipped.length ? ['-SkipProcessIds', skipped.join(',')] : [])] : ['-Operation', operation, '-DllPath', this.dll()];
+      const { stdout } = await this.exec('powershell.exe', ['-NoLogo', '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', helper, ...argumentsList], { env: powershellEnvironment(), windowsHide: true, timeout: ['restart', 'attach'].includes(operation) ? 45_000 : 20_000, maxBuffer: 128 * 1024 });
       return JSON.parse(stdout.replace(/^\uFEFF/, '').trim());
     } finally { if (fs.existsSync(helper)) fs.unlinkSync(helper); fs.rmdirSync(directory); }
   }
@@ -77,6 +78,14 @@ class ExplorerBeautyEngine {
   async install() {
     const before = await this.status();
     if (before.registered) {
+      if (!before.ready && digest(fs.readFileSync(this.dll())) !== this.binary().hash) {
+        // An unloaded legacy version has no explicit attachment export. Keep the
+        // original machine-entry ownership while replacing only our disabled DLL.
+        await this.disable(); await this.run('remove-user');
+        const record = JSON.parse(fs.readFileSync(this.receiptPath, 'utf8'));
+        record.phase = 'removed'; fs.writeFileSync(this.receiptPath, JSON.stringify(record, null, 2));
+        return this.install();
+      }
       // Older installs registered the userData alias. Rewrite only this owned COM
       // entry to its physical path; the native helper verifies both resolve to one DLL.
       if (before.userDllPath && path.normalize(before.userDllPath).toLowerCase() !== this.dll().toLowerCase()) {
@@ -99,6 +108,24 @@ class ExplorerBeautyEngine {
     await this.run('register-user');
     const status = await this.status(); if (!status.registered) throw new Error('组件未完成注册，当前电脑主题未改变，可重试启用');
     const record = JSON.parse(fs.readFileSync(this.receiptPath)); record.phase = 'installed'; fs.writeFileSync(this.receiptPath, JSON.stringify(record, null, 2));
+    return status;
+  }
+  async ensureLoaded() {
+    let status = await this.status();
+    if (!status.registered) throw new Error('请先启用资源管理器组件，当前电脑主题尚未改变');
+    if (!status.ready) status = await this.install();
+    const skipped = (status.live || []).filter(x => x.responded && (x.result & 0x4ffff) === 0x4b001).map(x => x.pid);
+    let result = await this.run('attach', false, skipped);
+    if (result.noFolderWindow && this.openFolder) {
+      await this.openFolder();
+      for (let attempt = 0; attempt < 4; attempt++) {
+        await new Promise(resolve => setTimeout(resolve, 250));
+        result = await this.run('attach', false, skipped); if (!result.noFolderWindow) break;
+      }
+    }
+    if ((result.targets || []).some(x => !x.connected)) throw new Error('部分资源管理器窗口连接失败，请关闭无响应的文件夹后重试；电脑主题尚未改变');
+    status = await this.status();
+    if (!status.ready) throw new Error('资源管理器组件尚未加载，请打开普通文件夹后重试；电脑主题尚未改变');
     return status;
   }
   async apply(buffer, { cover = false } = {}) {
