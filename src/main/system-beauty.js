@@ -466,7 +466,7 @@ class WindowsBeautyBridge {
 }
 
 function registerSystemBeautyIpc(ipcMain, { getUserDataPath, dialog, getWindow, shell }) {
-  const beauty = new SystemBeauty({ root: path.join(getUserDataPath(), 'system-beauty') });
+  const beauty = new SystemBeauty({ root: path.join(fs.realpathSync(getUserDataPath()), 'system-beauty') });
   const rendererRoot = pathToFileURL(path.join(__dirname, '..', 'renderer') + path.sep).href;
   const folderJobs = new BeautyFolderJobs();
   const folderOwner = event => {
@@ -482,10 +482,19 @@ function registerSystemBeautyIpc(ipcMain, { getUserDataPath, dialog, getWindow, 
       } catch (error) { return { ok: false, error: error.message }; }
     });
   }
+  async function openLocalFolder(relative = '') {
+    const folder = path.join(fs.realpathSync(getUserDataPath()), 'system-beauty', relative);
+    fs.mkdirSync(folder, { recursive: true });
+    // Explorer may not follow the userData junction even when Node can read it.
+    // Pass the physical directory across the app boundary; keep stored settings intact.
+    const error = await shell.openPath(fs.realpathSync(folder));
+    if (error) throw new Error(error);
+    return {};
+  }
   handle('list', () => beauty.list());
   handle('explorerEngineStatus', () => beauty.explorerEngine.status());
   handle('restartExplorerEngine', () => beauty.serial(async () => ({ ...beauty.list(), explorerEngine: await beauty.explorerEngine.restart() })));
-  handle('openExplorerThemeTest', async () => { const folder = path.join(beauty.root, 'theme-test'); fs.mkdirSync(folder, { recursive: true }); const error = await shell.openPath(folder); if (error) throw new Error(error); return {}; });
+  handle('openExplorerThemeTest', () => openLocalFolder('theme-test'));
   handle('installExplorerEngine', () => beauty.serial(async () => ({ ...beauty.list(), explorerEngine: await beauty.explorerEngine.install() })));
   handle('uninstallExplorerEngine', () => beauty.serial(async () => ({ ...beauty.list(), explorerEngine: await beauty.explorerEngine.uninstall() })));
   handle('applySystemTheme', payload => beauty.applySystemTheme(payload));
@@ -563,7 +572,7 @@ function registerSystemBeautyIpc(ipcMain, { getUserDataPath, dialog, getWindow, 
   });
   handle('forgetClosedWindow', async id => { await beauty.windowAppearance.forgetClosed(id); return beauty.list(); });
   handle('probe', () => beauty.native.probe());
-  handle('openFolder', async () => { fs.mkdirSync(beauty.root, { recursive: true }); const error = await shell.openPath(beauty.root); if (error) throw new Error(error); return {}; });
+  handle('openFolder', () => openLocalFolder());
   return beauty;
 }
 

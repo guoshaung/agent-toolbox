@@ -61,3 +61,26 @@ test('Explorer restart requires registration and reports the actual post-restart
   assert.equal(result.ready, false);
   assert.equal(result.painted, false);
 });
+
+test('an installed DLL reached through a junction keeps its version and migrates only the owned user path', async t => {
+  const { engine, state } = fixture(t); await engine.install();
+  const physical = fs.realpathSync(engine.dll()), alias = path.join(path.dirname(engine.root), 'alias');
+  fs.symlinkSync(engine.root, alias, process.platform === 'win32' ? 'junction' : 'dir');
+  const record = JSON.parse(fs.readFileSync(engine.receiptPath));
+  record.dll = path.join(alias, path.basename(path.dirname(physical)), 'ToolboxBeautyExplorer.dll');
+  fs.writeFileSync(engine.receiptPath, JSON.stringify(record));
+  let registeredPath = record.dll;
+  const run = engine.run;
+  engine.run = async (...args) => {
+    if (args[0] === 'register-user') registeredPath = engine.dll();
+    const result = await run(...args);
+    return args[0] === 'status' ? { ...result, userDllPath: registeredPath } : result;
+  };
+  const before = state.operations.length;
+  assert.equal(engine.dll(), physical);
+  assert.equal((await engine.install()).registered, true);
+  assert.equal(registeredPath, physical);
+  assert.equal(JSON.parse(fs.readFileSync(engine.receiptPath)).dll, physical);
+  assert.ok(!state.operations.slice(before).some(([, elevated]) => elevated));
+  await engine.uninstall(); assert.equal(state.machine, false);
+});

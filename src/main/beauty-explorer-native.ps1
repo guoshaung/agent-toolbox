@@ -30,16 +30,29 @@ function Assert-BeautyMachineMayComplete($Record) {
 }
 function Assert-BeautyUserOwned($Record, $Server, [string]$Expected) {
   if ($null -eq $Record -and $null -eq $Server) { return }
-  if ($null -eq $Record -or $null -eq $Server -or $Record.values.Count -ne 1 -or $Record.values[''].value -cne $beautyMarker -or $Record.values[''].kind -ne 'String' -or $Record.children.Count -ne 1 -or $Record.children[0] -cne 'InprocServer32' -or $Server.children.Count -ne 0 -or $Server.values.Count -ne 2 -or $Server.values[''].value -ine $Expected -or $Server.values[''].kind -ne 'String' -or $Server.values.ThreadingModel.kind -ne 'String' -or $Server.values.ThreadingModel.value -cne 'Apartment') { throw 'This user Explorer component registration has changed; preserved for inspection' }
+  if ($null -eq $Record -or $null -eq $Server -or $Record.values.Count -ne 1 -or $Record.values[''].value -cne $beautyMarker -or $Record.values[''].kind -ne 'String' -or $Record.children.Count -ne 1 -or $Record.children[0] -cne 'InprocServer32' -or $Server.children.Count -ne 0 -or $Server.values.Count -ne 2 -or -not [ToolboxExplorerMessages]::SameFile($Server.values[''].value,$Expected) -or $Server.values[''].kind -ne 'String' -or $Server.values.ThreadingModel.kind -ne 'String' -or $Server.values.ThreadingModel.value -cne 'Apartment') { throw 'This user Explorer component registration has changed; preserved for inspection' }
 }
 function Assert-BeautyUserMayComplete($Record, $Server, [string]$Expected) {
   if ($null -eq $Record -and $null -eq $Server) { return }
   if ($null -eq $Record -or $Record.values.Count -ne 1 -or $Record.values[''].kind -ne 'String' -or $Record.values[''].value -cne $beautyMarker -or @($Record.children | Where-Object { $_ -cne 'InprocServer32' }).Count) { throw 'User component key was changed; preserved for inspection' }
-  if ($null -ne $Server -and ($Server.children.Count -ne 0 -or @($Server.values.Keys | Where-Object { $_ -ne '' -and $_ -ne 'ThreadingModel' }).Count -or ($Server.values.ContainsKey('') -and ($Server.values[''].kind -ne 'String' -or $Server.values[''].value -ine $Expected)) -or ($Server.values.ContainsKey('ThreadingModel') -and ($Server.values.ThreadingModel.kind -ne 'String' -or $Server.values.ThreadingModel.value -cne 'Apartment')))) { throw 'User component server was changed; preserved for inspection' }
+  if ($null -ne $Server -and ($Server.children.Count -ne 0 -or @($Server.values.Keys | Where-Object { $_ -ne '' -and $_ -ne 'ThreadingModel' }).Count -or ($Server.values.ContainsKey('') -and ($Server.values[''].kind -ne 'String' -or -not [ToolboxExplorerMessages]::SameFile($Server.values[''].value,$Expected))) -or ($Server.values.ContainsKey('ThreadingModel') -and ($Server.values.ThreadingModel.kind -ne 'String' -or $Server.values.ThreadingModel.value -cne 'Apartment')))) { throw 'User component server was changed; preserved for inspection' }
 }
 Add-Type @'
 using System; using System.Text; using System.Runtime.InteropServices;
 public static class ToolboxExplorerMessages {
+ [DllImport("kernel32.dll",CharSet=CharSet.Unicode,SetLastError=true)] static extern uint GetFinalPathNameByHandle(Microsoft.Win32.SafeHandles.SafeFileHandle handle,StringBuilder name,uint length,uint flags);
+ public static bool SameFile(string a,string b) {
+  if(String.IsNullOrEmpty(a)||String.IsNullOrEmpty(b))return false;
+  if(String.Equals(a,b,StringComparison.OrdinalIgnoreCase))return true;
+  try {
+   using(var left=new System.IO.FileStream(a,System.IO.FileMode.Open,System.IO.FileAccess.Read,System.IO.FileShare.ReadWrite|System.IO.FileShare.Delete))
+   using(var right=new System.IO.FileStream(b,System.IO.FileMode.Open,System.IO.FileAccess.Read,System.IO.FileShare.ReadWrite|System.IO.FileShare.Delete)) {
+    var x=new StringBuilder(32768);var y=new StringBuilder(32768);
+    uint nx=GetFinalPathNameByHandle(left.SafeFileHandle,x,32768,0),ny=GetFinalPathNameByHandle(right.SafeFileHandle,y,32768,0);
+    return nx>0&&nx<32768&&ny>0&&ny<32768&&String.Equals(x.ToString(),y.ToString(),StringComparison.OrdinalIgnoreCase);
+   }
+  }catch{return false;}
+ }
  [DllImport("user32.dll",CharSet=CharSet.Unicode)] public static extern IntPtr FindWindowEx(IntPtr parent,IntPtr after,string cls,string title);
  [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr h,out uint pid);
  [DllImport("user32.dll")] public static extern IntPtr SendMessageTimeout(IntPtr h,uint msg,IntPtr w,IntPtr l,uint flags,uint timeout,out UIntPtr result);
@@ -55,7 +68,7 @@ function Send-BeautyMessage([uint32]$Message) {
     $engineProcess = Get-Process -Id $engineProcessId -ErrorAction SilentlyContinue
     if ($null -eq $engineProcess -or $engineProcess.Path -ine $expectedExplorer) { continue }
     # Verify our exact loaded module path, not just a spoofable message-window class.
-    $loaded = @($engineProcess.Modules | Where-Object { $_.FileName -ieq $DllPath })
+    $loaded = @($engineProcess.Modules | Where-Object { $_.ModuleName -ieq 'ToolboxBeautyExplorer.dll' -and [ToolboxExplorerMessages]::SameFile($_.FileName,$DllPath) })
     if ($loaded.Count -ne 1) { continue }
     [UIntPtr]$reply = [UIntPtr]::Zero
     $sent = [ToolboxExplorerMessages]::SendMessageTimeout($handle,$Message,[IntPtr]::Zero,[IntPtr]::Zero,3,1500,[ref]$reply)
@@ -74,7 +87,8 @@ switch ($Operation) {
     try { Assert-BeautyMachineMayComplete $machine; $machineRecoverable=$true } catch {}
     try { Assert-BeautyUserMayComplete $user $server $DllPath; $userRecoverable=$true } catch {}
     $live = @(Send-BeautyMessage 0x810f)
-    @{ machineRegistered=$machineOwned; userRegistered=$userOwned; foreignMachine=($null -ne $machine -and -not $machineRecoverable); foreignUser=($null -ne $user -and -not $userRecoverable); live=$live; requiresAdministrator=(-not $machineOwned) } | ConvertTo-Json -Depth 6 -Compress
+    $userDllPath = if ($null -ne $server -and $server.values.ContainsKey('')) { $server.values[''].value } else { '' }
+    @{ machineRegistered=$machineOwned; userRegistered=$userOwned; userDllPath=$userDllPath; foreignMachine=($null -ne $machine -and -not $machineRecoverable); foreignUser=($null -ne $user -and -not $userRecoverable); live=$live; requiresAdministrator=(-not $machineOwned) } | ConvertTo-Json -Depth 6 -Compress
   }
   'install-machine' {
     Assert-BeautyMachineMayComplete $machine

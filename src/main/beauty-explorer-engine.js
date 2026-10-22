@@ -27,7 +27,7 @@ class ExplorerBeautyEngine {
     if (fs.existsSync(this.receiptPath)) {
       const record = JSON.parse(fs.readFileSync(this.receiptPath, 'utf8'));
       const directory = typeof record.dll === 'string' ? path.dirname(record.dll) : '';
-      if (record.version === 1 && record.phase === 'installed' && path.dirname(directory) === this.root && /^v1-[a-f0-9]{16}$/.test(path.basename(directory)) && path.basename(record.dll) === 'ToolboxBeautyExplorer.dll') return directory;
+      if (record.version === 1 && record.phase === 'installed' && fs.existsSync(directory) && fs.existsSync(this.root) && fs.realpathSync(path.dirname(directory)) === fs.realpathSync(this.root) && /^v1-[a-f0-9]{16}$/.test(path.basename(directory)) && path.basename(record.dll) === 'ToolboxBeautyExplorer.dll') return fs.realpathSync(directory);
     }
     const { hash } = this.binary();
     return path.join(this.root, `v1-${hash.slice(0, 16)}`);
@@ -76,7 +76,17 @@ class ExplorerBeautyEngine {
   }
   async install() {
     const before = await this.status();
-    if (before.registered) return before;
+    if (before.registered) {
+      // Older installs registered the userData alias. Rewrite only this owned COM
+      // entry to its physical path; the native helper verifies both resolve to one DLL.
+      if (before.userDllPath && path.normalize(before.userDllPath).toLowerCase() !== this.dll().toLowerCase()) {
+        await this.run('register-user');
+        const record = JSON.parse(fs.readFileSync(this.receiptPath, 'utf8'));
+        record.dll = this.dll(); fs.writeFileSync(this.receiptPath, JSON.stringify(record, null, 2));
+        return this.status();
+      }
+      return before;
+    }
     if (before.foreignMachine || before.foreignUser) throw new Error('发现其他安装占用组件注册，请保留原设置并先处理冲突');
     const binary = this.binary(), file = this.dll(); fs.mkdirSync(path.dirname(file), { recursive: true });
     if (fs.existsSync(file)) { if (digest(fs.readFileSync(file)) !== binary.hash) throw new Error('原生组件文件已改变，已停止启用'); }
@@ -92,7 +102,8 @@ class ExplorerBeautyEngine {
     return status;
   }
   async apply(buffer, { cover = false } = {}) {
-    const status = await this.status();
+    let status = await this.status();
+    if (status.registered && status.userDllPath && path.normalize(status.userDllPath).toLowerCase() !== this.dll().toLowerCase()) status = await this.install();
     if (!status.registered) throw new Error('请先启用资源管理器组件并完成 Windows 授权，当前电脑主题尚未改变');
     const image = path.join(this.location(), digest(buffer) + '.png');
     if (!fs.existsSync(image)) fs.writeFileSync(image, buffer, { flag: 'wx' });
@@ -117,7 +128,7 @@ class ExplorerBeautyEngine {
     await this.run('remove-user');
     const status = await this.status();
     const record = fs.existsSync(this.receiptPath) ? JSON.parse(fs.readFileSync(this.receiptPath)) : null;
-    const ownsMachine = record?.version === 1 && record.dll === this.dll() && record.machineAlreadyInstalled === false;
+    const ownsMachine = record?.version === 1 && fs.existsSync(record.dll) && fs.realpathSync(record.dll) === fs.realpathSync(this.dll()) && record.machineAlreadyInstalled === false;
     if (status.machineRegistered && ownsMachine) await this.run('remove-machine', true);
     if (ownsMachine && (await this.status()).machineRegistered) throw new Error('Windows 未完成组件移除，可以重试；图片效果已停止');
     if (fs.existsSync(this.receiptPath)) { const record = JSON.parse(fs.readFileSync(this.receiptPath)); record.phase = 'removed'; fs.writeFileSync(this.receiptPath, JSON.stringify(record, null, 2)); }

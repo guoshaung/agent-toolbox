@@ -128,6 +128,28 @@ test('IPC rejects remote pages before accessing filesystem or dialogs', async ()
   }
 });
 
+test('Explorer folder IPC resolves the userData junction without changing settings or material storage', async t => {
+  const beauty = fixture(t), actual = path.join(beauty.root, 'actual-data'), alias = path.join(beauty.root, 'user-data-link');
+  fs.mkdirSync(actual); fs.symlinkSync(actual, alias, process.platform === 'win32' ? 'junction' : 'dir');
+  const config = Buffer.from('{"font":"custom","key":"fixture-only"}'); fs.writeFileSync(path.join(actual, 'config.json'), config);
+  const handlers = {}, opened = []; let shellError = '';
+  registerSystemBeautyIpc({ handle: (name, fn) => { handlers[name] = fn; } }, {
+    getUserDataPath: () => alias, shell: { openPath: async folder => { opened.push(folder); return shellError; } },
+  });
+  const event = { senderFrame: { url: require('node:url').pathToFileURL(path.join(__dirname, '../src/renderer/index.html')).href } };
+  const testFolder = await handlers['systemBeauty:openExplorerThemeTest'](event);
+  assert.equal(testFolder.ok, true, testFolder.error);
+  const materialsFolder = await handlers['systemBeauty:openFolder'](event);
+  assert.equal(materialsFolder.ok, true, materialsFolder.error);
+  assert.deepEqual(opened, [fs.realpathSync(path.join(actual, 'system-beauty/theme-test')), fs.realpathSync(path.join(actual, 'system-beauty'))]);
+  assert.deepEqual(fs.readFileSync(path.join(actual, 'config.json')), config);
+  assert.equal(fs.lstatSync(alias).isSymbolicLink(), true);
+  assert.equal(fs.existsSync(path.join(actual, 'system-beauty/library.json')), false);
+  shellError = 'folder open failed';
+  const result = await handlers['systemBeauty:openExplorerThemeTest'](event);
+  assert.equal(result.ok, false); assert.equal(result.error, shellError);
+});
+
 test('INI merge IPC supports cancel at each dialog and never overwrites the source', async t => {
   const beauty = fixture(t), source = path.join(beauty.root, 'original.ini'), target = path.join(beauty.root, 'new.ini');
   const original = Buffer.from('[config]\neffectType=0\nfont=custom\n'); fs.writeFileSync(source, original);
