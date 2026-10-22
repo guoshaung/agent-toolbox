@@ -9,6 +9,11 @@ contextBridge.exposeInMainWorld('toolbox', {
   platform: process.platform,
 
   systemBeauty: {
+    catalog: () => ipcRenderer.invoke('systemBeauty:catalog'),
+    cacheCatalogCovers: () => ipcRenderer.invoke('systemBeauty:cacheCatalogCovers'),
+    importCatalogMaterials: (id) => ipcRenderer.invoke('systemBeauty:importCatalogMaterials', id),
+    composeCharacterWallpaper: (payload) => ipcRenderer.invoke('systemBeauty:composeCharacterWallpaper', payload),
+    openCatalogSource: (id) => ipcRenderer.invoke('systemBeauty:openCatalogSource', id),
     list: () => ipcRenderer.invoke('systemBeauty:list'),
     importImages: () => ipcRenderer.invoke('systemBeauty:importImages'),
     scanImageFolder: () => ipcRenderer.invoke('systemBeauty:scanImageFolder'),

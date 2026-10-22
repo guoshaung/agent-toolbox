@@ -16,6 +16,7 @@ const { BeautyNativePreview } = require('./beauty-native-preview');
 const { WindowAppearance } = require('./beauty-window-appearance');
 const { BeautyFolderImport } = require('./beauty-folder-import');
 const { BeautyFolderJobs } = require('./beauty-folder-jobs');
+const { BeautyCatalog } = require('./beauty-catalog');
 const MAX_IMAGE = 25 * 1024 * 1024;
 const MAX_BUNDLE = Math.ceil(MAX_IMAGE * 4 / 3) + 256 * 1024;
 const ASSET_ID = /^[a-f0-9]{64}$/;
@@ -67,6 +68,7 @@ class SystemBeauty {
     this.preview = new BeautyNativePreview({ platform });
     this.windowAppearance = new WindowAppearance({ root: path.join(root, 'window-appearance'), platform });
     this.folderImport = new BeautyFolderImport();
+    this.catalog = new BeautyCatalog({ root: path.join(root, 'catalog') });
     this.pending = Promise.resolve();
   }
   serial(action) {
@@ -112,6 +114,8 @@ class SystemBeauty {
       data.assets.push(asset);
     }
     Object.assign(asset, { width: thumbnail.width, height: thumbnail.height, bytes: buffer.length });
+    if (metadata.source) asset.source = metadata.source;
+    if (metadata.kind === 'character') asset.kind = 'character';
     return asset;
   }
   list() {
@@ -121,6 +125,34 @@ class SystemBeauty {
         thumbnailUrl: pathToFileURL(fs.existsSync(this.thumbnailPath(a.id)) ? this.thumbnailPath(a.id) : this.assetPath(a.id)).href })),
       profiles: data.profiles, activeProfileId: data.activeProfileId || '', recovery: data.recovery ? { available: true, at: data.recovery.at } : null,
       personalizationRecovery: data.personalizationRecovery ? { available: true, at: data.personalizationRecovery.at, fields: Object.keys(data.personalizationRecovery.values || {}) } : null };
+  }
+  importCatalogMaterials(id) {
+    return this.serial(async () => {
+      const entries = id === 'all' ? this.catalog.data.entries : [this.catalog.entry(id)];
+      const imported = [], errors = []; let added = 0;
+      for (const entry of entries) for (let index = 0; index < entry.materials.length; index++) {
+        try {
+          const source = await this.catalog.material(entry.id, index);
+          const data = this.read(), previous = data.assets.length;
+          const asset = await this.storeAsset(await this.decodeImage(source.buffer), { name: source.name, kind: 'character', source: source.source }, data);
+          this.write(data); added += data.assets.length - previous; imported.push(asset.id);
+        } catch (error) { errors.push({ name: entry.materials[index].name, error: error.message }); }
+      }
+      return { ...this.list(), imported, added, errors };
+    });
+  }
+  composeCharacterWallpaper(payload) {
+    return this.serial(async () => {
+      const data = this.read(), asset = data.assets.find(a => a.id === payload?.id && a.kind === 'character');
+      if (!asset) throw new Error('请选择已导入的人物素材');
+      const background = await renderBackground(payload.preset, payload.size);
+      const sharp = require('sharp'), meta = await sharp(background.buffer).metadata();
+      const character = await sharp(this.assetPath(asset.id), { limitInputPixels: 40_000_000 }).resize({ width: Math.round(meta.width * .45), height: Math.round(meta.height * .82), fit: 'inside' }).png().toBuffer();
+      const foreground = await sharp(character).metadata();
+      const buffer = await sharp(background.buffer).composite([{ input: character, left: meta.width - foreground.width - Math.round(meta.width * .04), top: meta.height - foreground.height }]).png().toBuffer();
+      const result = await this.storeAsset(buffer, { name: `${asset.name} · 合成壁纸`, kind: 'generated', source: asset.source }, data);
+      this.write(data); return { ...this.list(), generatedAssetId: result.id };
+    });
   }
   importImages(paths) {
     return this.serial(async () => {
@@ -236,7 +268,8 @@ class SystemBeauty {
       if (!asset) throw new Error('背景素材不存在');
       const file = this.assetPath(asset.id);
       if (fs.statSync(file).size > MAX_IMAGE) throw new Error('图片超过主题包大小限制');
-      bundle.background = { mime: 'image/png', name: String(asset.name).slice(0, 120), base64: fs.readFileSync(file).toString('base64') };
+      bundle.background = { mime: 'image/png', name: String(asset.name).slice(0, 120), kind: asset.kind === 'character' ? 'character' : 'image',
+        sourceArticleId: asset.source?.articleId, base64: fs.readFileSync(file).toString('base64') };
     }
     return JSON.stringify(bundle, null, 2);
   }
@@ -261,7 +294,9 @@ class SystemBeauty {
       }
       const data = this.read();
       if (buffer) {
-        const asset = await this.storeAsset(buffer, { name: path.basename(String(bundle.background.name || '主题背景.png')) }, data);
+        const item = this.catalog.data.entries.find(x => x.id === bundle.background.sourceArticleId);
+        const asset = await this.storeAsset(buffer, { name: path.basename(String(bundle.background.name || '主题背景.png')), kind: bundle.background.kind === 'character' ? 'character' : 'imported',
+          source: item ? { articleId: item.id, url: item.url, author: item.author } : undefined }, data);
         profile.backgroundId = asset.id;
       }
       data.profiles.push(profile);
@@ -390,6 +425,11 @@ function registerSystemBeautyIpc(ipcMain, { getUserDataPath, dialog, getWindow, 
     });
   }
   handle('list', () => beauty.list());
+  handle('catalog', () => beauty.catalog.list());
+  handle('cacheCatalogCovers', () => beauty.catalog.cacheCovers());
+  handle('importCatalogMaterials', id => beauty.importCatalogMaterials(id));
+  handle('composeCharacterWallpaper', payload => beauty.composeCharacterWallpaper(payload));
+  handle('openCatalogSource', async id => { const entry = beauty.catalog.entry(id); await shell.openExternal(entry.packages[0]?.url || entry.url); return {}; });
   handle('generateBackground', payload => beauty.generateBackground(payload));
   handle('prepareThumbnails', () => beauty.prepareThumbnails());
   handle('importImages', async () => {

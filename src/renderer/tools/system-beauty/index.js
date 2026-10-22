@@ -12,6 +12,8 @@ export default {
     let windowRecovery = null;
     let folderPreview = null, folderImportResult = null;
     let folderJobId = '', folderProgress = null;
+    let catalog = { entries: [] }, catalogQuery = '', catalogCategory = '全部', catalogPage = 0, catalogSelection = '';
+    let catalogStatus = '';
     const windowOptions = { dark: 'keep', corners: 'keep', material: 'keep' };
     const body = h('div', { class: 'beauty__body' });
     root.append(h('div', { class: 'bar bar--drag' }, h('strong', {}, '系统美化'), h('span', { class: 'faint' }, '你的图片，你的桌面')), body);
@@ -41,11 +43,67 @@ export default {
     ] : [];
     const paintFolderProgress = () => { if (!disposed) body.querySelector('.beauty__import-progress')?.replaceChildren(...progressContents()); };
 
+    async function importCharacters(id) {
+      const result = await invoke('importCatalogMaterials', id);
+      library = result;
+      if (result.imported.length) draft.backgroundId = result.imported[0];
+      catalogStatus = `新增 ${result.added} 张公开人物原图，失败 ${result.errors.length} 张。完整包仍需从原站获取。`;
+      render(); body.querySelector('.beauty__preview-card')?.scrollIntoView({ block: 'start', behavior: 'smooth' });
+      toast(catalogStatus, result.errors.length ? 'info' : 'good', 6000);
+    }
+    function gallery() {
+      const grid = h('div', { class: 'beauty__catalog-grid' });
+      const pages = h('div', { class: 'beauty__row beauty__pages' });
+      const detail = h('div', { class: 'beauty__catalog-detail' });
+      const draw = () => {
+        const matching = catalog.entries.filter(item => (catalogCategory === '全部' || item.category === catalogCategory) &&
+          `${item.title} ${item.author} ${item.tags.join(' ')}`.toLowerCase().includes(catalogQuery.toLowerCase()));
+        const pageCount = Math.max(1, Math.ceil(matching.length / 12)); catalogPage = Math.max(0, Math.min(catalogPage, pageCount - 1));
+        grid.replaceChildren(...matching.slice(catalogPage * 12, (catalogPage + 1) * 12).map(item =>
+          h('article', { class: `beauty__catalog-card${catalogSelection === item.id ? ' is-active' : ''}` },
+            button(item.coverUrl ? h('img', { src: item.coverUrl, alt: item.title, loading: 'lazy' }) : h('span', {}, '点击“缓存全部预览”加载图片'), async () => { catalogSelection = item.id; draw(); detail.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); }, { class: 'beauty__catalog-cover', 'aria-label': `查看 ${item.title}` }),
+            h('div', { class: 'beauty__catalog-copy' }, h('span', { class: 'beauty__catalog-kind' }, item.category), h('h3', {}, item.title),
+              h('p', { class: 'faint' }, item.author), h('p', { class: 'beauty__catalog-access' }, item.materials.length ? `${item.materials.length} 张人物 PNG 可导入` : item.notice)))));
+        if (!matching.length) grid.append(h('p', { class: 'faint' }, '没有匹配的角色或作品。'));
+        pages.replaceChildren(h('span', { class: 'faint' }, `${matching.length} 项 · ${catalogPage + 1} / ${pageCount} 页`),
+          button('上一页', async () => { catalogPage--; draw(); }, { disabled: catalogPage === 0 }),
+          button('下一页', async () => { catalogPage++; draw(); }, { disabled: catalogPage >= pageCount - 1 }));
+        const item = catalog.entries.find(x => x.id === catalogSelection);
+        detail.hidden = !item;
+        detail.replaceChildren(...(item ? [
+          item.coverUrl ? h('img', { src: item.coverUrl, alt: '官网效果图' }) : null,
+          h('div', { class: 'beauty__catalog-info' }, h('span', { class: 'beauty__catalog-kind' }, '官网效果图 · 非完整主题'), h('h3', {}, item.title),
+            h('p', { class: 'faint' }, `${item.author} · ${item.tags.join(' / ')}`), h('p', {}, item.notice),
+            h('p', { class: 'faint' }, item.materials.length ? '下方按钮导入文章公开的人物透明原图，可在这里搭配窗口与合成壁纸。' : '此项目仅提供目录和效果图，尚未导入完整包或人物原图。'),
+            h('div', { class: 'beauty__row' }, item.materials.length ? button(`导入 ${item.materials.length} 张人物原图`, () => importCharacters(item.id), { class: 'btn btn--primary' }) : null,
+              button(item.packages.length ? '去原站登录下载完整包' : '查看原文与下载方式', () => invoke('openCatalogSource', item.id)),
+              button('收起详情', async () => { catalogSelection = ''; draw(); })))
+        ] : []));
+      };
+      const search = h('input', { class: 'field', type: 'search', value: catalogQuery, placeholder: '搜索角色、作品、作者', 'aria-label': '搜索二次元素材目录' });
+      search.addEventListener('input', () => { catalogQuery = search.value; catalogPage = 0; draw(); });
+      const filter = h('select', { class: 'field', 'aria-label': '素材分类' }, ...['全部', '预设包', '美化包', '文件夹背景', '鼠标指针&图标'].map(name => h('option', { value: name, selected: catalogCategory === name }, name)));
+      filter.addEventListener('change', () => { catalogCategory = filter.value; catalogPage = 0; draw(); });
+      draw();
+      const available = catalog.entries.reduce((n, item) => n + item.materials.length, 0);
+      return h('section', { class: 'card beauty__catalog' },
+        h('div', { class: 'beauty__catalog-heading' }, h('div', {}, h('span', { class: 'tag' }, 'ACG COLLECTION'), h('h2', {}, '把喜欢的角色，留在桌面上'),
+          h('p', { class: 'faint' }, `${catalog.entries.length} 项官网资源目录 · ${available} 张公开人物原图 · ${library.assets.filter(a => a.kind === 'character').length} 张已在本机`)),
+          h('div', { class: 'beauty__row' }, button('缓存全部预览', async () => {
+            catalogStatus = '正在缓存官网公开预览，完成后可离线浏览…'; render();
+            catalog = await invoke('cacheCatalogCovers'); catalogStatus = `已缓存 ${catalog.entries.filter(x => x.coverUrl).length} / ${catalog.entries.length} 项预览${catalog.errors.length ? `，${catalog.errors.length} 项失败，可重试` : ''}。`; render();
+          }), button(`导入全部 ${available} 张公开人物图`, () => importCharacters('all'), { class: 'btn btn--primary' }),
+            button('看本机人物与搭配', async () => { body.querySelector('.beauty__preview-card')?.scrollIntoView({ block: 'start', behavior: 'smooth' }); }))),
+        h('p', { class: 'faint' }, '收录预设、美化包、文件夹背景和鼠标图标；完整包由原作者发布，需登录的项目会跳转原站。效果截图不作为壁纸或人物素材导入。'),
+        h('div', { class: 'beauty__row beauty__catalog-filters' }, search, filter), catalogStatus ? h('p', { role: 'status' }, catalogStatus) : null,
+        grid, pages, detail);
+    }
+
     function preview() {
       const preset = library.presets.find(p => p.id === draft.preset) || library.presets[0];
       const asset = library.assets.find(a => a.id === draft.backgroundId);
       const surface = h('div', { class: `beauty__preview beauty__preview--${draft.effect}`, 'aria-label': '桌面与窗口效果预览', style: {
-        backgroundImage: asset ? `url("${asset.url}")` : preset.gradient,
+        backgroundImage: asset && asset.kind !== 'character' ? `url("${asset.url}")` : preset.gradient,
       } });
       surface.style.setProperty('--beauty-accent', draft.accent);
       surface.style.setProperty('--beauty-tint', draft.tint);
@@ -67,6 +125,11 @@ export default {
       );
       else windowBody.append(h('div', { class: 'beauty__desktop-note' }, h('strong', {}, draft.name), h('p', {}, '选一张喜欢的图片，把桌面留给自己。')));
       windowBody.classList.toggle('beauty__window--desktop', scene === 'desktop');
+      if (asset?.kind === 'character') {
+        const picture = h('img', { class: 'beauty__character', src: asset.url, alt: asset.name });
+        if (scene === 'desktop') surface.append(picture); else windowBody.append(picture);
+        surface.classList.add('beauty__preview--character');
+      }
       surface.append(windowBody, h('div', { class: 'beauty__taskbar' }, '⊞　⌕　▱　◈　⚙', h('span', {}, '预览')));
       return surface;
     }
@@ -117,7 +180,7 @@ export default {
         assets.replaceChildren(...matching.slice(assetPage * 48, (assetPage + 1) * 48).map(a => button([
           h('img', { src: a.thumbnailUrl || a.url, alt: '', loading: 'lazy', decoding: 'async' }),
           h('span', {}, a.name),
-        ], async () => { draft.backgroundId = a.id; render(); }, {
+        ], async () => { draft.backgroundId = a.id; render(); body.querySelector('.beauty__preview-card')?.scrollIntoView({ block: 'start', behavior: 'smooth' }); }, {
           class: `beauty__asset${draft.backgroundId === a.id ? ' is-active' : ''}`,
           title: a.width && a.height ? `${a.name} · ${a.width} × ${a.height}` : a.name,
         })));
@@ -137,7 +200,12 @@ export default {
       };
       const applyBackground = async () => {
         if (!draft.backgroundId) await generateBackground();
-        try { await invoke('applyWallpaper', draft.backgroundId); toast('桌面壁纸已应用，原壁纸已备份', 'good'); }
+        let wallpaperId = draft.backgroundId;
+        if (library.assets.find(a => a.id === wallpaperId)?.kind === 'character') {
+          const composed = await invoke('composeCharacterWallpaper', { id: wallpaperId, preset: draft.preset, size: wallpaperSize });
+          wallpaperId = composed.generatedAssetId;
+        }
+        try { await invoke('applyWallpaper', wallpaperId); toast('桌面壁纸已应用，原壁纸已备份', 'good'); }
         finally { library = await invoke('list'); render(); }
       };
       const importImages = async () => {
@@ -229,11 +297,12 @@ export default {
         finally { library = await invoke('list'); render(); }
       };
       body.replaceChildren(
-        h('section', { class: 'beauty__hero' }, h('div', {}, h('span', { class: 'tag' }, '本地素材 · 独立主题库'), h('h2', {}, '给桌面换一种心情'), h('p', { class: 'faint' }, '先搭配背景与窗口质感，保存成自己的主题。桌面壁纸可直接应用；资源管理器和开始菜单当前为效果预览。')),
+        gallery(),
+        h('section', { class: 'beauty__hero' }, h('div', {}, h('h2', {}, '人物与窗口搭配'), h('p', { class: 'faint' }, '选择下方人物原图，再搭配底色与窗口质感。人物会贴在窗口右下角；桌面壁纸会先合成完整背景。资源管理器和开始菜单当前为效果预览。')),
           presetStrip, h('div', { class: 'beauty__row' }, button(showAllPresets ? '收起配色' : `全部 ${library.presets.length} 套配色`, async () => { showAllPresets = !showAllPresets; render(); }, { class: 'btn btn--sm' }))),
         h('div', { class: 'beauty__layout' },
           h('section', { class: 'card beauty__preview-card' }, h('div', { class: 'beauty__row' }, ...[['explorer', '资源管理器'], ['start', '开始菜单'], ['desktop', '桌面']].map(([id, name]) => button(name, async () => { scene = id; render(); }, { class: `btn btn--sm${scene === id ? ' btn--primary' : ''}` }))), previewHost,
-            h('p', { class: 'faint' }, '预览中的磨砂、云母、色彩和布局只作用于此画面。'),
+            h('p', { class: 'faint' }, '人物贴图和窗口质感当前仅在此预览；桌面壁纸需点击下方按钮应用。'),
             h('div', { class: 'beauty__row' }, button('打开 Windows 原生材质预览', async () => {
               await invoke('previewNative', draft);
             }, { disabled: !library.nativePreview?.supported }), h('span', { class: 'faint' }, library.nativePreview?.supported ? '另开窗口预览云母或亚克力；模糊由 Windows 控制。' : library.nativePreview?.reason || '需要 Windows 11 22H2 或更新版本')),
@@ -308,7 +377,9 @@ export default {
 
     body.append(h('p', { class: 'faint' }, '正在读取本地素材库…'));
     action(async () => {
-      library = await invoke('list'); const selected = library.profiles.find(p => p.id === library.activeProfileId) || library.profiles[0]; draft = selected ? { ...selected } : fresh(library.presets[0]);
+      library = await invoke('list'); catalog = await invoke('catalog');
+      const selected = library.profiles.find(p => p.id === library.activeProfileId) || library.profiles[0]; draft = selected ? { ...selected } : fresh(library.presets[0]);
+      if (!selected) draft.backgroundId = library.assets.find(a => a.kind === 'character')?.id || '';
       if (selected && !library.presets.slice(0, 4).some(preset => preset.id === selected.preset)) showAllPresets = true;
       render();
     });
