@@ -9,6 +9,13 @@ contextBridge.exposeInMainWorld('toolbox', {
   platform: process.platform,
 
   systemBeauty: {
+    explorerEngineStatus: () => ipcRenderer.invoke('systemBeauty:explorerEngineStatus'),
+    restartExplorerEngine: () => ipcRenderer.invoke('systemBeauty:restartExplorerEngine'),
+    openExplorerThemeTest: () => ipcRenderer.invoke('systemBeauty:openExplorerThemeTest'),
+    installExplorerEngine: () => ipcRenderer.invoke('systemBeauty:installExplorerEngine'),
+    uninstallExplorerEngine: () => ipcRenderer.invoke('systemBeauty:uninstallExplorerEngine'),
+    applySystemTheme: (payload) => ipcRenderer.invoke('systemBeauty:applySystemTheme', payload),
+    restoreSystemTheme: () => ipcRenderer.invoke('systemBeauty:restoreSystemTheme'),
     importPreparedPackages: () => ipcRenderer.invoke('systemBeauty:importPreparedPackages'),
     catalog: () => ipcRenderer.invoke('systemBeauty:catalog'),
     cacheCatalogCovers: () => ipcRenderer.invoke('systemBeauty:cacheCatalogCovers'),

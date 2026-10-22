@@ -4,6 +4,8 @@
 
 ## 当前可用
 
+- “应用主题到电脑”统一应用桌面壁纸、实际资源管理器人物／背景、Windows 深浅色与透明效果；三个范围可独立勾选。单独的壁纸按钮仍只应用壁纸。支持连续切换与“恢复应用前电脑外观”，保留第一次应用前的恢复点，部分失败时保留备份并显示错误。
+- 资源管理器图片使用新实现的 `ToolboxBeautyExplorer.dll`，MinHook 及 HDE 的许可证随源码和组件保存；没有复用 MToolBox DLL。首次启用需要 Windows 管理员授权建立加载入口，普通主题切换与撤销不需要重复授权。界面分别显示注册、实际加载与实际绘制状态，尚未加载不会当作图片已经生效。
 - 二次元素材图鉴：截至 2026-10-22，收录官网当前预设包 16 项、美化包 16 项、文件夹背景 11 项、鼠标指针与图标 19 项，共 62 项；支持作品/角色/作者搜索、分类、12 项分页、作者署名和原站入口。
 - 目录预览按需从公开文章封面缓存到本机，离线可看；不把效果截图当作人物或完整主题。源码只带目录元数据、来源链接，不打包或公开第三方画作。
 - 可批量导入公开文章内的 8 张透明人物 PNG（古拉 6 张、白玉插画 1 张、Helltaker 1 张）；内容去重并逐张持久化，失败保留成功项。人物与配色可在窗口/桌面画面中搭配，手动应用壁纸时先合成完整 PNG，避免直接把透明立绘铺成桌面。
@@ -23,7 +25,7 @@
 - 刷新并选择普通应用窗口，手动应用或恢复圆角、标题栏深色与系统材质；不注入代码。窗口关闭后可清理对应恢复记录。
 - 只读检测原版 MToolBox 2.1.0 宿主，验证宿主 SHA-256 后才查询协议与状态。
 
-窗口质感、资源管理器和开始菜单目前是画面预览，没有向这些系统进程注入代码。壁纸应用使用 Windows `SystemParametersInfoW`，不会改字体、凭据或工具箱主题。
+搭配画面中的窗口质感和开始菜单是预览；启用自己的资源管理器组件后，人物与底图可实际绘制到文件区域。系统图标目前仍是素材查看，尚未全局替换。壁纸使用 Windows `SystemParametersInfoW`，配色只涉及三个已列明的 Personalize 字段；不改字体、凭据或 Toolbox 偏好。
 
 ## 数据与接入
 
@@ -33,11 +35,28 @@
 
 1. 顶部“已解析的完整预设”选择已安装的 13 套之一，载入人物与底图。“二次元素材图鉴”提供更多原站作品与公开人物图入口。自己的 PNG/JPEG/WebP 可在“我的素材”点击“从文件夹导入”，检查候选数量后导入；单次多选“＋ 导入图片”还支持 ICO/CUR。
 2. 选择素材与配色，在“搭配主题”调整颜色、质感和透明度，点击“保存主题”。“全部 12 套配色”可展开更多原创渐变；主题包可带背景图片导出和重新导入。
-3. “效果预览”用于搭配画面；“打开 Windows 原生材质预览”会另开自有预览窗口。点击“应用这张桌面壁纸”或“应用当前渐变壁纸”才改变桌面，可用“恢复原壁纸”恢复。
+3. 首次点击“启用资源管理器组件”，在 Windows 授权框同意建立加载入口。勾选需要的范围，再点顶部“应用主题到电脑”；“恢复应用前电脑外观”会撤销本次主题，连续切换仍恢复第一次应用前的状态。若组件显示等待加载，点“打开测试文件夹”后“检查生效”；仍未加载时不能声称效果已启用，不自动杀掉或重启用户的 Explorer。
 4. 若要调整实际窗口，在“指定窗口外观”刷新列表并选择目标，只更改需要的项目再点击应用；可恢复单个或全部已调整窗口。“Windows 原生外观”里的深浅色和透明效果也需要单独点击应用。
 5. 已有 DWMBlurGlass/ExplorerBlurMica 的用户可使用“合并已有 INI”，保留其他引擎参数并另存新配置，之后在对应引擎里手动导入。Toolbox 不会自动安装或启用这些引擎。
 
-本次专用主题包采用本机私有、只读的素材解析流程；产品界面尚未提供通用 `.mpkg` 导入器。Explorer 客户端图片背景暂不支持；当前预览与单窗 DWM 材质不代表完整全局背景引擎。恢复失败时保留自己的备份目录，按照界面提示重试；窗口关闭后可以显式清理其记录。
+本次专用主题包采用本机私有、只读的素材解析流程；产品界面尚未提供通用 `.mpkg` 导入器。新组件只处理 Explorer 文件区域图片，不等同于原版全部功能或完整系统皮肤引擎。恢复失败时保留自己的备份目录，按照界面提示重试；窗口关闭后可以显式清理其记录。
+
+### 实际资源管理器图片组件
+
+组件由 `src/main/beauty-explorer-native/engine.cpp` 独立实现，使用 BSD 许可的 MinHook/HDE 截获文件视图的 GDI 背景绘制；在文件图标绘制前叠加人物或背景。只允许 Windows 目录下的 `explorer.exe` 和独立测试宿主加载。不创建服务，不读取账户或原版配置，不修改系统字体。构建入口 `node scripts/build-beauty-engine.cjs` 优先使用 MSVC x64，回退 MinGW-w64 g++，`beforePack` 自动构建并校验源哈希；可用 `BEAUTY_CXX` 指定回退编译器。产物不进 Git，安装包包含自建 DLL 与许可证。
+
+本机真实验证状态（2026-10-22）：用户授权后已重启 Explorer，BHO 与当前用户 COM 注册读回正常，但尚未取得真实 Explorer 的绘制回执。因此本机文件区域图片功能仍未验证可用，不能将注册成功、隔离宿主通过或按钮调用成功等同于真实生效。界面明确显示“已注册但尚未加载，图片未生效”。“重启资源管理器（关闭文件夹）”只在用户点击后执行，限定当前用户、当前会话、Windows 目录下的 Explorer，检测到可见文件操作窗口时拒绝；不会关闭其他应用。任务栏会短暂消失，文件夹可能关闭。对机器 COM、FolderExtensions 与图标覆盖入口的临时加载实验已移除，不进入产品安装流程。
+
+组件启用仅涉及以下固定注册位置，CLSID 为 `{70C21916-1316-4825-AF20-DEED801D7690}`：
+
+- `HKLM\Software\Microsoft\Windows\CurrentVersion\Explorer\Browser Helper Objects\<CLSID>`：加载标记与 `NoInternetExplorer=1`。管理员助手只允许建立／移除这一个固定键，不接受任意注册表路径或文件操作。
+- `HKCU\Software\Classes\CLSID\<CLSID>` 与 `InprocServer32`：当前用户组件名称、DLL 路径及 `ThreadingModel=Apartment`。不会覆盖原版或其他插件的 CLSID。
+
+注册前校验 DLL 的构建哈希、保存安装意图，并默认关闭图片。遇到其他值或子键时拒绝覆盖；带自身标记的部分注册可重试完成。移除只清理自己的用户注册；机器加载入口若在本次安装前已存在则保留。普通“恢复”只停止绘制并恢复桌面与配色，组件加载入口可保留；“移除资源管理器组件”才另行请求 Windows 授权卸除本次建立的入口。
+
+DLL 与 INI 保存在独立数据目录 `system-beauty/explorer-engine/v1-<hash>/`，图片按内容寻址。热切换更换不可变画面，旧画面在正在执行的绘制结束后释放；撤销立即停止叠加并使视图重绘。钩子代码仍留在原 Explorer 进程直到其正常退出，撤销不强制关闭文件窗口。更新 Toolbox 后继续控制已安装的原生版本，直到用户显式移除再启用，避免丢失已加载组件的撤销入口。
+
+统一主题操作与原有壁纸、配色操作共用串行队列。原生注册未完成时，在改变桌面或配色前拒绝整套应用；两个画面预先解码后再执行系统修改。部分应用失败会保留主题状态及各项首次备份；恢复逐项尝试，一项失败不会阻止其他项恢复，失败项可重试。
 
 数据单独保存在 `userData/system-beauty/library.json`、`assets/`、`recovery/`。不读写主 `config.json`，也不写原版 MToolBox 的 `.mcfg` 或 `.mpkg`。所有新 IPC 仅接受 Toolbox 本地 renderer 页面。
 
@@ -117,9 +136,11 @@
 
 ## 验证
 
-`node --test test/beauty-package-materials.test.js test/beauty-catalog.test.js test/system-beauty.test.js test/beauty-folder-import.test.js test/beauty-folder-jobs.test.js test/beauty-ini.test.js test/beauty-personalization.test.js test/beauty-native-preview.test.js test/beauty-window-appearance.test.js test/app-controls.test.js`
+`node --test test/beauty-system-theme.test.js test/beauty-explorer-engine.test.js test/beauty-explorer-registry.test.js test/beauty-package-materials.test.js test/beauty-catalog.test.js test/system-beauty.test.js test/beauty-folder-import.test.js test/beauty-folder-jobs.test.js test/beauty-ini.test.js test/beauty-personalization.test.js test/beauty-native-preview.test.js test/beauty-window-appearance.test.js test/app-controls.test.js`
 
-本轮相关测试共 103 项。新增覆盖 ICO/CUR 内嵌 PNG 与 DIB 调色板/透明遮罩、损坏范围拒绝、受控清单路径与哈希校验、按包去重及失败重试、保留原主题编辑与选择、双层便携主题往返。隔离 Electron 使用真实的 13 套解析素材验证分组、筛选、双层预览、图标查看和窄窗口布局，原生写入次数为 0。
+本次 117 项相关测试通过。原生组件新增测试涵盖多主题后恢复最初状态、未注册零系统写入、部分失败重试、应用／恢复排队、共享机器入口保留、版本更新后的控制入口、管理员请求限制，以及重启后仍未加载不能误报成功。注册表保护使用独立 HKCU 测试键验证真实类型及未知字段保留，不写生产注册位置。C++ 隔离宿主实际执行 GDI 绘制、即时关闭与重载；此测试不注册到真实 Explorer。Electron 界面测试执行统一应用／恢复六次模拟原生调用，真实系统写入为零。用户明确启用与重启后的真实验证结果另见上面的本机状态说明。
+
+素材导入阶段相关测试共 103 项。覆盖 ICO/CUR 内嵌 PNG 与 DIB 调色板/透明遮罩、损坏范围拒绝、受控清单路径与哈希校验、按包去重及失败重试、保留原主题编辑与选择、双层便携主题往返。隔离 Electron 使用真实的 13 套解析素材验证分组、筛选、双层预览、图标查看和窄窗口布局，原生写入次数为 0。
 
 测试覆盖素材重复导入与并发、错误图片、字段白名单、应用前备份、连续应用后的恢复、失败时保留恢复记录、空壁纸恢复、原生调用参数隔离及 IPC 来源校验。另有本机隔离 Electron 预览检查，覆盖真实图片解码、导入、保存、切换画面和布局；不触发实际壁纸写入。
 

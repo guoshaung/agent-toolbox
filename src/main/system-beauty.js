@@ -18,6 +18,8 @@ const { BeautyFolderImport } = require('./beauty-folder-import');
 const { BeautyFolderJobs } = require('./beauty-folder-jobs');
 const { BeautyCatalog } = require('./beauty-catalog');
 const { PreparedBeautyPackages } = require('./beauty-prepared-packages');
+const { ExplorerBeautyEngine } = require('./beauty-explorer-engine');
+const { SystemThemeSession } = require('./beauty-system-theme');
 const MAX_IMAGE = 25 * 1024 * 1024;
 const MAX_BUNDLE = 2 * Math.ceil(MAX_IMAGE * 4 / 3) + 256 * 1024;
 const ASSET_ID = /^[a-f0-9]{64}$/;
@@ -61,7 +63,7 @@ function normalizeProfile(input) {
 }
 
 class SystemBeauty {
-  constructor({ root, native, decodeImage, thumbnailImage, platform = process.platform }) {
+  constructor({ root, native, decodeImage, thumbnailImage, explorerEngine, platform = process.platform }) {
     this.root = root;
     this.file = path.join(root, 'library.json');
     this.native = native || new WindowsBeautyBridge();
@@ -73,6 +75,8 @@ class SystemBeauty {
     this.folderImport = new BeautyFolderImport();
     this.catalog = new BeautyCatalog({ root: path.join(root, 'catalog') });
     this.prepared = new PreparedBeautyPackages(root);
+    this.explorerEngine = explorerEngine || new ExplorerBeautyEngine({ root: path.join(root, 'explorer-engine'), platform });
+    this.systemTheme = new SystemThemeSession(this, normalizeProfile);
     this.pending = Promise.resolve();
   }
   serial(action) {
@@ -132,9 +136,11 @@ class SystemBeauty {
       assets: data.assets.map(a => ({ ...a, url: pathToFileURL(this.assetPath(a.id)).href,
         thumbnailUrl: pathToFileURL(fs.existsSync(this.thumbnailPath(a.id)) ? this.thumbnailPath(a.id) : this.assetPath(a.id)).href })),
       profiles: data.profiles, packages: (data.packages || []).map(p => ({ ...p, previewUrl: p.preview && /^[a-f0-9]{64}$/.test(p.preview) ? pathToFileURL(path.join(this.root, 'package-previews', p.preview + '.webp')).href : '' })),
-      activeProfileId: data.activeProfileId || '', recovery: data.recovery ? { available: true, at: data.recovery.at } : null,
+      activeProfileId: data.activeProfileId || '', themeSession: data.themeSession || null, recovery: data.recovery ? { available: true, at: data.recovery.at } : null,
       personalizationRecovery: data.personalizationRecovery ? { available: true, at: data.personalizationRecovery.at, fields: Object.keys(data.personalizationRecovery.values || {}) } : null };
   }
+  applySystemTheme(payload) { return this.serial(() => this.systemTheme.apply(payload)); }
+  restoreSystemTheme() { return this.serial(() => this.systemTheme.restore()); }
   importPreparedPackages() {
     return this.serial(async () => {
       const plan = this.prepared.plan(), errors = []; let added = 0;
@@ -184,8 +190,8 @@ class SystemBeauty {
       return { ...this.list(), imported, added, errors };
     });
   }
-  composeCharacterWallpaper(payload) {
-    return this.serial(async () => {
+  composeCharacterWallpaper(payload) { return this.serial(() => this._composeCharacterWallpaper(payload)); }
+  async _composeCharacterWallpaper(payload) {
       const data = this.read(), asset = data.assets.find(a => a.id === payload?.id && a.kind === 'character');
       if (!asset) throw new Error('请选择已导入的人物素材');
       const background = await renderBackground(payload.preset, payload.size);
@@ -199,7 +205,6 @@ class SystemBeauty {
       const buffer = await sharp(background.buffer).composite([{ input: character, left: meta.width - foreground.width - Math.round(meta.width * .04), top: meta.height - foreground.height }]).png().toBuffer();
       const result = await this.storeAsset(buffer, { name: `${asset.name} · 合成壁纸`, kind: 'generated', source: asset.source }, data);
       this.write(data); return { ...this.list(), generatedAssetId: result.id };
-    });
   }
   importImages(paths) {
     return this.serial(async () => {
@@ -361,8 +366,8 @@ class SystemBeauty {
       return { importedProfileId: profile.id, ...this.list() };
     });
   }
-  applyWallpaper(id) {
-    return this.serial(async () => {
+  applyWallpaper(id) { return this.serial(() => this._applyWallpaper(id)); }
+  async _applyWallpaper(id) {
       if (this.platform !== 'win32') throw new Error('应用桌面壁纸仅支持 Windows');
       const data = this.read(), asset = this.assetPath(id);
       if (!data.assets.some(a => a.id === id) || !fs.existsSync(asset)) throw new Error('请先导入背景图片');
@@ -386,10 +391,9 @@ class SystemBeauty {
       this.write(data);
       await this.native.setWallpaper(asset);
       return this.list();
-    });
   }
-  restoreWallpaper() {
-    return this.serial(async () => {
+  restoreWallpaper() { return this.serial(() => this._restoreWallpaper()); }
+  async _restoreWallpaper() {
       if (this.platform !== 'win32') throw new Error('恢复桌面壁纸仅支持 Windows');
       const data = this.read(), recovery = data.recovery;
       if (!recovery) throw new Error('还没有可恢复的壁纸备份');
@@ -407,10 +411,9 @@ class SystemBeauty {
       data.recovery = null;
       this.write(data);
       return this.list();
-    });
   }
-  applyPersonalization(options) {
-    return this.serial(async () => {
+  applyPersonalization(options) { return this.serial(() => this._applyPersonalization(options)); }
+  async _applyPersonalization(options) {
       if (this.platform !== 'win32') throw new Error('Windows 外观仅支持 Windows');
       const plan = personalizationPlan(options);
       if (!Object.keys(plan).length) throw new Error('请先选择需要更改的 Windows 外观项');
@@ -428,10 +431,9 @@ class SystemBeauty {
       this.write(data);
       const result = await this.native.setPersonalization(plan);
       return { ...this.list(), personalizationNotified: result?.notified !== false };
-    });
   }
-  restorePersonalization() {
-    return this.serial(async () => {
+  restorePersonalization() { return this.serial(() => this._restorePersonalization()); }
+  async _restorePersonalization() {
       if (this.platform !== 'win32') throw new Error('Windows 外观仅支持 Windows');
       const data = this.read(), recovery = data.personalizationRecovery;
       if (!recovery || recovery.version !== 1) throw new Error('还没有可恢复的 Windows 外观备份');
@@ -439,8 +441,8 @@ class SystemBeauty {
       data.personalizationRecovery = null;
       this.write(data);
       return { ...this.list(), personalizationNotified: result?.notified !== false };
-    });
   }
+
 }
 
 class WindowsBeautyBridge {
@@ -481,6 +483,13 @@ function registerSystemBeautyIpc(ipcMain, { getUserDataPath, dialog, getWindow, 
     });
   }
   handle('list', () => beauty.list());
+  handle('explorerEngineStatus', () => beauty.explorerEngine.status());
+  handle('restartExplorerEngine', () => beauty.serial(async () => ({ ...beauty.list(), explorerEngine: await beauty.explorerEngine.restart() })));
+  handle('openExplorerThemeTest', async () => { const folder = path.join(beauty.root, 'theme-test'); fs.mkdirSync(folder, { recursive: true }); const error = await shell.openPath(folder); if (error) throw new Error(error); return {}; });
+  handle('installExplorerEngine', () => beauty.serial(async () => ({ ...beauty.list(), explorerEngine: await beauty.explorerEngine.install() })));
+  handle('uninstallExplorerEngine', () => beauty.serial(async () => ({ ...beauty.list(), explorerEngine: await beauty.explorerEngine.uninstall() })));
+  handle('applySystemTheme', payload => beauty.applySystemTheme(payload));
+  handle('restoreSystemTheme', () => beauty.restoreSystemTheme());
   handle('catalog', () => beauty.catalog.list());
   handle('importPreparedPackages', () => beauty.importPreparedPackages());
   handle('cacheCatalogCovers', () => beauty.catalog.cacheCovers());

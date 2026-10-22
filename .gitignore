@@ -15,6 +15,8 @@ container-seed/cc-voice-input/resources/wechat_config.json
 
 # 本地构建环境（Android SDK / Gradle 缓存等，勿提交）
 work/
+src/main/beauty-explorer-native/ToolboxBeautyExplorer.dll
+src/main/beauty-explorer-native/build.json
 
 # Voicebox 外部工具产物：二进制/模型/音频/发音样本/下载包一律不入库。
 # 实际产物都在 userData/external/voicebox（仓库外），以下为纵深防御。

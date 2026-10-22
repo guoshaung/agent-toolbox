@@ -15,6 +15,8 @@ export default {
     let catalog = { entries: [] }, catalogQuery = '', catalogCategory = '全部', catalogPage = 0, catalogSelection = '';
     let catalogStatus = '';
     let assetKind = 'all', assetSource = '', inspectedAsset = '', packagePage = 0;
+    let engine = { registered: false }, themeMessage = '';
+    const themeOptions = { wallpaper: true, explorer: true, colors: true };
     const windowOptions = { dark: 'keep', corners: 'keep', material: 'keep' };
     const body = h('div', { class: 'beauty__body' });
     root.append(h('div', { class: 'bar bar--drag' }, h('strong', {}, '系统美化'), h('span', { class: 'faint' }, '你的图片，你的桌面')), body);
@@ -326,7 +328,33 @@ export default {
       }));
       const inspected = library.assets.find(a => a.id === inspectedAsset);
       const deleteId = inspectedAsset || draft.characterId || draft.backgroundId;
+      const changeSystemTheme = async restore => {
+        try {
+          library = await invoke(restore ? 'restoreSystemTheme' : 'applySystemTheme', ...(restore ? [] : [{ profile: draft, options: themeOptions }]));
+          engine = library.explorerEngine || engine;
+          themeMessage = restore ? (library.restoreErrors.length ? `部分恢复失败：${library.restoreErrors.map(e => `${e.part}：${e.error}`).join('；')}` : '已撤销本次主题，恢复应用前的桌面和 Windows 配色。') : themeOptions.explorer && !engine.painted ? '已处理所选桌面与配色；资源管理器图片尚未确认生效。请打开测试文件夹并检查加载状态，必要时手动重启资源管理器。' : '主题已应用到电脑；可随时恢复应用前外观。';
+          toast(themeMessage, library.restoreErrors?.length ? 'bad' : 'good', 7000);
+        } finally { library = await invoke('list'); render(); }
+      };
+      const themeState = library.themeSession;
       body.replaceChildren(
+        h('section', { class: 'card beauty__system-apply' }, h('h2', {}, '切换电脑主题'),
+          h('p', {}, `当前搭配：${draft.name}。选择下方预设或素材，再应用到电脑。`),
+          h('div', { class: 'beauty__row' }, ...[['wallpaper', '桌面壁纸'], ['explorer', '资源管理器人物／背景'], ['colors', 'Windows 深浅色与透明效果']].map(([key, label]) => {
+            const check = h('input', { type: 'checkbox', checked: themeOptions[key], 'aria-label': label }); check.addEventListener('change', () => { themeOptions[key] = check.checked; });
+            return h('label', { class: 'beauty__theme-option' }, check, label);
+          })),
+          h('p', { class: 'faint', role: 'status' }, engine.error ? `组件检测：${engine.error}` : engine.registered ? engine.enabled && engine.painted ? '资源管理器组件：已启用，已实际绘制图片' : engine.ready ? '资源管理器组件：已加载；主题图片尚未应用或绘制' : '资源管理器组件：已注册但尚未加载，图片未生效' : '资源管理器组件：未启用。首次启用会请求 Windows 管理员授权。'),
+          h('div', { class: 'beauty__row' }, button('应用主题到电脑', () => changeSystemTheme(false), { class: 'btn btn--primary', disabled: !library.supported }),
+            button('恢复应用前电脑外观', () => changeSystemTheme(true), { disabled: !library.supported || !(themeState || library.recovery || library.personalizationRecovery || engine.enabled) }),
+            !engine.registered ? button('启用资源管理器组件', async () => { themeMessage = '等待 Windows 授权…'; library = await invoke('installExplorerEngine'); engine = library.explorerEngine; themeMessage = '组件已注册；选好搭配后点击“应用主题到电脑”。'; render(); }, { disabled: !library.supported }) : null,
+            button('打开测试文件夹', async () => { await invoke('openExplorerThemeTest'); }, { disabled: !engine.registered }),
+            button('检查生效', async () => { engine = await invoke('explorerEngineStatus'); render(); }),
+            engine.registered && !engine.ready ? button('重启资源管理器（关闭文件夹）', async () => { library = await invoke('restartExplorerEngine'); engine = library.explorerEngine; themeMessage = engine.ready ? '资源管理器已重启，组件已加载，请打开文件夹检查图片。' : '资源管理器已重启，但组件仍未加载，图片尚未生效。'; render(); }) : null,
+            engine.registered || engine.machineRegistered || engine.userRegistered ? button('移除资源管理器组件', async () => { library = await invoke('uninstallExplorerEngine'); engine = library.explorerEngine; render(); }, { disabled: !library.supported }) : null),
+          themeMessage ? h('p', { role: 'status' }, themeMessage) : null,
+          themeState?.error ? h('p', { class: 'faint', role: 'alert' }, `上次操作未完成：${themeState.error}。恢复备份已保留。`) : null,
+          h('p', { class: 'faint' }, '人物会绘制到实际资源管理器文件区域；图标目前仅作素材查看。此入口不会修改字体、Key 或 Toolbox 偏好。恢复会停止图片绘制并还原首次应用前的桌面与配色；移除组件需要另一次 Windows 授权。')),
         packageItems.length ? h('section', { class: 'card beauty__local-packages' }, h('div', { class: 'beauty__row' }, h('h2', {}, `已解析的完整预设 · ${packageItems.length} 套`),
           h('span', { class: 'faint' }, '人物、底图与图标分开收纳，保留来源')), packageCards,
           h('div', { class: 'beauty__row beauty__pages' }, h('span', { class: 'faint' }, `第 ${packagePage + 1} / ${Math.ceil(packageItems.length / 8)} 页`),
@@ -416,6 +444,7 @@ export default {
     body.append(h('p', { class: 'faint' }, '正在读取本地素材库…'));
     action(async () => {
       library = await invoke('list'); catalog = await invoke('catalog');
+      engine = await invoke('explorerEngineStatus');
       const selected = library.profiles.find(p => p.id === library.activeProfileId) || library.profiles[0]; draft = selected ? { ...selected } : fresh(library.presets[0]);
       if (!selected) draft.characterId = library.assets.find(a => a.kind === 'character')?.id || '';
       if (selected && !library.presets.slice(0, 4).some(preset => preset.id === selected.preset)) showAllPresets = true;

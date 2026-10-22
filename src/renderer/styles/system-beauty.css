@@ -94,3 +94,6 @@
 @media(max-width:1150px) { .beauty__catalog-grid { grid-template-columns:repeat(3,minmax(0,1fr)); } }
 @media(max-width:800px) { .beauty__catalog-grid { grid-template-columns:repeat(2,minmax(0,1fr)); } .beauty__catalog-detail { grid-template-columns:1fr; } }
 @media(max-width:450px) { .beauty__catalog-grid { grid-template-columns:1fr; } }
+.beauty__system-apply { border-color: color-mix(in srgb, var(--accent, #8fb4ff) 48%, transparent); }
+.beauty__theme-option { display: inline-flex; align-items: center; gap: 7px; padding: 6px 0; }
+.beauty__theme-option input { accent-color: var(--accent, #8fb4ff); }
