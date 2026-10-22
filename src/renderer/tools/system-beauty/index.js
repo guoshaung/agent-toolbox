@@ -324,7 +324,14 @@ export default {
           }, { class: 'beauty__catalog-cover', 'aria-label': `使用预设 ${pkg.title}`, disabled: !library.profiles.some(p => p.id === pkg.profileId) }),
           h('div', { class: 'beauty__catalog-copy' }, h('span', { class: 'beauty__catalog-kind' }, pkg.failedCount ? `已解析 · ${pkg.failedCount} 项待重试` : '完整包已解析 · 本机可用'), h('h3', {}, pkg.title),
             h('p', { class: 'faint' }, `${items.filter(a => a.kind === 'character').length} 张人物 · ${items.filter(a => a.kind === 'wallpaper').length} 张底图 · ${items.filter(a => a.kind === 'icon').length} 个图标`),
-            h('p', { class: 'faint' }, '点击载入素材搭配；系统设置需手动应用')));
+            h('p', { class: 'faint' }, '点击封面载入搭配，或直接应用这套电脑主题。'),
+            button('应用这套电脑主题', async () => {
+              const profile = library.profiles.find(p => p.id === pkg.profileId);
+              if (!profile) throw new Error('预设尚未解析，请重新导入');
+              library = await invoke('selectProfile', profile.id); draft = { ...profile };
+              await changeSystemTheme(false);
+              body.querySelector('.beauty__system-apply')?.scrollIntoView({ block: 'start', behavior: 'smooth' });
+            }, { class: 'btn btn--primary', 'aria-label': `应用 ${pkg.title} 电脑主题`, disabled: !library.supported || !library.profiles.some(p => p.id === pkg.profileId) })));
       }));
       const inspected = library.assets.find(a => a.id === inspectedAsset);
       const deleteId = inspectedAsset || draft.characterId || draft.backgroundId;
@@ -342,6 +349,7 @@ export default {
       body.replaceChildren(
         h('section', { class: 'card beauty__system-apply' }, h('h2', {}, '切换电脑主题'),
           h('p', {}, `当前搭配：${draft.name}。选择下方预设或素材，再应用到电脑。`),
+          themeState?.phase === 'applied' ? h('p', { role: 'status' }, `电脑已应用：${themeState.name}。使用下方恢复按钮可撤销。`) : null,
           h('div', { class: 'beauty__row' }, ...[['wallpaper', '桌面壁纸'], ['explorer', '资源管理器人物／背景'], ['colors', 'Windows 深浅色与透明效果']].map(([key, label]) => {
             const check = h('input', { type: 'checkbox', checked: themeOptions[key], 'aria-label': label }); check.addEventListener('change', () => { themeOptions[key] = check.checked; });
             return h('label', { class: 'beauty__theme-option' }, check, label);
@@ -363,15 +371,15 @@ export default {
             button('上一组预设', async () => { packagePage--; render(); }, { disabled: packagePage === 0 }),
             button('下一组预设', async () => { packagePage++; render(); }, { disabled: packagePage >= Math.ceil(packageItems.length / 8) - 1 }))) : null,
         gallery(),
-        h('section', { class: 'beauty__hero' }, h('div', {}, h('h2', {}, '人物与窗口搭配'), h('p', { class: 'faint' }, '选择下方人物原图，再搭配底色与窗口质感。人物会贴在窗口右下角；桌面壁纸会先合成完整背景。资源管理器和开始菜单当前为效果预览。')),
+        h('section', { class: 'beauty__hero' }, h('div', {}, h('h2', {}, '人物与窗口搭配'), h('p', { class: 'faint' }, '选择人物与底图后，使用上方“应用主题到电脑”切换桌面、文件夹图片与 Windows 配色。开始菜单和预览中的玻璃质感仅供参考。')),
           presetStrip, h('div', { class: 'beauty__row' }, button(showAllPresets ? '收起配色' : `全部 ${library.presets.length} 套配色`, async () => { showAllPresets = !showAllPresets; render(); }, { class: 'btn btn--sm' }))),
         h('div', { class: 'beauty__layout' },
           h('section', { class: 'card beauty__preview-card' }, h('div', { class: 'beauty__row' }, ...[['explorer', '资源管理器'], ['start', '开始菜单'], ['desktop', '桌面']].map(([id, name]) => button(name, async () => { scene = id; render(); }, { class: `btn btn--sm${scene === id ? ' btn--primary' : ''}` }))), previewHost,
-            h('p', { class: 'faint' }, '人物贴图和窗口质感当前仅在此预览；桌面壁纸需点击下方按钮应用。'),
+            h('p', { class: 'faint' }, '这里预览素材搭配。整套切换请用上方“应用主题到电脑”；下方按钮只更改桌面壁纸。'),
             h('div', { class: 'beauty__row' }, button('打开 Windows 原生材质预览', async () => {
               await invoke('previewNative', draft);
             }, { disabled: !library.nativePreview?.supported }), h('span', { class: 'faint' }, library.nativePreview?.supported ? '另开窗口预览云母或亚克力；模糊由 Windows 控制。' : library.nativePreview?.reason || '需要 Windows 11 22H2 或更新版本')),
-            h('div', { class: 'beauty__row' }, button(draft.backgroundId || draft.characterId ? '应用这张桌面壁纸' : '应用当前渐变壁纸', applyBackground, { class: 'btn btn--primary', disabled: !library.supported }),
+            h('div', { class: 'beauty__row' }, button('仅应用桌面壁纸', applyBackground, { disabled: !library.supported }),
               button('恢复原壁纸', async () => { library = await invoke('restoreWallpaper'); render(); toast('已恢复应用前的桌面壁纸', 'good'); }, { disabled: !library.supported || !library.recovery }))),
           h('section', { class: 'card beauty__editor' }, h('h3', {}, '搭配主题'), profileName, h('label', { class: 'beauty__field' }, '窗口质感', effect),
             input('强调色', 'accent', { type: 'color' }), input('窗口底色', 'tint', { type: 'color' }), input('窗口不透明度', 'opacity', { type: 'range', min: 15, max: 100 }), input('背景模糊', 'blur', { type: 'range', min: 0, max: 40 }),

@@ -10,7 +10,6 @@
 #include <string>
 #include <memory>
 #include <mutex>
-#include <unordered_map>
 #include <unordered_set>
 #include <vector>
 #include <algorithm>
@@ -33,7 +32,16 @@ std::atomic<bool> hooksReady{false};
 LONG painted = 0;
 thread_local bool inside = false;
 thread_local HWND activeView = nullptr;
-thread_local std::unordered_map<HDC, HWND> memoryViews;
+// Hooks can still run during a worker's GDI cleanup. Keep this TLS trivial so it
+// has no container destructor that later DeleteDC notifications could re-enter.
+struct DcViews {
+  struct Binding { HDC dc; HWND window; } items[256];
+  unsigned count;
+  HWND find(HDC dc) const { for(unsigned i=0;i<count;i++)if(items[i].dc==dc)return items[i].window; return nullptr; }
+  void set(HDC dc,HWND window) { for(unsigned i=0;i<count;i++)if(items[i].dc==dc){items[i].window=window;return;} if(count==256)count=0;items[count++]={dc,window}; }
+  void erase(HDC dc) { for(unsigned i=0;i<count;i++)if(items[i].dc==dc){items[i]=items[--count];return;} }
+};
+thread_local DcViews memoryViews{};
 decltype(&BeginPaint) originalBegin;
 decltype(&EndPaint) originalEnd;
 decltype(&FillRect) originalFill;
@@ -41,9 +49,9 @@ decltype(&CreateCompatibleDC) originalCreateDC;
 decltype(&DeleteDC) originalDeleteDC;
 
 std::wstring IniPath() {
-  wchar_t file[32768]; DWORD n = GetModuleFileNameW(moduleHandle, file, 32768);
+  std::wstring file(32768,L'\0'); DWORD n = GetModuleFileNameW(moduleHandle, file.data(), 32768);
   if (!n || n >= 32768) return L"";
-  std::wstring result(file, n); return result.substr(0, result.find_last_of(L"\\/")) + L"\\config.ini";
+  file.resize(n); return file.substr(0, file.find_last_of(L"\\/")) + L"\\config.ini";
 }
 void Trace(const char* step) {
   const auto ini = IniPath();
@@ -83,11 +91,11 @@ bool LoadFrame() {
   const auto ini = IniPath();
   std::shared_ptr<Frame> next;
   if (GetPrivateProfileIntW(L"beauty", L"enabled", 0, ini.c_str())) {
-    wchar_t file[32768] = {};
-    GetPrivateProfileStringW(L"beauty", L"image", L"", file, 32768, ini.c_str());
+    std::wstring file(32768,L'\0');
+    GetPrivateProfileStringW(L"beauty", L"image", L"", file.data(), 32768, ini.c_str());
     WIN32_FILE_ATTRIBUTE_DATA info;
-    if (!GetFileAttributesExW(file, GetFileExInfoStandard, &info) || info.nFileSizeHigh || info.nFileSizeLow > 25 * 1024 * 1024) return false;
-    Gdiplus::Bitmap input(file, FALSE);
+    if (!GetFileAttributesExW(file.c_str(), GetFileExInfoStandard, &info) || info.nFileSizeHigh || info.nFileSizeLow > 25 * 1024 * 1024) return false;
+    Gdiplus::Bitmap input(file.c_str(), FALSE);
     const UINT width = input.GetWidth(), height = input.GetHeight();
     if (input.GetLastStatus() != Gdiplus::Ok || !width || !height || width > 4096 || height > 4096 || UINT64(width) * height > 16'000'000) return false;
     Gdiplus::Rect rect(0, 0, width, height); Gdiplus::BitmapData pixels = {};
@@ -121,8 +129,7 @@ HDC WINAPI HookBegin(HWND window, LPPAINTSTRUCT paint) {
   HDC dc = originalBegin(window, paint);
   if (!inside && IsView(window)) {
     activeView = window;
-    if (memoryViews.size() > 256) memoryViews.clear();
-    memoryViews[dc] = window;
+    memoryViews.set(dc,window);
     std::lock_guard<std::mutex> lock(stateMutex); if (views.size() < 256) views.insert(window);
   }
   return dc;
@@ -135,7 +142,7 @@ HDC WINAPI HookCreateDC(HDC dc) {
   HDC result = originalCreateDC(dc);
   if (!inside && result) {
     HWND window = WindowFromDC(dc); if (!IsView(window)) window = activeView;
-    if (IsView(window)) { if (memoryViews.size() > 256) memoryViews.clear(); memoryViews[result] = window; }
+    if (IsView(window)) memoryViews.set(result,window);
   }
   return result;
 }
@@ -143,14 +150,14 @@ BOOL WINAPI HookDeleteDC(HDC dc) { memoryViews.erase(dc); return originalDeleteD
 int WINAPI HookFill(HDC dc, const RECT* rect, HBRUSH brush) {
   const int result = originalFill(dc, rect, brush);
   if (inside || !rect) return result;
-  const auto found = memoryViews.find(dc); if (found == memoryViews.end() || !IsView(found->second)) return result;
+  const HWND view = memoryViews.find(dc); if (!IsView(view)) return result;
   std::shared_ptr<Frame> frame;
   { std::lock_guard<std::mutex> lock(stateMutex); frame = currentFrame; }
   if (!frame) return result;
   inside = true;
   {
     std::lock_guard<std::mutex> lock(frame->paintMutex);
-    RECT client; GetClientRect(found->second, &client);
+    RECT client; GetClientRect(view, &client);
     int width = frame->width, height = frame->height;
     if (frame->cover) {
       const double ratio = std::max(double(client.right) / width, double(client.bottom) / height);
@@ -244,8 +251,13 @@ extern "C" LRESULT CALLBACK ToolboxBeautyAttach(int code, WPARAM w, LPARAM l) {
 BOOL WINAPI DllMain(HINSTANCE instance, DWORD reason, void*) {
   if (reason == DLL_PROCESS_ATTACH) {
     moduleHandle = instance; DisableThreadLibraryCalls(instance);
-    wchar_t exe[32768] = {}, windows[32768] = {}; GetModuleFileNameW(nullptr, exe, 32768); GetWindowsDirectoryW(windows, 32768);
-    const std::wstring path(exe), expected = std::wstring(windows) + L"\\explorer.exe";
+    // This entry point receives thread attach/detach on small-stack Windows
+    // workers too. Never reserve 128 KiB of automatic path buffers here.
+    std::wstring exe(32768,L'\0'), windows(32768,L'\0');
+    DWORD n=GetModuleFileNameW(nullptr,exe.data(),32768),w=GetWindowsDirectoryW(windows.data(),32768);
+    if(!n||n>=32768||!w||w>=32768)return FALSE;
+    exe.resize(n);windows.resize(w);
+    const std::wstring path(exe), expected = windows + L"\\explorer.exe";
     const auto name = path.substr(path.find_last_of(L"\\/") + 1);
     const bool admitted = _wcsicmp(path.c_str(), expected.c_str()) == 0 || name == L"ToolboxBeautyTestHost.exe";
     if (!admitted) {
