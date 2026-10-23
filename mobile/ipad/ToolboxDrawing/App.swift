@@ -106,7 +106,7 @@ final class PaperView: UIView {
             let retained = Set(next.values)
             for id in rendered.values where !retained.contains(id) { changes.append(["kind": "remove", "target": id]) }
             // Enqueue before changing the baseline, so disk/network failures cannot erase the local draft.
-            if !changes.isEmpty { rendered = next; try store.enqueue(changes) }
+            if !changes.isEmpty { let previous = rendered; rendered = next; do { try store.enqueue(changes) } catch { rendered = previous; throw error } }
             if refreshAfterDrawing { refreshAfterDrawing = false; refresh() }
         } catch { fail(error) }
     }
@@ -167,7 +167,7 @@ final class PaperView: UIView {
 
 final class ScannerController: UIViewController, AVCaptureMetadataOutputObjectsDelegate {
     var scanned: ((String) -> Void)?, session = AVCaptureSession(), preview: AVCaptureVideoPreviewLayer?, finished = false
-    override func viewDidLoad() { super.viewDidLoad(); title = "扫描 Toolbox 绘图二维码"; view.backgroundColor = .black; navigationItem.leftBarButtonItem = UIBarButtonItem(barButtonSystemItem: .cancel, target: self, action: #selector(close)); AVCaptureDevice.requestAccess(for: .video) { [weak self] granted in DispatchQueue.main.async { guard let self else { return }; if granted { setup() } else { title = "相机未授权，请返回后粘贴配对地址" } } } }
+    override func viewDidLoad() { super.viewDidLoad(); title = "扫描 Toolbox 绘图二维码"; view.backgroundColor = .black; navigationItem.leftBarButtonItem = UIBarButtonItem(barButtonSystemItem: .cancel, target: self, action: #selector(close)); AVCaptureDevice.requestAccess(for: .video) { [weak self] granted in DispatchQueue.main.async { guard let self else { return }; if granted { self.setup() } else { self.title = "相机未授权，请返回后粘贴配对地址" } } } }
     func setup() { guard let device = AVCaptureDevice.default(for: .video), let input = try? AVCaptureDeviceInput(device: device), session.canAddInput(input) else { return }; session.addInput(input); let output = AVCaptureMetadataOutput(); guard session.canAddOutput(output) else { return }; session.addOutput(output); output.setMetadataObjectsDelegate(self, queue: .main); output.metadataObjectTypes = [.qr]; let layer = AVCaptureVideoPreviewLayer(session: session); layer.videoGravity = .resizeAspectFill; layer.frame = view.bounds; view.layer.insertSublayer(layer, at: 0); preview = layer; DispatchQueue.global(qos: .userInitiated).async { [session] in session.startRunning() } }
     override func viewDidLayoutSubviews() { super.viewDidLayoutSubviews(); preview?.frame = view.bounds }
     override func viewDidDisappear(_ animated: Bool) { super.viewDidDisappear(animated); session.stopRunning() }
