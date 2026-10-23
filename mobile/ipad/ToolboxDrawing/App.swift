@@ -172,5 +172,5 @@ final class ScannerController: UIViewController, AVCaptureMetadataOutputObjectsD
     override func viewDidLayoutSubviews() { super.viewDidLayoutSubviews(); preview?.frame = view.bounds }
     override func viewDidDisappear(_ animated: Bool) { super.viewDidDisappear(animated); session.stopRunning() }
     @objc func close() { dismiss(animated: true) }
-    func metadataOutput(_ output: AVCaptureMetadataOutput, didOutput metadataObjects: [AVMetadataObject], from connection: AVCaptureConnection) { guard !finished, let code = metadataObjects.first as? AVMetadataMachineReadableCodeObject, let text = code.stringValue else { return }; finished = true; dismiss(animated: true) { [weak self] in self?.scanned?(text) } }
+    func metadataOutput(_ output: AVCaptureMetadataOutput, didOutput metadataObjects: [AVMetadataObject], from connection: AVCaptureConnection) { guard !finished, let code = metadataObjects.first as? AVMetadataMachineReadableCodeObject, let text = code.stringValue else { return }; finished = true; let callback = scanned; dismiss(animated: true) { callback?(text) } }
 }

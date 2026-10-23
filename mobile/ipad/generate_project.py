@@ -2,6 +2,7 @@
 from pathlib import Path
 import json
 import plistlib
+import shutil
 
 root = Path(__file__).resolve().parent
 project = root / 'ToolboxDrawing.xcodeproj'
@@ -17,10 +18,12 @@ info = {
     'NSAppTransportSecurity': {'NSAllowsArbitraryLoads': True},
     'ITSAppUsesNonExemptEncryption': False,
     'UIFileSharingEnabled': True, 'LSSupportsOpeningDocumentsInPlace': True,
+    'CFBundleIcons': {'CFBundlePrimaryIcon': {'CFBundleIconFiles': ['AppIcon']}},
 }
+shutil.copyfile(root.parents[1] / 'assets' / 'icon.png', root / 'ToolboxDrawing' / 'AppIcon.png')
 with (root / 'ToolboxDrawing' / 'Info.plist').open('wb') as f:
     plistlib.dump(info, f)
-ids = {name: f'{i:024X}' for i, name in enumerate(['project', 'main', 'sources', 'products', 'target', 'product', 'phase', 'appref', 'storeref', 'appbuild', 'storebuild', 'projectconfigs', 'targetconfigs', 'pd', 'pr', 'td', 'tr'], 1)}
+ids = {name: f'{i:024X}' for i, name in enumerate(['project', 'main', 'sources', 'products', 'target', 'product', 'phase', 'appref', 'storeref', 'appbuild', 'storebuild', 'projectconfigs', 'targetconfigs', 'pd', 'pr', 'td', 'tr', 'resources', 'iconref', 'iconbuild'], 1)}
 i = ids
 settings = 'SDKROOT = iphoneos; IPHONEOS_DEPLOYMENT_TARGET = 16.0; CLANG_ENABLE_MODULES = YES; SWIFT_VERSION = 5.0;'
 targetsettings = 'PRODUCT_BUNDLE_IDENTIFIER = cn.macpe.agenttoolbox.drawing; PRODUCT_NAME = ToolboxDrawing; INFOPLIST_FILE = ToolboxDrawing/Info.plist; TARGETED_DEVICE_FAMILY = 2; CODE_SIGN_STYLE = Automatic; SUPPORTS_MACCATALYST = NO; SWIFT_EMIT_LOC_STRINGS = YES;'
@@ -29,15 +32,18 @@ text = '''// !$*UTF8*$!
 '''
 text += f'''{i['project']} = {{isa = PBXProject; attributes = {{LastUpgradeCheck = 1600;}}; buildConfigurationList = {i['projectconfigs']}; compatibilityVersion = "Xcode 14.0"; developmentRegion = zh_CN; knownRegions = (en, Base, zh_CN); mainGroup = {i['main']}; productRefGroup = {i['products']}; projectDirPath = ""; projectRoot = ""; targets = ({i['target']});}};
 {i['main']} = {{isa = PBXGroup; children = ({i['sources']}, {i['products']}); sourceTree = "<group>";}};
-{i['sources']} = {{isa = PBXGroup; path = ToolboxDrawing; children = ({i['appref']}, {i['storeref']}); sourceTree = "<group>";}};
+{i['sources']} = {{isa = PBXGroup; path = ToolboxDrawing; children = ({i['appref']}, {i['storeref']}, {i['iconref']}); sourceTree = "<group>";}};
 {i['products']} = {{isa = PBXGroup; children = ({i['product']}); name = Products; sourceTree = "<group>";}};
 {i['product']} = {{isa = PBXFileReference; explicitFileType = wrapper.application; path = ToolboxDrawing.app; sourceTree = BUILT_PRODUCTS_DIR;}};
 {i['appref']} = {{isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = App.swift; sourceTree = "<group>";}};
 {i['storeref']} = {{isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncStore.swift; sourceTree = "<group>";}};
 {i['appbuild']} = {{isa = PBXBuildFile; fileRef = {i['appref']};}};
 {i['storebuild']} = {{isa = PBXBuildFile; fileRef = {i['storeref']};}};
+{i['iconref']} = {{isa = PBXFileReference; lastKnownFileType = image.png; path = AppIcon.png; sourceTree = "<group>";}};
+{i['iconbuild']} = {{isa = PBXBuildFile; fileRef = {i['iconref']};}};
+{i['resources']} = {{isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = ({i['iconbuild']}); runOnlyForDeploymentPostprocessing = 0;}};
 {i['phase']} = {{isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = ({i['appbuild']}, {i['storebuild']}); runOnlyForDeploymentPostprocessing = 0;}};
-{i['target']} = {{isa = PBXNativeTarget; buildConfigurationList = {i['targetconfigs']}; buildPhases = ({i['phase']}); buildRules = (); dependencies = (); name = ToolboxDrawing; productName = ToolboxDrawing; productReference = {i['product']}; productType = "com.apple.product-type.application";}};
+{i['target']} = {{isa = PBXNativeTarget; buildConfigurationList = {i['targetconfigs']}; buildPhases = ({i['phase']}, {i['resources']}); buildRules = (); dependencies = (); name = ToolboxDrawing; productName = ToolboxDrawing; productReference = {i['product']}; productType = "com.apple.product-type.application";}};
 {i['projectconfigs']} = {{isa = XCConfigurationList; buildConfigurations = ({i['pd']}, {i['pr']}); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release;}};
 {i['targetconfigs']} = {{isa = XCConfigurationList; buildConfigurations = ({i['td']}, {i['tr']}); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release;}};
 {i['pd']} = {{isa = XCBuildConfiguration; buildSettings = {{{settings} DEBUG_INFORMATION_FORMAT = dwarf;}}; name = Debug;}};

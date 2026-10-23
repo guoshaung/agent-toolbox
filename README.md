@@ -39,7 +39,7 @@ Agent 工具箱是基于 Electron 的桌面应用，将网页 AI、DeepSeek Harn
 
 完整操作说明见 [功能与操作指南](docs/FEATURES.md)。第三方应用、模型与服务按各自的安装要求和账号权限使用。
 
-**iPad 绘图首版：** 电脑打开「同步绘图」，iPad 在同一 Wi-Fi 下用 Safari 扫码连接；复用原 Toolbox 设备 ID。笔迹和粘贴图片双向同步，支持添加到主屏幕。当前为网页绘图应用，Apple Pencil 真机手感待验证，详见 [连接与功能范围](docs/DRAWING-SYNC.md)。
+**iPad 同步绘图：** 电脑打开「同步绘图」，iPad 在同一 Wi-Fi 下扫码连接，复用原 Toolbox 设备 ID。支持 Safari 绘图与 [PencilKit 原生 iPad 应用](mobile/ipad/README.md)，笔迹和粘贴图片双向同步。网页包含可调压感、平滑笔迹与掌触过滤；原生 IPA 需自行签名安装，Apple Pencil 真机手感待验证。详见 [连接与功能范围](docs/DRAWING-SYNC.md)。
 
 ## 系统主题：选择、应用、恢复
 

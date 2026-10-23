@@ -10,7 +10,7 @@
 
 复用 `localsend.json` 的持久 ID、四位编号与设备名，不重新生成设备身份。编号用于辨认设备；二维码额外包含仅绘图服务使用的随机凭据。首次仍需二维码或电脑地址：Safari 不能单凭编号发现局域网内的电脑。多网卡时可在配对面板选择地址并复制。
 
-首版是 Safari 网页绘图应用，不是通过 App Store 安装的原生 iPadOS 应用。电脑需保持 Toolbox 和绘图连接运行；没有云中继，跨网络需要两台设备能通过 VPN 等方式互相访问。服务使用局域网 HTTP，应在可信网络使用；未自动配置公网端口、开机项或防火墙规则。
+支持 Safari 网页绘图，以及独立的 [PencilKit 原生 iPad 应用](../mobile/ipad/README.md)。原生版最低 iPadOS 16，未上架 App Store；构建的未签名 IPA 需要使用自己的 Apple ID 或开发证书签名后安装。电脑需保持 Toolbox 和绘图连接运行；没有云中继，跨网络需要两台设备能通过 VPN 等方式互相访问。服务使用局域网 HTTP，应在可信网络使用；未自动配置公网端口、开机项或防火墙规则。
 
 ## 绘图功能
 
@@ -23,7 +23,11 @@
 - 导入 PDF 为分页图片底稿，可继续手写批注。单次不超过 20 MB / 30 页；PDF 文字、链接和原始矢量不会保留为可编辑对象。
 - 导出当前纸张 PNG；绘图本 JSON 备份包含全部页、对象、图片和待同步操作。首版尚无 JSON 备份导入界面，请同时保留电脑数据目录。
 
-Apple Pencil 真机压感、延迟及掌触体验仍需在实际 iPad 上验证。普通 Pointer Events 是兼容路径；浏览器不提供合并事件时自动回退。支持压力输入不等于已经完成 Apple Pencil 真机验收。
+网页增强：笔迹采用可调压感曲线和平滑轮廓；预览通过 requestAnimationFrame 合并绘制，已完成的整页笔迹缓存在独立画布，不因每个笔移动事件重复绘制。预测点仅用于瞬时预览，不进入保存与同步。旧笔迹保留原有渲染方式。
+
+触屏默认仅 Pencil 绘图；Pencil 接管时取消未完成的手指操作，落笔与抬笔后 650 ms 内拒绝掌触导航，宽接触及第三指阻断缩放。两指正常接触用于平移和缩放；可显式关闭「仅 Pencil」允许手指绘制。pointercancel、丢失捕获和焦点离开不会将未确认的临时笔迹保存为完成笔迹。笔刷参数在落笔时锁定，避免一次书写中颜色或粗细突变。
+
+原生版用 `PKCanvasView` / `PKToolPicker` 处理笔输入和掌触，保留 PencilKit 原始笔迹并附跨端点数据。跨端移动笔迹后清除原生原位置数据，避免返回 iPad 时跳回旧位置。实际 Apple Pencil 压感、延迟及掌触体验仍需真机验证，不能用鼠标事件或模拟器代替。
 
 ## 保存与同步
 
@@ -45,6 +49,6 @@ Apple Pencil 真机压感、延迟及掌触体验仍需在实际 iPad 上验证�
 
 自动化服务测试覆盖身份复用、鉴权、来源限制、图片解码、持久化失败、操作去重、重连与 SSE。隔离 Electron 双窗口联调覆盖并发笔迹、压力数据、图片、撤销/重做、离线补传、多页、PDF 底稿和桌面 iframe 嵌入；使用临时数据，不修改实际用户配置。
 
-这是独立实现的手写同步工作流。Goodnotes 的手写识别、搜索、自动形状整理、多笔记本管理、原生 PencilKit 手感与 PDF 矢量导出尚未实现；没有复用其二进制、资源或私有服务。
+这是独立实现的手写同步工作流。Goodnotes 的手写识别、搜索、自动形状整理、多笔记本管理与 PDF 矢量导出尚未实现；原生版已接入 PencilKit，实际手感待真机验收。没有复用 Goodnotes 二进制、资源或私有服务。
 
 参考：[Pointer Events](https://developer.mozilla.org/en-US/docs/Web/API/Pointer_events)、[压力值](https://developer.mozilla.org/en-US/docs/Web/API/PointerEvent/pressure)、[Apple 的 iPad 网页应用说明](https://support.apple.com/en-bw/guide/ipad/ipad8f1f7a29/ipados)。
