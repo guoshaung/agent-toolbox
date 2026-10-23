@@ -25,6 +25,8 @@ final class PaperView: UIView {
 }
 
 @MainActor final class DrawingController: UIViewController, PKCanvasViewDelegate, UIScrollViewDelegate, UIDocumentPickerDelegate, PKToolPickerObserver {
+    struct Edit { let forward: [[String: Any]]; let reverse: [[String: Any]] }
+    var undoEdits = [Edit](), redoEdits = [Edit]()
     let store = SyncStore(), canvas = PKCanvasView(), scroll = UIScrollView(), stage = UIView(), paper = PaperView(), picker = PKToolPicker()
     let pageControl = UIButton(type: .system), statusLabel = UILabel()
     var page = "first", renderedPage = "", rendered = [String: String](), drawingActive = false, applying = false, refreshAfterDrawing = false
@@ -74,7 +76,7 @@ final class PaperView: UIView {
         let drawing = PKDrawing(strokes: strokes)
         if canvas.drawing.dataRepresentation() != drawing.dataRepresentation() { applying = true; canvas.drawing = drawing; applying = false }
         rendered = mapping
-        if renderedPage != page { canvas.undoManager?.removeAllActions(); renderedPage = page; fit() }
+        if renderedPage != page { canvas.undoManager?.removeAllActions(); undoEdits.removeAll(); redoEdits.removeAll(); renderedPage = page; fit() }
         var backgrounds = [(CGRect, UIImage)]()
         for object in objects.filter({ $0["type"] as? String == "image" }).sorted(by: { ($0["background"] as? Bool ?? false) && !($1["background"] as? Bool ?? false) }) {
             guard let asset = object["asset"] as? String else { continue }
@@ -106,7 +108,16 @@ final class PaperView: UIView {
             let retained = Set(next.values)
             for id in rendered.values where !retained.contains(id) { changes.append(["kind": "remove", "target": id]) }
             // Enqueue before changing the baseline, so disk/network failures cannot erase the local draft.
-            if !changes.isEmpty { let previous = rendered; rendered = next; do { try store.enqueue(changes) } catch { rendered = previous; throw error } }
+            if !changes.isEmpty {
+                let inverse: [[String: Any]] = changes.reversed().compactMap { change in
+                    if change["kind"] as? String == "remove", let id = change["target"] as? String, let value = store.objects[id] { return ["kind": "put", "value": value] }
+                    if let value = change["value"] as? [String: Any], let id = value["id"] as? String { return ["kind": "remove", "target": id] }
+                    return nil
+                }
+                let previous = rendered; rendered = next
+                do { try store.enqueue(changes); undoEdits.append(Edit(forward: changes, reverse: inverse)); if undoEdits.count > 100 { undoEdits.removeFirst() }; redoEdits.removeAll() }
+                catch { rendered = previous; throw error }
+            }
             if refreshAfterDrawing { refreshAfterDrawing = false; refresh() }
         } catch { fail(error) }
     }
@@ -116,8 +127,14 @@ final class PaperView: UIView {
     }
     @objc func background() { saveWork?.cancel(); drawingActive = false; publish(); store.stop() }
     @objc func foreground() { store.start() }
-    @objc func undo() { canvas.undoManager?.undo() }
-    @objc func redo() { canvas.undoManager?.redo() }
+    @objc func undo() {
+        saveWork?.cancel(); publish(); guard let edit = undoEdits.popLast() else { return }
+        do { try store.enqueue(edit.reverse); redoEdits.append(edit); refresh() } catch { undoEdits.append(edit); fail(error) }
+    }
+    @objc func redo() {
+        saveWork?.cancel(); publish(); guard let edit = redoEdits.popLast() else { return }
+        do { try store.enqueue(edit.forward); undoEdits.append(edit); refresh() } catch { redoEdits.append(edit); fail(error) }
+    }
     @objc func pair() {
         let alert = UIAlertController(title: "连接电脑 Toolbox", message: "同一 Wi-Fi 下，粘贴电脑「同步绘图」里的完整配对地址，或扫描二维码。", preferredStyle: .alert)
         alert.addTextField { $0.placeholder = "http://电脑地址:43128/#id=…&token=…"; $0.autocapitalizationType = .none; $0.autocorrectionType = .no }
