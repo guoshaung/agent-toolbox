@@ -16,7 +16,7 @@ let history = [], future = [], imageCache = new Map(), saveTimer, pendingLive = 
 const touchPoints = new Map();
 const Ink = ToolboxInk;
 const inputGuard = new Ink.InputGuard({ pencilOnly: navigator.maxTouchPoints > 1 });
-let inkSettings = { smoothing: .35, sensitivity: 1 }, predicted = [], frameScheduled = false, baseDirty = true, basePage = '';
+let inkSettings = { smoothing: .35, sensitivity: 1 }, predicted = [], frameScheduled = false, baseDirty = true, basePage = '', paperScale = 1;
 const paperCache = document.createElement('canvas'); paperCache.width = PAGE_W; paperCache.height = PAGE_H;
 const paperContext = paperCache.getContext('2d');
 $('pencil').checked = inputGuard.pencilOnly;
@@ -120,20 +120,22 @@ function draw(invalidate = true) {
 }
 function drawNow() {
   const dpr = Math.min(devicePixelRatio || 1, 2), w = canvas.clientWidth, h = canvas.clientHeight;
+  const resolution = Math.min(3, Math.max(1, Math.ceil(zoom * dpr)));
+  if (resolution !== paperScale) { paperScale = resolution; paperCache.width = PAGE_W * paperScale; paperCache.height = PAGE_H * paperScale; baseDirty = true; }
   if (canvas.width !== Math.round(w * dpr) || canvas.height !== Math.round(h * dpr)) { canvas.width = Math.round(w * dpr); canvas.height = Math.round(h * dpr); }
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.clearRect(0, 0, w, h); ctx.translate(pan.x, pan.y); ctx.scale(zoom, zoom);
   if (baseDirty || basePage !== page) {
     // Cache completed ink. Pointer previews do not repaint the notebook.
     renderTo(paperContext, () => paintPage(true)); baseDirty = false; basePage = page;
   }
-  ctx.drawImage(paperCache, 0, 0);
+  ctx.drawImage(paperCache, 0, 0, PAGE_W, PAGE_H);
   for (const v of live.values()) if (Date.now() - v.at < 4000 && v.value.page === page) paint(v.value);
   if (pointer && points.length) paint({ ...currentStroke(), points: points.concat(predicted) });
   if (lasso.length) { ctx.beginPath(); ctx.moveTo(...lasso[0]); lasso.forEach(p => ctx.lineTo(...p)); ctx.strokeStyle = '#457c99'; ctx.lineWidth = 1 / zoom; ctx.setLineDash([5 / zoom, 4 / zoom]); ctx.stroke(); ctx.setLineDash([]); }
   for (const object of visibleObjects().filter(o => selection.includes(o.id))) { const b = box(object); ctx.strokeStyle = '#457c99'; ctx.lineWidth = 1 / zoom; ctx.strokeRect(b.x - 4, b.y - 4, b.w + 8, b.h + 8); }
   $('hint').hidden = visibleObjects().length > 0 || !!pointer; $('zoom').textContent = Math.round(zoom * 100) + '%';
 }
-function renderTo(target, action) { const original = ctx; ctx = target; try { ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.clearRect(0, 0, PAGE_W, PAGE_H); action(); } finally { ctx = original; } }
+function renderTo(target, action) { const original = ctx; ctx = target; try { ctx.setTransform(paperScale, 0, 0, paperScale, 0, 0); ctx.clearRect(0, 0, PAGE_W, PAGE_H); action(); } finally { ctx = original; } }
 function paintPage(exporting = false) {
   ctx.fillStyle = '#fffefb'; ctx.fillRect(0, 0, PAGE_W, PAGE_H); ctx.save(); ctx.beginPath(); ctx.rect(0, 0, PAGE_W, PAGE_H); ctx.clip();
   const paper = state.pages[page]?.paper; ctx.strokeStyle = '#dce5e9'; ctx.fillStyle = '#c9d8df'; ctx.lineWidth = .6;
