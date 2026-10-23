@@ -16,8 +16,8 @@ final class PaperView: UIView {
     var paper = "dots" { didSet { setNeedsDisplay() } }
     var images: [(CGRect, UIImage)] = [] { didSet { setNeedsDisplay() } }
     override func draw(_ rect: CGRect) {
-        UIColor(red: 1, green: .995, blue: .985, alpha: 1).setFill(); UIRectFill(bounds)
-        let path = UIBezierPath(); UIColor(red: .84, green: .89, blue: .92, alpha: 1).setStroke(); path.lineWidth = .6
+        UIColor(red: 1, green: 0.995, blue: 0.985, alpha: 1).setFill(); UIRectFill(bounds)
+        let path = UIBezierPath(); UIColor(red: 0.84, green: 0.89, blue: 0.92, alpha: 1).setStroke(); path.lineWidth = 0.6
         if paper == "grid" || paper == "lines" { for y in stride(from: 32, to: 1584, by: 32) { path.move(to: CGPoint(x: 0, y: y)); path.addLine(to: CGPoint(x: 1120, y: y)) }; if paper == "grid" { for x in stride(from: 32, to: 1120, by: 32) { path.move(to: CGPoint(x: x, y: 0)); path.addLine(to: CGPoint(x: x, y: 1584)) } }; path.stroke() }
         if paper == "dots" { UIColor.systemGray3.setFill(); for x in stride(from: 32, to: 1120, by: 32) { for y in stride(from: 32, to: 1584, by: 32) { UIBezierPath(ovalIn: CGRect(x: Double(x), y: Double(y), width: 1.5, height: 1.5)).fill() } } }
         for (frame, image) in images { image.draw(in: frame) }
@@ -36,7 +36,7 @@ final class PaperView: UIView {
         pageControl.setTitle("纸张 ▾", for: .normal); pageControl.addTarget(self, action: #selector(pages), for: .touchUpInside)
         statusLabel.font = .systemFont(ofSize: 12); statusLabel.textColor = .secondaryLabel
         let bar = UIStackView(arrangedSubviews: [pageControl, statusLabel]); bar.spacing = 20; bar.translatesAutoresizingMaskIntoConstraints = false; view.addSubview(bar)
-        scroll.translatesAutoresizingMaskIntoConstraints = false; scroll.backgroundColor = UIColor(white: .93, alpha: 1); scroll.delegate = self; scroll.minimumZoomScale = .2; scroll.maximumZoomScale = 4; scroll.panGestureRecognizer.minimumNumberOfTouches = 2; scroll.delaysContentTouches = false; scroll.canCancelContentTouches = false
+        scroll.translatesAutoresizingMaskIntoConstraints = false; scroll.backgroundColor = UIColor(white: 0.93, alpha: 1); scroll.delegate = self; scroll.minimumZoomScale = 0.2; scroll.maximumZoomScale = 4; scroll.panGestureRecognizer.minimumNumberOfTouches = 2; scroll.delaysContentTouches = false; scroll.canCancelContentTouches = false
         view.addSubview(scroll); NSLayoutConstraint.activate([bar.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 8), bar.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 20), bar.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -20), bar.heightAnchor.constraint(equalToConstant: 32), scroll.topAnchor.constraint(equalTo: bar.bottomAnchor, constant: 8), scroll.leadingAnchor.constraint(equalTo: view.leadingAnchor), scroll.trailingAnchor.constraint(equalTo: view.trailingAnchor), scroll.bottomAnchor.constraint(equalTo: view.bottomAnchor)])
         stage.frame = CGRect(x: 0, y: 0, width: 1120, height: 1584); scroll.addSubview(stage); scroll.contentSize = stage.bounds.size
         paper.frame = stage.bounds; paper.isUserInteractionEnabled = false; stage.addSubview(paper)
@@ -50,7 +50,7 @@ final class PaperView: UIView {
     override func viewDidAppear(_ animated: Bool) { super.viewDidAppear(animated); canvas.becomeFirstResponder(); picker.setVisible(true, forFirstResponder: canvas); if store.base == nil { pair() } }
     override func viewDidLayoutSubviews() { super.viewDidLayoutSubviews(); if scroll.zoomScale == 1 && renderedPage.isEmpty { fit() } }
     func viewForZooming(in scrollView: UIScrollView) -> UIView? { stage }
-    func fit() { scroll.zoomScale = max(.2, min(1, (scroll.bounds.width - 24) / 1120)); scroll.contentOffset = .zero }
+    func fit() { scroll.zoomScale = max(0.2, min(1, (scroll.bounds.width - 24) / 1120)); scroll.contentOffset = .zero }
     func fail(_ error: Error) { let alert = UIAlertController(title: "绘图本", message: error.localizedDescription, preferredStyle: .alert); alert.addAction(UIAlertAction(title: "好", style: .default)); if presentedViewController == nil { present(alert, animated: true) }; statusLabel.text = error.localizedDescription }
     func hash(_ data: Data) -> String { SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined() }
     func values() -> [[String: Any]] { store.objects.values.filter { $0["page"] as? String == page } }
@@ -59,7 +59,7 @@ final class PaperView: UIView {
         if let ink = object["ink"] as? [String: Any], let encoded = ink["data"] as? String, let data = Data(base64Encoded: encoded), let drawing = try? PKDrawing(data: data), drawing.strokes.count == 1 { return drawing.strokes[0] }
         guard let points = object["points"] as? [[Double]], !points.isEmpty else { return nil }
         let x = object["x"] as? Double ?? 0, y = object["y"] as? Double ?? 0, width = object["width"] as? Double ?? 3, marker = object["tool"] as? String == "marker"
-        let controls = points.enumerated().map { i, p in PKStrokePoint(location: CGPoint(x: p[0] + x, y: p[1] + y), timeOffset: Double(i) / 120, size: CGSize(width: width * (marker ? 3 : .25 + p[2] * .75), height: width * (marker ? 3 : .25 + p[2] * .75)), opacity: marker ? .22 : 1, force: p[2], azimuth: 0, altitude: .pi / 2) }
+        let controls = points.enumerated().map { i, p in PKStrokePoint(location: CGPoint(x: p[0] + x, y: p[1] + y), timeOffset: Double(i) / 120, size: CGSize(width: width * (marker ? 3 : 0.25 + p[2] * 0.75), height: width * (marker ? 3 : 0.25 + p[2] * 0.75)), opacity: marker ? 0.22 : 1, force: p[2], azimuth: 0, altitude: .pi / 2) }
         return PKStroke(ink: PKInk(marker ? .marker : .pen, color: color(object["color"] as? String ?? "#26384d")), path: PKStrokePath(controlPoints: controls, creationDate: Date(timeIntervalSince1970: 0)))
     }
     func refresh() {
@@ -86,7 +86,7 @@ final class PaperView: UIView {
     func canvasViewDidBeginUsingTool(_ canvasView: PKCanvasView) { drawingActive = true; saveWork?.cancel(); pageControl.isEnabled = false }
     func canvasViewDidEndUsingTool(_ canvasView: PKCanvasView) { drawingActive = false; scheduleSave() }
     func canvasViewDrawingDidChange(_ canvasView: PKCanvasView) { if !applying { scheduleSave() } }
-    func scheduleSave() { saveWork?.cancel(); let work = DispatchWorkItem { [weak self] in guard let self, !drawingActive else { return }; publish() }; saveWork = work; DispatchQueue.main.asyncAfter(deadline: .now() + .18, execute: work) }
+    func scheduleSave() { saveWork?.cancel(); let work = DispatchWorkItem { [weak self] in guard let self, !drawingActive else { return }; publish() }; saveWork = work; DispatchQueue.main.asyncAfter(deadline: .now() + 0.18, execute: work) }
     func publish() {
         let drawing = canvas.drawing; var next = [String: String](), changes = [[String: Any]]()
         do {
@@ -97,7 +97,7 @@ final class PaperView: UIView {
                 let id = UUID().uuidString, controls = Array(stroke.path.interpolatedPoints(by: .distance(2)))
                 guard !controls.isEmpty, controls.count <= 19000 else { throw DrawingError.message("单笔过长，请分段书写") }
                 let maxWidth = max(0.2, min(60, controls.map { Double(max($0.size.width, $0.size.height)) }.max() ?? 3))
-                let samples = controls.map { point -> [Double] in let p = point.location.applying(stroke.transform); return [Double(p.x), Double(p.y), max(0, min(1, (Double(point.size.width) / maxWidth - .18) / .82))] }
+                let samples = controls.map { point -> [Double] in let p = point.location.applying(stroke.transform); return [Double(p.x), Double(p.y), max(0, min(1, (Double(point.size.width) / maxWidth - 0.18) / 0.82))] }
                 var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0; stroke.ink.color.getRed(&r, green: &g, blue: &b, alpha: &a)
                 let color = String(format: "#%02x%02x%02x", Int(r * 255), Int(g * 255), Int(b * 255))
                 let object: [String: Any] = ["id": id, "page": page, "type": "stroke", "tool": stroke.ink.inkType == .marker ? "marker" : "pen", "color": color, "x": 0, "y": 0, "width": stroke.ink.inkType == .marker ? maxWidth / 3 : maxWidth, "points": samples, "style": ["engine": "ribbon-v1", "smoothing": 0.0, "sensitivity": 1.0], "ink": ["format": "pencilkit-v1", "data": data.base64EncodedString()]]
