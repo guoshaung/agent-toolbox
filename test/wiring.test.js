@@ -31,6 +31,10 @@ const PRELOADS = ALL.filter((f) => /preload[^/\\]*\.js$/.test(f));
 const MAIN_SIDE = ALL.filter((f) => !PRELOADS.includes(f) && /\.(js|mjs)$/.test(f))
   .map((f) => fs.readFileSync(f, 'utf8')).join('\n');
 const HANDLED = new Set([...MAIN_SIDE.matchAll(/ipcMain\.(?:handle|on)\('([^']+)'/g)].map((m) => m[1]));
+// Modules register literal operations through a local authenticated handle wrapper.
+for (const channel of MAIN_SIDE.matchAll(/handle\('(drawing:[^']+)'/g)) HANDLED.add(channel[1]);
+const beautySource = fs.readFileSync(path.join(ROOT, 'src/main/system-beauty.js'), 'utf8');
+for (const channel of beautySource.matchAll(/\bhandle\('([^']+)'/g)) HANDLED.add(`systemBeauty:${channel[1]}`);
 const SENT = new Set([...MAIN_SIDE.matchAll(/\.send\('([^']+)'/g)].map((m) => m[1]));
 
 /** 解析 exposeInMainWorld('name', {...})：顶层键（含重复）、二级方法名 */

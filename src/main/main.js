@@ -23,6 +23,7 @@ const { installCoachExtension } = require('./coach-install');
 const litFetch = require('./lit-fetch');
 const { registerNotebookIpc } = require('./notebook');
 const { registerSystemBeautyIpc } = require('./system-beauty');
+const { registerDrawingIpc } = require('./drawing-sync');
 const { registerBiblioIpc } = require('./biblio');
 const { registerDocSearchIpc } = require('./doc-search');
 const { registerShelfIpc, stopAllShelfApps, start: startShelfTool, stop: stopShelfTool, status: shelfStatus, tail: shelfTail, resolveToolCommand } = require('./app-shelf');
@@ -1903,6 +1904,7 @@ function registerIpc() {
   // 代码记事本：读取 Understand-Anything 的知识图谱 + 按行号回读源码
   registerNotebookIpc(ipcMain, { dialog, getWindow: () => mainWindow, getUserDataPath: () => app.getPath('userData') });
   registerSystemBeautyIpc(ipcMain, { dialog, shell, getWindow: () => mainWindow, getUserDataPath: () => app.getPath('userData') });
+  registerDrawingIpc(ipcMain, { app });
   registerContainerIpc(ipcMain, { shell, getUserDataPath: () => app.getPath('userData') });
   // 鼠标侧键 → 切换应用（macOS，swiftc 编译的 CGEventTap 小助手）
   registerMouseSwitchIpc(ipcMain, { getUserDataPath: () => app.getPath('userData') });

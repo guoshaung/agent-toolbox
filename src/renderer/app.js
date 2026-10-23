@@ -216,7 +216,7 @@ const libraryPanel = h('section', { class: 'rail-library', hidden: true },
 // 「更多」轮盘：按类别分圈，工具在第二圈，有子页的（科研 / 专注）第三圈
 const WHEEL_GROUPS = [
   { id: 'learn', label: '学习科研', icon: 'graduation', color: '#3fbf87', tools: ['research', 'study', 'docs', 'terms', 'coach', 'skills', 'typing'] },
-  { id: 'make', label: '写作代码', icon: 'pen', color: '#ff9a6b', tools: ['notebook', 'notes', 'git', 'api', 'appgen', 'aipexbase', 'netlog', 'webtools'] },
+  { id: 'make', label: '写作代码', icon: 'pen', color: '#ff9a6b', tools: ['drawing', 'notebook', 'notes', 'git', 'api', 'appgen', 'aipexbase', 'netlog', 'webtools'] },
   { id: 'ai', label: 'AI 伙伴', icon: 'bot', color: '#c9a7ff', tools: ['ask', 'tavern', 'voicebox', 'digital-human', 'avatar-rig', 'voice', 'gesture', 'monologue'] },
   { id: 'life', label: '生活效率', icon: 'bowl', color: '#f0b93d', tools: ['home', 'tasks', 'focus', 'game', 'flylab', 'stickers', 'tidy', 'container', 'eat', 'history', 'video', 'vault'] },
   { id: 'device', label: '设备外观', icon: 'smartphone', color: '#7aa8ff', tools: ['remote', 'dsh', 'controls', 'dock', 'pet', 'appearance', 'system-beauty'] },

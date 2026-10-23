@@ -45,10 +45,11 @@ import featureLab from '../tools/feature-lab/index.js';
 import localsend from '../tools/localsend/index.js';
 import mcpTool from '../tools/mcp/index.js';
 import gameagent from '../tools/gameagent/index.js';
+import drawing from '../tools/drawing/index.js';
 
 /**
  * 工具注册表 —— 需求第 5 条「以后还要更多工具」就靠这里。
  * 加一个工具：写 tools/<id>/index.js，默认导出 { id, title, icon, create(root, ctx) }，
  * 然后在这个数组里加一行。详见 docs/ADD-A-TOOL.md。
  */
-export const TOOLS = [home, ask, docs, typing, focus, game, flylab, study, notebook, notes, tidy, stickers, webtools, vault, chatAnalyze, api, git, netlog, monologue, eat, container, dsh, aipexbase, appgen, tavern, voicebox, digitalHuman, avatarRig, pet, history, video, research, coach, terms, dock, skills, remote, controls, appearance, systemBeauty, voice, gesture, gameagent, tasks, featureLab, localsend, mcpTool, settings];
+export const TOOLS = [home, ask, docs, typing, focus, game, flylab, study, notebook, notes, tidy, stickers, webtools, vault, chatAnalyze, api, git, netlog, monologue, eat, container, dsh, aipexbase, appgen, tavern, voicebox, digitalHuman, avatarRig, pet, history, video, research, coach, terms, dock, skills, remote, controls, appearance, systemBeauty, voice, gesture, gameagent, tasks, featureLab, localsend, mcpTool, drawing, settings];

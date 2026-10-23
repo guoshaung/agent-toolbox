@@ -6,6 +6,12 @@ const { contextBridge, ipcRenderer, webUtils } = require('electron');
  * 页面里拿不到。工具代码统一通过 window.toolbox 访问。
  */
 contextBridge.exposeInMainWorld('toolbox', {
+  drawing: {
+    status: () => ipcRenderer.invoke('drawing:status'),
+    start: () => ipcRenderer.invoke('drawing:start'),
+    stop: () => ipcRenderer.invoke('drawing:stop'),
+    rotate: () => ipcRenderer.invoke('drawing:rotate'),
+  },
   platform: process.platform,
 
   systemBeauty: {
