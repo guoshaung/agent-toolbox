@@ -28,7 +28,7 @@ final class PaperView: UIView {
     let store = SyncStore(), canvas = PKCanvasView(), scroll = UIScrollView(), stage = UIView(), paper = PaperView(), picker = PKToolPicker()
     let pageControl = UIButton(type: .system), statusLabel = UILabel()
     var page = "first", renderedPage = "", rendered = [String: String](), drawingActive = false, applying = false, refreshAfterDrawing = false
-    var saveWork: DispatchWorkItem?, imageCache = [String: UIImage](), imageLoads = Set<String>(), oldTool: PKTool?
+    var hasFitted = false; var saveWork: DispatchWorkItem?, imageCache = [String: UIImage](), imageLoads = Set<String>(), oldTool: PKTool?
     override func viewDidLoad() {
         super.viewDidLoad(); title = "Toolbox 绘图本"; view.backgroundColor = .systemGroupedBackground
         navigationItem.leftBarButtonItem = UIBarButtonItem(title: "配对", style: .plain, target: self, action: #selector(pair))
@@ -48,9 +48,9 @@ final class PaperView: UIView {
         refresh(); store.start()
     }
     override func viewDidAppear(_ animated: Bool) { super.viewDidAppear(animated); canvas.becomeFirstResponder(); picker.setVisible(true, forFirstResponder: canvas); if store.base == nil { pair() } }
-    override func viewDidLayoutSubviews() { super.viewDidLayoutSubviews(); if scroll.zoomScale == 1 && renderedPage.isEmpty { fit() } }
+    override func viewDidLayoutSubviews() { super.viewDidLayoutSubviews(); if !hasFitted { fit() } }
     func viewForZooming(in scrollView: UIScrollView) -> UIView? { stage }
-    func fit() { scroll.zoomScale = max(0.2, min(1, (scroll.bounds.width - 24) / 1120)); scroll.contentOffset = .zero }
+    func fit() { guard scroll.bounds.width > 100 else { hasFitted = false; return }; hasFitted = true; scroll.zoomScale = max(0.2, min(1, (scroll.bounds.width - 24) / 1120)); scroll.contentOffset = .zero }
     func fail(_ error: Error) { let alert = UIAlertController(title: "绘图本", message: error.localizedDescription, preferredStyle: .alert); alert.addAction(UIAlertAction(title: "好", style: .default)); if presentedViewController == nil { present(alert, animated: true) }; statusLabel.text = error.localizedDescription }
     func hash(_ data: Data) -> String { SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined() }
     func values() -> [[String: Any]] { store.objects.values.filter { $0["page"] as? String == page } }
