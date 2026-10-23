@@ -48,7 +48,10 @@ class DrawingSync {
     const identity = this.identity(), running = !!this.server?.listening;
     const url = host => `http://${host}:${this.boundPort}/#id=${identity.id}&token=${this.token}`;
     return { enabled: running, identity, clients: this.clients.size, sequence: this.state.seq,
-      desktopUrl: running ? url('127.0.0.1') : '', urls: running ? networkAddresses().map(url) : [] };
+      desktopUrl: running ? url('127.0.0.1') : '', urls: running ? networkAddresses().sort((a, b) => {
+        const rank = address => address.startsWith('192.168.') ? 0 : address.startsWith('10.') ? 1 : /^172\.(1[6-9]|2\d|3[01])\./.test(address) ? 2 : 3;
+        return rank(a) - rank(b);
+      }).map(url) : [] };
   }
   async start() {
     if (this.starting) return this.starting;
@@ -172,13 +175,17 @@ function registerDrawingIpc(ipcMain, { app }) {
   let service;
   const get = () => service ||= new DrawingSync({ userDataDir: app.getPath('userData') });
   const valid = event => { try { const url = new URL(event.senderFrame.url); const { pathToFileURL } = require('node:url'); return url.protocol === 'file:' && url.href.startsWith(pathToFileURL(path.join(__dirname, '../renderer') + path.sep).href); } catch { return false; } };
-  const handle = (channel, action) => ipcMain.handle(channel, async event => {
-    if (!valid(event)) throw Error('仅工具箱本地界面可管理绘图连接'); return action();
+  const handle = (channel, action) => ipcMain.handle(channel, async (event, payload) => {
+    if (!valid(event)) throw Error('仅工具箱本地界面可管理绘图连接'); return action(payload);
   });
   handle('drawing:status', () => get().status());
   handle('drawing:start', async () => { const info = await get().start(); const QRCode = require('qrcode'); return { ...info, qr: info.urls[0] ? await QRCode.toDataURL(info.urls[0], { width: 240, margin: 2 }) : '' }; });
   handle('drawing:stop', () => get().stop());
   handle('drawing:rotate', () => get().rotate());
+  handle('drawing:qr', url => {
+    if (!get().status().urls.includes(url)) throw Error('无效的绘图地址');
+    return require('qrcode').toDataURL(url, { width: 240, margin: 2 });
+  });
   app.on('before-quit', () => { service?.stop().catch(() => {}); });
 }
 module.exports = { DrawingSync, registerDrawingIpc };

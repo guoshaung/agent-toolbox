@@ -25,8 +25,10 @@ export default {
       info.textContent = `设备 #${state.identity.code} · ${state.identity.name} ｜ 笔迹与图片自动同步。停止连接保留绘图本；重新配对会让旧地址失效。`;
       if (state.desktopUrl !== lastUrl) { frame.src = state.desktopUrl; lastUrl = state.desktopUrl; }
       pair.replaceChildren();
-      if (state.qr) pair.append(h('img', { src: state.qr, alt: 'iPad 专用绘图配对二维码', width: 170, height: 170 }));
+      const qr = h('img', { src: state.qr || '', alt: 'iPad 专用绘图配对二维码', width: 170, height: 170 });
+      if (state.qr) pair.append(qr);
       const urls = h('select', { class: 'field', 'aria-label': '电脑网络地址' }, state.urls.map(url => h('option', { value: url }, url.split('/#')[0])));
+      urls.addEventListener('change', async () => { const selected = urls.value; try { const data = await window.toolbox.drawing.qr(selected); if (urls.value === selected) qr.src = data; } catch (e) { toast(e.message, 'bad'); } });
       pair.append(h('div', {}, h('strong', {}, `在 iPad 上连接 #${state.identity.code}`), h('p', {}, '使用 iPad 相机扫码，用 Safari 打开。也可复制地址发给自己。'), urls,
         h('button', { class: 'btn', onclick: async () => { await window.toolbox.clipboard.write(urls.value); toast('绘图配对地址已复制'); } }, '复制配对地址'),
         h('p', { class: 'faint' }, '多网卡时请选择 iPad 可访问的 Wi-Fi 地址。首次可能需允许 Windows 防火墙的专用网络访问。'),

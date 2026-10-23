@@ -11,6 +11,7 @@ contextBridge.exposeInMainWorld('toolbox', {
     start: () => ipcRenderer.invoke('drawing:start'),
     stop: () => ipcRenderer.invoke('drawing:stop'),
     rotate: () => ipcRenderer.invoke('drawing:rotate'),
+    qr: (url) => ipcRenderer.invoke('drawing:qr', url),
   },
   platform: process.platform,
 
