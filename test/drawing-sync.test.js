@@ -39,6 +39,20 @@ test('two peers retain independent strokes, removal and replay remain ordered', 
   assert.equal(service.commit(stroke('from-ipad')).duplicate, true);
   assert.equal(service.state.seq, 3);
 });
+test('pressure brush settings and opaque PencilKit data survive persistence without changing old strokes', t => {
+  const { root, service } = fixture(t), original = stroke(); service.commit(original);
+  const op = stroke('native-ink');
+  op.value.style = { engine: 'ribbon-v1', smoothing: .35, sensitivity: .8 };
+  op.value.ink = { format: 'pencilkit-v1', data: Buffer.from('opaque native drawing').toString('base64') };
+  service.commit(op);
+  const reopened = new DrawingSync({ userDataDir: root, port: 0 });
+  assert.deepEqual(reopened.state.objects['native-ink'].style, op.value.style);
+  assert.deepEqual(reopened.state.objects['native-ink'].ink, op.value.ink);
+  assert.equal(reopened.state.objects.stroke1.style, undefined);
+  for (const override of [{ style: { ...op.value.style, sensitivity: 20 } }, { ink: { format: 'pencilkit-v1', data: '../not-base64!' } }]) {
+    const bad = stroke('bad-' + Math.random().toString(16).slice(2)); Object.assign(bad.value, override); assert.throws(() => service.commit(bad));
+  }
+});
 test('invalid operations, excessive coordinates, prototype keys and disk failure do not acknowledge or change state', t => {
   const { service } = fixture(t);
   for (const change of [{ points: [[0, 0, 3]] }, { x: Infinity }, { id: '__proto__' }, { page: 'missing' }, { asset: '../../config.json', type: 'image' }]) {

@@ -20,7 +20,16 @@ function objectValue(v, assets) {
   const base = { id: v.id, page: v.page, x: finite(v.x, -10000, 10000), y: finite(v.y, -10000, 10000) };
   if (v.type === 'stroke') {
     if (!['pen', 'marker'].includes(v.tool) || !/^#[\da-f]{6}$/i.test(v.color) || !Array.isArray(v.points) || !v.points.length || v.points.length > 20000) throw Error('笔迹无效');
-    return { ...base, type: 'stroke', tool: v.tool, color: v.color, width: finite(v.width, 0.2, 60), points: v.points.map(p => {
+    const extra = {};
+    if (v.style) {
+      if (v.style.engine !== 'ribbon-v1') throw Error('笔刷版本无效');
+      extra.style = { engine: 'ribbon-v1', smoothing: finite(v.style.smoothing, 0, .85), sensitivity: finite(v.style.sensitivity, .35, 2.5) };
+    }
+    if (v.ink) {
+      if (v.ink.format !== 'pencilkit-v1' || typeof v.ink.data !== 'string' || v.ink.data.length > 700000 || !/^[A-Za-z0-9+/]+={0,2}$/.test(v.ink.data)) throw Error('原生笔迹无效');
+      extra.ink = { format: 'pencilkit-v1', data: v.ink.data };
+    }
+    return { ...base, ...extra, type: 'stroke', tool: v.tool, color: v.color, width: finite(v.width, 0.2, 60), points: v.points.map(p => {
       if (!Array.isArray(p) || p.length !== 3) throw Error('笔迹点无效');
       return [finite(p[0], -10000, 10000), finite(p[1], -10000, 10000), finite(p[2], 0, 1)];
     }) };
@@ -125,7 +134,7 @@ class DrawingSync {
     const host = (req.headers.host || '').split(':')[0].toLowerCase();
     if (!['127.0.0.1', 'localhost', ...networkAddresses(), os.hostname().toLowerCase() + '.local'].includes(host)) return this.json(res, 403, { error: '无效的主机地址' });
     if (req.headers.origin && req.headers.origin !== `http://${req.headers.host}`) return this.json(res, 403, { error: '不允许跨站请求' });
-    const staticFiles = { '/': ['index.html', 'text/html'], '/app.js': ['app.js', 'text/javascript'], '/style.css': ['style.css', 'text/css'] };
+    const staticFiles = { '/': ['index.html', 'text/html'], '/app.js': ['app.js', 'text/javascript'], '/ink.js': ['ink.js', 'text/javascript'], '/style.css': ['style.css', 'text/css'] };
     if (req.method === 'GET' && ['/pdfjs/pdf.mjs', '/pdfjs/pdf.worker.mjs'].includes(url.pathname)) {
       res.writeHead(200, { 'Content-Type': 'text/javascript', 'Cache-Control': 'no-store' });
       return fs.createReadStream(path.join(__dirname, '../../node_modules/pdfjs-dist/build', path.basename(url.pathname))).on('error', () => res.end()).pipe(res);

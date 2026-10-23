@@ -7,13 +7,27 @@ const uuid = () => Array.from(crypto.getRandomValues(new Uint8Array(16)), b => b
 const client = uuid(), key = id || 'unpaired';
 const auth = { Authorization: 'Bearer ' + token, 'X-Toolbox-Id': id || '' };
 const query = '?id=' + encodeURIComponent(id || '') + '&token=' + encodeURIComponent(token || '');
-const canvas = $('canvas'), ctx = canvas.getContext('2d');
+const canvas = $('canvas'); let ctx = canvas.getContext('2d');
 const PAGE_W = 1120, PAGE_H = 1584;
 let state = { pages: {}, objects: {}, seq: 0 }, page = 'first', tool = 'pen', zoom = .6, pan = { x: 30, y: 30 };
 let pending = [], live = new Map(), selection = [], gesture = null, pointer = null, points = [], lasso = [], dragging = null;
 let online = false, flushing = false, db, eventSource, ready = false, fitted = false, liveAt = 0, active = true;
 let history = [], future = [], imageCache = new Map(), saveTimer, pendingLive = null, liveSending = false;
 const touchPoints = new Map();
+const Ink = ToolboxInk;
+const inputGuard = new Ink.InputGuard({ pencilOnly: navigator.maxTouchPoints > 1 });
+let inkSettings = { smoothing: .35, sensitivity: 1 }, predicted = [], frameScheduled = false, baseDirty = true, basePage = '';
+const paperCache = document.createElement('canvas'); paperCache.width = PAGE_W; paperCache.height = PAGE_H;
+const paperContext = paperCache.getContext('2d');
+$('pencil').checked = inputGuard.pencilOnly;
+try { const saved = JSON.parse(localStorage.getItem('toolbox-drawing-input') || 'null'); if (saved) { inkSettings.smoothing = Math.max(0, Math.min(.85, Number(saved.smoothing) || 0)); inkSettings.sensitivity = Math.max(.35, Math.min(2.5, Number(saved.sensitivity) || 1)); $('pencil').checked = saved.pencilOnly !== false; } } catch { /* Browser storage may be disabled. */ }
+inputGuard.pencilOnly = $('pencil').checked;
+const inputOptions = document.createElement('details'); inputOptions.className = 'ink-options';
+inputOptions.innerHTML = '<summary>笔迹手感</summary><label>平滑 <input id="smoothing" type="range" min="0" max="85" value="35"></label><label>压感 <input id="sensitivity" type="range" min="35" max="250" value="100"></label><small>轻压更粗 ← 压感 → 重压更细<br>Pencil 优先；双指缩放。取消触摸不会留下笔迹。</small>';
+document.querySelector('.settings').append(inputOptions);
+$('smoothing').value = inkSettings.smoothing * 100; $('sensitivity').value = inkSettings.sensitivity * 100;
+function saveInputSettings() { inputGuard.pencilOnly = $('pencil').checked; inkSettings = { smoothing: Number($('smoothing').value) / 100, sensitivity: Number($('sensitivity').value) / 100 }; try { localStorage.setItem('toolbox-drawing-input', JSON.stringify({ ...inkSettings, pencilOnly: inputGuard.pencilOnly })); } catch { /* Drawing persistence uses IndexedDB independently. */ } }
+for (const id of ['pencil', 'smoothing', 'sensitivity']) $(id).addEventListener('change', saveInputSettings);
 function status(text, good = online) { $('status').textContent = text; $('dot').classList.toggle('online', good); }
 function badge() { status(online ? pending.length ? `同步中 · ${pending.length} 项` : '已同步到电脑' : `连接中断 · 待同步 ${pending.length} 项`); }
 function openDb() {
@@ -35,7 +49,7 @@ function overlayPending() { for (const op of pending) apply(op); }
 function visibleObjects() { return Object.values(state.objects).filter(v => v.page === page).sort((a, b) => Number(!!b.background) - Number(!!a.background)); }
 function refreshPages() {
   const list = Object.values(state.pages); if (!list.some(p => p.id === page)) page = list[0]?.id || 'first';
-  $('pages').replaceChildren(...list.map(p => { const b = document.createElement('button'); b.textContent = p.name; b.className = page === p.id ? 'active' : ''; b.onclick = () => { page = p.id; selection = []; refreshPages(); draw(); }; return b; }));
+  $('pages').replaceChildren(...list.map(p => { const b = document.createElement('button'); b.textContent = p.name; b.className = page === p.id ? 'active' : ''; b.onclick = () => { cancelInput(); page = p.id; selection = []; refreshPages(); draw(); }; return b; }));
   $('paper').value = state.pages[page]?.paper || 'dots'; $('pageName').textContent = state.pages[page]?.name || '绘图本';
 }
 function enqueue(changes, remember = true) {
@@ -72,7 +86,7 @@ function connect() {
     refreshPages(); if (!fitted) fit(); draw(); cacheState(); badge(); flush();
   });
   eventSource.addEventListener('operation', event => { const op = JSON.parse(event.data); live.delete(op.client); apply(op); overlayPending(); refreshPages(); draw(); cacheState(); });
-  eventSource.addEventListener('live', event => { const op = JSON.parse(event.data); if (op.client === client) return; if (op.value) live.set(op.client, { value: op.value, at: Date.now() }); else live.delete(op.client); draw(); });
+  eventSource.addEventListener('live', event => { const op = JSON.parse(event.data); if (op.client === client) return; if (op.value) live.set(op.client, { value: op.value, at: Date.now() }); else live.delete(op.client); draw(false); });
   eventSource.onerror = () => { online = false; badge(); };
 }
 function box(o) {
@@ -90,19 +104,36 @@ function paint(o) {
   if (o.tool === 'marker') ctx.globalAlpha = .22;
   const p = o.points; ctx.beginPath();
   if (o.tool === 'marker') { ctx.lineWidth = o.width * 3; ctx.moveTo(o.x + p[0][0], o.y + p[0][1]); for (const v of p) ctx.lineTo(o.x + v[0], o.y + v[1]); ctx.stroke(); }
+  else if (o.style?.engine === 'ribbon-v1') {
+    const geometry = Ink.ribbon(p, o.width, o.style.sensitivity, o.style.smoothing);
+    if (geometry.outline.length > 2) { ctx.moveTo(o.x + geometry.outline[0][0], o.y + geometry.outline[0][1]); for (const v of geometry.outline) ctx.lineTo(o.x + v[0], o.y + v[1]); ctx.closePath(); ctx.fill(); }
+    for (const v of [geometry.centers[0], geometry.centers[geometry.centers.length - 1]]) if (v) { ctx.beginPath(); ctx.arc(o.x + v[0], o.y + v[1], o.width * Ink.pressure(v[2], o.style.sensitivity) / 2, 0, Math.PI * 2); ctx.fill(); }
+  }
   else if (p.length === 1) { ctx.arc(o.x + p[0][0], o.y + p[0][1], o.width * (.25 + p[0][2] * .75) / 2, 0, Math.PI * 2); ctx.fill(); }
   else for (let i = 1; i < p.length; i++) { ctx.beginPath(); ctx.lineWidth = o.width * (.25 + (p[i][2] + p[i - 1][2]) * .375); ctx.moveTo(o.x + p[i - 1][0], o.y + p[i - 1][1]); ctx.lineTo(o.x + p[i][0], o.y + p[i][1]); ctx.stroke(); }
   ctx.restore();
 }
-function draw() {
+function draw(invalidate = true) {
+  if (invalidate) baseDirty = true;
+  if (frameScheduled) return; frameScheduled = true;
+  requestAnimationFrame(() => { frameScheduled = false; drawNow(); });
+}
+function drawNow() {
   const dpr = Math.min(devicePixelRatio || 1, 2), w = canvas.clientWidth, h = canvas.clientHeight;
   if (canvas.width !== Math.round(w * dpr) || canvas.height !== Math.round(h * dpr)) { canvas.width = Math.round(w * dpr); canvas.height = Math.round(h * dpr); }
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.clearRect(0, 0, w, h); ctx.translate(pan.x, pan.y); ctx.scale(zoom, zoom);
-  paintPage();
+  if (baseDirty || basePage !== page) {
+    // Cache completed ink. Pointer previews do not repaint the notebook.
+    renderTo(paperContext, () => paintPage(true)); baseDirty = false; basePage = page;
+  }
+  ctx.drawImage(paperCache, 0, 0);
+  for (const v of live.values()) if (Date.now() - v.at < 4000 && v.value.page === page) paint(v.value);
+  if (pointer && points.length) paint({ ...currentStroke(), points: points.concat(predicted) });
   if (lasso.length) { ctx.beginPath(); ctx.moveTo(...lasso[0]); lasso.forEach(p => ctx.lineTo(...p)); ctx.strokeStyle = '#457c99'; ctx.lineWidth = 1 / zoom; ctx.setLineDash([5 / zoom, 4 / zoom]); ctx.stroke(); ctx.setLineDash([]); }
   for (const object of visibleObjects().filter(o => selection.includes(o.id))) { const b = box(object); ctx.strokeStyle = '#457c99'; ctx.lineWidth = 1 / zoom; ctx.strokeRect(b.x - 4, b.y - 4, b.w + 8, b.h + 8); }
   $('hint').hidden = visibleObjects().length > 0 || !!pointer; $('zoom').textContent = Math.round(zoom * 100) + '%';
 }
+function renderTo(target, action) { const original = ctx; ctx = target; try { ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.clearRect(0, 0, PAGE_W, PAGE_H); action(); } finally { ctx = original; } }
 function paintPage(exporting = false) {
   ctx.fillStyle = '#fffefb'; ctx.fillRect(0, 0, PAGE_W, PAGE_H); ctx.save(); ctx.beginPath(); ctx.rect(0, 0, PAGE_W, PAGE_H); ctx.clip();
   const paper = state.pages[page]?.paper; ctx.strokeStyle = '#dce5e9'; ctx.fillStyle = '#c9d8df'; ctx.lineWidth = .6;
@@ -114,7 +145,7 @@ function paintPage(exporting = false) {
 }
 function fit() { zoom = Math.max(.15, Math.min(1, (canvas.clientWidth - 50) / PAGE_W, (canvas.clientHeight - 40) / PAGE_H)); pan = { x: (canvas.clientWidth - PAGE_W * zoom) / 2, y: 20 }; fitted = true; draw(); }
 function locate(e) { const r = canvas.getBoundingClientRect(); return [(e.clientX - r.left - pan.x) / zoom, (e.clientY - r.top - pan.y) / zoom, e.pointerType === 'pen' ? Math.max(.05, e.pressure) : .5]; }
-function currentStroke() { return { id: pointer?.strokeId || 'live', page, type: 'stroke', tool, x: 0, y: 0, points, color: $('color').value, width: Number($('width').value) }; }
+function currentStroke() { return { id: pointer?.strokeId || 'live', page: pointer?.page || page, type: 'stroke', tool: pointer?.tool || tool, x: 0, y: 0, points, color: pointer?.color || $('color').value, width: pointer?.width || Number($('width').value), style: pointer?.style || { engine: 'ribbon-v1', ...inkSettings } }; }
 function sendLive(value) {
   if (!online) return; pendingLive = value;
   if (liveSending) return; liveSending = true;
@@ -123,35 +154,77 @@ function sendLive(value) {
 function hit(p, b) { return p[0] >= b.x && p[0] <= b.x + b.w && p[1] >= b.y && p[1] <= b.y + b.h; }
 function inside(p, poly) { let result = false; for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) { const a = poly[i], b = poly[j]; if ((a[1] > p[1]) !== (b[1] > p[1]) && p[0] < (b[0] - a[0]) * (p[1] - a[1]) / (b[1] - a[1]) + a[0]) result = !result; } return result; }
 function safe(action) { return (...args) => { try { return Promise.resolve(action(...args)).catch(e => status(e.message, false)); } catch (e) { status(e.message, false); } }; }
+
+function cancelInput() {
+  if (dragging) dragging.forEach(o => { state.objects[o.id] = o; });
+  pointer = null; points = []; predicted = []; lasso = []; dragging = null; gesture = null; sendLive(null); draw();
+}
 canvas.addEventListener('pointerdown', e => {
-  if (!ready || e.button > 0) return; e.preventDefault(); canvas.setPointerCapture(e.pointerId);
-  if (e.pointerType === 'touch') { touchPoints.set(e.pointerId, [e.clientX, e.clientY]); if (touchPoints.size === 2 && pointer?.type !== 'pen') { pointer = null; points = []; lasso = []; if (dragging) dragging.forEach(o => { state.objects[o.id] = o; }); dragging = null; sendLive(null); const [a, b] = [...touchPoints.values()]; gesture = { distance: Math.max(1, Math.hypot(a[0] - b[0], a[1] - b[1])), zoom, center: [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2], pan: { ...pan } }; return; } if ($('pencil').checked && tool !== 'hand' || pointer?.type === 'pen') return; }
+  if (!ready || e.button > 0) return;
+  e.preventDefault();
+  const action = inputGuard.begin(e, performance.now());
+  if (action === 'ignore') { if (inputGuard.touches.size > 2) { gesture = null; touchPoints.clear(); if (pointer?.type === 'touch') cancelInput(); } return; }
+  try { canvas.setPointerCapture(e.pointerId); } catch { /* Synthetic tests have no native pointer capture. */ }
+  if (action === 'pen') { if (pointer?.type !== 'pen') cancelInput(); touchPoints.clear(); }
+  if (e.pointerType === 'touch') {
+    touchPoints.set(e.pointerId, [e.clientX, e.clientY]);
+    if (action === 'gesture' && touchPoints.size === 2) {
+      cancelInput(); const [a, b] = [...touchPoints.values()];
+      gesture = { distance: Math.max(1, Math.hypot(a[0] - b[0], a[1] - b[1])), zoom, center: [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2], pan: { ...pan } }; return;
+    }
+    if (action === 'navigation' && tool !== 'hand') return;
+  }
   if (pointer) return;
-  const p = locate(e); pointer = { id: e.pointerId, type: e.pointerType, start: p, screen: [e.clientX, e.clientY], pan: { ...pan }, strokeId: uuid() };
+  const p = locate(e); pointer = { id: e.pointerId, type: e.pointerType, start: p, screen: [e.clientX, e.clientY], pan: { ...pan }, strokeId: uuid(), page, tool, color: $('color').value, width: Number($('width').value), style: { engine: 'ribbon-v1', ...inkSettings } };
   if (tool === 'pen' || tool === 'marker') points = [p];
   if (tool === 'select') { dragging = visibleObjects().filter(o => selection.includes(o.id)); if (!dragging.some(o => hit(p, box(o)))) { const object = [...visibleObjects()].reverse().find(o => o.type === 'image' && !o.background && hit(p, box(o))); selection = object ? [object.id] : []; dragging = object ? [object] : []; lasso = object ? [] : [p.slice(0, 2)]; } }
-  if (tool === 'eraser') eraseAt(p); draw();
+  if (tool === 'eraser') eraseAt(p); draw(false);
 });
 function eraseAt(p) { const object = [...visibleObjects()].reverse().find(o => { if (o.type !== 'stroke' || !hit(p, box(o))) return false; return o.points.some((q, i) => { if (!i) return Math.hypot(q[0] + o.x - p[0], q[1] + o.y - p[1]) < o.width + 12; const a = o.points[i - 1], dx = q[0] - a[0], dy = q[1] - a[1]; const t = Math.max(0, Math.min(1, ((p[0] - o.x - a[0]) * dx + (p[1] - o.y - a[1]) * dy) / (dx * dx + dy * dy || 1))); return Math.hypot(a[0] + t * dx + o.x - p[0], a[1] + t * dy + o.y - p[1]) < o.width + 12; }); }); if (object && !pending.some(op => op.kind === 'remove' && op.target === object.id)) safe(() => enqueue([{ kind: 'remove', target: object.id }]))(); }
+
 canvas.addEventListener('pointermove', e => {
+  if (inputGuard.blocked.has(e.pointerId)) return;
   if (touchPoints.has(e.pointerId)) touchPoints.set(e.pointerId, [e.clientX, e.clientY]);
-  if (gesture && touchPoints.size === 2 && !pointer?.type?.includes('pen')) { const [a, b] = [...touchPoints.values()], r = canvas.getBoundingClientRect(), center = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2]; zoom = Math.max(.15, Math.min(3, gesture.zoom * Math.hypot(a[0] - b[0], a[1] - b[1]) / gesture.distance)); pan = { x: center[0] - r.left - (gesture.center[0] - r.left - gesture.pan.x) * zoom / gesture.zoom, y: center[1] - r.top - (gesture.center[1] - r.top - gesture.pan.y) * zoom / gesture.zoom }; draw(); return; }
-  if (!pointer || e.pointerId !== pointer.id) return; const p = locate(e);
-  if (tool === 'pen' || tool === 'marker') { let samples; try { samples = e.getCoalescedEvents?.(); } catch { /* HTTP Safari falls back to ordinary Pointer Events. */ } for (const sample of samples?.length ? samples : [e]) if (points.length < 19000) points.push(locate(sample)); if (Date.now() - liveAt > 70) { liveAt = Date.now(); const stroke = currentStroke(); sendLive({ ...stroke, points: points.slice(-300) }); } }
-  if (tool === 'hand') pan = { x: pointer.pan.x + e.clientX - pointer.screen[0], y: pointer.pan.y + e.clientY - pointer.screen[1] };
-  if (tool === 'eraser') eraseAt(p);
-  if (tool === 'select') { if (dragging?.length) for (const o of dragging) state.objects[o.id] = { ...o, x: o.x + p[0] - pointer.start[0], y: o.y + p[1] - pointer.start[1] }; else lasso.push(p.slice(0, 2)); }
-  draw();
+  if (gesture && touchPoints.size === 2 && inputGuard.pen === null) {
+    const [a, b] = [...touchPoints.values()], r = canvas.getBoundingClientRect(), center = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
+    zoom = Math.max(.15, Math.min(3, gesture.zoom * Math.hypot(a[0] - b[0], a[1] - b[1]) / gesture.distance));
+    pan = { x: center[0] - r.left - (gesture.center[0] - r.left - gesture.pan.x) * zoom / gesture.zoom, y: center[1] - r.top - (gesture.center[1] - r.top - gesture.pan.y) * zoom / gesture.zoom }; draw(false); return;
+  }
+  if (!pointer || e.pointerId !== pointer.id) return; const p = locate(e), mode = pointer.tool;
+  if (mode === 'pen' || mode === 'marker') {
+    let samples; try { samples = e.getCoalescedEvents?.(); } catch { /* HTTP fallback. */ }
+    for (const sample of samples?.length ? samples : [e]) {
+      const next = locate(sample), last = points[points.length - 1];
+      if (points.length < 19000 && (!last || Math.hypot(next[0] - last[0], next[1] - last[1]) > .12 || Math.abs(next[2] - last[2]) > .04)) points.push(next);
+    }
+    predicted = [];
+    try { const last = points[points.length - 1]; predicted = (e.getPredictedEvents?.() || []).slice(0, 3).filter(p => p.timeStamp - e.timeStamp <= 35).map(locate).filter(p => Math.hypot(p[0] - last[0], p[1] - last[1]) < 80); } catch { /* Optional, never persisted. */ }
+    if (Date.now() - liveAt > 70) { liveAt = Date.now(); const stroke = currentStroke(); sendLive({ ...stroke, points: points.slice(-300) }); }
+  }
+  if (mode === 'hand') pan = { x: pointer.pan.x + e.clientX - pointer.screen[0], y: pointer.pan.y + e.clientY - pointer.screen[1] };
+  if (mode === 'eraser') eraseAt(p);
+  if (mode === 'select') { if (dragging?.length) for (const o of dragging) state.objects[o.id] = { ...o, ink: undefined, x: o.x + p[0] - pointer.start[0], y: o.y + p[1] - pointer.start[1] }; else lasso.push(p.slice(0, 2)); }
+  draw(mode === 'select' && !!dragging?.length);
 });
-async function finish(e) {
-  touchPoints.delete(e.pointerId); if (touchPoints.size < 2) gesture = null;
+async function finish(e, cancelled = false) {
+  inputGuard.end(e, performance.now()); touchPoints.delete(e.pointerId); if (touchPoints.size < 2) gesture = null;
   if (!pointer || pointer.id !== e.pointerId) return;
-  const stroke = points.length ? currentStroke() : null;
-  if (tool === 'select') { if (dragging?.length) { const changes = dragging.map(o => ({ kind: 'put', value: state.objects[o.id] })); dragging.forEach(o => { state.objects[o.id] = o; }); await enqueue(changes); } else if (lasso.length > 2) selection = visibleObjects().filter(o => { if (o.background) return false; const b = box(o); return inside([b.x + b.w / 2, b.y + b.h / 2], lasso); }).map(o => o.id); }
-  pointer = null; points = []; lasso = []; dragging = null; sendLive(null);
-  if (stroke) await enqueue([{ kind: 'put', value: stroke }]); draw();
+  if (cancelled) { cancelInput(); return; }
+  const stroke = points.length ? currentStroke() : null, mode = pointer.tool;
+  let changes = [];
+  if (mode === 'select') {
+    if (dragging?.length) { changes = dragging.map(o => ({ kind: 'put', value: state.objects[o.id] })); dragging.forEach(o => { state.objects[o.id] = o; }); }
+    else if (lasso.length > 2) selection = visibleObjects().filter(o => { if (o.background) return false; const b = box(o); return inside([b.x + b.w / 2, b.y + b.h / 2], lasso); }).map(o => o.id);
+  }
+  // Clear the active pointer synchronously; the next stroke may start during IndexedDB I/O.
+  pointer = null; points = []; predicted = []; lasso = []; dragging = null; sendLive(null);
+  if (stroke) changes.push({ kind: 'put', value: stroke });
+  if (changes.length) await enqueue(changes); draw();
 }
-canvas.addEventListener('pointerup', safe(finish)); canvas.addEventListener('pointercancel', safe(finish));
+canvas.addEventListener('pointerup', safe(e => finish(e)));
+canvas.addEventListener('pointercancel', safe(e => finish(e, true)));
+canvas.addEventListener('lostpointercapture', safe(e => { if (pointer?.id === e.pointerId) return finish(e, true); }));
+window.addEventListener('blur', () => { cancelInput(); touchPoints.clear(); inputGuard.reset(performance.now()); });
 document.querySelectorAll('[data-tool]').forEach(button => { button.onclick = () => { if (pointer) return; tool = button.dataset.tool; document.querySelectorAll('[data-tool]').forEach(b => b.classList.toggle('selected', b === button)); }; });
 $('addPage').onclick = safe(async () => { const value = { id: uuid(), name: '绘图本 · ' + String(Object.keys(state.pages).length + 1).padStart(2, '0'), paper: $('paper').value }; await enqueue([{ kind: 'page', value }], false); page = value.id; selection = []; refreshPages(); fit(); });
 $('paper').onchange = safe(() => enqueue([{ kind: 'page', value: { ...state.pages[page], paper: $('paper').value } }], false));

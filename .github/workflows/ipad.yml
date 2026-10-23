@@ -27,6 +27,17 @@ jobs:
           cd ../..
           shasum -a 256 build/output/*.ipa > build/output/SHA256SUMS.txt
           cp mobile/ipad/README.md build/output/INSTALL.md
+      - name: Build and launch iPad simulator smoke test
+        run: |
+          set -o pipefail
+          xcodebuild -project mobile/ipad/ToolboxDrawing.xcodeproj -scheme ToolboxDrawing -configuration Debug -destination 'generic/platform=iOS Simulator' -derivedDataPath build/simulator CODE_SIGNING_ALLOWED=NO build > build-simulator.log 2>&1
+          DEVICE=$(xcrun simctl list devices available --json | python3 -c 'import json,sys; d=json.load(sys.stdin); print(next(x["udid"] for a in d["devices"].values() for x in a if "iPad" in x["name"]))')
+          xcrun simctl boot "$DEVICE"
+          xcrun simctl bootstatus "$DEVICE" -b
+          xcrun simctl install "$DEVICE" build/simulator/Build/Products/Debug-iphonesimulator/ToolboxDrawing.app
+          xcrun simctl launch "$DEVICE" cn.macpe.agenttoolbox.drawing
+          sleep 5
+          xcrun simctl io "$DEVICE" screenshot build/output/ipad-simulator.png
       - uses: actions/upload-artifact@v4
         with:
           name: ToolboxDrawing-0.2.0-unsigned
@@ -36,4 +47,6 @@ jobs:
         if: failure()
         with:
           name: ipad-build-log
-          path: build-ipad.log
+          path: |
+            build-ipad.log
+            build-simulator.log
