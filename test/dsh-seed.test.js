@@ -5,6 +5,7 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 const { SEED_PLUGINS, seedTgzPath, webProfileNeedsSeed, seedWebProfile } = require('../src/main/dsh-service');
+const { MARKER, ensureBotClassicGuard } = require('../src/main/dsh-bot-guard');
 
 const REAL_SEED = path.join(__dirname, '..', 'dsh-seed', 'dsh-web-profile.tgz');
 const tmpHome = () => fs.mkdtempSync(path.join(os.tmpdir(), 'dshseed-'));
@@ -58,6 +59,10 @@ test('DSH 种子：仓库自带的真种子包能解到任意 DSH_HOME，插件�
   assert.equal(pkg.dependencies['dsh-our-free-model'], 'link:../../plugins/dsh-our-free-model', 'link: 依赖必须是相对路径');
   assert.ok(fs.existsSync(path.join(web, 'node_modules', 'ds-bot', 'package.json')));
   assert.equal(JSON.parse(fs.readFileSync(path.join(web, 'node_modules', 'ds-bot', 'package.json'), 'utf8')).version, '0.2.1', 'Chief 新会话应使用修复模型路由的 DS Bot 版本');
+  const guarded = ensureBotClassicGuard(home);
+  assert.equal(guarded.changed, true, `Chief 原始会话入口未修正：${guarded.reason}`);
+  assert.ok(fs.readFileSync(path.join(web, 'node_modules', 'ds-bot', 'client.js'), 'utf8').includes(MARKER));
+  assert.deepEqual(ensureBotClassicGuard(home), { changed: false, reason: 'already-patched' });
   assert.equal(fs.existsSync(path.join(web, 'node_modules', '.bin')), false, '.bin 全是软链，Windows 解不出来，不该随种子走');
   // 逆向整合包：从 GitHub 装的真目录，88 个 SKILL.md 随插件走
   const reverse = path.join(web, 'node_modules', '@dhicoc', 'dsh-reverse-skill');

@@ -45,9 +45,9 @@ export default {
     }
 
     function paintBot() {
-      botToggle.textContent = botOn == null ? 'DS Bot：…' : botOn ? 'DS Bot：开' : 'DS Bot：关';
+      botToggle.textContent = botOn == null ? 'DS Bot 插件：…' : botOn ? 'DS Bot 插件：开' : 'DS Bot 插件：关';
       botToggle.title = botOn
-        ? '关掉即切回原来的 DSH（侧栏不再有 Chief / Dev 两个助手）'
+        ? 'Chief / Dev 请在 DS Bot 对话页使用；点此关闭插件并重启 DSH'
         : '开启 DS Bot 助手（侧栏会多出 Chief / Dev）';
       botToggle.classList.toggle('btn--primary', botOn === true);
     }

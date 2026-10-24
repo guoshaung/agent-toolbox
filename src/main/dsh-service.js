@@ -5,6 +5,7 @@ const os = require('node:os');
 const path = require('node:path');
 const http = require('node:http');
 const { spawn, execFile, execFileSync } = require('node:child_process');
+const { ensureBotClassicGuard } = require('./dsh-bot-guard');
 
 // 2026-10-06 升到 0.1.7-rc.2：内置种子里的 dsh-our-free-model 插件要求内核 0.1.5～0.1.7-rc.2；0.2.x 超出插件范围、且 dsh-web-all 0.4.x 才要 0.2
 const DSH_PACKAGE = '@deepseek-ai/dsh@0.1.7-rc.2';
@@ -450,6 +451,9 @@ class DshService {
       const seeded = seedWebProfile(seedTgzPath(this.app));
       if (seeded.seeded) console.log(`[dsh] 已从内置种子初始化 web profile（${seeded.reason}）`);
       else if (!seeded.ok && seeded.reason !== 'no-seed') console.warn(`[dsh] 内置插件种子未生效：${seeded.reason}`);
+      const botGuard = ensureBotClassicGuard(dshHomeDir());
+      if (botGuard.changed) console.log('[dsh] DS Bot 经典会话入口已转到 Bot 对话');
+      else if (botGuard.reason === 'unsupported-client-layout') console.warn('[dsh] DS Bot 页面结构已变化，未安装会话入口修正');
       const userData = this.app.getPath('userData');
       const nodeBin = resolveCommand('node', userData);
       const mcpServer = path.join(__dirname, 'toolbox-mcp-server.js');
