@@ -158,6 +158,7 @@ function setBundleEnabled(name, enabled, dshHome = dshHomeDir()) {
 }
 
 const DEFAULT_PORT = 3080;
+const START_TIMEOUT_MS = 90000;
 
 function resolveCommand(command, userDataPath = '') {
   const commandNames = process.platform === 'win32'
@@ -436,7 +437,12 @@ class DshService {
       this.emit({ status: 'running', url: this.url, managed: false, error: '' });
       return { ok: true, ...this.state };
     }
-    if (this.child && !this.child.killed) return { ok: true, ...this.state };
+    if (this.child && !this.child.killed) {
+      if (this.state.status !== 'error') return { ok: this.state.status === 'running', ...this.state };
+      // 上一次冷启动超时后子进程可能仍在运行；重试时先清掉它。
+      await killTree(this.child);
+      this.child = null;
+    }
     try {
       const dsh = await this.ensureInstalled();
       // 新机器开箱即用：web profile 缺内置插件（免费模型 / ds-bot…）就从 app 自带的种子解包一份到 $DSH_HOME。
@@ -478,7 +484,7 @@ class DshService {
         this.child = null;
         if (this.state.status !== 'stopping') this.emit({ status: code === 0 ? 'idle' : 'error', error: code === 0 ? '' : `DSH 已退出（${code}）` });
       });
-      const deadline = Date.now() + 30000;
+      const deadline = Date.now() + START_TIMEOUT_MS;
       while (Date.now() < deadline) {
         let health = { running: false, isDsh: false };
         try {
