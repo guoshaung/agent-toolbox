@@ -420,9 +420,11 @@ export function createPracticePanel(ctx) {
     );
   }
 
-  function addCell() {
+  /** 在某一格下方插入新格（默认是当前格，和 Jupyter 的 B 一样）；没有当前格才加到末尾 */
+  function addCell(after = activeCell) {
     const cell = createCell('');
-    cells.push(cell);
+    const index = after ? cells.indexOf(after) : -1;
+    if (index >= 0) cells.splice(index + 1, 0, cell); else cells.push(cell);
     renderNotebook(cell, true);
     persistNotebook();
   }
@@ -527,17 +529,29 @@ export function createPracticePanel(ctx) {
     cell.resultStatus.className = 'practice__result-status is-running';
     try {
       const cellIndex = cells.indexOf(cell);
-      const prelude = track.runtime.includes('python3') || track.runtime.includes('bash')
-        ? cells.slice(0, Math.max(0, cellIndex)).map((item) => item.editor.value.trim()).filter(Boolean).join('\n\n')
-        : '';
-      const result = await window.toolbox.practice.run({ track: track.id, code: cell.editor.value, prelude, timeout: 12000, cwd: repo?.path || '' });
+      const above = cells.slice(0, Math.max(0, cellIndex));
+      const usesPrelude = track.runtime.includes('python3') || track.runtime.includes('bash');
+      const prelude = usesPrelude ? above.map((item) => item.editor.value.trim()).filter(Boolean).join('\n\n') : '';
+      // python 按格分开送（不 trim，行号就是编辑器里的行号）：上面哪一格炸了只记下来、不拦这一格——
+      // 和 Jupyter 里「上面那格没跑成功、它定义的名字就不存在」一个意思
+      const preludeCells = usesPrelude && track.runtime.includes('python3') ? above.map((item, index) => ({ index, code: item.editor.value })) : undefined;
+      const result = await window.toolbox.practice.run({ track: track.id, code: cell.editor.value, prelude, preludeCells, timeout: 12000, cwd: repo?.path || '' });
       if (currentRun !== cell.runId) return;
+      // 上面哪些格子跑炸了（已跳过）：不算这一格的错，但要告诉你它定义的东西这一格拿不到
+      const skipped = (result.preludeErrors || []).map((p) => {
+        const err = String(p.error || '');
+        const at = (err.match(/File "<prelude-\d+>", line (\d+)/) || [])[1];
+        return `第 ${p.cell + 1} 格${at ? ` 第 ${at} 行` : ''}：${err.trim().split('\n').pop()}`;
+      });
       const diagnosis = diagnoseRunError(track.id, result, cell.editor.value);
+      if (diagnosis && diagnosis.inPrelude) locatePreludeError(diagnosis, cellIndex);   // 报错在上面的格子：映射回具体哪一格第几行
+      // 状态栏只说本格的事；上面格子没跑成功的提示放在输出区，免得被当成"还是在怪上面的格子"
       cell.resultStatus.textContent = runStatusLabel(result, diagnosis);
       cell.resultStatus.className = `practice__result-status ${result.ok ? 'is-good' : 'is-bad'}`;
       const parts = [];
       if (result.stdout) parts.push(result.stdout.trimEnd());
       if (result.stderr) parts.push(`[stderr]\n${result.stderr.trimEnd()}`);
+      if (skipped.length) parts.push(`[上面有 ${skipped.length} 格没跑成功，已跳过，不影响本格；只是它们定义的东西这格拿不到]\n${skipped.join('\n')}`);
       const lastLine = cell.editor.value.trim().split('\n').pop() || '';
       if (!parts.length && !(result.displays || []).length) parts.push(result.ok ? `(程序没有输出)${/^\s*[A-Za-z_]\w*\s*=[^=]/.test(lastLine) ? '\n提示：像 Jupyter 一样，想看某个对象（图、表、值）就把它的名字单独写在最后一行，比如 ' + lastLine.split('=')[0].trim() : ''}` : (result.error || '(没有输出，检查错误信息)'));
       cell.output.textContent = `${parts.join('\n\n')}\n\n[${result.engine || track.runtime}] ${result.duration || 0} ms`;
@@ -590,7 +604,7 @@ export function createPracticePanel(ctx) {
     runCell(cell).finally(() => {
       const index = cells.indexOf(cell);
       if (index < cells.length - 1) selectCell(cells[index + 1], true);
-      else addCell();
+      else addCell(cell);
     });
   }
 
@@ -627,6 +641,44 @@ export function createPracticePanel(ctx) {
     };
   }
 
+  /**
+   * 报错出在 prelude（上面所有格 trim 后用一个空行拼起来重跑的那段）里：把 prelude 的行号映射回「第几格的第几行」。
+   * 拼法要和 runCell 里的完全一致：每格 trim()，空格子跳过，格与格之间一个空行。
+   */
+  function locatePreludeError(diagnosis, cellIndex) {
+    // 按格执行时帧里直接带着是第几格（<prelude-N>），行号就是那格自己的，不用算偏移
+    if (diagnosis.preludeCell != null && cells[diagnosis.preludeCell] && diagnosis.preludeCell < cellIndex) {
+      const i = diagnosis.preludeCell;
+      const line = diagnosis.preludeLine;
+      diagnosis.jumpCell = cells[i];
+      diagnosis.jumpLine = line;
+      diagnosis.where = `上面第 ${i + 1} 格${line ? ` 第 ${line} 行` : ''}`;
+      diagnosis.title = `${diagnosis.kind} · 在上面第 ${i + 1} 格`;
+      diagnosis.lineText = line ? (cells[i].editor.value.split(/\r?\n/)[line - 1] || '') : '';
+      return;
+    }
+    let offset = 0;
+    for (let i = 0; i < cellIndex; i += 1) {
+      const raw = cells[i].editor.value;
+      const trimmed = raw.trim();
+      if (!trimmed) continue;
+      const count = trimmed.split('\n').length;
+      if (diagnosis.preludeLine <= offset + count) {
+        const leading = ((raw.match(/^(?:[ \t]*\n)+/) || [''])[0].match(/\n/g) || []).length;   // trim 掉的开头空行
+        const line = diagnosis.preludeLine - offset + leading;
+        diagnosis.jumpCell = cells[i];
+        diagnosis.jumpLine = line;
+        diagnosis.where = `上面第 ${i + 1} 格 第 ${line} 行`;
+        diagnosis.title = `${diagnosis.kind} · 在上面第 ${i + 1} 格`;
+        diagnosis.lineText = raw.split(/\r?\n/)[line - 1] || '';
+        return;
+      }
+      offset += count + 1;
+    }
+    diagnosis.where = '上面的单元格';
+    diagnosis.title = `${diagnosis.kind} · 在上面的单元格里`;
+  }
+
   function hideDiagnosis(cell) {
     cell.lastDiagnosis = null;
     cell.diagPanel.setAttribute('hidden', '');
@@ -640,7 +692,12 @@ export function createPracticePanel(ctx) {
 
     const line = diagnosis.line;
     const lineText = diagnosis.lineText || (line ? cell.editor.value.split(/\r?\n/)[line - 1] || '' : '');
-    if (line) {
+    cell.diagJumpCell = diagnosis.jumpCell || null;   // 报错在上面某一格：定位按钮跳到那一格
+    if (diagnosis.jumpCell && diagnosis.jumpLine) {
+      cell.diagJump.textContent = `跳到${diagnosis.where || '上面那一格'}`;
+      cell.diagJump.removeAttribute('hidden');
+      cell.diagJumpLine = diagnosis.jumpLine;
+    } else if (line) {
       cell.diagJump.textContent = `跳到第 ${line} 行`;
       cell.diagJump.removeAttribute('hidden');
       cell.diagJumpLine = line;
@@ -652,7 +709,7 @@ export function createPracticePanel(ctx) {
     cell.diagSummary.textContent = diagnosis.summary || diagnosis.cause || '';
 
     if (lineText.trim()) {
-      cell.diagCode.textContent = `${line}  ${lineText}`;
+      cell.diagCode.textContent = `${diagnosis.jumpLine || line}  ${lineText}`;
       cell.diagCode.removeAttribute('hidden');
     } else cell.diagCode.setAttribute('hidden', '');
 
@@ -719,15 +776,18 @@ export function createPracticePanel(ctx) {
   /** 把光标放到出错那一行并滚过去 —— 报错说第 N 行，就得能一键看到第 N 行。 */
   function jumpToLine(cell, line = cell.diagJumpLine) {
     if (!line) return;
-    const lines = cell.editor.value.split(/\r?\n/);
+    // 报错在上面某一格时，跳到那一格（diagJumpCell），而不是在这一格里硬找第 N 行
+    const target = (cell.diagJumpCell && cells.includes(cell.diagJumpCell)) ? cell.diagJumpCell : cell;
+    if (target !== cell) selectCell(target);
+    const lines = target.editor.value.split(/\r?\n/);
     const index = Math.min(Math.max(line - 1, 0), lines.length - 1);
     const start = lines.slice(0, index).reduce((sum, item) => sum + item.length + 1, 0);
-    cell.editor.focus();
-    cell.editor.setSelectionRange(start, start + lines[index].length);
-    const lineHeight = parseFloat(getComputedStyle(cell.editor).lineHeight) || 21.875;
-    cell.editor.scrollTop = Math.max(0, index * lineHeight - cell.editor.clientHeight / 2);
-    syncHighlightScroll(cell);
-    cell.el.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    target.editor.focus();
+    target.editor.setSelectionRange(start, start + lines[index].length);
+    const lineHeight = parseFloat(getComputedStyle(target.editor).lineHeight) || 21.875;
+    target.editor.scrollTop = Math.max(0, index * lineHeight - target.editor.clientHeight / 2);
+    syncHighlightScroll(target);
+    target.el.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
   }
 
   async function diagnoseWithAi(cell) {
@@ -1009,6 +1069,7 @@ export function createPracticePanel(ctx) {
     const restoreBtn = h('button', { class: 'btn btn--ghost', onclick: () => restoreCell(cell) }, '恢复示例');
     const moveUpBtn = h('button', { class: 'btn btn--icon practice__cell-move', title: '上移单元格', onclick: () => moveCell(cell, -1) }, '↑');
     const moveDownBtn = h('button', { class: 'btn btn--icon practice__cell-move', title: '下移单元格', onclick: () => moveCell(cell, 1) }, '↓');
+    const insertBelowBtn = h('button', { class: 'btn btn--icon practice__cell-move', title: '在这一格下方插入新格', onclick: () => addCell(cell) }, '＋');
     cell.el = h('section', { class: 'practice__cell' },
       cell.gutter,
       h('div', { class: 'practice__cell-main' },
@@ -1017,7 +1078,7 @@ export function createPracticePanel(ctx) {
           cell.lineCount,
         ),
         cell.editorWrap,
-        h('div', { class: 'practice__actions' }, cell.runBtn, cell.commentBtn, explainLocalBtn, explainLineBtn, restoreBtn, moveUpBtn, moveDownBtn),
+        h('div', { class: 'practice__actions' }, cell.runBtn, cell.commentBtn, explainLocalBtn, explainLineBtn, restoreBtn, moveUpBtn, moveDownBtn, insertBelowBtn),
         h('div', { class: 'practice__hint faint' }, 'Shift+Enter 运行并到下一格 · ⌘Enter 原地运行'),
         h('div', { class: 'practice__latest-output' },
           h('div', { class: 'practice__pane-head' }, h('strong', {}, '输出'), h('span', { class: 'practice__output-head-actions' }, cell.resultStatus, cell.copyOutputBtn)),
@@ -1060,7 +1121,7 @@ export function createPracticePanel(ctx) {
         const index = cells.indexOf(cell);
         const next = cells[index + 1];
         if (next) { selectCell(next); next.editor.focus(); }
-        else { addCell(); }                        // 已经是最后一格就新开一格，和 Jupyter 一样
+        else { addCell(cell); }                    // 已经是最后一格就在它下面新开一格，和 Jupyter 一样
       });
     }, true);
     cell.editor.addEventListener('keydown', (event) => {
@@ -1545,7 +1606,7 @@ export function createPracticePanel(ctx) {
     // 一条工具栏搞定：跑 / 加 / 删 + 选练什么 + 内核状态。和 Jupyter 一样。
     h('div', { class: 'practice__bar' },
       runAllBtn,
-      h('button', { class: 'btn btn--sm practice__icon-btn', title: '在末尾添加单元格', onclick: addCell }, '＋'),
+      h('button', { class: 'btn btn--sm practice__icon-btn', title: '在当前单元格下方插入一格（Jupyter 的 B）', onclick: () => addCell() }, '＋'),
       h('button', { class: 'btn btn--sm practice__icon-btn', title: '删除当前单元格', onclick: removeCell }, '−'),
       h('button', { class: 'btn btn--sm', title: '把现在这份整体收进存档，然后换一份干净的（写过的东西不丢，⋯ 菜单里能找回）', onclick: archiveAndReset }, '存档并新建'),
       h('span', { class: 'practice__bar-sep' }),

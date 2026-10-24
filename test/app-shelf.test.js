@@ -31,3 +31,15 @@ test('工具架允许同一个项目在退出后再次启动', async () => {
     stop(id);
   }
 });
+
+test('闲鱼自动回复种子：点 ▶ 跑 run.py，且不带任何本机密码', () => {
+  const fs = require('node:fs');
+  const path = require('node:path');
+  const { probe } = require('../src/main/app-shelf');
+  const dir = path.join(__dirname, '..', 'container-seed', '闲鱼自动回复');
+  const info = probe(dir);
+  assert.equal(info.kind, 'Python');
+  assert.match(info.command, /run\.py$/);
+  // 密码在第一次运行时生成到 .runtime/xianyu.env，种子里绝不能有
+  assert.deepEqual(fs.readdirSync(dir).sort(), ['README-放进容器后怎么用.md', 'run.py']);
+});

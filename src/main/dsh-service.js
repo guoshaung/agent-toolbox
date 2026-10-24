@@ -20,6 +20,42 @@ function dshWorkDir(userDataPath) {
   try { fs.mkdirSync(dir, { recursive: true }); return dir; } catch { return os.homedir(); }
 }
 
+function mergeContainerWorkspace(store, containerDir, { title = '工具箱容器', newId = () => require('crypto').randomUUID(), now = () => new Date().toISOString() } = {}) {
+  const data = store && typeof store === 'object' ? store : {};
+  const tables = data.tables && typeof data.tables === 'object' ? data.tables : {};
+  const workspaces = tables.workspaces && typeof tables.workspaces === 'object' ? tables.workspaces : {};
+  let target = path.resolve(containerDir);
+  try { target = fs.realpathSync(target); } catch { /* 未创建时使用绝对路径 */ }
+  if (Object.values(workspaces).some((w) => w && path.resolve(String(w.path || '')) === target)) return { changed: false, store: data };
+  const id = newId();
+  const stamp = now();
+  const global = data.global && typeof data.global === 'object' ? data.global : { initialized: true };
+  return {
+    changed: true,
+    store: {
+      ...data,
+      unit: data.unit || { name: 'workspace', version: 2 },
+      global: { ...global, workspaceIds: [...(Array.isArray(global.workspaceIds) ? global.workspaceIds : []), id] },
+      tables: { ...tables, workspaces: { ...workspaces, [id]: { path: target, title, sessionIds: [], createdAt: stamp, updatedAt: stamp } } },
+    },
+  };
+}
+
+function ensureContainerWorkspace(userDataPath, dshHome = dshHomeDir()) {
+  try {
+    const file = path.join(dshHome, 'storages', 'workspace.json');
+    if (!fs.existsSync(file)) return { ok: false, reason: 'no-store' };
+    const { changed, store } = mergeContainerWorkspace(JSON.parse(fs.readFileSync(file, 'utf8')), dshWorkDir(userDataPath));
+    if (!changed) return { ok: true, changed: false };
+    const tmp = `${file}.tmp-${process.pid}`;
+    fs.writeFileSync(tmp, JSON.stringify(store, null, 2));
+    fs.renameSync(tmp, file);
+    return { ok: true, changed: true };
+  } catch (error) {
+    return { ok: false, reason: error.message };
+  }
+}
+
 /* ---------- 内置 DSH 插件种子：新机器开箱即用 ---------- */
 
 // DSH 的 $DSH_HOME（profile / 插件都在这下面）。和 DSH 自己的约定一致：没设环境变量就是 ~/.dsh
@@ -420,6 +456,7 @@ class DshService {
       // 让 DSH 自选空闲端口，避免要求用户手动寻找并关闭旧进程。
       const port = existing.running ? 0 : DEFAULT_PORT;
       const spec = dshSpawnSpec(dsh, nodeBin, ['--profile', 'web', '--patch', overlay, '--no-open', '--port', String(port)]);
+      ensureContainerWorkspace(userData);
       this.child = spawn(spec.command, spec.args, spawnOptions({ cwd: dshWorkDir(userData), stdio: ['ignore', 'pipe', 'pipe'], env: withNodeOnPath(process.env, nodeBin) }));
       const captureUrl = (chunk) => {
         const url = findWebUrl(chunk);
@@ -490,4 +527,4 @@ class DshService {
   }
 }
 
-module.exports = { DSH_PACKAGE, DEFAULT_PORT, DshService, findWebUrl, probe, resolveCommand, dshHomeDir, SEED_PLUGINS, BOT_BUNDLE, seedTgzPath, webProfileNeedsSeed, seedWebProfile, withNodeOnPath, dshSpawnSpec, REA_PACKAGE, reaLocalScript, reaMcpLines, ensureReaInstalled, asInsertPatch, buildOverlay, DSH_WARNING, readProfileBundles, botEnabled, toggleBundle, setBundleEnabled };
+module.exports = { DSH_PACKAGE, DEFAULT_PORT, DshService, findWebUrl, probe, resolveCommand, dshWorkDir, mergeContainerWorkspace, ensureContainerWorkspace, dshHomeDir, SEED_PLUGINS, BOT_BUNDLE, seedTgzPath, webProfileNeedsSeed, seedWebProfile, withNodeOnPath, dshSpawnSpec, REA_PACKAGE, reaLocalScript, reaMcpLines, ensureReaInstalled, asInsertPatch, buildOverlay, DSH_WARNING, readProfileBundles, botEnabled, toggleBundle, setBundleEnabled };

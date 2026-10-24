@@ -4,6 +4,7 @@ import android.app.Activity;
 import android.content.ActivityNotFoundException;
 import android.content.Intent;
 import android.content.res.ColorStateList;
+import android.content.res.Configuration;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
@@ -14,8 +15,10 @@ import android.os.Handler;
 import android.os.Looper;
 import android.speech.RecognizerIntent;
 import android.text.TextUtils;
+import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.View;
+import android.view.ViewGroup;
 import android.webkit.JavascriptInterface;
 import android.webkit.WebChromeClient;
 import android.webkit.WebResourceError;
@@ -41,6 +44,7 @@ import java.net.URL;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.List;
 
 /**
  * 手机端的壳：连接页 + 网页控制台（由电脑端提供）+ 精灵设置。
@@ -53,16 +57,29 @@ public class MainActivity extends Activity {
     private static final int VOICE_INPUT = 43, PICK_FILE = 42, TAKE_PHOTO = 44, VOICE_TASK = 45, NOTIF_PERM = 46;
     private Uri photoUri;
 
-    // ---- 设计 token ----
-    private static final int BG = 0xFF0F1117, CARD = 0xFF171A23, LINE = 0xFF262A37, FIELD = 0xFF0F1117;
+    // ---- 设计 token（Bilibili 风：B 站粉做主色、B 站蓝做辅色，深色底 + 大圆角）----
+    private static final int BG = 0xFF0F1117, CARD = 0xFF171A23, CARD_HI = 0xFF1C2130, LINE = 0xFF262A37, FIELD = 0xFF0F1117;
     private static final int INK = 0xFFEEF0F6, DIM = 0xFFA9B0C3, FAINT = 0xFF6F768A;
-    private static final int VIOLET = 0xFF7C5CFF, VIOLET_DEEP = 0xFF5B3DF5, VIOLET_SOFT = 0xFFA98BFF, MINT = 0xFF21E6A5, ROSE = 0xFFFF7BD0, BTN = 0xFF232735;
+    // B 站粉 #FB7299 / 深粉 #E85C84 / B 站蓝 #00AEEC；旧 VIOLET/MINT 名保留但指到新色，省得全局改引用
+    private static final int PINK = 0xFFFB7299, PINK_DEEP = 0xFFE85C84, PINK_SOFT = 0xFFFF9BB7, BLUE = 0xFF00AEEC, BLUE_SOFT = 0xFF4FC8F5, MINT = 0xFF21E6A5, BTN = 0xFF232735;
+    private static final int VIOLET = PINK, VIOLET_DEEP = PINK_DEEP, VIOLET_SOFT = PINK_SOFT, ROSE = BLUE;
+    // 圆角：卡片 20、按钮做成胶囊 22、输入框 16
+    private static final int R_CARD = 20, R_BTN = 22, R_FIELD = 16;
+    // 内容最大宽度：手机占满，平板/折叠屏/横屏时居中留白，不被拉成一条
+    private static final int MAX_CONTENT_DP = 600;
 
     private EditText endpointInput, manualShareInput;
-    private TextView connectionChip, shareStatus, spriteStatus;
+    private TextView connectionChip, shareStatus, spriteStatus, sendLogView;
     private Button spriteToggle;
     private ScrollView setupPanel;
+    private LinearLayout panel;
+    // 1 最近电脑  2 精灵指令  3 发送记录 —— 可刷新的小区块
+    private LinearLayout recentRail, recentWrap, spriteRail, sendLogWrap;
     private WebView webView;
+    // 所有按内容宽度居中的块（卡片、头、脚）；窗口尺寸变化时统一重算宽度
+    private final List<View> widthCapped = new ArrayList<>();
+    // 在线状态胶囊的呼吸动效
+    private android.animation.ValueAnimator chipPulse;
 
     private final Handler ui = new Handler(Looper.getMainLooper());
     // 8 秒没任何回调 = TCP 挂住了（不同 Wi‑Fi / AP 隔离 / VPN），别让人对着「正在连接」干等
@@ -89,6 +106,17 @@ public class MainActivity extends Activity {
         handleIncomingShare(intent);
     }
 
+    @Override public void onConfigurationChanged(Configuration newConfig) {
+        super.onConfigurationChanged(newConfig);
+        // 旋转 / 折叠屏展开 / 分屏改变窗口大小：重算居中内容宽度（Activity 不重建，WebView 状态不丢）
+        int cw = contentWidthPx();
+        for (View v : widthCapped) {
+            if (v == null) continue;
+            ViewGroup.LayoutParams lp = v.getLayoutParams();
+            if (lp != null) { lp.width = cw; v.setLayoutParams(lp); }
+        }
+    }
+
     @Override protected void onResume() {
         super.onResume();
         refreshSpriteStatus();
@@ -101,6 +129,12 @@ public class MainActivity extends Activity {
     // ---------------- 小工具：尺寸、形状、控件 ----------------
 
     private int dp(int v) { return Math.round(v * getResources().getDisplayMetrics().density); }
+
+    /** 居中内容的实际像素宽度：窄屏占满（两侧各留 16dp），宽屏封顶到 MAX_CONTENT_DP */
+    private int contentWidthPx() {
+        int screen = getResources().getDisplayMetrics().widthPixels;
+        return Math.min(screen - dp(32), dp(MAX_CONTENT_DP));
+    }
 
     private GradientDrawable shape(int fill, int radiusDp, int stroke) {
         GradientDrawable d = new GradientDrawable();
@@ -131,20 +165,26 @@ public class MainActivity extends Activity {
         b.setTypeface(null, Typeface.BOLD);
         b.setPadding(dp(14), 0, dp(14), 0);
         b.setStateListAnimator(null);
+        b.setMaxLines(1);
+        // 窄屏 / 三按钮一行时，emoji+文字放不下就自动缩字号，不截断
+        b.setAutoSizeTextTypeUniformWithConfiguration(11, 14, 1, TypedValue.COMPLEX_UNIT_SP);
         GradientDrawable base;
         if ("primary".equals(kind)) {
-            base = new GradientDrawable(GradientDrawable.Orientation.TL_BR, new int[]{ VIOLET, VIOLET_DEEP });
-            base.setCornerRadius(dp(14));
+            // B 站粉 → 深粉渐变
+            base = new GradientDrawable(GradientDrawable.Orientation.LEFT_RIGHT, new int[]{ PINK, PINK_DEEP });
+            base.setCornerRadius(dp(R_BTN));
             b.setTextColor(Color.WHITE);
         } else if ("ghost".equals(kind)) {
-            base = shape(Color.TRANSPARENT, 14, LINE);
+            base = shape(Color.TRANSPARENT, R_BTN, LINE);
             b.setTextColor(DIM);
         } else {
-            base = shape(BTN, 14, 0);
+            base = shape(BTN, R_BTN, 0);
             b.setTextColor(INK);
         }
-        GradientDrawable mask = shape(Color.WHITE, 14, 0);
+        GradientDrawable mask = shape(Color.WHITE, R_BTN, 0);
         b.setBackground(new RippleDrawable(ColorStateList.valueOf(0x33FFFFFF), base, mask));
+        // 轻触感：按下时震一下，不拦截点击
+        b.setOnTouchListener((v, e) -> { if (e.getActionMasked() == android.view.MotionEvent.ACTION_DOWN) v.performHapticFeedback(android.view.HapticFeedbackConstants.VIRTUAL_KEY); return false; });
         return b;
     }
 
@@ -154,7 +194,7 @@ public class MainActivity extends Activity {
         e.setTextSize(13);
         e.setTextColor(INK);
         e.setHintTextColor(FAINT);
-        e.setBackground(shape(FIELD, 14, LINE));
+        e.setBackground(shape(FIELD, R_FIELD, LINE));
         e.setPadding(dp(14), multiline ? dp(12) : 0, dp(14), multiline ? dp(12) : 0);
         if (multiline) { e.setGravity(Gravity.TOP); e.setMinLines(3); } else e.setSingleLine(true);
         return e;
@@ -164,13 +204,19 @@ public class MainActivity extends Activity {
         LinearLayout c = new LinearLayout(this);
         c.setOrientation(LinearLayout.VERTICAL);
         c.setPadding(dp(18), dp(18), dp(18), dp(18));
-        c.setBackground(shape(CARD, 18, LINE));
+        // 顶部略亮的竖向微渐变，深色下给卡片一点体积感
+        GradientDrawable bg = new GradientDrawable(GradientDrawable.Orientation.TOP_BOTTOM, new int[]{ CARD_HI, CARD });
+        bg.setCornerRadius(dp(R_CARD));
+        bg.setStroke(dp(1), LINE);
+        c.setBackground(bg);
         return c;
     }
 
+    /** 卡片宽度 = 居中内容宽度；两侧留白由内容封顶产生，不再写死左右 margin */
     private LinearLayout.LayoutParams cardParams() {
-        LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(-1, -2);
-        p.setMargins(dp(16), dp(12), dp(16), 0);
+        LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(contentWidthPx(), -2);
+        p.gravity = Gravity.CENTER_HORIZONTAL;
+        p.setMargins(0, dp(12), 0, 0);
         return p;
     }
 
@@ -185,10 +231,85 @@ public class MainActivity extends Activity {
         return r;
     }
 
+    /** 一颗可点的胶囊标签（B 站那种圆角小 tag） */
+    private TextView chip(String label, boolean accent) {
+        TextView t = text(label, 12.5f, accent ? PINK : INK);
+        t.setMaxLines(1);
+        t.setPadding(dp(13), dp(8), dp(13), dp(8));
+        t.setBackground(shape(accent ? 0x1AFB7299 : BTN, 999, accent ? 0x55FB7299 : LINE));
+        t.setOnTouchListener((v, e) -> { if (e.getActionMasked() == android.view.MotionEvent.ACTION_DOWN) v.performHapticFeedback(android.view.HapticFeedbackConstants.VIRTUAL_KEY); return false; });
+        return t;
+    }
+
+    /** 横向可滚的标签轨：把若干 (文字→点击) 铺成一排 */
+    private android.widget.HorizontalScrollView chipRail(LinearLayout into) {
+        android.widget.HorizontalScrollView hs = new android.widget.HorizontalScrollView(this);
+        hs.setHorizontalScrollBarEnabled(false);
+        hs.setOverScrollMode(View.OVER_SCROLL_NEVER);
+        into.setOrientation(LinearLayout.HORIZONTAL);
+        hs.addView(into, new FrameLayout.LayoutParams(-2, -2));
+        return hs;
+    }
+
+    private void fillChips(LinearLayout rail, java.util.List<String> labels, boolean accentFirst, final ChipTap onTap) {
+        rail.removeAllViews();
+        for (int i = 0; i < labels.size(); i++) {
+            final String label = labels.get(i);
+            TextView c = chip(label, accentFirst && i == 0);
+            c.setOnClickListener(v -> onTap.tap(label));
+            LinearLayout.LayoutParams p = new LinearLayout.LayoutParams(-2, -2);
+            if (i > 0) p.setMargins(dp(8), 0, 0, 0);
+            rail.addView(c, p);
+        }
+    }
+    interface ChipTap { void tap(String value); }
+
+    // ---- 小列表持久化：最近电脑 / 精灵指令历史 / 发送记录，都用换行拼存 ----
+    private java.util.List<String> listPref(String key) {
+        String raw = getSharedPreferences(PREFS, MODE_PRIVATE).getString(key, "");
+        java.util.List<String> out = new ArrayList<>();
+        if (raw != null) for (String s : raw.split("\n")) if (!s.trim().isEmpty()) out.add(s);
+        return out;
+    }
+
+    private void pushPref(String key, String value, int max) {
+        if (value == null || value.trim().isEmpty()) return;
+        value = value.trim();
+        java.util.List<String> cur = listPref(key);
+        cur.remove(value);                  // 去重：已有的提到最前
+        cur.add(0, value);
+        while (cur.size() > max) cur.remove(cur.size() - 1);
+        getSharedPreferences(PREFS, MODE_PRIVATE).edit().putString(key, TextUtils.join("\n", cur)).apply();
+    }
+
+    static void recordSpriteGoal(android.content.Context ctx, String goal) {
+        if (goal == null || goal.trim().isEmpty()) return;
+        android.content.SharedPreferences sp = ctx.getSharedPreferences("agent_remote", MODE_PRIVATE);
+        java.util.List<String> cur = new ArrayList<>();
+        for (String s : sp.getString("spritehist", "").split("\n")) if (!s.trim().isEmpty()) cur.add(s);
+        cur.remove(goal.trim()); cur.add(0, goal.trim());
+        while (cur.size() > 6) cur.remove(cur.size() - 1);
+        sp.edit().putString("spritehist", TextUtils.join("\n", cur)).apply();
+    }
+
     private void setChip(String label, boolean online) {
         connectionChip.setText((online ? "● " : "○ ") + label);
-        connectionChip.setTextColor(online ? MINT : DIM);
-        connectionChip.setBackground(shape(Color.TRANSPARENT, 999, online ? 0x6621E6A5 : LINE));
+        connectionChip.setTextColor(online ? BLUE : DIM);
+        connectionChip.setBackground(shape(online ? 0x1A00AEEC : Color.TRANSPARENT, 999, online ? 0x6600AEEC : LINE));
+        // 连上后胶囊轻轻呼吸，像 B 站的「在线」小点
+        if (online) {
+            if (chipPulse == null) {
+                chipPulse = android.animation.ValueAnimator.ofFloat(0.55f, 1f);
+                chipPulse.setDuration(1100);
+                chipPulse.setRepeatCount(android.animation.ValueAnimator.INFINITE);
+                chipPulse.setRepeatMode(android.animation.ValueAnimator.REVERSE);
+                chipPulse.addUpdateListener(a -> { if (connectionChip != null) connectionChip.setAlpha((float) a.getAnimatedValue()); });
+                chipPulse.start();
+            }
+        } else {
+            if (chipPulse != null) { chipPulse.cancel(); chipPulse = null; }
+            if (connectionChip != null) connectionChip.setAlpha(1f);
+        }
     }
 
     // ---------------- 界面 ----------------
@@ -221,13 +342,20 @@ public class MainActivity extends Activity {
         connectionChip.setPadding(dp(10), dp(5), dp(10), dp(5));
         header.addView(connectionChip);
         setChip("未连接", false);
-        root.addView(header);
+        // 头也跟着内容宽度居中，平板/横屏时不贴左
+        LinearLayout headerWrap = new LinearLayout(this);
+        headerWrap.setGravity(Gravity.CENTER_HORIZONTAL);
+        LinearLayout.LayoutParams headerLp = new LinearLayout.LayoutParams(contentWidthPx(), -2);
+        headerWrap.addView(header, headerLp);
+        root.addView(headerWrap);
+        widthCapped.add(header);
 
         // 设置面板：连接 / 精灵 / 发给电脑。连上之后整块隐藏，按返回键再叫出来
         setupPanel = new ScrollView(this);
         setupPanel.setFillViewport(true);
-        LinearLayout panel = new LinearLayout(this);
+        panel = new LinearLayout(this);
         panel.setOrientation(LinearLayout.VERTICAL);
+        panel.setGravity(Gravity.CENTER_HORIZONTAL);
         panel.setPadding(0, 0, 0, dp(24));
         setupPanel.addView(panel, new FrameLayout.LayoutParams(-1, -2));
 
@@ -255,10 +383,20 @@ public class MainActivity extends Activity {
         LinearLayout.LayoutParams clp = new LinearLayout.LayoutParams(dp(64), dp(46)); clp.setMargins(dp(8), 0, 0, 0);
         connectRow.addView(clearBtn, clp);
         connectCard.addView(connectRow);
+        // 1) 最近连过的电脑：点一下直接重连，不用再扫码
+        recentWrap = new LinearLayout(this);
+        recentWrap.setOrientation(LinearLayout.VERTICAL);
+        TextView recentLabel = text("最近的电脑 · 点一下重连", 12, FAINT);
+        recentLabel.setPadding(0, dp(14), 0, dp(8));
+        recentWrap.addView(recentLabel);
+        recentRail = new LinearLayout(this);
+        recentWrap.addView(chipRail(recentRail));
+        connectCard.addView(recentWrap);
         shareStatus = text("", 12, MINT);
         shareStatus.setPadding(0, dp(10), 0, 0);
         connectCard.addView(shareStatus);
         panel.addView(connectCard, cardParams());
+        renderRecents();
 
         // 卡 2：精灵（左边就是它本人）
         LinearLayout spriteCard = card();
@@ -293,10 +431,17 @@ public class MainActivity extends Activity {
             catch (Exception e) { toast("打不开应用信息页"); }
         });
         spriteCard.addView(row(talk, spriteToggle, info));
+        // 2) 常用指令 + 最近说过的：点一下直接让精灵干，省得每次开口
+        TextView cmdLabel = text("常用指令 · 点一下直接执行", 12, FAINT);
+        cmdLabel.setPadding(0, dp(14), 0, dp(8));
+        spriteCard.addView(cmdLabel);
+        spriteRail = new LinearLayout(this);
+        spriteCard.addView(chipRail(spriteRail));
         TextView spriteHint = text("若系统提示「受限设置」：应用信息 → 右上角 ⋮ → 允许受限设置，再回来开。", 12, FAINT);
-        spriteHint.setPadding(0, dp(10), 0, 0);
+        spriteHint.setPadding(0, dp(12), 0, 0);
         spriteCard.addView(spriteHint);
         panel.addView(spriteCard, cardParams());
+        renderSpriteChips();
 
         // 卡 2.5：快捷 —— 拍照 / 剪贴板双向 / 语音记任务 / 记笔记
         LinearLayout quickCard = card();
@@ -327,12 +472,26 @@ public class MainActivity extends Activity {
         LinearLayout shareRow = row(send, noteBtn, file);
         LinearLayout.LayoutParams srp = new LinearLayout.LayoutParams(-1, -2); srp.setMargins(0, dp(8), 0, 0);
         shareCard.addView(shareRow, srp);
+        // 3) 最近发送：发过什么回看一眼（图片/文件可多选一次发）
+        sendLogWrap = new LinearLayout(this);
+        sendLogWrap.setOrientation(LinearLayout.VERTICAL);
+        TextView sendLogLabel = text("最近发送", 12, FAINT);
+        sendLogLabel.setPadding(0, dp(14), 0, dp(6));
+        sendLogWrap.addView(sendLogLabel);
+        sendLogView = text("", 12, DIM);
+        sendLogWrap.addView(sendLogView);
+        shareCard.addView(sendLogWrap);
         panel.addView(shareCard, cardParams());
+        renderSendLog();
 
         TextView foot = text("手机不能让电脑执行任意命令；登录、付款、验证码、系统权限仍在电脑端确认。", 11, FAINT);
         foot.setGravity(Gravity.CENTER);
         foot.setPadding(dp(28), dp(18), dp(28), 0);
-        panel.addView(foot);
+        LinearLayout.LayoutParams footLp = new LinearLayout.LayoutParams(contentWidthPx(), -2);
+        footLp.gravity = Gravity.CENTER_HORIZONTAL;
+        panel.addView(foot, footLp);
+        // 收集所有需要随窗口宽度重算的块（卡片 + 脚），头已在上面登记
+        for (int i = 0; i < panel.getChildCount(); i++) widthCapped.add(panel.getChildAt(i));
 
         root.addView(setupPanel, new LinearLayout.LayoutParams(-1, 0, 1));
 
@@ -416,7 +575,54 @@ public class MainActivity extends Activity {
         SpriteService s = SpriteService.get();
         boolean visible = s != null && s.isSpriteShown();
         if (!enabled) { spriteStatus.setText("○ 无障碍未开启 —— 开了它才能看见屏幕、替你点"); spriteStatus.setTextColor(DIM); spriteToggle.setText("开启无障碍"); }
-        else { spriteStatus.setText("● 无障碍已开启 · " + (visible ? "精灵在屏幕下方" : "精灵隐藏中")); spriteStatus.setTextColor(MINT); spriteToggle.setText(visible ? "隐藏精灵" : "显示精灵"); }
+        else { spriteStatus.setText("● 无障碍已开启 · " + (visible ? "精灵在屏幕下方" : "精灵隐藏中")); spriteStatus.setTextColor(BLUE); spriteToggle.setText(visible ? "隐藏精灵" : "显示精灵"); }
+    }
+
+    // ---- 三个可刷新小区块 ----
+
+    /** 1 最近电脑：host:port 当标签，点一下回填地址并连 */
+    private void renderRecents() {
+        if (recentWrap == null) return;
+        java.util.List<String> recents = listPref("recents");
+        if (recents.isEmpty()) { recentWrap.setVisibility(View.GONE); return; }
+        recentWrap.setVisibility(View.VISIBLE);
+        java.util.List<String> labels = new ArrayList<>();
+        for (String ep : recents) labels.add(originOf(ep).replaceFirst("^https?://", ""));
+        fillChips(recentRail, labels, false, label -> {
+            for (String ep : listPref("recents"))
+                if (originOf(ep).replaceFirst("^https?://", "").equals(label)) { endpointInput.setText(ep); connect(); return; }
+        });
+    }
+
+    private static final String[] SPRITE_QUICK = { "读一下屏幕上有什么", "点第一个", "向下滑一屏", "返回上一页", "回到桌面" };
+
+    /** 2 常用指令 + 历史：固定几条在前，最近说过的接在后 */
+    private void renderSpriteChips() {
+        if (spriteRail == null) return;
+        java.util.List<String> labels = new ArrayList<>();
+        for (String s : SPRITE_QUICK) labels.add(s);
+        for (String h : listPref("spritehist")) if (!labels.contains(h)) labels.add(h);
+        fillChips(spriteRail, labels, false, this::runSpriteGoal);
+    }
+
+    private void runSpriteGoal(String goal) {
+        SpriteService s = SpriteService.get();
+        if (s == null) { toast("先开无障碍服务，精灵才能干活"); openAccessibilitySettings(); return; }
+        s.runGoal(goal);
+        pushPref("spritehist", goal, 6);
+        renderSpriteChips();
+        toast("交给精灵：" + goal);
+    }
+
+    /** 3 最近发送：一行一条，最新在上 */
+    private void renderSendLog() {
+        if (sendLogWrap == null) return;
+        java.util.List<String> log = listPref("sendlog");
+        if (log.isEmpty()) { sendLogWrap.setVisibility(View.GONE); return; }
+        sendLogWrap.setVisibility(View.VISIBLE);
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < log.size(); i++) { if (i > 0) sb.append("\n"); sb.append("· ").append(log.get(i)); }
+        sendLogView.setText(sb.toString());
     }
 
     // ---------------- 配对 / 连接 ----------------
@@ -462,6 +668,8 @@ public class MainActivity extends Activity {
         String endpoint = endpointInput.getText().toString().trim();
         if (!endpoint.startsWith("http://") && !endpoint.startsWith("https://")) { toast("请输入电脑端配对地址"); return; }
         getSharedPreferences(PREFS, MODE_PRIVATE).edit().putString(ENDPOINT, endpoint).apply();
+        pushPref("recents", endpoint, 4);
+        renderRecents();
         setupPanel.setVisibility(View.GONE);
         webView.loadUrl(endpoint);
         setChip("正在连接…", false);
@@ -581,7 +789,13 @@ public class MainActivity extends Activity {
             }
             return;
         }
-        if (req == PICK_FILE && result == RESULT_OK && data != null && data.getData() != null) { sendFile(data.getData()); return; }
+        if (req == PICK_FILE && result == RESULT_OK && data != null) {
+            if (data.getClipData() != null) {
+                android.content.ClipData cd = data.getClipData();
+                for (int i = 0; i < cd.getItemCount(); i++) { Uri u = cd.getItemAt(i).getUri(); if (u != null) sendFile(u); }
+            } else if (data.getData() != null) sendFile(data.getData());
+            return;
+        }
         if (req == TAKE_PHOTO) { if (result == RESULT_OK && photoUri != null) { shareStatus.setText("照片拍好了，正在递给电脑…"); setupPanel.setVisibility(View.VISIBLE); sendFile(photoUri); } return; }
         if (req == VOICE_TASK) {
             if (result == RESULT_OK && data != null) {
@@ -599,6 +813,7 @@ public class MainActivity extends Activity {
         Intent intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
         intent.addCategory(Intent.CATEGORY_OPENABLE);
         intent.setType("*/*");
+        intent.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, true);   // 一次可多选，批量发给电脑
         startActivityForResult(intent, PICK_FILE);
     }
 
@@ -615,7 +830,10 @@ public class MainActivity extends Activity {
                 org.json.JSONObject r = SpriteService.upload(this, uri, null);
                 boolean ok = r.optBoolean("ok");
                 String name = ok ? r.getJSONObject("saved").getString("name") : r.optString("error", "失败");
-                runOnUiThread(() -> shareStatus.setText(ok ? "电脑收到了：" + name + " ✓（在 下载/Agent工具箱/手机精灵）" : "发送失败：" + name));
+                runOnUiThread(() -> {
+                    shareStatus.setText(ok ? "电脑收到了：" + name + " ✓（在 下载/Agent工具箱/手机精灵）" : "发送失败：" + name);
+                    if (ok) { pushPref("sendlog", "📎 " + name, 6); renderSendLog(); }
+                });
             } catch (Exception e) { runOnUiThread(() -> shareStatus.setText("发送失败：" + e.getMessage())); }
         }).start();
     }
@@ -633,7 +851,11 @@ public class MainActivity extends Activity {
                 c.setRequestProperty("Content-Type", "application/json");
                 try (OutputStream out = c.getOutputStream()) { out.write(payload.getBytes(StandardCharsets.UTF_8)); }
                 int code = c.getResponseCode();
-                runOnUiThread(() -> { shareStatus.setText(code >= 200 && code < 300 ? "已发送到电脑收件箱 ✓" : "发送失败：HTTP " + code); if (code < 300) manualShareInput.setText(""); });
+                runOnUiThread(() -> {
+                    boolean ok = code >= 200 && code < 300;
+                    shareStatus.setText(ok ? "已发送到电脑收件箱 ✓" : "发送失败：HTTP " + code);
+                    if (ok) { manualShareInput.setText(""); pushPref("sendlog", "💬 " + (text.length() > 24 ? text.substring(0, 24) + "…" : text), 6); renderSendLog(); }
+                });
             } catch (Exception e) { runOnUiThread(() -> shareStatus.setText("发送失败：" + e.getMessage())); }
         }).start();
     }
@@ -663,4 +885,9 @@ public class MainActivity extends Activity {
     }
 
     private void toast(String message) { Toast.makeText(this, message, Toast.LENGTH_SHORT).show(); }
+
+    @Override protected void onDestroy() {
+        if (chipPulse != null) { chipPulse.cancel(); chipPulse = null; }
+        super.onDestroy();
+    }
 }

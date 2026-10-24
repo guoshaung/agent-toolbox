@@ -11,6 +11,7 @@ export default {
     const status = h('span', { class: 'tag dsh__status tag--warn' }, '正在连接 DSH…');
     let view = null;          // DSH 的 URL 带一次性 token，只能装一次，之后靠 reload 走无 token 地址
     let currentUrl = '';
+    let mountedUrl = '';
     let botOn = null;         // ds-bot 开没开（null=还没查到）
     let botBusy = false;      // 正在切换
 
@@ -22,9 +23,11 @@ export default {
     frame.append(placeholder);
 
     function mountView(url) {
-      // 只创建一次：token 是一次性的，重复用原始带 token 地址会 401
+      // 同一 token 只能使用一次；DSH 重启给出新 token 时必须换 webview。
       currentUrl = url;
-      if (view) return;
+      if (view && mountedUrl === url) return;
+      if (view) { try { view.remove(); } catch (_) { /* 已移除 */ } view = null; }
+      mountedUrl = url;
       view = h('webview', { partition: 'persist:dsh', src: url, allowpopups: true });
       view.addEventListener('did-navigate', (e) => { currentUrl = e.url; });
       view.addEventListener('did-navigate-in-page', (e) => { currentUrl = e.url; });
