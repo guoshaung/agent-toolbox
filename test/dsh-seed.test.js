@@ -57,6 +57,7 @@ test('DSH 种子：仓库自带的真种子包能解到任意 DSH_HOME，插件�
   assert.ok(fs.existsSync(path.join(home, 'plugins', 'dsh-our-free-model', 'index.js')), 'plugins/ 下的那份也要在');
   assert.equal(pkg.dependencies['dsh-our-free-model'], 'link:../../plugins/dsh-our-free-model', 'link: 依赖必须是相对路径');
   assert.ok(fs.existsSync(path.join(web, 'node_modules', 'ds-bot', 'package.json')));
+  assert.equal(JSON.parse(fs.readFileSync(path.join(web, 'node_modules', 'ds-bot', 'package.json'), 'utf8')).version, '0.2.1', 'Chief 新会话应使用修复模型路由的 DS Bot 版本');
   assert.equal(fs.existsSync(path.join(web, 'node_modules', '.bin')), false, '.bin 全是软链，Windows 解不出来，不该随种子走');
   // 逆向整合包：从 GitHub 装的真目录，88 个 SKILL.md 随插件走
   const reverse = path.join(web, 'node_modules', '@dhicoc', 'dsh-reverse-skill');

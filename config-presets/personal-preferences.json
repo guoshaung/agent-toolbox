@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "ui": {
+    "pinnedTools": ["ask", "focus", "research", "notebook", "notes", "video", "study"],
+    "rightPinnedTools": ["tavern", "pet", "appearance", "dsh", "eat", "gesture", "container"],
+    "theme": "silver",
+    "effect": "prism",
+    "logo": "crystal"
+  },
+  "translation": {
+    "target": "auto"
+  },
+  "history": {
+    "source": "dsh"
+  }
+}
