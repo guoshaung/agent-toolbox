@@ -17,6 +17,7 @@ function skillRoots({ homeDir = os.homedir(), projectDir = process.cwd(), exists
     { id: 'personal-codex', label: '个人目录 · ~/.codex/skills', path: path.join(homeDir, '.codex', 'skills') },
     { id: 'personal-cursor', label: '个人目录 · ~/.cursor/skills', path: path.join(homeDir, '.cursor', 'skills') },
     { id: 'personal-agents', label: '个人目录 · ~/.agents/skills', path: path.join(homeDir, '.agents', 'skills') },
+    { id: 'personal-dsh', label: 'DSH · ~/.dsh/skills（工具箱内置 Harness）', path: path.join(homeDir, '.dsh', 'skills') },
   ];
   const isProject = projectDir && projectDir !== '/' && path.resolve(projectDir) !== path.resolve(homeDir) && !projectDir.startsWith('/Applications') && exists(projectDir);
   const project = isProject ? [

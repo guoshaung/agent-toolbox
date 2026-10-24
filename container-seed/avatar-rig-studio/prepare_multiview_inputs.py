@@ -38,7 +38,7 @@ def cutout(image):
 
 
 def prepare(job):
-    for view in VIEWS:
+    for view in VIEWS + (('right',) if (job/'input-right.png').is_file() else ()):
         source = job / f'input-{view}.png'
         if not source.is_file():
             raise ValueError(f'缺少 {view} 图片')
@@ -48,9 +48,12 @@ def prepare(job):
                 raise ValueError(f'{view} 图尺寸无效（短边至少128像素，总像素不超过3200万）')
             # A common square canvas preserves within-view proportions. Height
             # normalization matches the upstream MV image processor contract.
-            image.thumbnail((2048, 2048), Image.Resampling.LANCZOS)
+            image.thumbnail((4096, 4096), Image.Resampling.LANCZOS)
             image = cutout(image)
             image = image.crop(image.getbbox())
+            # Keep a high-resolution crop for final texture projection. The
+            # square 1024 canvas below is only the Hunyuan conditioning input.
+            image.save(job / f'texture-source-{view}.png')
             image.thumbnail((870, 870), Image.Resampling.LANCZOS)
             canvas = Image.new('RGBA', (1024, 1024), (255, 255, 255, 0))
             canvas.alpha_composite(image, ((1024-image.width)//2, (1024-image.height)//2))

@@ -21,6 +21,17 @@ button, select, input { font: inherit; }
 .render-status [data-error="true"] { color: #ff8d96; }
 .settings { overflow: auto; padding: 28px 22px; border-left: 1px solid #ffffff14; background: #111720f2; box-shadow: -12px 0 40px #0005; }
 .settings header { margin-bottom: 25px; }
+.wardrobe h2 { margin: 0; font-size: 15px; }
+.wardrobe-hint, .wardrobe-credit { font-size: 11px; line-height: 1.6; color: #8798ad; }
+.wardrobe-credit { margin: 8px 0 18px; }
+.model-library { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.model-card { min-width: 0; padding: 0 0 8px; overflow: hidden; border: 1px solid #35414f; border-radius: 10px; background: #1a222d; color: #edf3f8; cursor: pointer; text-align: left; }
+.model-card img { display: block; width: 100%; aspect-ratio: 1; object-fit: cover; background: #222d3c; }
+.model-card strong, .model-card small { display: block; padding: 0 7px; overflow-wrap: anywhere; }
+.model-card strong { margin-top: 6px; font-size: 11px; }
+.model-card small { margin-top: 3px; font-size: 10px; color: #9dacc0; }
+.model-card[aria-pressed="true"] { border-color: #55e4c2; box-shadow: 0 0 0 1px #55e4c2; }
+.model-card:disabled { cursor: wait; opacity: .65; }
 .eyebrow { margin: 0 0 6px; color: #55e4c2; font: 750 10px/1 ui-monospace, monospace; letter-spacing: 1.4px; }
 h1 { margin: 0; font-size: 24px; letter-spacing: -.03em; }
 .field { display: grid; gap: 7px; margin: 18px 0 8px; color: #aab7c5; font-size: 12px; }

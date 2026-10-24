@@ -22,6 +22,9 @@ const pdfTitle = require('./pdf-title');
 const { installCoachExtension } = require('./coach-install');
 const litFetch = require('./lit-fetch');
 const { registerNotebookIpc } = require('./notebook');
+const { registerSystemBeautyIpc } = require('./system-beauty');
+const { registerDrawingIpc } = require('./drawing-sync');
+const { registerAiHubIpc } = require('./ai-hub');
 const { registerBiblioIpc } = require('./biblio');
 const { registerDocSearchIpc } = require('./doc-search');
 const { registerShelfIpc, stopAllShelfApps, start: startShelfTool, stop: stopShelfTool, status: shelfStatus, tail: shelfTail, resolveToolCommand } = require('./app-shelf');
@@ -1901,6 +1904,11 @@ function registerIpc() {
 
   // 代码记事本：读取 Understand-Anything 的知识图谱 + 按行号回读源码
   registerNotebookIpc(ipcMain, { dialog, getWindow: () => mainWindow, getUserDataPath: () => app.getPath('userData') });
+  registerSystemBeautyIpc(ipcMain, { dialog, shell, getWindow: () => mainWindow, getUserDataPath: () => app.getPath('userData') });
+  registerDrawingIpc(ipcMain, { app });
+  registerAiHubIpc(ipcMain, { app, safeStorage, clipboard, currentApi: () => ({
+    baseUrl: store.get('ai.api.baseUrl', ''), model: store.get('ai.api.model', ''), key: readApiKey(),
+  }), markClipboardSecret: value => { clipSecrets.add(value); if (clipSecrets.size > 50) clipSecrets.delete(clipSecrets.values().next().value); } });
   registerContainerIpc(ipcMain, { shell, getUserDataPath: () => app.getPath('userData') });
   // 鼠标侧键 → 切换应用（macOS，swiftc 编译的 CGEventTap 小助手）
   registerMouseSwitchIpc(ipcMain, { getUserDataPath: () => app.getPath('userData') });
@@ -2052,6 +2060,204 @@ function registerIpc() {
     });
   } catch (err) {
     console.error('[orchestrator] 未加载（文件可能未打包）：', err.message);
+  }
+
+  // ---- 论文讲解：分层教学页 + 火山双人配音 + papervid ----
+  try {
+    const { PaperTalkService } = require('./paper-talk-service');
+    const { resolveClaude } = require('./orchestrator-service');
+    const voiceConfig = require('./paper-talk-voice-config').createVoiceConfig({ vault, store });
+    const synthesizeVoice = options => require('./paper-talk-tts').synthesizeSpeech({ ...options, apiKey:voiceConfig.credential() });
+    const resourcesDir=app.isPackaged?process.resourcesPath:path.join(__dirname,'..','..','resources');
+    const localPapers=new (require('./paper-talk-local').LocalPaperService)({userDataDir:app.getPath('userData'),resourcesDir});
+    const paperTalk = new PaperTalkService({
+      userDataDir: app.getPath('userData'),
+      resourcesDir: app.isPackaged ? process.resourcesPath : path.join(__dirname, '..', '..', 'resources'),
+      resolveClaude,
+      synthesizeVoice,
+      loadLocalPaper:id=>localPapers.load(id),
+      generateScript: async (prompt, options = {}) => {
+        const cfg = store.get('research.papertalk.api', {});
+        const credential = cfg.vaultId ? vault.keyOf(String(cfg.vaultId)) : { ok: true, key: readApiKey() };
+        if (!credential.ok) throw new Error('论文讲解密钥：' + credential.error);
+        const api = validateCompatibleConfig({
+          baseUrl: cfg.baseUrl || store.get('ai.api.baseUrl', ''),
+          model: cfg.model || store.get('ai.api.model', ''),
+          hasKey: Boolean(credential.key),
+        });
+        if (!api.ok) throw new Error(api.error);
+        return require('./paper-talk-api').requestPaperText({ endpoint: api.endpoints.chat, apiKey: credential.key,
+          model: api.model, prompt, jsonMode: Boolean(options.jsonMode) });
+      },
+      emit: (e) => { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('papertalk:progress', e); },
+    });
+    ipcMain.handle('papertalk:run', (_e, payload) => {
+      if(payload?.localPaperId&&payload.allowCloud!==true)return{ok:false,error:'请先确认允许将提取的论文正文发送至已配置的 AI 服务'};
+      try { voiceConfig.credential(); return paperTalk.run(payload || {}); }
+      catch (e) { return {ok:false,error:e.message}; }
+    });
+    const localSender=e=>{try{const u=new URL(e.senderFrame.url),base=pathToFileURL(path.join(__dirname,'..','renderer')+path.sep).href;return u.protocol==='file:'&&u.href.startsWith(base)&&u.pathname.endsWith('.html');}catch{return false;}};
+    ipcMain.handle('papertalk:pickPdf',async(e)=>{
+      if(!localSender(e))return{ok:false,error:'仅允许在工具箱本地页面选择文件'};
+      const selected=await dialog.showOpenDialog(BrowserWindow.fromWebContents(e.sender)||mainWindow,{title:'选择用于论文讲解的 PDF',filters:[{name:'论文 PDF',extensions:['pdf']}],properties:['openFile']});
+      if(selected.canceled||!selected.filePaths[0])return{ok:false,canceled:true};
+      return localPapers.importFile(selected.filePaths[0]);
+    });
+    ipcMain.handle('papertalk:importPdf',(e,file)=>localSender(e)?localPapers.importFile(file):{ok:false,error:'仅允许从工具箱本地页面导入文件'});
+    ipcMain.handle('papertalk:localInfo',(e,id)=>{try{return localSender(e)?localPapers.info(id):{ok:false,error:'无权访问本地论文'};}catch{return{ok:false,error:'本地 PDF 缓存不存在，请重新上传'};}});
+    ipcMain.handle('papertalk:voiceStatus', () => voiceConfig.status());
+    ipcMain.handle('papertalk:voiceSave', (_e, key) => voiceConfig.save(key));
+    let previewBusy = false;
+    ipcMain.handle('papertalk:voicePreview', async () => {
+      if (previewBusy) return {ok:false,error:'正在生成试听，请稍候'};
+      previewBusy = true;
+      try {
+        const key = voiceConfig.credential();
+        const files = [];
+        for (const [speaker,text,delivery] of [
+          ['A','等一下，这篇论文真正想解决的，究竟是什么问题？我们先抓住最关键的一点。','curious'],
+          ['B','关键不在于模型答对了多少题，而在于：当多个智能体开始协作，风险会怎样一步步出现。这才是我们要重点看的。','emphasize'],
+        ]) {
+          const audio = await require('./paper-talk-tts').synthesizeSpeech({apiKey:key,voiceMode:'mf',segment:{speaker,text,delivery,focus:0},slide:{emphasis:'core',points:[{heading:'多智能体协作中的风险机制'}]}});
+          const file = path.join(paperTalk.outDir,`voice-preview-${speaker}.mp3`);
+          fs.writeFileSync(file,audio,{mode:0o600}); files.push({speaker,file});
+        }
+        return {ok:true,files};
+      } catch (e) {return {ok:false,error:e.message};}
+      finally {previewBusy=false;}
+    });
+    ipcMain.handle('papertalk:test', async () => {
+      try {
+        await paperTalk.generateScript('只回复 OK，不要其他内容。');
+        return { ok: true, model: store.get('research.papertalk.api.model', '') || store.get('ai.api.model', '') };
+      } catch (e) { return { ok: false, error: e.message }; }
+    });
+    ipcMain.handle('papertalk:list', () => paperTalk.list());
+    ipcMain.handle('papertalk:state', () => paperTalk.state());
+    ipcMain.handle('papertalk:plan', (_e, input) => paperTalk.plan(input));
+    const { BilibiliPublishService } = require('./bilibili-publish');
+    const publisher = new BilibiliPublishService({ outputDir: paperTalk.outDir, BrowserWindow, session,
+      partition: PARTITIONS.bilibili,
+      emit: state => { if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('papertalk:publish-state', state); },
+    });
+    ipcMain.handle('papertalk:publishPrepare', (_e, file) => {
+      try { return publisher.prepare(file); } catch (e) { return { ok: false, error: e.message }; }
+    });
+    ipcMain.handle('papertalk:publishOpen', async (_e, payload) => {
+      try { return await publisher.open(payload || {}); } catch (e) { return { ok: false, error: e.message }; }
+    });
+    ipcMain.handle('papertalk:reveal', (_e, p) => { shell.showItemInFolder(String(p || '')); return { ok: true }; });
+    ipcMain.handle('papertalk:open', (_e, p) => shell.openPath(String(p || '')));
+  } catch (err) {
+    console.error('[paper-talk] 未加载：', err.message);
+  }
+
+  // ---- LocalSend：局域网里的工具箱互相发现、互传文件/文字（UDP 53318 发现 + HTTP 传输；对方点接受才收）----
+  try {
+    const { LocalSendService } = require('./localsend-service');
+    const localSend = new LocalSendService({
+      userDataDir: app.getPath('userData'),
+      recvDir: path.join(app.getPath('downloads'), 'LocalSend'),
+      emit: (e) => {
+        if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('localsend:event', e);
+        if (e.type === 'incoming') {
+          try {
+            const what = e.files.length ? `${e.files.length} 个文件${e.text ? ' + 文字' : ''}` : '一段文字';
+            const n = new Notification({ title: `LocalSend：${e.from.name || e.from.ip}（#${e.from.code || '?'}）`, body: `想发给你 ${what}，点这里查看并接受` });
+            n.on('click', () => ensureMainWindow({ show: true }).webContents.send('app:navigate-tool', { id: 'localsend' }));
+            n.show();
+          } catch { /* */ }
+        }
+        if (e.type === 'file-received' && e.done) {
+          try { const n = new Notification({ title: 'LocalSend 收好了', body: `来自 ${e.from} · 在 下载/LocalSend` }); n.on('click', () => shell.showItemInFolder(e.path)); n.show(); } catch { /* */ }
+        }
+      },
+    });
+    localSend.start();
+    ipcMain.handle('localsend:info', () => localSend.info());
+    ipcMain.handle('localsend:peers', () => localSend.listPeers());
+    ipcMain.handle('localsend:pending', () => localSend.pendingList());
+    ipcMain.handle('localsend:history', () => localSend.getHistory());
+    ipcMain.handle('localsend:setName', (_e, name) => localSend.setName(name));
+    ipcMain.handle('localsend:addIp', (_e, ip) => localSend.addByIp(ip));
+    ipcMain.handle('localsend:send', (_e, payload) => localSend.send(payload || {}));
+    ipcMain.handle('localsend:respond', (_e, offerId, accept) => localSend.respond(offerId, accept));
+    ipcMain.handle('localsend:openFolder', () => shell.openPath(localSend.recvDir));
+    ipcMain.handle('localsend:reveal', (_e, p) => { shell.showItemInFolder(String(p || '')); return { ok: true }; });
+    ipcMain.handle('localsend:pickFiles', async () => {
+      const r = await dialog.showOpenDialog(mainWindow || undefined, { title: '选要发送的文件', properties: ['openFile', 'multiSelections'] });
+      return r.canceled ? [] : r.filePaths;
+    });
+    app.on('before-quit', () => { try { localSend.stop(); } catch { /* */ } });
+  } catch (err) {
+    console.error('[localsend] 未加载：', err.message);
+  }
+
+  // ---- DeepSeek 路由 MCP：把简单活交给 DeepSeek 省 Claude 额度。key 只在主进程里过，写进客户端 MCP 配置的 env ----
+  try {
+    const DSR_NAME = 'deepseek-router';
+    const dsrScript = path.join(__dirname, 'deepseek-router-mcp.js');
+    const dsrLog = path.join(app.getPath('userData'), 'deepseek-router', 'usage.jsonl');
+    const dsrTargets = () => mcpFactory.mcpTargets({ homeDir: app.getPath('home'), platform: process.platform }).filter((t) => t.format === 'claude');
+    const dsrKey = ({ vaultId, apiKey } = {}) => {
+      if (apiKey && String(apiKey).trim()) return { ok: true, key: String(apiKey).trim() };
+      if (!vaultId) return { ok: false, error: '先选保险箱里的 DeepSeek key，或直接粘贴一个' };
+      return vault.keyOf(String(vaultId));
+    };
+    const dsrPing = async (key, model) => {
+      const res = await fetch('https://api.deepseek.com/chat/completions', {
+        method: 'POST', headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ model, messages: [{ role: 'user', content: '只回两个字：收到' }], max_tokens: 10 }),
+        signal: AbortSignal.timeout(30000),
+      });
+      const t = await res.text();
+      if (!res.ok) return { ok: false, error: `DeepSeek HTTP ${res.status}：${t.split(key).join('[已隐藏]').slice(0, 200)}` };
+      const j = JSON.parse(t);
+      return { ok: true, reply: j.choices?.[0]?.message?.content || '', model: j.model || model };
+    };
+    ipcMain.handle('dsr:status', () => {
+      const targets = dsrTargets().map((t) => {
+        let installed = false;
+        try { installed = mcpFactory.listMcpServers(t).includes(DSR_NAME); } catch { /* 读不了当没装 */ }
+        return { id: t.id, label: t.label, path: t.path, exists: t.exists, installed };
+      });
+      let rows = [];
+      try { rows = fs.readFileSync(dsrLog, 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l)); } catch { /* 还没用过 */ }
+      const today = new Date().toISOString().slice(0, 10);
+      const sum = (list) => list.reduce((a, r) => ({ n: a.n + 1, i: a.i + (r.in || 0), o: a.o + (r.out || 0) }), { n: 0, i: 0, o: 0 });
+      return { ok: true, targets, usage: { today: sum(rows.filter((r) => String(r.at).startsWith(today))), all: sum(rows) }, script: dsrScript };
+    });
+    ipcMain.handle('dsr:test', async (_e, payload = {}) => {
+      const k = dsrKey(payload); if (!k.ok) return k;
+      try { return await dsrPing(k.key, payload.model || 'deepseek-chat'); } catch (err) { return { ok: false, error: '连不上 DeepSeek：' + err.message }; }
+    });
+    ipcMain.handle('dsr:install', async (_e, payload = {}) => {
+      const k = dsrKey(payload); if (!k.ok) return k;
+      const model = payload.model || 'deepseek-chat';
+      let ping; try { ping = await dsrPing(k.key, model); } catch (err) { return { ok: false, error: '连不上 DeepSeek：' + err.message }; }
+      if (!ping.ok) return ping;
+      const want = new Set(Array.isArray(payload.targets) ? payload.targets : []);
+      const results = [];
+      for (const target of dsrTargets().filter((t) => want.has(t.id))) {
+        try {
+          const r = mcpFactory.writeMcpServer({ target, overwrite: true, definition: {
+            name: DSR_NAME, transport: 'stdio', command: process.execPath, args: [dsrScript],
+            env: { ELECTRON_RUN_AS_NODE: '1', DEEPSEEK_API_KEY: k.key, DEEPSEEK_MODEL: model, DEEPSEEK_ROUTER_LOG: dsrLog },
+          } });
+          results.push({ id: target.id, label: target.label, ok: r.ok !== false, error: r.error || '' });
+        } catch (err) { results.push({ id: target.id, label: target.label, ok: false, error: err.message }); }
+      }
+      return { ok: results.length > 0 && results.every((r) => r.ok), results, model: ping.model };
+    });
+    ipcMain.handle('dsr:uninstall', (_e, payload = {}) => {
+      const want = new Set(Array.isArray(payload.targets) ? payload.targets : []);
+      return { ok: true, results: dsrTargets().filter((t) => want.has(t.id)).map((target) => {
+        try { const r = mcpFactory.removeMcpServer({ target, name: DSR_NAME }); return { id: target.id, ok: r.ok !== false, error: r.error || '' }; }
+        catch (err) { return { id: target.id, ok: false, error: err.message }; }
+      }) };
+    });
+  } catch (err) {
+    console.error('[deepseek-router] 未加载：', err.message);
   }
 
   // ---- 表情包管理：本地库在 userData/stickers/，Tenor Key 用 safeStorage 加密，同步只往私有仓库 ----
@@ -2418,6 +2624,8 @@ function registerIpc() {
   ipcMain.handle('dsh:status', () => dshService.status());
   ipcMain.handle('dsh:start', () => dshService.start());
   ipcMain.handle('dsh:stop', () => dshService.stop());
+  ipcMain.handle('dsh:botEnabled', () => dshService.botEnabled());
+  ipcMain.handle('dsh:setBot', (_event, enabled) => dshService.setBot(enabled));
   ipcMain.handle('tavern:status', () => tavernService.status());
   ipcMain.handle('tavern:start', () => tavernService.start());
   ipcMain.handle('tavern:stop', () => tavernService.stop());
