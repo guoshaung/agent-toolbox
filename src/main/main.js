@@ -4016,6 +4016,22 @@ function forwardSwitcherKeys(contents) {
     if (!mainWindow || mainWindow.isDestroyed()) return;
     const ctrl = input.control || input.modifiers?.includes('control');
 
+    // 快问可选阅读锁：在网页里按 ⌘J / Ctrl+J 时，事件不会冒泡到工具箱界面。
+    // 只接管快问当前窗口（含撕出的独立窗口），不影响其他工具或登录弹窗。
+    const readerModifier = process.platform === 'darwin' ? input.meta : ctrl;
+    if (input.type === 'keyDown' && readerModifier && !input.shift && !input.alt && !input.isAutoRepeat && String(input.key).toLowerCase() === 'j') {
+      const owner = contents.getOwnerBrowserWindow?.();
+      const ownerContents = owner?.webContents;
+      const detachedAsk = /[?&]detach=ask(?:&|$)/.test(ownerContents?.getURL?.() || '');
+      const mainAsk = owner === mainWindow && store?.get('ui.lastTool') === 'ask';
+      const askGuest = contents.getType?.() === 'webview' && contents.session === session.fromPartition(PARTITIONS.deepseek);
+      if (ownerContents && !owner.isDestroyed() && (mainAsk || detachedAsk) && (contents === ownerContents || askGuest)) {
+        event.preventDefault();
+        ownerContents.send('ask:reader-toggle');
+        return;
+      }
+    }
+
     // ⌘K / Ctrl+K：焦点在 webview 里时宿主页面收不到，主进程截下来转发
     if (input.type === 'keyDown' && (input.meta || input.control) && !input.shift && !input.alt && String(input.key).toLowerCase() === 'k') {
       event.preventDefault();

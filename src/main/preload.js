@@ -450,6 +450,9 @@ contextBridge.exposeInMainWorld('toolbox', {
   palette: {
     onOpen: (callback) => ipcRenderer.on('palette:open', () => callback()),
   },
+  askReader: {
+    onToggle: (callback) => ipcRenderer.on('ask:reader-toggle', () => callback()),
+  },
 
   /** 学习记录：解释 / 看懂 / 带我读 / 考考我 都记一笔 */
   learn: {

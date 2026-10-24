@@ -2,6 +2,7 @@ import { h, toast } from '../../core/ui.js';
 import { PAGE_AGENT } from '../../core/page-agent.js';
 import { DEEPSEEK_URL, DEEPSEEK_PARTITION } from '../../core/deepseek-bridge.js';
 import { CAPTURE_AGENT } from '../../core/capture-agent.js';
+import { ASK_READER_AGENT } from '../../core/ask-reader.js';
 import { createStore } from '../anchor/store.js';
 import { createRail } from '../anchor/rail.js';
 
@@ -36,6 +37,8 @@ export default {
 
   create(root, ctx) {
     const { config } = ctx;
+    let readerEnabled = config.get('ask.reader.enabled', false) === true;
+    let readerSpeed = Math.min(1.1, Math.max(0.4, Number(config.get('ask.reader.speed', 0.7)) || 0.7));
 
     const view = h('webview', {
       partition: DEEPSEEK_PARTITION,
@@ -49,7 +52,7 @@ export default {
     });
 
     const quick = h('input', {
-      class: 'field',
+      class: 'field ask__quick',
       placeholder: '直接在这里问，回车发送 —— 不用先点进去',
       onkeydown: async (e) => {
         if (e.key !== 'Enter' || e.isComposing) return;
@@ -159,6 +162,50 @@ export default {
     }, '⚓ 锚点');
     if (config.get('ask.rail.hidden')) rail.root.setAttribute('hidden', '');
 
+    async function syncReader() {
+      try {
+        if (new URL(view.getURL()).hostname !== 'chat.deepseek.com') return;
+        await view.executeJavaScript(ASK_READER_AGENT);
+        await view.executeJavaScript(`window.__tbxReader.setSpeed(${readerSpeed}); window.__tbxReader.setEnabled(${readerEnabled});`, true);
+      } catch { /* 导航中或页面尚未就绪，下次 dom-ready 再同步 */ }
+    }
+    const lock = h('button', {
+      class: 'btn btn--sm ask__reader-lock',
+      type: 'button',
+      onclick: () => toggleReader(),
+    });
+    function paintReader() {
+      lock.textContent = readerEnabled ? '🔐' : '🔓';
+      lock.classList.toggle('is-on', readerEnabled);
+      lock.setAttribute('aria-pressed', String(readerEnabled));
+      lock.title = `键盘翻页${readerEnabled ? '已开启' : '已关闭'} · ${window.toolbox.platform === 'darwin' ? '⌘J' : 'Ctrl+J'} 切换 · J 下翻 / K 上翻`;
+    }
+    function toggleReader() {
+      readerEnabled = !readerEnabled;
+      config.set('ask.reader.enabled', readerEnabled);
+      paintReader();
+      void syncReader();
+    }
+    paintReader();
+    const speedValue = h('span', { class: 'ask__reader-value' }, `${readerSpeed.toFixed(1)} 屏`);
+    const speed = h('input', {
+      type: 'range', min: '0.4', max: '1.1', step: '0.1', value: String(readerSpeed),
+      'aria-label': '快问翻页速度',
+      oninput: () => {
+        readerSpeed = Number(speed.value);
+        speedValue.textContent = `${readerSpeed.toFixed(1)} 屏`;
+        config.set('ask.reader.speed', readerSpeed);
+        void syncReader();
+      },
+    });
+    const readerControls = h('div', { class: 'ask__reader-controls' },
+      lock,
+      h('label', { class: 'ask__reader-speed' }, '速度', speed, speedValue),
+    );
+    window.toolbox.askReader?.onToggle?.(() => {
+      if (!root.hasAttribute('hidden')) toggleReader();
+    });
+
     const bar = h('div', { class: 'bar bar--drag' },
       h('button', {
         class: 'btn btn--icon', title: '新会话',
@@ -174,6 +221,7 @@ export default {
         onclick: () => panel.toggleAttribute('hidden'),
       }, '🖼 背景'),
       railToggle,
+      readerControls,
     );
 
     const stage = h('div', { class: 'ask__stage' }, view, rail.root);
@@ -242,6 +290,7 @@ export default {
       injected = false;
       await applyBackground();
       await inject();
+      await syncReader();
       startDraining();
     });
     view.addEventListener('did-fail-load', (e) => {

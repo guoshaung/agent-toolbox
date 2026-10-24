@@ -2592,6 +2592,14 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 /* webview 必须留在 flex 里，否则 guest 视口会缩回 150px 的固有高度 */
 .ask__stage { display: flex; flex: 1; min-height: 0; gap: 8px; }
 .ask__stage webview { flex: 1; min-width: 0; }
+.ask__quick { flex: 1; min-width: 150px; }
+.ask__reader-controls { display: flex; align-items: center; gap: 6px; margin-left: auto; flex: none; padding-left: 10px; border-left: 1px solid var(--line-soft); }
+.ask__reader-lock { min-width: 38px; padding: 4px 7px; font-size: 18px; line-height: 1; }
+.ask__reader-lock.is-on { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 17%, transparent); }
+.ask__reader-speed { display: flex; align-items: center; gap: 5px; color: var(--text-dim); font-size: 11px; white-space: nowrap; }
+.ask__reader-speed input { width: 82px; accent-color: var(--accent); cursor: pointer; }
+.ask__reader-value { min-width: 34px; color: var(--text); font-variant-numeric: tabular-nums; }
+@media (max-width: 1000px) { .ask__reader-speed input { width: 60px; } .ask__reader-controls { padding-left: 5px; } }
 
 .anchor {
   width: 268px;
