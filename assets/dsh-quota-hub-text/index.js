@@ -11,6 +11,8 @@ const PORT = 18879
 const CONFIG_FILE = path.join(process.env.DSH_HOME || path.join(os.homedir(), '.dsh'), 'toolbox-quota-hub-text.json')
 const MAX_BODY = 2 * 1024 * 1024
 const MAX_USER_CHARS = 16000
+const MAX_CONTEXT_CHARS = 12000
+const MAX_CONTEXT_MESSAGES = 20
 
 function respond(res, status, message) {
   res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' })
@@ -25,24 +27,49 @@ function pureText(content) {
   return null
 }
 
+function assistantText(content) {
+  if (typeof content === 'string') return content
+  if (!Array.isArray(content)) return null
+  return content.filter(part => part?.type === 'text' && typeof part.text === 'string').map(part => part.text).join('\n') || null
+}
+
 export function normalizeTextRequest(input) {
   if (!input || input.model !== 'auto' || !Array.isArray(input.messages)) throw new Error('只支持模型 auto 的纯文本消息')
   const messages = input.messages
-  let lastUser = [...messages].reverse().find(message => message?.role === 'user')
-  if (!lastUser) throw new Error('缺少用户文本')
-  let content = pureText(lastUser.content)
-  // DSH 的首轮固定把实际输入放在第 2 条，之后再附一段短说明和大块工具前导。
-  // 只对已验证的四条消息结构做转换；其它过长消息不能猜测成前导。
-  if (content?.length > MAX_USER_CHARS && messages.length === 4
-      && messages[0]?.role === 'system' && messages.slice(1).every(message => message?.role === 'user')
-      && pureText(messages[2].content)?.length < 2000 && content.length > 32000) {
-    lastUser = messages[1]
-    content = pureText(lastUser.content)
+  const conversation = []
+  for (let i = 0; i < messages.length; i++) {
+    const message = messages[i]
+    if (message?.role === 'user') {
+      const content = pureText(message.content)
+      // DSH 会在真实用户输入后追加一段短说明和大型工具前导。
+      // 只在相邻三条 user 消息吻合已验证的形状时丢弃这两段前导。
+      if (content?.length > 32000 && i >= 2
+          && messages[i - 1]?.role === 'user' && pureText(messages[i - 1].content)?.length < 2000
+          && messages[i - 2]?.role === 'user' && conversation.at(-1)?.role === 'user') {
+        conversation.pop()
+        continue
+      }
+      if (content === null) throw new Error('当前路由不支持图片或文件消息')
+      if (content && content.length <= MAX_USER_CHARS) conversation.push({ role: 'user', content })
+      else if (content?.length > MAX_USER_CHARS) throw new Error('用户文本超过长度上限')
+    } else if (message?.role === 'assistant') {
+      const content = assistantText(message.content)
+      if (content) conversation.push({ role: 'assistant', content })
+    }
   }
-  if (!content || content.length > MAX_USER_CHARS) throw new Error('用户消息不是纯文本或超过文本上限')
+  if (conversation.at(-1)?.role !== 'user') throw new Error('缺少当前用户文本')
+  const selected = [conversation.at(-1)]
+  let length = selected[0].content.length
+  for (let i = conversation.length - 2; i >= 0 && selected.length < MAX_CONTEXT_MESSAGES; i--) {
+    const message = conversation[i]
+    if (length + message.content.length > MAX_CONTEXT_CHARS) break
+    selected.unshift(message)
+    length += message.content.length
+  }
+  while (selected[0]?.role === 'assistant') selected.shift()
   return {
     model: 'auto',
-    messages: [{ role: 'user', content }],
+    messages: selected,
     stream: input.stream === true,
     max_tokens: 4096,
   }

@@ -93,7 +93,7 @@ test('provider patch replaces only the hub block on repeated setup', () => {
   assert.match(twice, /- id: other/);
 });
 
-test('bundled DSH bridge sends only the current text to the configured Chat Completions endpoint', async () => {
+test('bundled DSH bridge preserves text turns while removing tool prelude', async () => {
   const { normalizeTextRequest, targetUrl } = await import(path.join(pluginSource, 'index.js'));
   assert.equal(targetUrl('http://127.0.0.1:18878/v1', '/v1/chat/completions').href, 'http://127.0.0.1:18878/v1/chat/completions');
   assert.equal(targetUrl('https://example.test/api/v3', '/v1/models').href, 'https://example.test/api/v3/models');
@@ -103,6 +103,19 @@ test('bundled DSH bridge sends only the current text to the configured Chat Comp
     { role: 'user', content: 'short prelude' }, { role: 'user', content: 'x'.repeat(64000) },
   ] };
   assert.deepEqual(normalizeTextRequest(first), { model: 'auto', stream: true, max_tokens: 4096, messages: [{ role: 'user', content: 'first prompt' }] });
-  assert.deepEqual(normalizeTextRequest({ ...first, messages: [...first.messages, { role: 'user', content: 'next prompt' }] }).messages, [{ role: 'user', content: 'next prompt' }]);
-  assert.throws(() => normalizeTextRequest({ model: 'auto', messages: [{ role: 'user', content: [{ type: 'image_url', image_url: { url: 'x' } }] }] }), /纯文本/);
+  const second = { ...first, messages: [...first.messages,
+    { role: 'assistant', content: 'first answer' }, { role: 'tool', content: 'private tool output' },
+    { role: 'user', content: 'next prompt' }, { role: 'user', content: 'short prelude' }, { role: 'user', content: 'x'.repeat(64000) },
+  ] };
+  assert.deepEqual(normalizeTextRequest(second).messages, [
+    { role: 'user', content: 'first prompt' }, { role: 'assistant', content: 'first answer' }, { role: 'user', content: 'next prompt' },
+  ]);
+  assert.deepEqual(normalizeTextRequest({ model: 'auto', messages: [
+    { role: 'user', content: 'My code is 4321.' },
+    { role: 'assistant', content: [{ type: 'thinking', thinking: 'do not forward' }, { type: 'text', text: 'I will remember.' }], tool_calls: [{ id: 'hidden' }] },
+    { role: 'user', content: 'What is my code?' },
+  ] }).messages, [
+    { role: 'user', content: 'My code is 4321.' }, { role: 'assistant', content: 'I will remember.' }, { role: 'user', content: 'What is my code?' },
+  ]);
+  assert.throws(() => normalizeTextRequest({ model: 'auto', messages: [{ role: 'user', content: [{ type: 'image_url', image_url: { url: 'x' } }] }] }), /图片或文件/);
 });

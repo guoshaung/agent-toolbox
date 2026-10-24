@@ -96,13 +96,13 @@ function mergeCredentials(raw, key) {
 
 const providerLines = [
   '      toolbox-quota-hub:',
-  '        displayName: Toolbox 额度中枢（单轮文本）',
+  '        displayName: Toolbox 额度中枢（文本对话）',
   `        apiKeyEnv: ${REF}`,
   '        api: openai-completions',
   `        baseURL: ${BRIDGE_URL}`,
   '        models:',
   '          - id: auto',
-  '            name: Auto · 额度中枢（单轮文本）',
+  '            name: Auto · 额度中枢（文本对话）',
   '            contextWindow: 8192',
   '            maxTokens: 4096',
   '            input: [text]',

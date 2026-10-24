@@ -1,10 +1,10 @@
 {
   "name": "toolbox-quota-hub-text",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
   "type": "module",
   "main": "./index.js",
   "exports": { ".": "./index.js" },
-  "description": "Text-only DSH bridge to the Windows Agent Toolbox quota hub",
+  "description": "Text conversation bridge from DSH to an Agent Toolbox quota hub",
   "dsh": { "bundle": { "patch": "./cordis.patch.yml" } }
 }
