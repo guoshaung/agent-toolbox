@@ -24,6 +24,7 @@ const litFetch = require('./lit-fetch');
 const { registerNotebookIpc } = require('./notebook');
 const { registerSystemBeautyIpc } = require('./system-beauty');
 const { registerDrawingIpc } = require('./drawing-sync');
+const { registerAiHubIpc } = require('./ai-hub');
 const { registerBiblioIpc } = require('./biblio');
 const { registerDocSearchIpc } = require('./doc-search');
 const { registerShelfIpc, stopAllShelfApps, start: startShelfTool, stop: stopShelfTool, status: shelfStatus, tail: shelfTail, resolveToolCommand } = require('./app-shelf');
@@ -1905,6 +1906,9 @@ function registerIpc() {
   registerNotebookIpc(ipcMain, { dialog, getWindow: () => mainWindow, getUserDataPath: () => app.getPath('userData') });
   registerSystemBeautyIpc(ipcMain, { dialog, shell, getWindow: () => mainWindow, getUserDataPath: () => app.getPath('userData') });
   registerDrawingIpc(ipcMain, { app });
+  registerAiHubIpc(ipcMain, { app, safeStorage, clipboard, currentApi: () => ({
+    baseUrl: store.get('ai.api.baseUrl', ''), model: store.get('ai.api.model', ''), key: readApiKey(),
+  }), markClipboardSecret: value => { clipSecrets.add(value); if (clipSecrets.size > 50) clipSecrets.delete(clipSecrets.values().next().value); } });
   registerContainerIpc(ipcMain, { shell, getUserDataPath: () => app.getPath('userData') });
   // 鼠标侧键 → 切换应用（macOS，swiftc 编译的 CGEventTap 小助手）
   registerMouseSwitchIpc(ipcMain, { getUserDataPath: () => app.getPath('userData') });

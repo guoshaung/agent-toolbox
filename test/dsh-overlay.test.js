@@ -35,7 +35,7 @@ test('DSH overlay：有 uvx 才挂 Blender，顺序 toolbox→blender→rea，se
   const entries = yaml.load(buildOverlay({ ...base, uvx: '/u/bin/uvx' }))[0].insert;
   assert.deepEqual(entries.map((e) => e.id), ['mcp-agent-toolbox', 'mcp-blender', 'mcp-rea']);
   assert.equal(entries[1].config.command, '/u/bin/uvx');
-  assert.deepEqual(entries[1].config.args, ['mcp-for-blender']);
+  assert.deepEqual(entries[1].config.args, ['--offline', 'mcp-for-blender']);
   const names = entries.map((e) => e.config.serverName);
   assert.equal(new Set(names).size, names.length);
 });

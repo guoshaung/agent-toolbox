@@ -4,13 +4,15 @@
 
 ## 安装与签名
 
-`ToolboxDrawing-0.2.0-unsigned.ipa` 是 **未签名的真机编译包**，不能直接点开安装。需要在自己的设备上签名。
+当前原生版本为 **0.2.1**。未签名的真机 IPA 不能直接点开安装，需要在自己的设备上签名。
 
 - Windows：可使用爱思助手的「工具箱 → IPA 签名」，导入该 IPA，并自行输入 Apple ID / 验证码完成个人签名，再用数据线安装到 iPad。根据爱思官方说明，普通 Apple ID 签名有效期通常为 7 天，需要定期重新签名。首次运行可能需要在 iPad「隐私与安全性」启用开发者模式，并在「VPN 与设备管理」信任对应开发者。
 - Mac：运行 `python3 generate_project.py`，用 Xcode 打开 `ToolboxDrawing.xcodeproj`，在 Signing & Capabilities 选自己的 Personal Team，连接 iPad 并运行。账号登录、设备信任与权限确认由本人操作。
 - 本包没有 Apple 签名证书、描述文件或 Apple ID。没有绕过 iPadOS 签名。未越狱设备必须完成合法签名才能安装。
 
-首次连接：电脑打开 Toolbox「更多 → 写作代码 → 同步绘图」，iPad 扫描专用二维码或粘贴完整配对地址。电脑需安装支持 PencilKit 数据的新版 Toolbox。
+首次连接：电脑打开 Toolbox「更多轮盘 → 绘图同步 → 同步绘图」，开启同步；在原生 iPad 绘图本内点「配对」，扫描二维码或粘贴完整地址。右上角显示「已同步」表示成功。电脑连接面板会自动收起，也可手动重开。系统相机扫描后在 Safari 打开的是网页模式。
+
+0.2.1 修复原生 SSE 数据已收到但一直不应用的情况，已在真机验证双向笔迹和电脑图片下发。可复用的签名、安装和排查过程见 [iPad 联调记录](../../docs/IPAD-INTEGRATION-NOTES.md)。
 
 ## 原生笔输入
 

@@ -6,6 +6,25 @@ const { contextBridge, ipcRenderer, webUtils } = require('electron');
  * 页面里拿不到。工具代码统一通过 window.toolbox 访问。
  */
 contextBridge.exposeInMainWorld('toolbox', {
+  aiHub: {
+    connectQwenWork: () => ipcRenderer.invoke('aiHub:connectQwenWork'),
+    connectDoubao: () => ipcRenderer.invoke('aiHub:connectDoubao'),
+    openDoubao: () => ipcRenderer.invoke('aiHub:openDoubao'),
+    connectTrae: () => ipcRenderer.invoke('aiHub:connectTrae'),
+    loginStart: (id) => ipcRenderer.invoke('aiHub:loginStart', id),
+    loginPoll: (id) => ipcRenderer.invoke('aiHub:loginPoll', id),
+    loginCancel: () => ipcRenderer.invoke('aiHub:loginCancel'),
+    status: () => ipcRenderer.invoke('aiHub:status'),
+    save: (channel) => ipcRenderer.invoke('aiHub:save', channel),
+    remove: (id) => ipcRenderer.invoke('aiHub:remove', id),
+    quota: (value) => ipcRenderer.invoke('aiHub:quota', value),
+    refresh: (id) => ipcRenderer.invoke('aiHub:refresh', id),
+    test: (id) => ipcRenderer.invoke('aiHub:test', id),
+    start: () => ipcRenderer.invoke('aiHub:start'),
+    stop: () => ipcRenderer.invoke('aiHub:stop'),
+    rotate: () => ipcRenderer.invoke('aiHub:rotate'),
+    copyKey: () => ipcRenderer.invoke('aiHub:copyKey'),
+  },
   drawing: {
     status: () => ipcRenderer.invoke('drawing:status'),
     start: () => ipcRenderer.invoke('drawing:start'),

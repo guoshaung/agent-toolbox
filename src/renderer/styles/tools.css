@@ -5243,3 +5243,28 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 }
 .avatar-rig__platform-warn strong { color: #e6b422; font-size: 14px; }
 .avatar-rig__platform-warn p { margin: 6px 0 0; font-size: 12.5px; line-height: 1.55; }
+
+/* AI quota hub: inherits existing theme and font preferences. */
+.aihub__body { overflow: auto; padding: 20px; display: flex; flex-direction: column; gap: 16px; }
+.aihub__row { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; }
+.aihub__row h3 { margin-right: auto; }
+.aihub__gateway, .aihub__editor, .aihub__channel, .aihub__help { padding: 18px; }
+.aihub__gateway { display: grid; gap: 14px; }
+.aihub__summary { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 12px; }
+.aihub__metric { display: grid; gap: 6px; padding: 16px; }
+.aihub__metric strong { font-size: 24px; }
+.aihub__cards, .aihub__catalog { display: grid; grid-template-columns: repeat(auto-fit,minmax(min(100%,310px),1fr)); gap: 14px; }
+.aihub__catalog .card { padding: 16px; }
+.aihub__balance { font-size: 23px; font-weight: 600; margin-top: 18px; }
+.aihub__channel p, .aihub__catalog p, .aihub__help p { line-height: 1.65; }
+.aihub__form { display: grid; grid-template-columns: repeat(auto-fit,minmax(220px,1fr)); gap: 12px; margin: 12px 0; }
+.aihub__field { display: grid; gap: 7px; min-width: 0; }
+.aihub__field .field { width: 100%; box-sizing: border-box; }
+.aihub__editor > .aihub__row { margin-top: 16px; }
+.aihub__id { display: block; overflow-wrap: anywhere; margin: 14px 0; opacity: .7; }
+.aihub__example { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.65; }
+.aihub__quota-edit { display: grid; gap: 10px; padding-top: 16px; }
+.aihub__log { display: grid; grid-template-columns: 90px minmax(100px,1fr) 110px 65px; gap: 10px; padding: 10px; border-bottom: 1px solid var(--border, #8883); }
+.aihub__usage { font-size: 12px; }
+#tool-ai-hub { min-height: 0; }
+@media(max-width:600px) { .aihub__body { padding: 12px; } .aihub__summary { grid-template-columns: 1fr; } .aihub__log { grid-template-columns: 75px 1fr 85px; } .aihub__log > :last-child { display: none; } }

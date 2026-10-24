@@ -13,6 +13,7 @@
     <a href="https://github.com/guoshaung/agent-toolbox/releases">下载安装</a> ·
     <a href="#核心能力">功能概览</a> ·
     <a href="docs/SYSTEM-BEAUTY.md">系统主题</a> ·
+    <a href="docs/DRAWING-SYNC.md">iPad 同步绘图</a> ·
     <a href="docs/FEATURES.md">使用指南</a> ·
     <a href="https://github.com/guoshaung/agent-toolbox/issues">反馈问题</a>
   </p>
@@ -29,13 +30,14 @@ Agent 工具箱是基于 Electron 的桌面应用，将网页 AI、DeepSeek Harn
 | 方向 | 可以做什么 | 主要入口 |
 | --- | --- | --- |
 | **AI 工作台** | DeepSeek 网页会话、OpenAI 兼容接口、DSH 内置控制台、聊天记录导出 | 快问 / DSH / 记录 |
+| **额度与统一接口** | WorkBuddy 国内版、TRAE 国际版 IDE、豆包工作、QwenWork 国内版，本地兼容网关、各家额度与用量记录 | [额度中枢](docs/AI-HUB.md) |
 | **科研与阅读** | 文献发现与管理、PDF 阅读与批注、Zotero 联动、科研绘图与 PPTX 导出 | 科研 |
 | **代码与学习** | 模板默写、AI 出题、实践 Notebook、仓库阅读、代码陪读 | 学习 / 代码记事本 / 陪读 |
 | **Skill 与 MCP** | 收藏提示词并补齐 Skill 格式、管理技能库、配置 MCP 服务 | Skill 工厂 / MCP |
 | **开发与效率** | HTTP 调试、Git 操作、流量查看、文件收纳、任务与专注 | 接口台 / Git / 抓包台 / 收纳 / 专注 |
 | **桌面与形象** | 应用皮肤、可恢复的电脑主题、VRM 形象、桌宠、OBS 窗口输出 | 皮肤 / 系统美化 / 形象输出 / 桌宠 |
 | **设备与媒体** | 手机控制与文件互传、本地视频报告、Voicebox 启动与联动 | 手机 / 视频 / Voicebox |
-| **iPad 同步绘图** | 压感手写、多页纸张、套索、图片双向同步、PDF 底稿批注 | 更多 → 写作代码 → 同步绘图 |
+| **iPad 同步绘图** | PencilKit 原生手写、笔迹与图片同步、PDF 底稿批注；配对后收起二维码 | 更多轮盘 → 绘图同步 → 同步绘图 |
 
 完整操作说明见 [功能与操作指南](docs/FEATURES.md)。第三方应用、模型与服务按各自的安装要求和账号权限使用。
 

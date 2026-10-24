@@ -91,13 +91,15 @@ enum DrawingError: LocalizedError {
                     var req = try request("api/events"); req.timeoutInterval = 86400
                     let (bytes, response) = try await URLSession.shared.bytes(for: req)
                     guard let http = response as? HTTPURLResponse, http.statusCode == 200 else { throw DrawingError.message("配对失效，请重新扫描电脑二维码") }
-                    var event = "", payload = ""
+                    var event = ""
                     for try await line in bytes.lines {
                         try Task.checkCancellation(); guard epoch == generation else { return }
                         if line.hasPrefix("event: ") { event = String(line.dropFirst(7)) }
-                        else if line.hasPrefix("data: ") { payload = String(line.dropFirst(6)) }
-                        else if line.isEmpty && !payload.isEmpty {
-                            if let data = payload.data(using: .utf8), let value = try JSONSerialization.jsonObject(with: data) as? [String: Any] {
+                        // DrawingSync emits exactly one JSON data line per event.
+                        // AsyncBytes.lines omits empty lines, so consume that data
+                        // line directly rather than waiting for an SSE separator.
+                        else if line.hasPrefix("data: ") {
+                            if let data = String(line.dropFirst(6)).data(using: .utf8), let value = try JSONSerialization.jsonObject(with: data) as? [String: Any] {
                                 if event == "snapshot" {
                                     pages = value["pages"] as? [String: [String: Any]] ?? [:]; objects = value["objects"] as? [String: [String: Any]] ?? [:]
                                     for op in pending { apply(op) }
@@ -106,9 +108,10 @@ enum DrawingError: LocalizedError {
                                 } else if event == "operation" { apply(value); for op in pending { apply(op) }; try persist() }
                                 changed?()
                             }
-                            payload = ""; event = ""
+                            event = ""
                         }
                     }
+                    throw DrawingError.message("同步连接已关闭")
                 } catch { if Task.isCancelled || epoch != generation { return }; online = false; note = "连接中断：\(error.localizedDescription)；笔迹保留在本机"; changed?() }
                 try? await Task.sleep(nanoseconds: 2_000_000_000)
             }

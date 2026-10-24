@@ -56,7 +56,11 @@ class DrawingSync {
   status() {
     const identity = this.identity(), running = !!this.server?.listening;
     const url = host => `http://${host}:${this.boundPort}/#id=${identity.id}&token=${this.token}`;
-    return { enabled: running, identity, clients: this.clients.size, sequence: this.state.seq,
+    const remoteClients = [...this.clients].filter(client => {
+      const address = client.req?.socket?.remoteAddress;
+      return address && !['127.0.0.1', '::1', '::ffff:127.0.0.1'].includes(address);
+    }).length;
+    return { enabled: running, identity, clients: this.clients.size, remoteClients, sequence: this.state.seq,
       desktopUrl: running ? url('127.0.0.1') : '', urls: running ? networkAddresses().sort((a, b) => {
         const rank = address => address.startsWith('192.168.') ? 0 : address.startsWith('10.') ? 1 : /^172\.(1[6-9]|2\d|3[01])\./.test(address) ? 2 : 3;
         return rank(a) - rank(b);

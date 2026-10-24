@@ -6,36 +6,85 @@ export default {
   icon: 'pen',
   hint: '与 iPad 共享手写绘图本，笔迹和粘贴图片双向同步',
   create(root) {
-    const info = h('span', { class: 'faint' }, 'iPad 与电脑连接同一 Wi-Fi，用 Safari 扫码配对。');
-    const pair = h('div', { style: { display: 'none', gap: '18px', alignItems: 'center', padding: '16px', flexWrap: 'wrap' } });
-    const frame = h('iframe', { title: 'Toolbox 同步绘图本', style: { width: '100%', flex: '1', minHeight: '450px', border: '0' } });
+    let lastUrl = '', pairOpen = false, hadRemote = false, active = false, timer, polling = false, qrGeneration = 0;
+    const info = h('span', { class: 'drawing__connection', role: 'status', 'aria-live': 'polite' }, '开启后连接 iPad，共享笔迹与图片');
+    const pair = h('div', { class: 'drawing__pair', id: 'drawing-pair-panel', hidden: true });
+    const frame = h('iframe', { class: 'drawing__frame', title: 'Toolbox 同步绘图本', hidden: true });
+    const placeholder = h('div', { class: 'empty' }, h('strong', {}, '电脑与 iPad，共用一本画册'), h('p', {}, '开启绘图本后，在 iPad「Toolbox 绘图本」内扫码或粘贴地址配对。'));
+    const qr = h('img', { class: 'drawing__qr', alt: 'iPad 绘图配对二维码', width: 128, height: 128, hidden: true });
+    const urls = h('select', { class: 'field', 'aria-label': '电脑网络地址' });
+    async function updateQR() {
+      const selected = urls.value, generation = ++qrGeneration;
+      qr.hidden = true;
+      if (!selected || !pairOpen) return;
+      try {
+        const data = await window.toolbox.drawing.qr(selected);
+        if (generation === qrGeneration && pairOpen && urls.value === selected) { qr.src = data; qr.hidden = false; }
+      } catch (e) { toast(e.message, 'bad'); }
+    }
+    urls.addEventListener('change', updateQR);
+    function showPair(show) {
+      pairOpen = show; pair.hidden = !show;
+      pairButton.textContent = show ? '收起配对' : '连接 iPad';
+      pairButton.setAttribute('aria-expanded', String(show));
+      if (show) updateQR(); else qrGeneration++;
+    }
     const start = h('button', { class: 'btn btn--primary', onclick: async () => {
       start.disabled = true;
-      try { render(await window.toolbox.drawing.start()); } catch (e) { toast(e.message, 'bad'); } finally { start.disabled = false; }
+      try { const state = await window.toolbox.drawing.start(); render(state); showPair(!state.remoteClients); }
+      catch (e) { toast(e.message, 'bad'); } finally { start.disabled = false; }
     } }, '打开绘图本并启用 iPad 同步');
-    const pairButton = h('button', { class: 'btn', hidden: true, onclick: () => { pair.style.display = pair.style.display === 'none' ? 'flex' : 'none'; } }, 'iPad 配对');
-    const stop = h('button', { class: 'btn', hidden: true, onclick: async () => { try { render(await window.toolbox.drawing.stop()); } catch (e) { toast(e.message, 'bad'); } } }, '停止连接');
-    const rotate = h('button', { class: 'btn', hidden: true, onclick: async () => { try { await window.toolbox.drawing.rotate(); render(await window.toolbox.drawing.start()); } catch (e) { toast(e.message, 'bad'); } } }, '重新配对');
-    root.style.display = 'flex'; root.style.flexDirection = 'column'; root.style.height = '100%';
-    root.append(h('div', { class: 'bar bar--drag' }, h('strong', {}, '同步绘图'), start, pairButton, rotate, stop), h('div', { style: { padding: '8px 16px' } }, info), pair, frame);
-    let lastUrl = '';
+    const pairButton = h('button', { class: 'btn', hidden: true, 'aria-expanded': 'false', 'aria-controls': pair.id, onclick: () => showPair(!pairOpen) }, '连接 iPad');
+    const stop = h('button', { class: 'btn btn--sm', hidden: true, onclick: async () => {
+      try { render(await window.toolbox.drawing.stop()); } catch (e) { toast(e.message, 'bad'); }
+    } }, '停止同步');
+    const rotate = h('button', { class: 'btn btn--sm', onclick: async () => {
+      try { render(await window.toolbox.drawing.rotate()); showPair(true); }
+      catch (e) { toast(e.message, 'bad'); }
+    } }, '使旧地址失效并重新配对');
+    pair.append(qr, h('div', { class: 'drawing__pair-body' },
+      h('strong', {}, '在 iPad 绘图本内配对'),
+      h('p', {}, '打开「Toolbox 绘图本」→ 左上角「配对」→ 扫描此二维码。也可复制完整地址后粘贴连接。'),
+      h('div', { class: 'drawing__pair-actions' }, urls, h('button', { class: 'btn', onclick: async () => {
+        try { if (!urls.value) return; await window.toolbox.clipboard.write(urls.value); toast('绘图配对地址已复制'); }
+        catch (e) { toast(e.message, 'bad'); }
+      } }, '复制配对地址')),
+      h('p', { class: 'faint' }, '连接后自动收起。网页用户也可用 Safari 打开二维码地址；“已同步”表示连接成功。'),
+      rotate,
+    ));
+    root.classList.add('drawing');
+    root.append(h('div', { class: 'bar bar--drag drawing__toolbar' }, h('strong', {}, '同步绘图'), info, start, pairButton, stop), pair, placeholder, frame);
     function render(state) {
       start.hidden = state.enabled; stop.hidden = !state.enabled; rotate.hidden = !state.enabled; pairButton.hidden = !state.enabled;
-      if (!state.enabled) { frame.removeAttribute('src'); lastUrl = ''; pair.style.display = 'none'; info.textContent = '连接已关闭。绘图本保存在本机，下次打开继续。'; return; }
-      info.textContent = `设备 #${state.identity.code} · ${state.identity.name} ｜ 笔迹与图片自动同步。停止连接保留绘图本；重新配对会让旧地址失效。`;
-      if (state.desktopUrl !== lastUrl) { frame.src = state.desktopUrl; lastUrl = state.desktopUrl; }
-      pair.replaceChildren();
-      const qr = h('img', { src: state.qr || '', alt: 'iPad 专用绘图配对二维码', width: 170, height: 170 });
-      if (state.qr) pair.append(qr);
-      const urls = h('select', { class: 'field', 'aria-label': '电脑网络地址' }, state.urls.map(url => h('option', { value: url }, url.split('/#')[0])));
-      urls.addEventListener('change', async () => { const selected = urls.value; try { const data = await window.toolbox.drawing.qr(selected); if (urls.value === selected) qr.src = data; } catch (e) { toast(e.message, 'bad'); } });
-      pair.append(h('div', {}, h('strong', {}, `在 iPad 上连接 #${state.identity.code}`), h('p', {}, '使用 iPad 相机扫码，用 Safari 打开。也可复制地址发给自己。'), urls,
-        h('button', { class: 'btn', onclick: async () => { await window.toolbox.clipboard.write(urls.value); toast('绘图配对地址已复制'); } }, '复制配对地址'),
-        h('p', { class: 'faint' }, '多网卡时请选择 iPad 可访问的 Wi-Fi 地址。首次可能需允许 Windows 防火墙的专用网络访问。'),
-        h('p', { class: 'faint' }, 'Safari → 分享 → 添加到主屏幕，即可作为独立绘图应用打开。仅 Pencil 可防止手指误画。')));
-      if (!state.urls.length) pair.append(h('p', {}, '未找到局域网地址，请检查 Wi-Fi 连接。电脑端仍可绘图。'));
-      if (state.qr && pair.style.display === 'none' && !pair.dataset.shown) { pair.style.display = 'flex'; pair.dataset.shown = 'yes'; }
+      frame.hidden = !state.enabled; placeholder.hidden = state.enabled;
+      if (!state.enabled) {
+        frame.removeAttribute('src'); lastUrl = ''; hadRemote = false; showPair(false);
+        info.textContent = '同步已停止 · 绘图本保留在本机'; info.classList.remove('is-connected'); return;
+      }
+      const remote = state.remoteClients > 0;
+      info.textContent = `#${state.identity.code} · ${remote ? `已连接 ${state.remoteClients} 个远端窗口` : '等待 iPad 连接'}`;
+      info.classList.toggle('is-connected', remote);
+      if (remote && !hadRemote) showPair(false);
+      hadRemote = remote;
+      if (state.desktopUrl !== lastUrl) {
+        frame.src = state.desktopUrl; lastUrl = state.desktopUrl;
+        const selected = urls.value;
+        urls.replaceChildren(...state.urls.map(url => h('option', { value: url }, url.split('/#')[0])));
+        if (state.urls.includes(selected)) urls.value = selected;
+        if (pairOpen) updateQR();
+      }
     }
-    return { async activate() { try { const state = await window.toolbox.drawing.status(); if (state.enabled) render(await window.toolbox.drawing.start()); } catch (e) { info.textContent = e.message; } } };
+    async function refresh() {
+      if (polling) return;
+      polling = true;
+      try { const state = await window.toolbox.drawing.status(); if (active) render(state); }
+      catch (e) { if (active) info.textContent = e.message; }
+      finally { polling = false; }
+    }
+    return {
+      activate() { active = true; refresh(); clearInterval(timer); timer = setInterval(refresh, 2000); },
+      deactivate() { active = false; clearInterval(timer); },
+      destroy() { active = false; clearInterval(timer); qrGeneration++; },
+    };
   },
 };
