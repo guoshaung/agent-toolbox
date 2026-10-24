@@ -1,6 +1,7 @@
 import ask from '../tools/ask/index.js';
 import docs from '../tools/docs/index.js';
 import typing from '../tools/typing/index.js';
+import translate from '../tools/translate/index.js';
 import focus from '../tools/focus/index.js';
 import study from '../tools/study/index.js';
 import { codeTool as notebook, notesTool as notes } from '../tools/notebook/index.js';
@@ -53,4 +54,4 @@ import aiHub from '../tools/ai-hub/index.js';
  * 加一个工具：写 tools/<id>/index.js，默认导出 { id, title, icon, create(root, ctx) }，
  * 然后在这个数组里加一行。详见 docs/ADD-A-TOOL.md。
  */
-export const TOOLS = [home, ask, docs, typing, focus, game, flylab, study, notebook, notes, tidy, stickers, webtools, vault, chatAnalyze, api, git, netlog, monologue, eat, container, dsh, aipexbase, appgen, tavern, voicebox, digitalHuman, avatarRig, pet, history, video, research, coach, terms, dock, skills, remote, controls, appearance, systemBeauty, voice, gesture, gameagent, tasks, featureLab, localsend, mcpTool, drawing, aiHub, settings];
+export const TOOLS = [home, ask, docs, typing, translate, focus, game, flylab, study, notebook, notes, tidy, stickers, webtools, vault, chatAnalyze, api, git, netlog, monologue, eat, container, dsh, aipexbase, appgen, tavern, voicebox, digitalHuman, avatarRig, pet, history, video, research, coach, terms, dock, skills, remote, controls, appearance, systemBeauty, voice, gesture, gameagent, tasks, featureLab, localsend, mcpTool, drawing, aiHub, settings];

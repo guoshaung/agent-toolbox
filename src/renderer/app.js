@@ -215,7 +215,7 @@ const libraryPanel = h('section', { class: 'rail-library', hidden: true },
 );
 // 「更多」轮盘：按类别分圈，工具在第二圈，有子页的（科研 / 专注）第三圈
 const WHEEL_GROUPS = [
-  { id: 'learn', label: '学习科研', icon: 'graduation', color: '#3fbf87', tools: ['research', 'study', 'docs', 'terms', 'coach', 'skills', 'typing'] },
+  { id: 'learn', label: '学习科研', icon: 'graduation', color: '#3fbf87', tools: ['research', 'study', 'docs', 'terms', 'coach', 'skills', 'typing', 'translate'] },
   { id: 'make', label: '写作代码', icon: 'pen', color: '#ff9a6b', tools: ['notebook', 'notes', 'git', 'api', 'appgen', 'aipexbase', 'netlog', 'webtools'] },
   { id: 'draw', label: '绘图同步', icon: 'pen', color: '#38bdf8', tools: ['drawing', 'localsend'] },
   { id: 'ai', label: 'AI 伙伴', icon: 'bot', color: '#c9a7ff', tools: ['ask', 'tavern', 'voicebox', 'digital-human', 'avatar-rig', 'voice', 'gesture', 'monologue'] },

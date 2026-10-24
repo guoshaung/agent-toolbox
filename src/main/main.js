@@ -3852,6 +3852,7 @@ function registerIpc() {
   });
 
   ipcMain.handle('translation:argos', (_event, payload) => argosService.translate(payload));
+  ipcMain.handle('translation:fast', (_event, payload) => translator.translateFast(payload?.text, { to: payload?.to }));
   // Kept for preload compatibility. Research reading does not use this remote provider by default.
   ipcMain.handle('lit:translate', (_event, text, options) => translator.translate(text, options));
   ipcMain.handle('translation:argos-status', () => argosService.status());

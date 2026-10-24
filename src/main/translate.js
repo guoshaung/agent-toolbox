@@ -3,6 +3,7 @@
 /** Legacy remote translator kept for preload compatibility. */
 const ENDPOINT = 'https://aidemo.youdao.com/trans';
 const CHUNK_SIZE = 900;
+const FAST_CHUNK_SIZE = 450;
 const MAX_TOTAL = 20000;
 
 function detectTarget(text) {
@@ -12,17 +13,19 @@ function detectTarget(text) {
 
 async function translateChunk(q, to, options = {}, attempt = 0) {
   const interactive = Boolean(options.interactive);
-  const maxAttempt = interactive ? 1 : 2;
+  const fast = Boolean(options.fast);
+  const maxAttempt = fast ? 0 : interactive ? 1 : 2;
   const retryWait = interactive ? 12000 : 30000;
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 20000);
+  const timer = setTimeout(() => controller.abort(), fast ? 6000 : 20000);
   try {
-    const response = await fetch(ENDPOINT, {
+    const response = await (options.fetchImpl || fetch)(ENDPOINT, {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded', 'User-Agent': 'Mozilla/5.0' },
       body: new URLSearchParams({ q, from: 'auto', to }).toString(),
       signal: controller.signal,
     });
+    if (!response.ok) throw new Error(`快速翻译服务返回 HTTP ${response.status}`);
     const data = await response.json();
     const code = String(data.errorCode);
     if (attempt < maxAttempt && (code === '411' || code === '103')) {
@@ -43,6 +46,44 @@ async function translateChunk(q, to, options = {}, attempt = 0) {
     return data.translation.join('\n');
   } finally {
     clearTimeout(timer);
+  }
+}
+
+function splitFastChunks(text) {
+  const chunks = [];
+  let rest = String(text || '').trim();
+  while (rest.length > FAST_CHUNK_SIZE) {
+    const head = rest.slice(0, FAST_CHUNK_SIZE);
+    const candidates = ['\n', '。', '！', '？', '.', '!', '?', '；', ';', '，', ',', ' '].map(mark => head.lastIndexOf(mark) + 1).filter(index => index >= 220);
+    const cut = candidates.length ? Math.max(...candidates) : FAST_CHUNK_SIZE;
+    chunks.push(rest.slice(0, cut).trim());
+    rest = rest.slice(cut).trimStart();
+  }
+  if (rest) chunks.push(rest);
+  return chunks;
+}
+
+async function translateFast(text, options = {}) {
+  const input = String(text || '').trim();
+  if (!input) return { ok: false, error: '没有要翻译的内容' };
+  if (input.length > MAX_TOTAL) return { ok: false, error: `单次翻译不能超过 ${MAX_TOTAL} 字符` };
+  const selected = String(options.to || 'auto');
+  if (!['auto', 'en', 'zh-CHS'].includes(selected)) return { ok: false, error: '不支持的翻译方向' };
+  const to = selected === 'auto' ? detectTarget(input) : selected;
+  const chunks = splitFastChunks(input);
+  const parts = Array(chunks.length);
+  let next = 0;
+  const started = performance.now();
+  try {
+    await Promise.all(Array.from({ length: Math.min(2, chunks.length) }, async () => {
+      while (next < chunks.length) {
+        const index = next++;
+        parts[index] = await translateChunk(chunks[index], to, { fast: true, fetchImpl: options.fetchImpl });
+      }
+    }));
+    return { ok: true, translation: parts.join('\n'), to, provider: 'youdao', chunks: chunks.length, elapsedMs: Math.round(performance.now() - started) };
+  } catch (error) {
+    return { ok: false, error: error.name === 'AbortError' ? '快速翻译超时，请重试' : error.message };
   }
 }
 
@@ -85,4 +126,4 @@ async function translate(text, options = {}) {
   };
 }
 
-module.exports = { translate };
+module.exports = { translate, translateFast, splitFastChunks };

@@ -307,6 +307,7 @@ contextBridge.exposeInMainWorld('toolbox', {
   },
 
   translation: {
+    fast: (payload) => ipcRenderer.invoke('translation:fast', payload),
     argos: (payload) => ipcRenderer.invoke('translation:argos', payload),
     argosStatus: () => ipcRenderer.invoke('translation:argos-status'),
     installArgosModels: () => ipcRenderer.invoke('translation:argos-install'),
