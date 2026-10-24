@@ -4,6 +4,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
+const { pathToFileURL } = require('node:url');
 const yaml = require('js-yaml');
 const net = require('node:net');
 const { AiHubPeer, normalizePeerUrl, suggestPeerPort, mergeProviderPatch } = require('../src/main/ai-hub-peer');
@@ -97,7 +98,7 @@ test('provider patch replaces only the hub block on repeated setup', () => {
 });
 
 test('bundled DSH bridge preserves text turns while removing tool prelude', async () => {
-  const { normalizeTextRequest, targetUrl, createModelObserver } = await import(path.join(pluginSource, 'index.js'));
+  const { normalizeTextRequest, targetUrl, createModelObserver } = await import(pathToFileURL(path.join(pluginSource, 'index.js')).href);
   assert.equal(targetUrl('http://127.0.0.1:18878/v1', '/v1/chat/completions').href, 'http://127.0.0.1:18878/v1/chat/completions');
   assert.equal(targetUrl('https://example.test/api/v3', '/v1/models').href, 'https://example.test/api/v3/models');
   assert.throws(() => targetUrl('http://example.test/v1', '/v1/models'), /invalid upstream/);
