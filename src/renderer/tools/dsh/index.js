@@ -14,6 +14,8 @@ export default {
     let mountedUrl = '';
     let botOn = null;         // ds-bot 开没开（null=还没查到）
     let botBusy = false;      // 正在切换
+    let routeTimer = null;
+    const route = h('div', { class: 'dsh__route', hidden: true, 'aria-live': 'polite' });
 
     const frame = h('div', { class: 'dsh__frame' });
     const placeholder = h('div', { class: 'dsh__external-panel' },
@@ -69,6 +71,17 @@ export default {
       if (!result.ok && result.error) toast(result.error, 'bad', 6000);
     }
 
+    async function refreshRoute() {
+      try {
+        const result = await window.toolbox.aiHub.peerLastRoute();
+        const last = result?.ok ? result.route : null;
+        route.hidden = !last;
+        if (!last) return;
+        const label = last.model ? `${last.modelSource === 'upstream' ? '上游报告模型' : '配置模型'} ${last.model}` : '模型未报告';
+        route.textContent = `额度中枢上次调用 · ${last.channel} · ${label} · ${new Date(last.at).toLocaleString()}`;
+      } catch { route.hidden = true; }
+    }
+
     async function toggleBot() {
       if (botBusy || botOn == null) return;
       const next = !botOn;
@@ -104,8 +117,10 @@ export default {
 
     root.append(
       h('div', { class: 'bar bar--drag dsh__bar' }, h('strong', {}, 'DeepSeek Harness'), status, h('span', { style: { flex: 1 } }), botToggle, start, reload, openExternal),
+      route,
       frame,
     );
-    return { activate: startDsh };
+    return { async activate() { await startDsh(); await refreshRoute(); clearInterval(routeTimer); routeTimer = setInterval(refreshRoute, 5000); },
+      deactivate() { clearInterval(routeTimer); routeTimer = null; } };
   },
 };

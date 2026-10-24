@@ -49,6 +49,9 @@ test('peer checks models, encrypts only the new key, and sends a short text requ
   assert.equal(await peer.verifyDshBridge(), true);
   assert.equal(JSON.parse(calls[1].options.body).model, 'auto');
   assert.equal(JSON.parse(calls[1].options.body).messages.length, 1);
+  fs.mkdirSync(path.join(root, '.dsh'), { recursive: true });
+  fs.writeFileSync(path.join(root, '.dsh/toolbox-quota-hub-last-route.json'), JSON.stringify({ at: '2026-10-24T07:00:00.000Z', channelId: 'channel-1', model: 'hy4-preview', modelSource: 'upstream' }));
+  assert.deepEqual(peer.lastRoute(), { at: '2026-10-24T07:00:00.000Z', channel: 'WorkBuddy', model: 'hy4-preview', modelSource: 'upstream' });
 });
 
 test('DSH installation retains existing providers, credentials, bundles and default model', async t => {
@@ -94,7 +97,7 @@ test('provider patch replaces only the hub block on repeated setup', () => {
 });
 
 test('bundled DSH bridge preserves text turns while removing tool prelude', async () => {
-  const { normalizeTextRequest, targetUrl } = await import(path.join(pluginSource, 'index.js'));
+  const { normalizeTextRequest, targetUrl, createModelObserver } = await import(path.join(pluginSource, 'index.js'));
   assert.equal(targetUrl('http://127.0.0.1:18878/v1', '/v1/chat/completions').href, 'http://127.0.0.1:18878/v1/chat/completions');
   assert.equal(targetUrl('https://example.test/api/v3', '/v1/models').href, 'https://example.test/api/v3/models');
   assert.throws(() => targetUrl('http://example.test/v1', '/v1/models'), /invalid upstream/);
@@ -118,4 +121,8 @@ test('bundled DSH bridge preserves text turns while removing tool prelude', asyn
     { role: 'user', content: 'My code is 4321.' }, { role: 'assistant', content: 'I will remember.' }, { role: 'user', content: 'What is my code?' },
   ]);
   assert.throws(() => normalizeTextRequest({ model: 'auto', messages: [{ role: 'user', content: [{ type: 'image_url', image_url: { url: 'x' } }] }] }), /图片或文件/);
+  const observed = createModelObserver('text/event-stream');
+  observed.push(Buffer.from('data: {"model":"hy4-'));
+  observed.push(Buffer.from('preview","choices":[]}\n\ndata: [DONE]\n\n'));
+  assert.deepEqual(observed.result(), { model: 'hy4-preview', complete: true });
 });

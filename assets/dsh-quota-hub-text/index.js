@@ -9,10 +9,12 @@ export const name = 'toolbox-quota-hub-text'
 const HOST = '127.0.0.1'
 const PORT = 18879
 const CONFIG_FILE = path.join(process.env.DSH_HOME || path.join(os.homedir(), '.dsh'), 'toolbox-quota-hub-text.json')
+const STATUS_FILE = path.join(process.env.DSH_HOME || path.join(os.homedir(), '.dsh'), 'toolbox-quota-hub-last-route.json')
 const MAX_BODY = 2 * 1024 * 1024
 const MAX_USER_CHARS = 16000
 const MAX_CONTEXT_CHARS = 12000
 const MAX_CONTEXT_MESSAGES = 20
+let latestRouteStartedAt = 0
 
 function respond(res, status, message) {
   res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' })
@@ -91,6 +93,47 @@ function upstreamUrl(requestPath) {
   return targetUrl(saved.baseUrl, requestPath)
 }
 
+export function createModelObserver(contentType) {
+  const stream = String(contentType || '').includes('text/event-stream')
+  const decoder = new TextDecoder()
+  let pending = ''
+  let model = ''
+  let done = false
+  return {
+    push(chunk) {
+      pending += decoder.decode(chunk, { stream: true })
+      if (pending.length > MAX_BODY) { pending = ''; return }
+      if (!stream) return
+      let end
+      while ((end = pending.indexOf('\n')) >= 0) {
+        const line = pending.slice(0, end).trim(); pending = pending.slice(end + 1)
+        if (!line.startsWith('data:')) continue
+        const value = line.slice(5).trim()
+        if (value === '[DONE]') { done = true; continue }
+        try { const event = JSON.parse(value); if (typeof event.model === 'string' && event.model !== 'auto') model = event.model.slice(0, 150) }
+        catch { /* Preserve the upstream stream; only ignore malformed metadata. */ }
+      }
+    },
+    result() {
+      if (stream) return { model, complete: done }
+      try { const body = JSON.parse(pending + decoder.decode()); return { model: typeof body.model === 'string' && body.model !== 'auto' ? body.model.slice(0, 150) : '', complete: true } }
+      catch { return { model: '', complete: false } }
+    },
+  }
+}
+
+function rememberRoute({ channelId, model, modelSource, startedAt }) {
+  if (!channelId || startedAt < latestRouteStartedAt) return
+  latestRouteStartedAt = startedAt
+  const status = { at: new Date().toISOString(), channelId: String(channelId).slice(0, 150), model: String(model || '').slice(0, 150), modelSource }
+  const temporary = `${STATUS_FILE}.tmp-${process.pid}`
+  try {
+    fs.writeFileSync(temporary, JSON.stringify(status) + '\n', { mode: 0o600 })
+    fs.renameSync(temporary, STATUS_FILE)
+    fs.chmodSync(STATUS_FILE, 0o600)
+  } catch { try { fs.unlinkSync(temporary) } catch { /* status is optional */ } }
+}
+
 function forward(req, res, body) {
   let target
   try { target = upstreamUrl(req.url) }
@@ -101,12 +144,26 @@ function forward(req, res, body) {
     'Content-Length': String(body.length),
   }
   const transport = target.protocol === 'https:' ? https : http
+  const startedAt = Date.now()
   const upstream = transport.request({ hostname: target.hostname, port: target.port || undefined, path: target.pathname, method: req.method, headers, timeout: 120000 }, reply => {
     const responseHeaders = {
       'Content-Type': reply.headers['content-type'] || 'application/json; charset=utf-8',
       'Cache-Control': 'no-store',
     }
     if (reply.headers['x-toolbox-channel']) responseHeaders['X-Toolbox-Channel'] = reply.headers['x-toolbox-channel']
+    if (reply.headers['x-toolbox-configured-model']) responseHeaders['X-Toolbox-Configured-Model'] = reply.headers['x-toolbox-configured-model']
+    if (req.method === 'POST' && reply.statusCode === 200) {
+      const observer = createModelObserver(reply.headers['content-type'])
+      reply.on('data', chunk => observer.push(chunk))
+      reply.on('end', () => {
+        const observed = observer.result()
+        if (!observed.complete) return
+        let configured = ''
+        try { configured = decodeURIComponent(String(reply.headers['x-toolbox-configured-model'] || '')) } catch { /* optional header */ }
+        rememberRoute({ channelId: reply.headers['x-toolbox-channel'], model: observed.model || configured,
+          modelSource: observed.model ? 'upstream' : configured ? 'configured' : 'unknown', startedAt })
+      })
+    }
     res.writeHead(reply.statusCode || 502, responseHeaders)
     reply.pipe(res)
   })

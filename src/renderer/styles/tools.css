@@ -2337,6 +2337,9 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 
 .dsh__bar { background: linear-gradient(180deg, rgba(27,39,58,.78), rgba(13,18,27,.94)); }
 .dsh__status { flex: 0 0 auto; font-size: 10.5px; }
+.dsh__route { padding: 5px 14px; background: var(--bg-sunken); border-bottom: 1px solid var(--line-soft); color: var(--text-dim); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dsh__route[hidden] { display: none; }
+.aihub__last-route { margin: 8px 0; padding: 9px 11px; border: 1px solid var(--line-soft); border-radius: 8px; background: var(--bg-sunken); color: var(--text-dim); font-size: 12px; }
 .dsh__view { flex: 1; min-height: 0; width: 100%; border: 0; background: var(--bg-sunken); }.tavern__bar { background: linear-gradient(180deg, rgba(46,32,20,.88), rgba(13,18,27,.94)); }
 .tavern__status { flex: 0 0 auto; font-size: 10.5px; max-width: 46%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tavern__view { flex: 1; min-height: 0; width: 100%; border: 0; background: var(--bg-sunken); }

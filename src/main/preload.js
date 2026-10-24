@@ -25,6 +25,7 @@ contextBridge.exposeInMainWorld('toolbox', {
     rotate: () => ipcRenderer.invoke('aiHub:rotate'),
     copyKey: () => ipcRenderer.invoke('aiHub:copyKey'),
     peerStatus: () => ipcRenderer.invoke('aiHub:peerStatus'),
+    peerLastRoute: () => ipcRenderer.invoke('aiHub:peerLastRoute'),
     suggestPort: () => ipcRenderer.invoke('aiHub:suggestPort'),
     peerConnect: (value) => ipcRenderer.invoke('aiHub:peerConnect', value),
     peerTest: () => ipcRenderer.invoke('aiHub:peerTest'),

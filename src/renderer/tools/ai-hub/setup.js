@@ -49,6 +49,7 @@ export function createAiHubSetup({ api, getGateway, applyGateway }) {
   const connection = h('p', { class: 'faint' }, '尚未检测对方网关。');
   const models = h('div', { class: 'aihub__setup-models' });
   const dsh = h('p', { class: 'faint' }, '正在检查 DSH…');
+  const route = h('p', { class: 'aihub__last-route' }, 'DSH 尚无经额度中枢的调用记录。');
   const useOwn = h('button', { class: 'btn btn--sm', onclick: () => {
     const url = getGateway()?.baseUrl;
     if (!url) return toast('先启动本机网关');
@@ -67,7 +68,7 @@ export function createAiHubSetup({ api, getGateway, applyGateway }) {
     h('div', { class: 'aihub__setup-grid' },
       h('label', { class: 'aihub__field' }, h('span', {}, '对方 Base URL · Chat Completions'), baseUrl),
       h('label', { class: 'aihub__field' }, h('span', {}, '对方网关密钥'), h('div', { class: 'aihub__key-input' }, key, show))),
-    h('div', { class: 'aihub__row aihub__setup-actions' }, useOwn, check, test, install, all), connection, models, dsh,
+    h('div', { class: 'aihub__row aihub__setup-actions' }, useOwn, check, test, install, all), connection, models, dsh, route,
     h('p', { class: 'faint' }, '测试会消耗少量上游额度。接入 DSH 时，密钥还会写入 DSH 当前用户的凭据文件并备份旧配置。DSH 路由保留最近的纯文本对话上下文，不传工具、图片或文件；Responses API 客户端不能直接使用此 Chat Completions 地址。'));
 
   async function action(fn) {
@@ -105,6 +106,11 @@ export function createAiHubSetup({ api, getGateway, applyGateway }) {
     if (result.baseUrl) baseUrl.value = result.baseUrl;
     paint();
   }
+  async function refreshRoute() {
+    if (!peer) return;
+    const result = await api.peerLastRoute();
+    if (result?.ok) { peer.lastRoute = result.route; paint(); }
+  }
   function paint() {
     roleButtons.forEach((button, index) => {
       const selected = ['server', 'client', 'both'][index] === role;
@@ -119,10 +125,12 @@ export function createAiHubSetup({ api, getGateway, applyGateway }) {
     connection.textContent = peer?.checkedAt ? `已验证 ${peer.baseUrl} · ${new Date(peer.checkedAt).toLocaleString()} · ${peer.hasKey ? '密钥已保存' : '缺少密钥'}` : peer?.hasKey ? '已有本机密钥；填写地址后可留空沿用。' : '填写对方地址和密钥后检测。';
     models.replaceChildren(...(peer?.models?.length ? peer.models.map(item => h('span', { class: 'aihub__setup-model' }, item.id === 'auto' ? 'auto' : item.name || item.id)) : []));
     dsh.textContent = !peer?.dsh?.available ? '本机未发现 DSH Web；仍可使用通用 Chat Completions 参数。' : peer.dsh.installed ? 'DSH 已接入 · 在模型菜单选择“Toolbox 额度中枢（文本对话）→ Auto”' : '已发现 DSH；检测与文本测试通过后可一键接入。';
+    const last = peer?.lastRoute;
+    route.textContent = last ? `DSH 最近一次额度中枢调用：${last.channel} · ${last.model ? `${last.modelSource === 'upstream' ? '上游报告模型' : '配置模型'} ${last.model}` : '模型未报告'} · ${new Date(last.at).toLocaleString()}` : 'DSH 尚无经额度中枢的调用记录。';
     for (const button of [start, check, test, install, all]) button.disabled = busy;
     install.disabled = busy || !peer?.dsh?.available || !peer?.checkedAt;
     test.disabled = busy || !peer?.checkedAt;
   }
   paint();
-  return { toggle, panel, paint, load };
+  return { toggle, panel, paint, load, refreshRoute };
 }

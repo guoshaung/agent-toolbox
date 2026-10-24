@@ -169,8 +169,18 @@ class AiHubPeer {
     } catch { return { available: false, installed: false, hasKey: Boolean(dshCredential(this.dshHome)) }; }
   }
 
+  lastRoute() {
+    try {
+      const route = JSON.parse(fs.readFileSync(path.join(this.dshHome, 'toolbox-quota-hub-last-route.json'), 'utf8'));
+      if (!route || typeof route.channelId !== 'string' || typeof route.at !== 'string' || !Number.isFinite(Date.parse(route.at))) return null;
+      const known = this.state.models.find(item => item.id === route.channelId);
+      return { at: route.at, channel: known?.name || route.channelId, model: typeof route.model === 'string' ? route.model.slice(0, 150) : '',
+        modelSource: ['upstream', 'configured'].includes(route.modelSource) ? route.modelSource : 'unknown' };
+    } catch { return null; }
+  }
+
   status() {
-    return { baseUrl: this.state.baseUrl, hasKey: Boolean(this.key()), models: this.state.models, checkedAt: this.state.checkedAt, testedAt: this.state.testedAt, dsh: this.dshStatus(), protocol: 'openai-completions', model: 'auto' };
+    return { baseUrl: this.state.baseUrl, hasKey: Boolean(this.key()), models: this.state.models, checkedAt: this.state.checkedAt, testedAt: this.state.testedAt, dsh: this.dshStatus(), lastRoute: this.lastRoute(), protocol: 'openai-completions', model: 'auto' };
   }
 
   async connect(input) {

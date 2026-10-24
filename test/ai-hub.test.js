@@ -82,6 +82,8 @@ test('priority failover uses a different key/model and records usage without pro
   const hub = await fixture(t); const a = add(hub, first, { priority: 1 });
   add(hub, second, { priority: 2, model: 'second-model', apiKey: 'second-key' }); await hub.start(0);
   const result = await request(hub); assert.equal(result.status, 200); assert.equal((await result.json()).model, 'auto');
+  assert.equal(decodeURIComponent(result.headers.get('x-toolbox-configured-model')), 'second-model');
+  assert.equal(hub.status().requests[0].model, 'second-model');
   assert.equal(called, 1); assert.ok(hub.cooldowns.get(a.id) > Date.now());
   assert.equal(hub.status().channels[1].stats.inputTokens, 12);
   assert.equal(hub.status().channels[0].stats.failures, 1);
@@ -100,12 +102,13 @@ test('no hidden fallback for ambiguous connection failure or authentication reje
 test('SSE relays split Unicode/usage and counts one completed generation', async t => {
   const base = await upstream(t, (_req, res) => {
     res.writeHead(200, { 'Content-Type': 'text/event-stream' });
-    const data = Buffer.from('data: {"choices":[{"delta":{"content":"你好"}}]}\n\ndata: {"choices":[],"usage":{"prompt_tokens":3,"completion_tokens":2}}\n\ndata: [DONE]\n\n');
+    const data = Buffer.from('data: {"model":"actual-stream-model","choices":[{"delta":{"content":"你好"}}]}\n\ndata: {"choices":[],"usage":{"prompt_tokens":3,"completion_tokens":2}}\n\ndata: [DONE]\n\n');
     res.write(data.subarray(0, 48)); setTimeout(() => res.end(data.subarray(48)), 10);
   });
   const hub = await fixture(t); add(hub, base); await hub.start(0);
   const r = await request(hub, { stream: true }); assert.match(await r.text(), /你好/);
   assert.equal(hub.status().channels[0].stats.completed, 1); assert.equal(hub.status().channels[0].stats.outputTokens, 2);
+  assert.equal(hub.status().requests[0].model, 'actual-stream-model');
 });
 test('truncated streams count as failure and never switch providers after output', async t => {
   let fallback = 0;

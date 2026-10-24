@@ -40,7 +40,7 @@ export default {
       try { const next = await fn(); if (!next?.ok) throw Error(next?.error || '操作失败'); if (next.channels) { state = next; render(); } if (success) toast(success, 'good'); return true; }
       catch (error) { toast(error.message, 'bad'); return false; }
     }
-    async function refresh() { await run(() => api.status()); }
+    async function refresh() { await run(() => api.status()); if (!setup.panel.hidden) await setup.refreshRoute(); }
     async function login(id) {
       if (loginBusy || loginTimer) return toast('已有登录正在等待，请先完成或取消');
       loginBusy = true; const generation = ++loginGeneration; loginBox.hidden = false; loginBox.replaceChildren(h('p', {}, '正在打开 WorkBuddy 国内版授权页面…'));
@@ -165,7 +165,7 @@ export default {
         p.id === 'doubao-work' && button('连接本机豆包工作', async () => { await run(async () => { const r = await api.connectDoubao(); if (r.ok) { state = r; render(); edit(r.channels.find(c => c.id === r.channelId)); } return r; }, '已连接，请确认并启用'); }),
         p.id === 'trae' && button('连接本机 IDE', async () => { await run(async () => { const r = await api.connectTrae(); if (r.ok) { state = r; render(); edit(r.channels.find(c => c.id === r.channelId)); } return r; }, '已连接，请确认模型并启用'); }),
         button('添加兼容 API', () => edit({ provider: p.id, name: p.name, priority: 50 })), button('查看接入说明', () => window.toolbox.shell.openExternal(p.url))))));
-      history.replaceChildren(...(state.requests.length ? state.requests.slice(0, 15).map(r => h('div', { class: 'aihub__log' }, h('span', {}, new Date(r.at).toLocaleTimeString()), h('span', {}, r.channel), h('span', {}, r.result), h('span', { class: 'faint' }, `${(r.elapsedMs / 1000).toFixed(1)}s`))) : [h('p', { class: 'faint' }, '还没有调用记录。只记录通道、状态和耗时，不保存提示词或回答。')]));
+      history.replaceChildren(...(state.requests.length ? state.requests.slice(0, 15).map(r => h('div', { class: 'aihub__log' }, h('span', {}, new Date(r.at).toLocaleTimeString()), h('span', {}, r.model ? `${r.channel} · ${r.modelSource === 'upstream' ? '上游报告模型' : '配置模型'} ${r.model}` : r.channel), h('span', {}, r.result), h('span', { class: 'faint' }, `${(r.elapsedMs / 1000).toFixed(1)}s`))) : [h('p', { class: 'faint' }, '还没有调用记录。只记录通道、模型、状态和耗时，不保存提示词或回答。')]));
       resultText.textContent = `Base URL: ${state.baseUrl || 'http://127.0.0.1:18878/v1'}\nAPI Key: 点击「复制网关密钥」取得\nModel: auto\n\nPOST /v1/chat/completions\nAuthorization: Bearer <网关密钥>\nContent-Type: application/json\n\n{"model":"auto","messages":[{"role":"user","content":"你好"}],"stream":true}`;
     }
     return { async activate() { active = true; await refresh(); if (!setup.panel.hidden) await setup.load(); clearInterval(timer); timer = setInterval(() => { if (active && !editing && !root.querySelector('.aihub__quota-edit')) refresh(); }, 5000); }, deactivate() { active = false; clearInterval(timer); } };

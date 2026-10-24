@@ -338,7 +338,7 @@ class AiHub {
     if (!response.ok) throw fault(response.status, data.error?.message || '测试失败');
     return { ...this.status(), testReply: String(data.choices?.[0]?.message?.content || '请求成功，上游未返回文本').slice(0, 300) };
   }
-  record(channel, result, usage, elapsed) {
+  record(channel, result, usage, elapsed, reportedModel = '') {
     const c = this.state.channels.find(v => v.id === channel.id);
     if (c) {
       c.stats.attempts++; c.stats[result === 'ok' ? 'completed' : 'failures']++;
@@ -347,7 +347,7 @@ class AiHub {
         c.stats.outputTokens += number(usage.completion_tokens) ? usage.completion_tokens : 0; c.stats.usageResponses++;
       }
     }
-    this.state.requests.push({ at: new Date().toISOString(), channel: channel.name, result, elapsedMs: elapsed });
+    this.state.requests.push({ at: new Date().toISOString(), channel: channel.name, model: reportedModel || channel.model, modelSource: reportedModel ? 'upstream' : 'configured', result, elapsedMs: elapsed });
     this.state.requests = this.state.requests.slice(-100); this.persist();
   }
   async handle(req, res) {
@@ -375,7 +375,7 @@ class AiHub {
       const candidates = selected.filter(c => (this.cooldowns.get(c.id) || 0) <= Date.now());
       if (!candidates.length) { res.setHeader('Retry-After', '30'); throw fault(429, '通道正在限流冷却，请稍后重试'); }
       for (const c of candidates) {
-        const begin = Date.now(); let usage = null; let completed = false;
+        const begin = Date.now(); let usage = null; let completed = false; let reportedModel = '';
         try {
           const base = endpoint(c.baseUrl);
           if (new URL(base).port === String(this.server.address().port) && ['127.0.0.1', 'localhost', '[::1]'].includes(new URL(base).hostname)) throw fault(400, '通道指向了网关自身，请改为上游服务地址');
@@ -392,9 +392,11 @@ class AiHub {
             throw fault(upstream.status >= 400 && upstream.status < 500 ? upstream.status : 502, `通道「${c.name}」返回 HTTP ${upstream.status}`);
           }
           res.setHeader('X-Toolbox-Channel', c.id);
+          res.setHeader('X-Toolbox-Configured-Model', encodeURIComponent(c.model));
           if (!body.stream) {
             let result; try { result = JSON.parse(await readLimited(upstream.body, MAX_RESPONSE)); } catch { throw fault(502, '上游未返回有效的 JSON 响应'); }
             if (!Array.isArray(result.choices) || !result.choices.length) throw fault(502, '上游响应不符合 Chat Completions 格式');
+            if (typeof result.model === 'string' && result.model !== 'auto') reportedModel = result.model.slice(0, 150);
             usage = result.usage; result.model = alias; json(res, 200, result);
           } else {
             if (!(upstream.headers.get('content-type') || '').includes('text/event-stream')) { await upstream.body?.cancel(); throw fault(502, '上游未返回流式响应'); }
@@ -410,7 +412,7 @@ class AiHub {
                 if (line.startsWith('data:')) {
                   const value = line.slice(5).trim();
                   if (value === '[DONE]') done = true;
-                  else { try { const event = JSON.parse(value); if (event.error || (Number.isInteger(event.code) && event.code !== 0)) throw fault(502, '上游流式返回错误'); if (event.usage) usage = event.usage; } catch (e) { if (e.status) throw e; } }
+                  else { try { const event = JSON.parse(value); if (event.error || (Number.isInteger(event.code) && event.code !== 0)) throw fault(502, '上游流式返回错误'); if (event.usage) usage = event.usage; if (typeof event.model === 'string' && event.model !== 'auto') reportedModel = event.model.slice(0, 150); } catch (e) { if (e.status) throw e; } }
                 }
               }
               if (pending.length > MAX_BODY) throw fault(502, '上游事件过大');
@@ -423,7 +425,7 @@ class AiHub {
             if (!done) throw fault(502, '上游流式响应中断');
             res.end();
           }
-          this.record(c, 'ok', usage, Date.now() - begin); completed = true; return;
+          this.record(c, 'ok', usage, Date.now() - begin, reportedModel); completed = true; return;
         } catch (error) {
           if (!completed) this.record(c, controller.signal.aborted ? 'cancelled' : 'failed', null, Date.now() - begin);
           if (res.headersSent) { res.destroy(); return; }
@@ -466,6 +468,7 @@ function registerAiHubIpc(ipcMain, { app, safeStorage, clipboard, currentApi, ge
   ipcMain.handle('aiHub:rotate', secure(() => get().rotate()));
   ipcMain.handle('aiHub:copyKey', secure(() => { if (!get().token) throw fault(400, '请先启动网关'); markClipboardSecret(get().token); clipboard.writeText(get().token); return {}; }));
   ipcMain.handle('aiHub:peerStatus', secure(() => peer().status()));
+  ipcMain.handle('aiHub:peerLastRoute', secure(() => ({ route: peer().lastRoute() })));
   ipcMain.handle('aiHub:suggestPort', secure(async () => ({ port: await suggestPeerPort() })));
   ipcMain.handle('aiHub:peerConnect', secure(payload => peer().connect(payload)));
   ipcMain.handle('aiHub:peerTest', secure(() => peer().test()));
