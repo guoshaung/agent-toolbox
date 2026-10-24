@@ -18,12 +18,17 @@ jobs:
         run: |
           set -o pipefail
           xcodebuild -project mobile/ipad/ToolboxDrawing.xcodeproj -scheme ToolboxDrawing -configuration Release -destination 'generic/platform=iOS' -derivedDataPath build/ipad CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO build | tee build-ipad.log
+      - name: Verify conservative scribble recognition and ink hit testing
+        run: |
+          swiftc mobile/ipad/ToolboxDrawing/InkGestures.swift mobile/ipad/tests/InkGesturesTests.swift -o build/ink-gesture-checks
+          build/ink-gesture-checks
       - name: Package unsigned IPA for personal signing
         run: |
           mkdir -p build/package/Payload build/output
           cp -R build/ipad/Build/Products/Release-iphoneos/ToolboxDrawing.app build/package/Payload/
+          APP_VERSION=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' mobile/ipad/ToolboxDrawing/Info.plist)
           cd build/package
-          zip -qry ../output/ToolboxDrawing-0.2.0-unsigned.ipa Payload
+          zip -qry "../output/ToolboxDrawing-${APP_VERSION}-unsigned.ipa" Payload
           cd ../..
           shasum -a 256 build/output/*.ipa > build/output/SHA256SUMS.txt
           cp mobile/ipad/README.md build/output/INSTALL.md
@@ -40,7 +45,7 @@ jobs:
           xcrun simctl io "$DEVICE" screenshot build/output/ipad-simulator.png
       - uses: actions/upload-artifact@v4
         with:
-          name: ToolboxDrawing-0.2.0-unsigned
+          name: ToolboxDrawing-unsigned
           path: build/output/*
           retention-days: 14
       - uses: actions/upload-artifact@v4

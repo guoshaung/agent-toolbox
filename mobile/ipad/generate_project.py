@@ -11,8 +11,9 @@ info = {
     'CFBundleDevelopmentRegion': 'zh_CN', 'CFBundleDisplayName': 'Toolbox 绘图本',
     'CFBundleExecutable': '$(EXECUTABLE_NAME)', 'CFBundleIdentifier': '$(PRODUCT_BUNDLE_IDENTIFIER)',
     'CFBundleInfoDictionaryVersion': '6.0', 'CFBundleName': 'ToolboxDrawing', 'CFBundlePackageType': 'APPL',
-    'CFBundleShortVersionString': '0.2.0', 'CFBundleVersion': '2', 'LSRequiresIPhoneOS': True,
+    'CFBundleShortVersionString': '0.3.0', 'CFBundleVersion': '4', 'LSRequiresIPhoneOS': True,
     'UILaunchScreen': {}, 'UISupportedInterfaceOrientations': ['UIInterfaceOrientationPortrait', 'UIInterfaceOrientationLandscapeLeft', 'UIInterfaceOrientationLandscapeRight'],
+    'UIApplicationSceneManifest': {'UIApplicationSupportsMultipleScenes': False, 'UISceneConfigurations': {'UIWindowSceneSessionRoleApplication': [{'UISceneConfigurationName': 'Default Configuration', 'UISceneDelegateClassName': '$(PRODUCT_MODULE_NAME).SceneDelegate'}]}},
     'NSCameraUsageDescription': '仅用于扫描电脑 Toolbox 绘图配对二维码。',
     'NSLocalNetworkUsageDescription': '通过局域网与自己的电脑同步笔迹和图片。',
     'NSAppTransportSecurity': {'NSAllowsArbitraryLoads': True},
@@ -23,7 +24,7 @@ info = {
 shutil.copyfile(root.parents[1] / 'assets' / 'icon.png', root / 'ToolboxDrawing' / 'AppIcon.png')
 with (root / 'ToolboxDrawing' / 'Info.plist').open('wb') as f:
     plistlib.dump(info, f)
-ids = {name: f'{i:024X}' for i, name in enumerate(['project', 'main', 'sources', 'products', 'target', 'product', 'phase', 'appref', 'storeref', 'appbuild', 'storebuild', 'projectconfigs', 'targetconfigs', 'pd', 'pr', 'td', 'tr', 'resources', 'iconref', 'iconbuild'], 1)}
+ids = {name: f'{i:024X}' for i, name in enumerate(['project', 'main', 'sources', 'products', 'target', 'product', 'phase', 'appref', 'storeref', 'appbuild', 'storebuild', 'projectconfigs', 'targetconfigs', 'pd', 'pr', 'td', 'tr', 'resources', 'iconref', 'iconbuild', 'shelfref', 'shelfbuild', 'gestureref', 'gesturebuild'], 1)}
 i = ids
 settings = 'SDKROOT = iphoneos; IPHONEOS_DEPLOYMENT_TARGET = 16.0; CLANG_ENABLE_MODULES = YES; SWIFT_VERSION = 5.0;'
 targetsettings = 'PRODUCT_BUNDLE_IDENTIFIER = cn.macpe.agenttoolbox.drawing; PRODUCT_NAME = ToolboxDrawing; INFOPLIST_FILE = ToolboxDrawing/Info.plist; TARGETED_DEVICE_FAMILY = 2; CODE_SIGN_STYLE = Automatic; SUPPORTS_MACCATALYST = NO; SWIFT_EMIT_LOC_STRINGS = YES;'
@@ -32,17 +33,21 @@ text = '''// !$*UTF8*$!
 '''
 text += f'''{i['project']} = {{isa = PBXProject; attributes = {{LastUpgradeCheck = 1600;}}; buildConfigurationList = {i['projectconfigs']}; compatibilityVersion = "Xcode 14.0"; developmentRegion = zh_CN; knownRegions = (en, Base, zh_CN); mainGroup = {i['main']}; productRefGroup = {i['products']}; projectDirPath = ""; projectRoot = ""; targets = ({i['target']});}};
 {i['main']} = {{isa = PBXGroup; children = ({i['sources']}, {i['products']}); sourceTree = "<group>";}};
-{i['sources']} = {{isa = PBXGroup; path = ToolboxDrawing; children = ({i['appref']}, {i['storeref']}, {i['iconref']}); sourceTree = "<group>";}};
+{i['sources']} = {{isa = PBXGroup; path = ToolboxDrawing; children = ({i['appref']}, {i['storeref']}, {i['shelfref']}, {i['gestureref']}, {i['iconref']}); sourceTree = "<group>";}};
 {i['products']} = {{isa = PBXGroup; children = ({i['product']}); name = Products; sourceTree = "<group>";}};
 {i['product']} = {{isa = PBXFileReference; explicitFileType = wrapper.application; path = ToolboxDrawing.app; sourceTree = BUILT_PRODUCTS_DIR;}};
 {i['appref']} = {{isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = App.swift; sourceTree = "<group>";}};
 {i['storeref']} = {{isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncStore.swift; sourceTree = "<group>";}};
 {i['appbuild']} = {{isa = PBXBuildFile; fileRef = {i['appref']};}};
 {i['storebuild']} = {{isa = PBXBuildFile; fileRef = {i['storeref']};}};
+{i['shelfref']} = {{isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DrawingShelf.swift; sourceTree = "<group>";}};
+{i['shelfbuild']} = {{isa = PBXBuildFile; fileRef = {i['shelfref']};}};
+{i['gestureref']} = {{isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InkGestures.swift; sourceTree = "<group>";}};
+{i['gesturebuild']} = {{isa = PBXBuildFile; fileRef = {i['gestureref']};}};
 {i['iconref']} = {{isa = PBXFileReference; lastKnownFileType = image.png; path = AppIcon.png; sourceTree = "<group>";}};
 {i['iconbuild']} = {{isa = PBXBuildFile; fileRef = {i['iconref']};}};
 {i['resources']} = {{isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = ({i['iconbuild']}); runOnlyForDeploymentPostprocessing = 0;}};
-{i['phase']} = {{isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = ({i['appbuild']}, {i['storebuild']}); runOnlyForDeploymentPostprocessing = 0;}};
+{i['phase']} = {{isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = ({i['appbuild']}, {i['storebuild']}, {i['shelfbuild']}, {i['gesturebuild']}); runOnlyForDeploymentPostprocessing = 0;}};
 {i['target']} = {{isa = PBXNativeTarget; buildConfigurationList = {i['targetconfigs']}; buildPhases = ({i['phase']}, {i['resources']}); buildRules = (); dependencies = (); name = ToolboxDrawing; productName = ToolboxDrawing; productReference = {i['product']}; productType = "com.apple.product-type.application";}};
 {i['projectconfigs']} = {{isa = XCConfigurationList; buildConfigurations = ({i['pd']}, {i['pr']}); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release;}};
 {i['targetconfigs']} = {{isa = XCConfigurationList; buildConfigurations = ({i['td']}, {i['tr']}); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release;}};

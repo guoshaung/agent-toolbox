@@ -145,4 +145,5 @@ enum DrawingError: LocalizedError {
         guard (response as? HTTPURLResponse)?.statusCode == 200 else { throw DrawingError.message(result["error"] as? String ?? "图片上传失败") }; return result
     }
     var backupURL: URL { file }
+    var notebookID: String { deviceID }
 }

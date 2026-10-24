@@ -6,10 +6,18 @@ import PDFKit
 import AVFoundation
 
 @main final class AppDelegate: UIResponder, UIApplicationDelegate {
+    func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool { true }
+}
+
+final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     var window: UIWindow?
-    func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
-        let window = UIWindow(frame: UIScreen.main.bounds); window.rootViewController = UINavigationController(rootViewController: DrawingController()); window.makeKeyAndVisible(); self.window = window; return true
+    private var drawingController: DrawingController? { (window?.rootViewController as? UINavigationController)?.viewControllers.first as? DrawingController }
+    func scene(_ scene: UIScene, willConnectTo session: UISceneSession, options connectionOptions: UIScene.ConnectionOptions) {
+        guard let scene = scene as? UIWindowScene else { return }
+        let window = UIWindow(windowScene: scene); window.rootViewController = UINavigationController(rootViewController: DrawingController()); window.makeKeyAndVisible(); self.window = window
     }
+    func sceneWillResignActive(_ scene: UIScene) { drawingController?.background() }
+    func sceneDidBecomeActive(_ scene: UIScene) { drawingController?.foreground() }
 }
 
 final class PaperView: UIView {
@@ -29,6 +37,11 @@ final class PaperView: UIView {
     var undoEdits = [Edit](), redoEdits = [Edit]()
     let store = SyncStore(), canvas = PKCanvasView(), scroll = UIScrollView(), stage = UIView(), paper = PaperView(), picker = PKToolPicker()
     let pageControl = UIButton(type: .system), statusLabel = UILabel()
+    let toolRow = UIStackView(), shelfView = ImageShelfView(), library = ImageLibrary()
+    let galleryButton = UIButton(type: .system), colorButton = UIButton(type: .system), widthButton = UIButton(type: .system)
+    var toolButtons = [String: UIButton](), shelfLoads = Set<String>()
+    var inkColor = UIColor(red: 0.15, green: 0.22, blue: 0.30, alpha: 1), inkWidth = 3.0, selectedInkKind = "pen", systemToolsVisible = false
+    var scribbleEnabled = UserDefaults.standard.object(forKey: "drawing.scribbleErase") as? Bool ?? true
     var page = "first", renderedPage = "", rendered = [String: String](), drawingActive = false, applying = false, refreshAfterDrawing = false
     var hasFitted = false; var saveWork: DispatchWorkItem?, imageCache = [String: UIImage](), imageLoads = Set<String>(), oldTool: PKTool?
     override func viewDidLoad() {
@@ -37,24 +50,52 @@ final class PaperView: UIView {
         navigationItem.rightBarButtonItems = [UIBarButtonItem(title: "更多", style: .plain, target: self, action: #selector(more)), UIBarButtonItem(title: "重做", style: .plain, target: self, action: #selector(redo)), UIBarButtonItem(title: "撤销", style: .plain, target: self, action: #selector(undo))]
         pageControl.setTitle("纸张 ▾", for: .normal); pageControl.addTarget(self, action: #selector(pages), for: .touchUpInside)
         statusLabel.font = .systemFont(ofSize: 12); statusLabel.textColor = .secondaryLabel
-        let bar = UIStackView(arrangedSubviews: [pageControl, statusLabel]); bar.spacing = 20; bar.translatesAutoresizingMaskIntoConstraints = false; view.addSubview(bar)
+        statusLabel.lineBreakMode = .byTruncatingMiddle; statusLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        let bar = UIStackView(arrangedSubviews: [pageControl, statusLabel]); bar.spacing = 20
+        setupDrawingTools()
+        let toolScroll = UIScrollView(); toolScroll.showsHorizontalScrollIndicator = false; toolRow.translatesAutoresizingMaskIntoConstraints = false; toolScroll.addSubview(toolRow)
+        for button in toolRow.arrangedSubviews where button is UIButton { button.setContentCompressionResistancePriority(.required, for: .horizontal) }
+        NSLayoutConstraint.activate([toolScroll.heightAnchor.constraint(equalToConstant: 48), toolRow.leadingAnchor.constraint(equalTo: toolScroll.contentLayoutGuide.leadingAnchor, constant: 12), toolRow.trailingAnchor.constraint(equalTo: toolScroll.contentLayoutGuide.trailingAnchor, constant: -12), toolRow.topAnchor.constraint(equalTo: toolScroll.contentLayoutGuide.topAnchor, constant: 4), toolRow.bottomAnchor.constraint(equalTo: toolScroll.contentLayoutGuide.bottomAnchor, constant: -4), toolRow.heightAnchor.constraint(equalTo: toolScroll.frameLayoutGuide.heightAnchor, constant: -8), toolRow.widthAnchor.constraint(greaterThanOrEqualTo: toolScroll.frameLayoutGuide.widthAnchor, constant: -24)])
+        galleryButton.setContentCompressionResistancePriority(.required, for: .horizontal)
+        let toolLine = UIStackView(arrangedSubviews: [toolScroll, galleryButton]); toolLine.spacing = 8; toolLine.isLayoutMarginsRelativeArrangement = true; toolLine.layoutMargins = UIEdgeInsets(top: 0, left: 0, bottom: 0, right: 12)
+        let header = UIStackView(arrangedSubviews: [bar, toolLine, shelfView]); header.axis = .vertical; header.spacing = 4; header.translatesAutoresizingMaskIntoConstraints = false; view.addSubview(header)
+        bar.isLayoutMarginsRelativeArrangement = true; bar.layoutMargins = UIEdgeInsets(top: 0, left: 16, bottom: 0, right: 16); bar.heightAnchor.constraint(equalToConstant: 32).isActive = true
         scroll.translatesAutoresizingMaskIntoConstraints = false; scroll.backgroundColor = UIColor(white: 0.93, alpha: 1); scroll.delegate = self; scroll.minimumZoomScale = 0.2; scroll.maximumZoomScale = 4; scroll.panGestureRecognizer.minimumNumberOfTouches = 2; scroll.delaysContentTouches = false; scroll.canCancelContentTouches = false
-        view.addSubview(scroll); NSLayoutConstraint.activate([bar.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 8), bar.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 20), bar.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -20), bar.heightAnchor.constraint(equalToConstant: 32), scroll.topAnchor.constraint(equalTo: bar.bottomAnchor, constant: 8), scroll.leadingAnchor.constraint(equalTo: view.leadingAnchor), scroll.trailingAnchor.constraint(equalTo: view.trailingAnchor), scroll.bottomAnchor.constraint(equalTo: view.bottomAnchor)])
+        view.addSubview(scroll); NSLayoutConstraint.activate([header.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 4), header.leadingAnchor.constraint(equalTo: view.leadingAnchor), header.trailingAnchor.constraint(equalTo: view.trailingAnchor), scroll.topAnchor.constraint(equalTo: header.bottomAnchor, constant: 4), scroll.leadingAnchor.constraint(equalTo: view.leadingAnchor), scroll.trailingAnchor.constraint(equalTo: view.trailingAnchor), scroll.bottomAnchor.constraint(equalTo: view.bottomAnchor)])
         stage.frame = CGRect(x: 0, y: 0, width: 1120, height: 1584); scroll.addSubview(stage); scroll.contentSize = stage.bounds.size
         paper.frame = stage.bounds; paper.isUserInteractionEnabled = false; stage.addSubview(paper)
         canvas.frame = stage.bounds; canvas.backgroundColor = .clear; canvas.isOpaque = false; canvas.isScrollEnabled = false; canvas.drawingPolicy = .pencilOnly; canvas.delegate = self; stage.addSubview(canvas)
-        picker.addObserver(canvas); picker.addObserver(self); picker.setVisible(true, forFirstResponder: canvas)
+        picker.addObserver(canvas); picker.addObserver(self); picker.setVisible(systemToolsVisible, forFirstResponder: canvas)
         store.changed = { [weak self] in self?.refresh() }
-        NotificationCenter.default.addObserver(self, selector: #selector(background), name: UIApplication.willResignActiveNotification, object: nil)
-        NotificationCenter.default.addObserver(self, selector: #selector(foreground), name: UIApplication.didBecomeActiveNotification, object: nil)
         refresh(); store.start()
     }
-    override func viewDidAppear(_ animated: Bool) { super.viewDidAppear(animated); canvas.becomeFirstResponder(); picker.setVisible(true, forFirstResponder: canvas); if store.base == nil { pair() } }
+    override func viewDidAppear(_ animated: Bool) { super.viewDidAppear(animated); canvas.becomeFirstResponder(); picker.setVisible(systemToolsVisible, forFirstResponder: canvas); if store.base == nil { pair() } }
     override func viewDidLayoutSubviews() { super.viewDidLayoutSubviews(); if !hasFitted { fit() } }
     func viewForZooming(in scrollView: UIScrollView) -> UIView? { stage }
     func fit() { guard scroll.bounds.width > 100 else { hasFitted = false; return }; hasFitted = true; scroll.zoomScale = max(0.2, min(1, (scroll.bounds.width - 24) / 1120)); scroll.contentOffset = .zero }
     func fail(_ error: Error) { let alert = UIAlertController(title: "绘图本", message: error.localizedDescription, preferredStyle: .alert); alert.addAction(UIAlertAction(title: "好", style: .default)); if presentedViewController == nil { present(alert, animated: true) }; statusLabel.text = error.localizedDescription }
     func hash(_ data: Data) -> String { SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined() }
+    func fingerprint(_ stroke: PKStroke) -> String {
+        // PKDrawing archives contain container identity. Hash stable stroke
+        // geometry instead, so wrapping the same stroke never creates a new edit.
+        var data = Data(stroke.ink.inkType.rawValue.utf8)
+        func put(_ value: Double, _ scale: Double = 1000) {
+            var bits = Int64((value * scale).rounded()).littleEndian
+            withUnsafeBytes(of: &bits) { data.append(contentsOf: $0) }
+        }
+        var red: CGFloat = 0, green: CGFloat = 0, blue: CGFloat = 0, alpha: CGFloat = 1
+        stroke.ink.color.getRed(&red, green: &green, blue: &blue, alpha: &alpha)
+        for value in [red, green, blue, alpha] { put(Double(value), 10000) }
+        for value in [stroke.transform.a, stroke.transform.b, stroke.transform.c, stroke.transform.d, stroke.transform.tx, stroke.transform.ty] { put(Double(value), 10000) }
+        put(stroke.path.creationDate.timeIntervalSince1970); put(Double(stroke.path.count), 1)
+        for point in stroke.path {
+            for value in [point.location.x, point.location.y, point.size.width, point.size.height] { put(Double(value)) }
+            put(point.timeOffset, 10000)
+            for value in [point.opacity, point.force, point.azimuth, point.altitude] { put(Double(value), 10000) }
+        }
+        if let rect = stroke.mask?.bounds { for value in [rect.minX, rect.minY, rect.width, rect.height] { put(Double(value)) } } else { put(-1) }
+        return hash(data)
+    }
     func values() -> [[String: Any]] { store.objects.values.filter { $0["page"] as? String == page } }
     func color(_ hex: String) -> UIColor { let value = UInt32(hex.dropFirst(), radix: 16) ?? 0x26384d; return UIColor(red: CGFloat((value >> 16) & 255) / 255, green: CGFloat((value >> 8) & 255) / 255, blue: CGFloat(value & 255) / 255, alpha: 1) }
     func stroke(_ object: [String: Any]) -> PKStroke? {
@@ -68,11 +109,12 @@ final class PaperView: UIView {
         statusLabel.text = "\(store.identity) · \(store.note) · 待同步 \(store.pending.count)"
         pageControl.isEnabled = !drawingActive
         guard !drawingActive else { refreshAfterDrawing = true; return }
+        refreshShelf(); refreshToolButtons()
         if store.pages[page] == nil { page = store.pages.keys.sorted().first ?? "first" }
         pageControl.setTitle((store.pages[page]?["name"] as? String ?? "纸张") + " ▾", for: .normal); paper.paper = store.pages[page]?["paper"] as? String ?? "dots"
         let objects = values().sorted { ($0["id"] as? String ?? "") < ($1["id"] as? String ?? "") }
         var strokes = [PKStroke](), mapping = [String: String]()
-        for object in objects where object["type"] as? String == "stroke" { if let stroke = stroke(object), let id = object["id"] as? String { strokes.append(stroke); mapping[hash(PKDrawing(strokes: [stroke]).dataRepresentation())] = id } }
+        for object in objects where object["type"] as? String == "stroke" { if let stroke = stroke(object), let id = object["id"] as? String { strokes.append(stroke); mapping[fingerprint(stroke)] = id } }
         let drawing = PKDrawing(strokes: strokes)
         if canvas.drawing.dataRepresentation() != drawing.dataRepresentation() { applying = true; canvas.drawing = drawing; applying = false }
         rendered = mapping
@@ -80,8 +122,8 @@ final class PaperView: UIView {
         var backgrounds = [(CGRect, UIImage)]()
         for object in objects.filter({ $0["type"] as? String == "image" }).sorted(by: { ($0["background"] as? Bool ?? false) && !($1["background"] as? Bool ?? false) }) {
             guard let asset = object["asset"] as? String else { continue }
-            if let image = imageCache[asset] { backgrounds.append((CGRect(x: object["x"] as? Double ?? 0, y: object["y"] as? Double ?? 0, width: object["w"] as? Double ?? 100, height: object["h"] as? Double ?? 100), image)) }
-            else if !imageLoads.contains(asset) { imageLoads.insert(asset); Task { [weak self] in guard let self else { return }; defer { imageLoads.remove(asset) }; do { let data = try await store.image(asset); if let image = UIImage(data: data) { imageCache[asset] = image; refresh() } } catch { statusLabel.text = "图片等待连接电脑后加载" } } }
+            if let image = imageCache[asset] ?? library.image(asset) { backgrounds.append((CGRect(x: object["x"] as? Double ?? 0, y: object["y"] as? Double ?? 0, width: object["w"] as? Double ?? 100, height: object["h"] as? Double ?? 100), image)) }
+            else if !imageLoads.contains(asset) { imageLoads.insert(asset); Task { [weak self] in guard let self else { return }; defer { imageLoads.remove(asset) }; do { let data = try await store.image(asset); try library.cache(data, asset: asset); if let image = UIImage(data: data) { imageCache[asset] = image; if imageCache.count > 24 { imageCache = [asset: image] }; refresh() } } catch { statusLabel.text = "图片等待连接电脑后加载" } } }
         }
         paper.images = backgrounds
     }
@@ -92,9 +134,10 @@ final class PaperView: UIView {
     func publish() {
         let drawing = canvas.drawing; var next = [String: String](), changes = [[String: Any]]()
         do {
+            if try eraseWithScribble(drawing) { refreshAfterDrawing = false; return }
             for stroke in drawing.strokes {
-                let data = PKDrawing(strokes: [stroke]).dataRepresentation(), fingerprint = hash(data)
-                if let old = rendered[fingerprint] { next[fingerprint] = old; continue }
+                let data = PKDrawing(strokes: [stroke]).dataRepresentation(), signature = fingerprint(stroke)
+                if let old = rendered[signature] { next[signature] = old; continue }
                 guard data.count <= 520000 else { throw DrawingError.message("单笔过长，请分成较短的笔迹") }
                 let id = UUID().uuidString, controls = Array(stroke.path.interpolatedPoints(by: .distance(2)))
                 guard !controls.isEmpty, controls.count <= 19000 else { throw DrawingError.message("单笔过长，请分段书写") }
@@ -103,7 +146,7 @@ final class PaperView: UIView {
                 var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0; stroke.ink.color.getRed(&r, green: &g, blue: &b, alpha: &a)
                 let color = String(format: "#%02x%02x%02x", Int(r * 255), Int(g * 255), Int(b * 255))
                 let object: [String: Any] = ["id": id, "page": page, "type": "stroke", "tool": stroke.ink.inkType == .marker ? "marker" : "pen", "color": color, "x": 0, "y": 0, "width": stroke.ink.inkType == .marker ? maxWidth / 3 : maxWidth, "points": samples, "style": ["engine": "ribbon-v1", "smoothing": 0.0, "sensitivity": 1.0], "ink": ["format": "pencilkit-v1", "data": data.base64EncodedString()]]
-                changes.append(["kind": "put", "value": object]); next[fingerprint] = id
+                changes.append(["kind": "put", "value": object]); next[signature] = id
             }
             let retained = Set(next.values)
             for id in rendered.values where !retained.contains(id) { changes.append(["kind": "remove", "target": id]) }
@@ -119,11 +162,15 @@ final class PaperView: UIView {
                 catch { rendered = previous; throw error }
             }
             if refreshAfterDrawing { refreshAfterDrawing = false; refresh() }
+            refreshToolButtons()
         } catch { fail(error) }
     }
     func toolPickerSelectedToolDidChange(_ toolPicker: PKToolPicker) {
         // Keep erasing portable: PencilKit bitmap masks cannot be edited by the web renderer.
         if let eraser = toolPicker.selectedTool as? PKEraserTool, eraser.eraserType == .bitmap { toolPicker.selectedTool = PKEraserTool(.vector) }
+        canvas.tool = toolPicker.selectedTool
+        if let ink = canvas.tool as? PKInkingTool { inkColor = ink.color; inkWidth = ink.inkType == .marker ? ink.width / 4 : ink.width; selectedInkKind = ink.inkType == .pencil ? "pencil" : ink.inkType == .marker ? "marker" : "pen" }
+        refreshToolButtons()
     }
     @objc func background() { saveWork?.cancel(); drawingActive = false; publish(); store.stop() }
     @objc func foreground() { store.start() }
@@ -149,6 +196,8 @@ final class PaperView: UIView {
     }
     @objc func more() {
         sheet("绘图工具", choices: [
+            (scribbleEnabled ? "✓ 涂划擦除（可撤销）" : "开启涂划擦除", { [weak self] in guard let self else { return }; scribbleEnabled.toggle(); UserDefaults.standard.set(scribbleEnabled, forKey: "drawing.scribbleErase") }),
+            (systemToolsVisible ? "收起系统笔刷面板" : "更多系统笔刷", { [weak self] in guard let self else { return }; systemToolsVisible.toggle(); canvas.becomeFirstResponder(); picker.setVisible(systemToolsVisible, forFirstResponder: canvas) }),
             (canvas.drawingPolicy == .pencilOnly ? "允许手指绘图" : "仅 Apple Pencil 绘图", { [weak self] in guard let self else { return }; canvas.drawingPolicy = canvas.drawingPolicy == .pencilOnly ? .anyInput : .pencilOnly }),
             ("导入图片 / PDF", { [weak self] in guard let self else { return }; let picker = UIDocumentPickerViewController(forOpeningContentTypes: [.image, .pdf], asCopy: true); picker.delegate = self; present(picker, animated: true) }),
             ("导出本页 PNG", { [weak self] in self?.exportImage() }),
@@ -169,7 +218,7 @@ final class PaperView: UIView {
                     let image = UIGraphicsImageRenderer(size: size).image { c in UIColor.white.setFill(); c.fill(CGRect(origin: .zero, size: size)); c.cgContext.translateBy(x: 0, y: size.height); c.cgContext.scaleBy(x: scale, y: -scale); pdfPage.draw(with: .mediaBox, to: c.cgContext) }
                     let id = UUID().uuidString; try store.enqueue([["kind": "page", "value": ["id": id, "name": url.deletingPathExtension().lastPathComponent.prefix(55) + " · \(n + 1)", "paper": "plain"]]]); try await insert(image, page: id, background: true); page = id
                 }
-            } else { guard let image = UIImage(data: bytes) else { throw DrawingError.message("无法读取图片") }; try await insert(image, page: page, background: false) }; refresh()
+            } else { guard let image = UIImage(data: bytes) else { throw DrawingError.message("无法读取图片") }; _ = try await saveToShelf(image); shelfView.isHidden = false; galleryButton.isSelected = true }; refresh()
         } catch { fail(error) } }
     }
     func insert(_ image: UIImage, page: String, background: Bool) async throws {
