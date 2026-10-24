@@ -115,6 +115,13 @@
     },
     "extraResources": [
       {
+        "from": "resources/bin",
+        "to": "bin",
+        "filter": [
+          "papervid"
+        ]
+      },
+      {
         "from": "container-seed",
         "to": "container-seed",
         "filter": [

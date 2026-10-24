@@ -24,7 +24,8 @@ public class GlowView extends View {
     private final RectF rect = new RectF();
     private final Matrix matrix = new Matrix();
     private SweepGradient gradient;
-    private final int[] colors = { 0xFF21E6A5, 0xFF4FB3D9, 0xFF9D7BFF, 0xFFF0B93D, 0xFF21E6A5 };
+    // Bilibili 粉 → 蓝的环向流光
+    private final int[] colors = { 0xFFFB7299, 0xFF00AEEC, 0xFFFF9BB7, 0xFF4FC8F5, 0xFFFB7299 };
     private float phase = 0f;        // 0..1，转了几圈的小数部分
     private float alpha = 0f;        // 0..1，整体淡入淡出
     private int mode = OFF;

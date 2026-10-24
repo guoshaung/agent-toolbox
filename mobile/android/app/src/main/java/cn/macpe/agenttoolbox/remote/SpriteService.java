@@ -408,6 +408,8 @@ public class SpriteService extends AccessibilityService {
         if (goal == null || goal.trim().isEmpty()) return;
         if (running) { cancelled = true; return; }
         if (endpoint(this).isEmpty()) { say("还没连电脑 —— 先在工具箱里扫码配对"); return; }
+        MainActivity.recordSpriteGoal(this, goal);   // 记进指令历史，手机端卡片能一键复用
+
         running = true; cancelled = false;
         new Thread(() -> {
             JSONArray history = new JSONArray();

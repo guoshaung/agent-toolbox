@@ -163,8 +163,17 @@ function lineTextOf(code, line) {
 function diagnosePython(stderr, code) {
   const text = String(stderr || '');
   // 取最后一个用户代码帧：库内部的帧对练习者没有参考价值。
-  const frames = [...text.matchAll(/File "(?:<stdin>|<string>)", line (\d+)/g)];
-  const line = frames.length ? Number(frames[frames.length - 1][1]) : null;
+  // 用户代码帧有两种：<cell> 是当前这一格；<prelude> 是「上面所有格拼起来重跑」的那段（没有常驻内核，
+  // 每次运行都先把上面的格子重新执行一遍）。<prelude> 里的行号不是这一格的，交给渲染层映射回具体哪一格。
+  // 老版本两段都叫 <string>，这里一并兼容。
+  // <prelude-N> 是按格执行时第 N 格（0 起）的帧，行号就是那一格自己的行号；老的整段 <prelude> 行号要渲染层再映射。
+  const frames = [...text.matchAll(/File "(<cell>|<prelude(?:-\d+)?>|<stdin>|<string>)", line (\d+)/g)];
+  const last = frames.length ? frames[frames.length - 1] : null;
+  const inPrelude = Boolean(last && last[1].startsWith('<prelude'));
+  const line = last && !inPrelude ? Number(last[2]) : null;
+  const preludeLine = inPrelude ? Number(last[2]) : null;
+  const preludeCellHit = inPrelude ? last[1].match(/<prelude-(\d+)>/) : null;
+  const preludeCell = preludeCellHit ? Number(preludeCellHit[1]) : null;
 
   const lines = text.trimEnd().split(/\r?\n/);
   let name = '';
@@ -180,8 +189,11 @@ function diagnosePython(stderr, code) {
     kind: name,
     title: name,
     line,
+    inPrelude,
+    preludeLine,
+    preludeCell,
     lineText: lineTextOf(code, line),
-    summary: rule ? rule.summary(message) : (message || '解释器抛出了这个异常。'),
+    summary: `${inPrelude ? '这个错不是这一格抛的：运行时会先把上面的格子重跑一遍，报错出在上面的单元格里。' : ''}${rule ? rule.summary(message) : (message || '解释器抛出了这个异常。')}`,
     fixes: rule ? clean(rule.fixes(message)) : ['把报错这一行拆成几步，分别 print 中间结果，缩小出问题的范围。'],
     raw: message,
     docUrl: PY_DOCS,
@@ -354,7 +366,7 @@ export function runStatusLabel(result, diagnosis) {
   if (result.timedOut) return '超时（已停止）';
   if (result.ok) return '运行成功';
   if (diagnosis) {
-    const where = diagnosis.line ? ` · 第 ${diagnosis.line} 行` : '';
+    const where = diagnosis.where ? ` · ${diagnosis.where}` : diagnosis.line ? ` · 第 ${diagnosis.line} 行` : diagnosis.inPrelude ? ' · 在上面的单元格里' : '';
     return `${diagnosis.kind}${where}`;
   }
   if (result.exitCode == null) return '启动失败';

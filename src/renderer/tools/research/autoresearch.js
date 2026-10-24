@@ -11,7 +11,10 @@ import { md } from '../../core/md.js';
 export function createAutoResearch(root, ctx) {
   const { config } = ctx;
   const api = window.toolbox.autoresearch;
+  const orchApi = window.toolbox.orchestrator;
   let state = { projects: [], codeDir: '' };
+  let orch = { running: false };          // orchestrator 状态
+  const orchLog = h('pre', { class: 'ar__console orch__log' });
   let currentId = config.get('research.autoresearch.project', 'ai-researcher');
   let currentMode = {};             // projectId -> modeId
   const fieldValues = config.get('research.autoresearch.fields', {});   // projectId.modeId.key -> value
@@ -46,6 +49,15 @@ export function createAutoResearch(root, ctx) {
       h('div', { class: 'ar__item-tags' }, ...p.tags.map((t) => h('span', { class: 'tag' }, t))),
       h('div', { class: 'ar__item-dots' }, dot(p.cloned, p.cloned ? '代码已在本机' : '还没拿代码'), dot(p.envReady, p.envReady ? '环境好了' : '环境还没装'), dot(p.configReady, p.configReady ? '配置有了' : '配置还没写')),
       )),
+      // 自己的：GPT 审稿 ↔ claude 查证的本地协调器（不是 clone 的仓库）
+      h('button', {
+        class: `ar__item ar__item--mine ${currentId === 'orchestrator' ? 'is-active' : ''}`,
+        onclick: () => { currentId = 'orchestrator'; config.set('research.autoresearch.project', 'orchestrator'); renderList(); renderDetail(); },
+      },
+      h('div', { class: 'ar__item-top' }, h('span', { class: 'ar__item-name' }, 'Research Orchestrator'), orch.running ? h('span', { class: 'tag tag--good ar__running' }, '跑着') : h('span', { class: 'tag' }, '自己的')),
+      h('div', { class: 'ar__item-org faint' }, '本地 · GPT↔Claude 自动协调'),
+      h('div', { class: 'ar__item-tags' }, h('span', { class: 'tag' }, '审稿/刹车'), h('span', { class: 'tag' }, '只读查证'), h('span', { class: 'tag' }, '自动循环')),
+      ),
       h('div', { class: 'faint ar__list-foot' }, `代码都放在 ${state.codeDir}`),
     );
   }
@@ -91,6 +103,7 @@ export function createAutoResearch(root, ctx) {
   function fieldKey(p, mode, f) { return `${p.id}.${mode.id}.${f.key}`; }
 
   function renderDetail() {
+    if (currentId === 'orchestrator') { renderOrchestrator(); return; }
     const p = current();
     if (!p) { detail.replaceChildren(h('div', { class: 'empty' }, '没有可用的项目')); return; }
     const modeId = currentMode[p.id] || p.modes[0].id;
@@ -253,6 +266,120 @@ export function createAutoResearch(root, ctx) {
     if (p.cloned) loadOutputs();
   }
 
+  // ---------- Research Orchestrator 面板（GPT=Edge里的ChatGPT ↔ Claude会话查证）----------
+  const DEC_COLOR = { STOP: 'tag--warn', PROCEED: 'tag--good', PIVOT: 'tag--warn', ANALYZE: '', SEARCH: '' };
+  let orchSessions = null;       // Claude 会话列表缓存
+  let orchEdge = { up: false, chatgptTabs: [] };
+
+  function orchSay(line) {
+    const stick = orchLog.scrollTop + orchLog.clientHeight >= orchLog.scrollHeight - 24;
+    orchLog.textContent += (orchLog.textContent ? '\n' : '') + line;
+    const ls = orchLog.textContent.split('\n'); if (ls.length > 400) orchLog.textContent = ls.slice(-400).join('\n');
+    if (stick) orchLog.scrollTop = orchLog.scrollHeight;
+  }
+
+  async function refreshOrch() { orch = await orchApi.status(); if (currentId === 'orchestrator') { try { orchEdge = await orchApi.edgeStatus(); } catch { /* */ } renderOrchestrator(); } }
+
+  function parseSid(v) { const s = String(v || '').trim(); const m = s.match(/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i); return m ? m[1] : s; }
+
+  async function runOrch({ auto, question, maxRounds }) {
+    if (orch.running) return;
+    orchLog.textContent = '';
+    orch.running = true; renderOrchestrator();
+    const r = await (auto ? orchApi.runAuto({ question, maxRounds }) : orchApi.runRound({ question }));
+    if (!r.ok) toast(r.error || '没跑成', 'bad', 6000);
+    await refreshOrch();
+  }
+
+  function renderOrchestrator() {
+    const o = orch;
+    const busy = o.running;
+    const dec = o.decision || {};
+    const edge = orchEdge || {};
+
+    const urlInput = h('input', { class: 'field field--sm orch__url', placeholder: 'chatgpt.com/c/… （指定那条对话；留空=用 Edge 里打开的那条）', value: o.gptUrl || '' });
+    const tabsLine = edge.up
+      ? (edge.chatgptTabs && edge.chatgptTabs.length ? h('div', { class: 'faint' }, `Edge 里 ChatGPT 标签：${edge.chatgptTabs.length} 个` + (edge.chatgptTabs[0] ? `（当前：${edge.chatgptTabs[0].title || edge.chatgptTabs[0].url}）` : '')) : h('div', { class: 'faint' }, 'Edge 开着但没 ChatGPT 标签，点「打开 ChatGPT」'))
+      : h('div', { class: 'faint' }, edge.bin ? 'Edge 还没起（跑的时候会自动起，或点下面按钮）' : '没装 Microsoft Edge');
+    const gptPane = h('div', { class: 'orch__gptpane' },
+      h('div', { class: 'ar__row' },
+        h('button', { class: 'btn btn--sm btn--primary', onclick: async () => { orchSay('正在起 Edge / 打开 ChatGPT…'); const r = await orchApi.openChatgpt(); if (!r.ok) toast(r.error, 'bad', 6000); setTimeout(refreshOrch, 1800); } }, '打开 Edge 登录 ChatGPT'),
+        h('button', { class: 'btn btn--sm btn--ghost', onclick: refreshOrch }, '刷新状态'),
+      ),
+      tabsLine,
+      h('div', { class: 'ar__row' },
+        urlInput,
+        h('button', { class: 'btn btn--sm', onclick: async () => { await orchApi.setup({ gptUrl: urlInput.value.trim() }); toast('记下这条对话', 'good'); } }, '用这条链接'),
+        (edge.chatgptTabs && edge.chatgptTabs.length) ? h('button', { class: 'btn btn--sm', onclick: async () => { const u = edge.chatgptTabs[0].url; urlInput.value = u; await orchApi.setup({ gptUrl: u }); toast('用当前标签那条', 'good'); } }, '用当前标签') : null,
+      ),
+      h('div', { class: 'faint orch__hint' }, '在弹出的真 Edge 窗口里登录 ChatGPT（邮箱/Google 都行，真浏览器不受限），切到你要的那条对话。工具箱只往里传话、取回复。'),
+    );
+
+    const sessSel = h('select', { class: 'field field--sm orch__sess', onchange: async (e) => { const s = (orchSessions || []).find((x) => x.id === e.target.value); await orchApi.setup({ claudeSessionId: e.target.value, claudeSessionCwd: s && s.cwd || '' }); refreshOrch(); } }, h('option', { value: '' }, '（选一条 Claude 会话）'));
+    function fillSessions() { sessSel.replaceChildren(h('option', { value: '' }, '（选一条 Claude 会话）'), ...(orchSessions || []).map((s) => h('option', { value: s.id, selected: s.id === o.claudeSessionId }, `${s.title.slice(0, 44)} · ${new Date(s.mtime).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}`))); }
+    if (orchSessions) fillSessions(); else orchApi.sessions().then((r) => { orchSessions = r.sessions || []; fillSessions(); });
+    const sidInput = h('input', { class: 'field field--sm', placeholder: '或粘会话 id / claude.ai/code 链接' });
+    const repoPath = h('span', { class: 'faint mono orch__repo' }, o.targetRepo || o.claudeSessionCwd || '（默认用会话所在目录）');
+
+    const goal = h('textarea', { class: 'field orch__goal', rows: 2, placeholder: '研究目标：一句话说清要找什么样的、有生产证据支撑的问题', value: o.goal || '' });
+    const allowImpl = h('label', { class: 'ar__check orch__danger' }, h('input', { type: 'checkbox', checked: Boolean(o.allowImpl), onchange: (e) => orchApi.setup({ allowImpl: e.target.checked }).then(refreshOrch) }), '允许进入实现阶段（GPT 决策 PROCEED 后让 Claude 改代码）');
+    const question = h('input', { class: 'field orch__q', placeholder: '本轮研究问题（空=用目标 / 上一轮 GPT 给的下一问）', value: o.decision && o.decision.next_question || o.goal || '' });
+    const rounds = h('input', { class: 'field field--sm orch__rounds', type: 'number', min: 1, max: 20, value: config.get('research.orch.rounds', 6) });
+
+    const runOne = h('button', { class: 'btn btn--sm btn--primary', disabled: busy, onclick: () => runOrch({ auto: false, question: question.value.trim() }) }, busy ? '跑着…' : '跑一轮');
+    const runAutoBtn = h('button', { class: 'btn btn--sm', disabled: busy, onclick: () => { config.set('research.orch.rounds', Number(rounds.value) || 6); runOrch({ auto: true, question: question.value.trim(), maxRounds: Number(rounds.value) || 6 }); } }, '自动连跑');
+    const stopBtn = busy ? h('button', { class: 'btn btn--sm btn--danger', onclick: () => orchApi.cancel() }, '停止') : null;
+
+    const decTag = dec.decision ? h('span', { class: `tag ${DEC_COLOR[dec.decision] || ''} orch__dectag` }, `${dec.decision}${dec.confidence ? ` · ${Math.round(dec.confidence * 100)}%` : ''}`) : h('span', { class: 'faint' }, '还没跑');
+    const section = (title, text, open = false) => (text ? h('details', { class: 'orch__sec', open }, h('summary', {}, title), h('div', { class: 'ar__md' }, md(text))) : null);
+    const lineage = (o.lineage || []).slice().reverse().slice(0, 30);
+
+    detail.replaceChildren(
+      h('div', { class: 'ar__head' },
+        h('div', {},
+          h('h2', { class: 'ar__title' }, 'Research Orchestrator', h('span', { class: 'tag ar__badge' }, '自己的')),
+          h('p', { class: 'ar__desc' }, '你当“方向 + 中转”太慢了。GPT（Edge 里你那条 ChatGPT）当审稿/刹车，Claude 会话当只读查证。每轮 Claude 跑证据 → GPT 判 STOP/GO → 更新 STATE，攒成一份否定结果档案。'),
+          h('div', { class: 'ar__needs' },
+            h('span', { class: `tag ${edge.up ? 'tag--good' : 'tag--warn'}` }, `GPT: ${edge.up ? ((edge.chatgptTabs && edge.chatgptTabs.length) ? 'Edge·ChatGPT 就绪' : 'Edge 开着·无对话') : 'Edge 未起'}`),
+            h('span', { class: `tag ${o.claudeSessionId ? 'tag--good' : 'tag--warn'}` }, `Claude: ${o.claudeSessionId ? '会话已指定' : '未指定'}`),
+          ),
+        ),
+        h('div', { class: 'ar__head-actions' }, h('button', { class: 'btn btn--sm btn--ghost', onclick: () => orchApi.openFolder() }, '打开工作目录')),
+      ),
+      h('div', { class: 'orch__warn' }, '⚠ 用真·Edge 驱动（调试端口 CDP），不是内嵌窗——真浏览器登录正常。但自动打字/发送到 ChatGPT 仍可能违反 OpenAI 条款、有封号风险；页面改版时抓取要更新。Claude 端 --resume 走订阅，稳。'),
+      step(1, '指定两条对话', Boolean(o.claudeSessionId),
+        h('div', { class: 'orch__cols' },
+          h('div', { class: 'orch__col' }, h('div', { class: 'ar__field-label' }, 'GPT（Edge 里的 ChatGPT）'), gptPane),
+          h('div', { class: 'orch__col' },
+            h('div', { class: 'ar__field-label' }, 'Claude 会话（--resume 续这条，走订阅）'),
+            h('div', { class: 'ar__row' }, sessSel, h('button', { class: 'btn btn--sm btn--ghost', onclick: () => { orchSessions = null; refreshOrch(); } }, '刷新')),
+            h('div', { class: 'ar__row' }, sidInput, h('button', { class: 'btn btn--sm', onclick: async () => { const id = parseSid(sidInput.value); if (!id) return; await orchApi.setup({ claudeSessionId: id }); toast('会话已指定', 'good'); refreshOrch(); } }, '用这个')),
+            h('div', { class: 'ar__row' }, h('button', { class: 'btn btn--sm btn--ghost', onclick: async () => { const r = await orchApi.pickRepo(); if (r.ok) refreshOrch(); } }, '选目标仓库（可选）'), repoPath),
+          ),
+        ),
+      ),
+      step(2, '目标 & 跑', Boolean(o.goal),
+        h('label', { class: 'ar__field ar__field--wide' }, h('span', { class: 'ar__field-label' }, '研究目标'), goal),
+        h('div', { class: 'ar__row' }, h('button', { class: 'btn btn--sm', onclick: async () => { await orchApi.setup({ goal: goal.value.trim() }); toast('目标存好了', 'good'); refreshOrch(); } }, '保存目标'), allowImpl),
+        h('label', { class: 'ar__field ar__field--wide' }, h('span', { class: 'ar__field-label' }, '本轮研究问题'), question),
+        h('div', { class: 'ar__row' }, runOne, runAutoBtn, h('span', { class: 'faint' }, '最多'), rounds, h('span', { class: 'faint' }, '轮'), stopBtn),
+        h('div', { class: 'orch__log-head' }, h('span', { class: 'faint' }, '实时日志'), h('button', { class: 'btn btn--sm btn--ghost', onclick: () => { orchLog.textContent = ''; } }, '清空')),
+        orchLog,
+      ),
+      step(3, '当前决策 & 证据', false,
+        h('div', { class: 'ar__row orch__dec' }, h('strong', {}, '决策'), decTag, dec.next_question ? h('span', { class: 'faint' }, `下一问：${dec.next_question}`) : null),
+        ...[section('GPT 审稿（GPT_REVIEW）', o.review, true), section('Claude 证据（CLAUDE_REPORT）', o.report), section('STATE（累积事实 / 已否决）', o.state)].filter(Boolean),
+      ),
+      step(4, '研究谱系（否定结果档案）', false,
+        lineage.length ? h('div', { class: 'orch__lineage' }, ...lineage.map((l) => h('div', { class: 'orch__ln' },
+          h('span', { class: `tag ${DEC_COLOR[l.decision] || ''}` }, l.decision),
+          h('span', { class: 'orch__ln-q' }, `#${l.round} ${l.question}`),
+          h('span', { class: 'faint' }, l.next_question ? `→ ${l.next_question}` : ''),
+        ))) : h('div', { class: 'faint' }, '还没有轮次。指定两条对话、设好目标，点「跑一轮」。'),
+      ),
+    );
+  }
+
   /** idea 的 json 渲染成卡片，别的 json 直接美化；md 走 md() */
   function renderOutput(read) {
     if (read.ext === 'md') return h('div', { class: 'ar__md' }, md(read.text));
@@ -292,6 +419,12 @@ export function createAutoResearch(root, ctx) {
     refresh();
   });
 
+  orchApi.onProgress((s) => {
+    if (s.line) { const stick = orchLog.scrollTop + orchLog.clientHeight >= orchLog.scrollHeight - 24; orchLog.textContent += (orchLog.textContent ? '\n' : '') + `[${s.phase}] ${s.line}`; const ls = orchLog.textContent.split('\n'); if (ls.length > 400) orchLog.textContent = ls.slice(-400).join('\n'); if (stick) orchLog.scrollTop = orchLog.scrollHeight; }
+    if (s.phase === 'done' || s.phase === 'error') refreshOrch();
+  });
+
   refresh();
-  return { activate: refresh, refresh };
+  refreshOrch();
+  return { activate: () => { refresh(); refreshOrch(); }, refresh };
 }

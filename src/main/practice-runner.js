@@ -225,7 +225,12 @@ async function run(trackId, code, options = {}) {
   const validation = validateCode(trackId, code);
   if (validation) return { ok: false, error: validation };
   const prelude = String(options.prelude || '');
-  if (prelude.length + String(code || '').length > MAX_CODE) return { ok: false, error: `当前单元格和前置单元格合计超过 ${MAX_CODE} 字节。` };
+  // python 走按格的 preludeCells（每格单独执行、各自容错）；bash 仍是整段 prelude
+  const preludeCells = Array.isArray(options.preludeCells)
+    ? options.preludeCells.map((c, i) => ({ index: Number(c && c.index != null ? c.index : i), code: String((c && c.code) || '') }))
+    : null;
+  const preludeLen = preludeCells ? preludeCells.reduce((n, c) => n + c.code.length, 0) : prelude.length;
+  if (preludeLen + String(code || '').length > MAX_CODE) return { ok: false, error: `当前单元格和前置单元格合计超过 ${MAX_CODE} 字节。` };
   const env = environment();
   const missing = unavailable(trackId, env);
   if (missing) return { ok: false, error: missing, environment: env };
@@ -236,10 +241,10 @@ async function run(trackId, code, options = {}) {
   try {
     if (PYTHON_TRACKS.has(trackId)) {
       const interpreter = pythonInterpreter(trackId);
-      const source = pythonHarness(prelude, String(code || ''));
+      const source = pythonHarness(preludeCells || prelude, String(code || ''));
       const ran = await runProcess(interpreter, ['-u', '-'], source, cwd, options.timeout);
-      const { text, displays } = await collectDisplays(ran.stdout);
-      return { ...ran, stdout: text, displays, engine: trackId === 'python' ? 'python3' : interpreter === 'python3' ? 'python3' : `${track.label} · uv .venv` };
+      const { text, displays, preludeErrors } = await collectDisplays(ran.stdout);
+      return { ...ran, stdout: text, displays, preludeErrors, engine: trackId === 'python' ? 'python3' : interpreter === 'python3' ? 'python3' : `${track.label} · uv .venv` };
     }
     if (SHELL_TRACKS.has(trackId)) {
       const shell = resolveCommand('bash');
@@ -264,20 +269,33 @@ async function run(trackId, code, options = {}) {
 /**
  * 像 Jupyter 一样：最后一行是个表达式就把它的值「显示」出来 ——
  * graphviz 的图、matplotlib 的图、带 _repr_svg_ / _repr_png_ 的对象都变成图片，其他打 repr。
- * 图片用标记行塞进 stdout，主进程再抠出来。文件名保持 <string>，报错行号的解析不用改。
+ * 图片用标记行塞进 stdout，主进程再抠出来。
+ * 没有常驻内核：每次运行都把上面的格子（prelude）重跑一遍再跑这一格。两段分别编译成 <prelude> / <cell>，
+ * 报错时渲染层才分得清「是这一格的第几行」还是「上面哪一格抛的」——以前都叫 <string>，上面格子的报错会被当成这一格的行号。
  */
 function pythonHarness(prelude, code) {
+  // prelude 可以是老的整段字符串，也可以是 [{index, code}]（按格）。按格时每格单独编译成 <prelude-N> 并各自 try/except：
+  // 上面哪格炸了只记一条 <<toolbox-prelude-error:N:...>> 标记，后面的格和当前格照跑 —— 和 Jupyter 里
+  // 「上面那格没跑成功、它定义的名字就不存在」是一个意思，而不是整个运行被上面的错拦住。
+  const preludeCells = Array.isArray(prelude)
+    ? prelude.map((c, i) => [Number(c && c.index != null ? c.index : i), String((c && c.code) || '')])
+    : [[0, String(prelude || '')]];
   return [
-    'import ast, sys, base64, contextlib, io',
+    'import ast, sys, base64, contextlib, io, traceback',
     '_g = globals()',
-    `_prelude = ${JSON.stringify(prelude)}`,
+    'def _toolbox_emit(tag, data): print("\\n<<toolbox-%s:%s>>\\n" % (tag, base64.b64encode(data if isinstance(data, bytes) else str(data).encode("utf-8")).decode("ascii")))',
+    `_prelude = ${JSON.stringify(preludeCells)}`,
     `_code = ${JSON.stringify(code)}`,
-    'if _prelude.strip():',
-    '    with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):',
-    '        exec(compile(_prelude, "<string>", "exec"), _g)',
+    'for _i, _src in _prelude:',
+    '    if not _src.strip(): continue',
+    '    try:',
+    '        with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(io.StringIO()):',
+    '            exec(compile(_src, "<prelude-%d>" % _i, "exec"), _g)',
+    '    except BaseException:',
+    '        _toolbox_emit("prelude-error:%d" % _i, traceback.format_exc())',
     'def _toolbox_display(v):',
     '    if v is None: return',
-    '    def emit(kind, data): print("\\n<<toolbox-display:%s:%s>>\\n" % (kind, base64.b64encode(data if isinstance(data, bytes) else str(data).encode("utf-8")).decode("ascii")))',
+    '    def emit(kind, data): _toolbox_emit("display:" + kind, data)',
     '    src = getattr(v, "source", None)',
     '    if isinstance(src, str) and type(v).__name__ in ("Digraph", "Graph", "Source"): return emit("dot", src)',
     '    f = getattr(v, "_repr_svg_", None)',
@@ -291,12 +309,12 @@ function pythonHarness(prelude, code) {
     '    if hasattr(v, "savefig"):',
     '        buf = io.BytesIO(); v.savefig(buf, format="png", bbox_inches="tight"); return emit("png", buf.getvalue())',
     '    print(repr(v))',
-    '_tree = ast.parse(_code)',
+    '_tree = ast.parse(_code, "<cell>")',
     'if _tree.body and isinstance(_tree.body[-1], ast.Expr):',
-    '    exec(compile(ast.Module(body=_tree.body[:-1], type_ignores=[]), "<string>", "exec"), _g)',
-    '    _toolbox_display(eval(compile(ast.Expression(body=_tree.body[-1].value), "<string>", "eval"), _g))',
+    '    exec(compile(ast.Module(body=_tree.body[:-1], type_ignores=[]), "<cell>", "exec"), _g)',
+    '    _toolbox_display(eval(compile(ast.Expression(body=_tree.body[-1].value), "<cell>", "eval"), _g))',
     'else:',
-    '    exec(compile(_tree, "<string>", "exec"), _g)',
+    '    exec(compile(_tree, "<cell>", "exec"), _g)',
     // matplotlib：没显式 show 也把当前的图交出来
     'try:',
     '    import matplotlib.pyplot as _plt',
@@ -315,10 +333,15 @@ async function renderDot(source) {
 /** 把 stdout 里的显示标记抠出来：dot 在这里用 viz.js 画成 svg，不需要装 Graphviz 本体 */
 async function collectDisplays(stdout) {
   const displays = [];
+  // 上面格子的报错：harness 把它们单独容错并打成标记，这里抠出来，不混进正文
+  const preludeErrors = [];
+  const text = String(stdout || '').replace(/\n?<<toolbox-prelude-error:(\d+):([A-Za-z0-9+/=]*)>>\n?/g, (_m, idx, b64) => {
+    preludeErrors.push({ cell: Number(idx), error: Buffer.from(b64, 'base64').toString('utf8') });
+    return '';
+  });
   const re = /\n?<<toolbox-display:(dot|svg|png):([A-Za-z0-9+/=]*)>>\n?/g;
   const parts = [];
   let last = 0; let m;
-  const text = String(stdout || '');
   while ((m = re.exec(text))) {
     parts.push(text.slice(last, m.index)); last = m.index + m[0].length;
     const raw = Buffer.from(m[2], 'base64');
@@ -329,7 +352,7 @@ async function collectDisplays(stdout) {
     } catch (err) { parts.push(`[图片没画出来：${err.message}]\n`); }
   }
   parts.push(text.slice(last));
-  return { text: parts.join(''), displays };
+  return { text: parts.join(''), displays, preludeErrors };
 }
 
 /** 学 GitHub 仓库：克隆后扫一遍代码文件（浅层、小文件），README 一起带回 */

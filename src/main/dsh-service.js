@@ -6,7 +6,8 @@ const path = require('node:path');
 const http = require('node:http');
 const { spawn, execFile, execFileSync } = require('node:child_process');
 
-const DSH_PACKAGE = '@deepseek-ai/dsh@0.1.1-rc.2';
+// 2026-10-06 升到 0.1.7-rc.2：dsh-our-free-model 插件要求内核 0.1.5～0.1.7-rc.2；0.2.x 超出插件范围、且 dsh-web-all 0.4.x 才要 0.2
+const DSH_PACKAGE = '@deepseek-ai/dsh@0.1.7-rc.2';
 
 /**
  * DSH 的工作目录。
@@ -17,6 +18,50 @@ function dshWorkDir(userDataPath) {
   if (!userDataPath) return os.homedir();
   const dir = path.join(userDataPath, 'container', 'dsh');
   try { fs.mkdirSync(dir, { recursive: true }); return dir; } catch { return os.homedir(); }
+}
+
+/**
+ * 光把进程 cwd 放进容器是不够的：DSH 不看 cwd，只认它自己存档里的「工作区」（$DSH_HOME/storages/workspace.json），
+ * 默认那条指向 ~/Documents/dsh，于是它读写的文件根本不进「容器」那一栏。这里把容器的 dsh 目录登记成一条工作区
+ * （不动用户已有的那条和它的会话），DSH 侧栏「工作区」里就能切过去。纯函数，好测；已有同路径就原样返回。
+ */
+function mergeContainerWorkspace(store, containerDir, { title = '工具箱容器', newId = () => require('crypto').randomUUID(), now = () => new Date().toISOString() } = {}) {
+  const data = store && typeof store === 'object' ? store : {};
+  const tables = data.tables && typeof data.tables === 'object' ? data.tables : {};
+  const workspaces = tables.workspaces && typeof tables.workspaces === 'object' ? tables.workspaces : {};
+  // DSH 的记录 schema（dsh-workspace/types/spec.js）：path 必须是 realpath 规范形，createdAt / updatedAt 必填的 ISO 串。
+  // 少一个字段整个存档都过不了校验，工作区列表会一直"正在加载"，连原来那条也不见——这坑踩过。
+  let target = path.resolve(containerDir);
+  try { target = fs.realpathSync(target); } catch { /* 目录还没建就按 resolve 的用 */ }
+  if (Object.values(workspaces).some((w) => w && path.resolve(String(w.path || '')) === target)) return { changed: false, store: data };
+  const id = newId();
+  const stamp = now();
+  const global = data.global && typeof data.global === 'object' ? data.global : { initialized: true };
+  return {
+    changed: true,
+    store: {
+      ...data,
+      unit: data.unit || { name: 'workspace', version: 2 },
+      global: { ...global, workspaceIds: [...(Array.isArray(global.workspaceIds) ? global.workspaceIds : []), id] },
+      tables: { ...tables, workspaces: { ...workspaces, [id]: { path: target, title, sessionIds: [], createdAt: stamp, updatedAt: stamp } } },
+    },
+  };
+}
+
+/** 启动 DSH 前把容器目录登记成工作区。文件不存在就不管（DSH 第一次跑会自己建），写失败也不拦启动。 */
+function ensureContainerWorkspace(userDataPath, dshHome = process.env.DSH_HOME || path.join(os.homedir(), '.dsh')) {
+  try {
+    const file = path.join(dshHome, 'storages', 'workspace.json');
+    if (!fs.existsSync(file)) return { ok: false, reason: 'no-store' };
+    const { changed, store } = mergeContainerWorkspace(JSON.parse(fs.readFileSync(file, 'utf8')), dshWorkDir(userDataPath));
+    if (!changed) return { ok: true, changed: false };
+    const tmp = `${file}.tmp-${process.pid}`;
+    fs.writeFileSync(tmp, JSON.stringify(store, null, 2));
+    fs.renameSync(tmp, file);
+    return { ok: true, changed: true };
+  } catch (error) {
+    return { ok: false, reason: error.message };
+  }
 }
 const DEFAULT_PORT = 3080;
 
@@ -181,6 +226,8 @@ class DshService {
       // 新版 DSH 的 URL 含一次性认证 token。若 3080 已被另一个实例占用，
       // 让 DSH 自选空闲端口，避免要求用户手动寻找并关闭旧进程。
       const port = existing.running ? 0 : DEFAULT_PORT;
+      // 把容器目录登记成 DSH 工作区（只在我们自己拉起 DSH 时做；DSH 没跑的时候改它的存档才安全）
+      ensureContainerWorkspace(this.app.getPath('userData'));
       this.child = spawn(dsh, ['--profile', 'web', '--patch', overlay, '--no-open', '--port', String(port)], spawnOptions({ cwd: dshWorkDir(this.app.getPath('userData')), stdio: ['ignore', 'pipe', 'pipe'] }));
       const captureUrl = (chunk) => {
         const url = findWebUrl(chunk);
@@ -225,4 +272,4 @@ class DshService {
   }
 }
 
-module.exports = { DSH_PACKAGE, DEFAULT_PORT, DshService, findWebUrl, probe, resolveCommand };
+module.exports = { DSH_PACKAGE, DEFAULT_PORT, DshService, findWebUrl, probe, resolveCommand, dshWorkDir, mergeContainerWorkspace, ensureContainerWorkspace };
