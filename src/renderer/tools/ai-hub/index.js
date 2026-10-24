@@ -1,4 +1,5 @@
 import { h, toast } from '../../core/ui.js';
+import { createAiHubSetup } from './setup.js';
 
 export default {
   id: 'ai-hub',
@@ -16,6 +17,7 @@ export default {
     const loginBox = h('div', { class: 'card aihub__login', hidden: true });
     const status = h('span', { class: 'tag' }, '未启动');
     const start = h('button', { class: 'btn btn--primary', onclick: () => run(() => state?.running ? api.stop() : api.start()) }, '启动本地网关');
+    const setup = createAiHubSetup({ api, getGateway: () => state, applyGateway: next => { state = next; render(); } });
     const address = h('code', {}, '启动后显示本地地址');
     const resultText = h('pre', { class: 'aihub__example' });
     const help = h('details', { class: 'card aihub__help' }, h('summary', {}, '怎么接入和使用'),
@@ -26,11 +28,11 @@ export default {
       h('p', {}, '网关支持 /v1/models 和 /v1/chat/completions（含流式）；auto 遇到 HTTP 429/502/503/504 才尝试下一通道，连接中断或已经输出时不会重发。网关随工具箱退出而停止，不自动改动工具箱原来的 AI 设置。'), resultText);
     root.append(h('div', { class: 'bar bar--drag' }, h('strong', {}, '额度中枢'), h('span', { class: 'faint' }, '一个入口，各家独立记账')),
       h('div', { class: 'aihub__body' },
-        h('div', { class: 'card aihub__gateway' }, h('div', { class: 'aihub__row' }, h('strong', {}, '本地统一接口'), status, start),
+        h('div', { class: 'card aihub__gateway' }, h('div', { class: 'aihub__row' }, h('strong', {}, '本地统一接口'), status, start, setup.toggle),
           h('div', { class: 'aihub__row' }, address, button('复制地址', async () => { if (!state?.baseUrl) return toast('请先启动网关'); await window.toolbox.clipboard.write(state.baseUrl); toast('地址已复制', 'good'); }),
             button('复制网关密钥', () => run(() => api.copyKey(), '网关密钥已复制')), button('更换网关密钥', () => { if (window.confirm('更换后，已有客户端需要更新网关密钥。继续吗？')) run(() => api.rotate(), '网关密钥已更换'); })),
           h('p', { class: 'faint' }, '本机地址 · Bearer 密钥鉴权 · 模型 auto 按优先级选择')),
-        summary, h('div', { class: 'aihub__row' }, h('h3', {}, '我的通道'), button('添加通道', () => edit()),
+        setup.panel, summary, h('div', { class: 'aihub__row' }, h('h3', {}, '我的通道'), button('添加通道', () => edit()),
           button('引用工具箱当前 API', () => edit({ source: 'current', name: '工具箱当前 API', enabled: false, priority: 50 }))),
         loginBox, editor, cards, h('h3', {}, '你关注的服务'), catalog, help, h('h3', {}, '最近调用'), history));
     function button(label, action) { return h('button', { class: 'btn btn--sm', onclick: action }, label); }
@@ -112,6 +114,7 @@ export default {
       }), button('取消', () => box.remove()))); return box;
     }
     function render() {
+      setup.paint();
       const openDetails = new Set([...cards.querySelectorAll('.aihub__details[open]')].map(d => d.dataset.channelId));
       status.textContent = state.running ? '运行中' : '已停止'; start.textContent = state.running ? '停止网关' : '启动本地网关';
       address.textContent = state.baseUrl || 'http://127.0.0.1:18878/v1（未启动）';
@@ -165,6 +168,6 @@ export default {
       history.replaceChildren(...(state.requests.length ? state.requests.slice(0, 15).map(r => h('div', { class: 'aihub__log' }, h('span', {}, new Date(r.at).toLocaleTimeString()), h('span', {}, r.channel), h('span', {}, r.result), h('span', { class: 'faint' }, `${(r.elapsedMs / 1000).toFixed(1)}s`))) : [h('p', { class: 'faint' }, '还没有调用记录。只记录通道、状态和耗时，不保存提示词或回答。')]));
       resultText.textContent = `Base URL: ${state.baseUrl || 'http://127.0.0.1:18878/v1'}\nAPI Key: 点击「复制网关密钥」取得\nModel: auto\n\nPOST /v1/chat/completions\nAuthorization: Bearer <网关密钥>\nContent-Type: application/json\n\n{"model":"auto","messages":[{"role":"user","content":"你好"}],"stream":true}`;
     }
-    return { async activate() { active = true; await refresh(); clearInterval(timer); timer = setInterval(() => { if (active && !editing && !root.querySelector('.aihub__quota-edit')) refresh(); }, 5000); }, deactivate() { active = false; clearInterval(timer); } };
+    return { async activate() { active = true; await refresh(); if (!setup.panel.hidden) await setup.load(); clearInterval(timer); timer = setInterval(() => { if (active && !editing && !root.querySelector('.aihub__quota-edit')) refresh(); }, 5000); }, deactivate() { active = false; clearInterval(timer); } };
   },
 };

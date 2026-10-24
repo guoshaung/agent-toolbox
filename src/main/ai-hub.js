@@ -9,6 +9,7 @@ const { WorkBuddyCN } = require('./ai-hub-workbuddy');
 const { TraeIDE } = require('./ai-hub-trae');
 const { DoubaoWork } = require('./ai-hub-doubao-work');
 const { QwenWork } = require('./ai-hub-qwenwork');
+const { AiHubPeer, suggestPeerPort } = require('./ai-hub-peer');
 
 const CATALOG = [
   { id: 'workbuddy', name: 'WorkBuddy 国内版', url: 'https://www.codebuddy.cn/docs/cli/sdk', note: '可在浏览器授权登录，读取个人模型列表和 credits。登录后先选模型并启用，再测试调用；上游拒绝时会直接显示失败。' },
@@ -315,7 +316,7 @@ class AiHub {
       }));
       server.requestTimeout = 15000; server.headersTimeout = 10000;
       server.on('clientError', (_error, socket) => socket.destroy());
-      await new Promise((resolve, reject) => { server.once('error', reject); server.listen(port, '127.0.0.1', resolve); });
+      await new Promise((resolve, reject) => { server.once('error', error => reject(error.code === 'EADDRINUSE' ? fault(409, `端口 ${port} 已被占用，请选择空闲端口`) : error)); server.listen(port, '127.0.0.1', resolve); });
       this.server = server; return this.status();
     })();
     try { return await this.starting; } finally { this.starting = null; }
@@ -436,11 +437,12 @@ class AiHub {
   }
 }
 
-function registerAiHubIpc(ipcMain, { app, safeStorage, clipboard, currentApi, markClipboardSecret = () => {} }) {
-  let service, loginWindow;
+function registerAiHubIpc(ipcMain, { app, safeStorage, clipboard, currentApi, getDshService = () => null, markClipboardSecret = () => {} }) {
+  let service, peerService, loginWindow;
   // Match the main application's Node fetch transport; Chromium inherits the
   // system proxy, which may be stopped even while direct API calls still work.
   const get = () => service ||= new AiHub({ directory: path.join(app.getPath('userData'), 'ai-hub'), safeStorage, currentApi });
+  const peer = () => peerService ||= new AiHubPeer({ directory: path.join(app.getPath('userData'), 'ai-hub'), safeStorage });
   const closeLogin = () => { if (loginWindow && !loginWindow.isDestroyed()) loginWindow.destroy(); loginWindow = null; };
   const secure = action => async (event, payload) => {
     try {
@@ -459,10 +461,39 @@ function registerAiHubIpc(ipcMain, { app, safeStorage, clipboard, currentApi, ma
   ipcMain.handle('aiHub:quota', secure(payload => get().manualQuota(payload)));
   ipcMain.handle('aiHub:refresh', secure(id => get().refreshQuota(id)));
   ipcMain.handle('aiHub:test', secure(id => get().testChannel(id)));
-  ipcMain.handle('aiHub:start', secure(() => get().start()));
+  ipcMain.handle('aiHub:start', secure(port => get().start(port == null ? 18878 : Number(port))));
   ipcMain.handle('aiHub:stop', secure(() => get().stop()));
   ipcMain.handle('aiHub:rotate', secure(() => get().rotate()));
   ipcMain.handle('aiHub:copyKey', secure(() => { if (!get().token) throw fault(400, '请先启动网关'); markClipboardSecret(get().token); clipboard.writeText(get().token); return {}; }));
+  ipcMain.handle('aiHub:peerStatus', secure(() => peer().status()));
+  ipcMain.handle('aiHub:suggestPort', secure(async () => ({ port: await suggestPeerPort() })));
+  ipcMain.handle('aiHub:peerConnect', secure(payload => peer().connect(payload)));
+  ipcMain.handle('aiHub:peerTest', secure(() => peer().test()));
+  ipcMain.handle('aiHub:peerInstallDsh', secure(async () => {
+    const dsh = getDshService();
+    if (['starting', 'installing', 'stopping'].includes(dsh?.status().status)) throw fault(409, 'DSH 正在启动或停止，请完成后重试');
+    const wasRunning = dsh?.status().status === 'running';
+    if (wasRunning && !dsh.status().managed) throw fault(409, 'DSH 由其他程序启动；请先在原程序退出后再接入');
+    if (wasRunning) await dsh.stop();
+    try {
+      const { resolveCommand } = require('./dsh-service');
+      const userData = app.getPath('userData');
+      const result = peer().installDsh({
+        pluginSource: path.join(__dirname, '../../assets/dsh-quota-hub-text'),
+        dshCommand: resolveCommand('dsh', userData),
+        nodeCommand: resolveCommand('node', userData),
+      });
+      if (!wasRunning) return { ...result, restartNeeded: true };
+      await new Promise(resolve => setTimeout(resolve, 800));
+      const started = await dsh.start();
+      if (!started.ok) throw fault(502, 'DSH 配置已保存，但重启失败；请在 DSH 页面重新启动');
+      await peer().verifyDshBridge();
+      return { ...result, restartNeeded: false, dshRunning: true };
+    } catch (error) {
+      if (wasRunning && dsh.status().status !== 'running') await dsh.start().catch(() => {});
+      throw error;
+    }
+  }));
   ipcMain.handle('aiHub:loginStart', secure(async id => {
     closeLogin(); const login = await get().loginStart(id);
     const { BrowserWindow, session } = require('electron');

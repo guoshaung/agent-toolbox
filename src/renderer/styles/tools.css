@@ -5250,6 +5250,27 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .aihub__row h3 { margin-right: auto; }
 .aihub__gateway, .aihub__editor, .aihub__channel, .aihub__help { padding: 18px; }
 .aihub__gateway { display: grid; gap: 14px; }
+.aihub__setup { padding: 20px; display: grid; gap: 18px; border-color: var(--line-glow, var(--line)); }
+.aihub__setup h3 { margin: 0 0 4px; }
+.aihub__setup .aihub__row > div:first-child { max-width: 680px; }
+.aihub__setup .aihub__row p { margin: 0; line-height: 1.55; }
+.aihub__roles { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.aihub__role { min-height: 44px; padding: 9px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg-raised); color: var(--text); font: inherit; font-weight: 650; cursor: pointer; text-align: center; }
+.aihub__role:hover { border-color: var(--accent); }
+.aihub__role:focus-visible, .aihub__setup button:focus-visible, .aihub__setup input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.aihub__role--active { border-color: var(--accent); background: var(--accent-soft); box-shadow: inset 0 0 0 1px var(--accent); }
+.aihub__setup-section { display: grid; gap: 12px; border-top: 1px solid var(--line); padding-top: 16px; }
+.aihub__setup-section[hidden], .aihub__setup[hidden], .aihub__setup [hidden] { display: none !important; }
+.aihub__setup-heading { display: flex; align-items: baseline; flex-wrap: wrap; gap: 10px; }
+.aihub__setup-heading strong { font-size: 15px; }
+.aihub__setup-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: end; gap: 12px; }
+.aihub__setup-grid .aihub__field { min-width: 0; }
+.aihub__setup-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.aihub__key-input { display: flex; gap: 8px; }
+.aihub__key-input .field { min-width: 0; flex: 1; }
+.aihub__setup-models { display: flex; flex-wrap: wrap; gap: 6px; }
+.aihub__setup-model { max-width: 100%; overflow-wrap: anywhere; padding: 5px 9px; border: 1px solid var(--line); border-radius: 8px; color: var(--text-dim); font-size: 12px; }
+.aihub__setup-notice { margin: 0; padding: 10px 12px; border-left: 3px solid var(--accent); background: var(--accent-soft); border-radius: 0 8px 8px 0; line-height: 1.5; }
 .aihub__summary { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 12px; }
 .aihub__metric { display: grid; gap: 6px; padding: 16px; }
 .aihub__metric strong { font-size: 24px; }
@@ -5267,4 +5288,4 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .aihub__log { display: grid; grid-template-columns: 90px minmax(100px,1fr) 110px 65px; gap: 10px; padding: 10px; border-bottom: 1px solid var(--border, #8883); }
 .aihub__usage { font-size: 12px; }
 #tool-ai-hub { min-height: 0; }
-@media(max-width:600px) { .aihub__body { padding: 12px; } .aihub__summary { grid-template-columns: 1fr; } .aihub__log { grid-template-columns: 75px 1fr 85px; } .aihub__log > :last-child { display: none; } }
+@media(max-width:600px) { .aihub__body { padding: 12px; } .aihub__summary, .aihub__setup-grid { grid-template-columns: 1fr; } .aihub__roles { grid-template-columns: 1fr; } .aihub__log { grid-template-columns: 75px 1fr 85px; } .aihub__log > :last-child { display: none; } }

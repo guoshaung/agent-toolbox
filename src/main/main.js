@@ -1908,7 +1908,7 @@ function registerIpc() {
   registerDrawingIpc(ipcMain, { app });
   registerAiHubIpc(ipcMain, { app, safeStorage, clipboard, currentApi: () => ({
     baseUrl: store.get('ai.api.baseUrl', ''), model: store.get('ai.api.model', ''), key: readApiKey(),
-  }), markClipboardSecret: value => { clipSecrets.add(value); if (clipSecrets.size > 50) clipSecrets.delete(clipSecrets.values().next().value); } });
+  }), getDshService: () => dshService, markClipboardSecret: value => { clipSecrets.add(value); if (clipSecrets.size > 50) clipSecrets.delete(clipSecrets.values().next().value); } });
   registerContainerIpc(ipcMain, { shell, getUserDataPath: () => app.getPath('userData') });
   // 鼠标侧键 → 切换应用（macOS，swiftc 编译的 CGEventTap 小助手）
   registerMouseSwitchIpc(ipcMain, { getUserDataPath: () => app.getPath('userData') });
