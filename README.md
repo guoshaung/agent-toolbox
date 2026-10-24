@@ -111,7 +111,7 @@ Windows 安装版会定期检查更新，确认后才下载。下载完成可立
 
 ## 开发与构建
 
-需要 Git、Node.js 和 npm；仓库 CI 使用 Node.js 20。原生扩展的开发要求见对应模块文档。
+需要 Git、Node.js 和 npm；仓库 CI 使用 Node.js 22。原生扩展的开发要求见对应模块文档。
 
 ```bash
 git clone https://github.com/guoshaung/agent-toolbox.git
