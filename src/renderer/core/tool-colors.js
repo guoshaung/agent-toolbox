@@ -30,6 +30,7 @@ export const TOOL_COLORS = {
   tavern:         '#d9737a',   // 砖红
   pet:            '#5ec8d8',   // 湖蓝
   appearance:     '#e6a5e0',   // 粉紫
+  'system-beauty':'#9bbdf5',
   dsh:            '#7ed36b',   // 草绿
 
   // 下面这些平时收在「更多」里，彼此不相邻，按用途给色就行

@@ -1,6 +1,6 @@
 {
   "name": "agent-toolbox",
-  "version": "0.46.16",
+  "version": "0.46.25",
   "description": "个人 Agent 工具箱：科研文献 / 代码阅读 / 文档 / 打字纠错 / 专注 / DeepSeek 快问",
   "private": true,
   "main": "src/main/main.js",
@@ -19,7 +19,7 @@
     "dist:win": "electron-builder --win nsis --x64",
     "icon": "electron scripts/build-icon.js",
     "test": "node --test \"test/*.test.js\"",
-    "check": "node --check src/main/main.js && node --check src/main/preload.js && node --test",
+    "check": "node --check src/main/main.js && node --check src/main/preload.js && npm run test",
     "logo": "node scripts/build-logo.js",
     "release": "electron-builder --mac dmg zip --publish always"
   },
@@ -41,6 +41,7 @@
     "qrcode": "^1.5.4",
     "sharp": "0.35.5",
     "three": "^0.186.0",
+    "ws": "^8.22.0",
     "zod": "^4.5.4"
   },
   "build": {
@@ -49,7 +50,8 @@
     "asar": true,
     "asarUnpack": [
       "node_modules/@mediapipe/tasks-vision/wasm/**",
-      "assets/models/**"
+      "assets/models/**",
+      "src/main/vendor/**"
     ],
     "files": [
       "src/**/*",

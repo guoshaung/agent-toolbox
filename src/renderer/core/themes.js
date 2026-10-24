@@ -1,3 +1,4 @@
+import { readableText } from './readability.js';
 const COLOR_VARS = ['--glow-a','--glow-b','--bg','--bg-raised','--bg-sunken','--panel','--panel-glass','--line','--line-soft','--line-glow','--text','--text-dim','--text-faint','--accent','--accent-soft','--accent-glow','--accent-secondary','--accent-secondary-soft','--accent-tertiary','--accent-tertiary-soft','--glow-accent','--good','--warn','--bad',
   '--code-bg','--code-fg','--code-fg-dim','--code-line','--code-ln','--tok-com','--tok-str','--tok-kw','--tok-fn','--tok-bi','--tok-num','--tok-param','--tok-call','--tok-member'];
 
@@ -111,6 +112,13 @@ export function applyTheme(id) {
   root.dataset.theme = theme.id;
   root.dataset.clean = theme.clean ? '1' : '';
   for (const name of COLOR_VARS) root.style.setProperty(name, theme.vars[name] ?? '');
+  const surfaces = ['--bg', '--bg-raised', '--bg-sunken', '--panel'].map(name => theme.vars[name]);
+  root.style.setProperty('--text-faint', readableText(theme.vars['--text-faint'], surfaces));
+  root.style.setProperty('--text-dim', readableText(theme.vars['--text-dim'], surfaces, 5.5));
+  // Controls need their own visible silhouette, not just readable labels.
+  const controlFill = readableText(theme.vars['--panel'], surfaces, 3);
+  root.style.setProperty('--control-fill', controlFill);
+  root.style.setProperty('--control-ink', inkOn(controlFill));
   root.style.setProperty('--accent-ink', inkOn(theme.vars['--accent']));
   return theme;
 }

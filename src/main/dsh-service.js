@@ -283,7 +283,10 @@ function blenderMcpLines(uvx) {
     '    serverName: blender',
     '    transport: stdio',
     `    command: ${yamlPath(uvx)}`,
-    "    args: ['mcp-for-blender']",
+    // Optional tooling must not hold the web UI's startup barrier while uv
+    // downloads packages. A cached installation works offline; a missing one
+    // fails promptly and can be installed explicitly when Blender is needed.
+    "    args: ['--offline', 'mcp-for-blender']",
     '    toolCallTimeoutMs: 180000',
     '    failOnStartupError: false',
     '',
@@ -323,7 +326,12 @@ function probe(port = DEFAULT_PORT, requestPath = '/') {
 }
 
 function findWebUrl(text) {
-  return String(text || '').match(/https?:\/\/[^\s"'<>]+/)?.[0] || '';
+  const clean = String(text || '').replace(/\x1b\[[0-9;]*m/g, '');
+  const local = (clean.match(/https?:\/\/[^\s"'<>]+/g) || []).filter(value => {
+    try { const url = new URL(value); return ['127.0.0.1', 'localhost', '[::1]'].includes(url.hostname) && Boolean(url.port) && !url.username && !url.password; }
+    catch { return false; }
+  });
+  return local.find(value => new URL(value).searchParams.has('token')) || local[0] || '';
 }
 
 /**
@@ -415,7 +423,9 @@ class DshService {
       this.child = spawn(spec.command, spec.args, spawnOptions({ cwd: dshWorkDir(userData), stdio: ['ignore', 'pipe', 'pipe'], env: withNodeOnPath(process.env, nodeBin) }));
       const captureUrl = (chunk) => {
         const url = findWebUrl(chunk);
-        if (url) this.url = url;
+        // Dependency/plugin diagnostics also print remote and local service URLs.
+        // Only DSH's authenticated loopback launch URL can replace our entry.
+        if (url && new URL(url).searchParams.has('token')) this.url = url;
       };
       const captureWarnings = (chunk) => {
         for (const line of String(chunk).split(/\r?\n/)) {

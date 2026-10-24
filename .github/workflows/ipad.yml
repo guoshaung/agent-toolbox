@@ -1,0 +1,57 @@
+name: Build iPad drawing app
+on:
+  workflow_dispatch:
+  push:
+    branches: [codex/toolbox-unified]
+    paths: ['mobile/ipad/**', '.github/workflows/ipad.yml']
+permissions:
+  contents: read
+jobs:
+  ipad:
+    runs-on: macos-15
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Generate Xcode project
+        run: python3 mobile/ipad/generate_project.py
+      - name: Compile native iPad app
+        run: |
+          set -o pipefail
+          xcodebuild -project mobile/ipad/ToolboxDrawing.xcodeproj -scheme ToolboxDrawing -configuration Release -destination 'generic/platform=iOS' -derivedDataPath build/ipad CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO build | tee build-ipad.log
+      - name: Verify conservative scribble recognition and ink hit testing
+        run: |
+          swiftc mobile/ipad/ToolboxDrawing/InkGestures.swift mobile/ipad/tests/InkGesturesTests.swift -o build/ink-gesture-checks
+          build/ink-gesture-checks
+      - name: Package unsigned IPA for personal signing
+        run: |
+          mkdir -p build/package/Payload build/output
+          cp -R build/ipad/Build/Products/Release-iphoneos/ToolboxDrawing.app build/package/Payload/
+          APP_VERSION=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' mobile/ipad/ToolboxDrawing/Info.plist)
+          cd build/package
+          zip -qry "../output/ToolboxDrawing-${APP_VERSION}-unsigned.ipa" Payload
+          cd ../..
+          shasum -a 256 build/output/*.ipa > build/output/SHA256SUMS.txt
+          cp mobile/ipad/README.md build/output/INSTALL.md
+      - name: Build and launch iPad simulator smoke test
+        run: |
+          set -o pipefail
+          xcodebuild -project mobile/ipad/ToolboxDrawing.xcodeproj -scheme ToolboxDrawing -configuration Debug -destination 'generic/platform=iOS Simulator' -derivedDataPath build/simulator CODE_SIGNING_ALLOWED=NO build > build-simulator.log 2>&1
+          DEVICE=$(xcrun simctl list devices available --json | python3 -c 'import json,sys; d=json.load(sys.stdin); print(next(x["udid"] for a in d["devices"].values() for x in a if "iPad" in x["name"]))')
+          xcrun simctl boot "$DEVICE"
+          xcrun simctl bootstatus "$DEVICE" -b
+          xcrun simctl install "$DEVICE" build/simulator/Build/Products/Debug-iphonesimulator/ToolboxDrawing.app
+          xcrun simctl launch "$DEVICE" cn.macpe.agenttoolbox.drawing
+          sleep 5
+          xcrun simctl io "$DEVICE" screenshot build/output/ipad-simulator.png
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ToolboxDrawing-unsigned
+          path: build/output/*
+          retention-days: 14
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: ipad-build-log
+          path: |
+            build-ipad.log
+            build-simulator.log

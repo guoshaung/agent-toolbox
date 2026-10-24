@@ -1,0 +1,27 @@
+// !$*UTF8*$!
+{archiveVersion = 1; classes = {}; objectVersion = 56; objects = {
+000000000000000000000001 = {isa = PBXProject; attributes = {LastUpgradeCheck = 1600;}; buildConfigurationList = 00000000000000000000000C; compatibilityVersion = "Xcode 14.0"; developmentRegion = zh_CN; knownRegions = (en, Base, zh_CN); mainGroup = 000000000000000000000002; productRefGroup = 000000000000000000000004; projectDirPath = ""; projectRoot = ""; targets = (000000000000000000000005);};
+000000000000000000000002 = {isa = PBXGroup; children = (000000000000000000000003, 000000000000000000000004); sourceTree = "<group>";};
+000000000000000000000003 = {isa = PBXGroup; path = ToolboxDrawing; children = (000000000000000000000008, 000000000000000000000009, 000000000000000000000015, 000000000000000000000017, 000000000000000000000013); sourceTree = "<group>";};
+000000000000000000000004 = {isa = PBXGroup; children = (000000000000000000000006); name = Products; sourceTree = "<group>";};
+000000000000000000000006 = {isa = PBXFileReference; explicitFileType = wrapper.application; path = ToolboxDrawing.app; sourceTree = BUILT_PRODUCTS_DIR;};
+000000000000000000000008 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = App.swift; sourceTree = "<group>";};
+000000000000000000000009 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncStore.swift; sourceTree = "<group>";};
+00000000000000000000000A = {isa = PBXBuildFile; fileRef = 000000000000000000000008;};
+00000000000000000000000B = {isa = PBXBuildFile; fileRef = 000000000000000000000009;};
+000000000000000000000015 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DrawingShelf.swift; sourceTree = "<group>";};
+000000000000000000000016 = {isa = PBXBuildFile; fileRef = 000000000000000000000015;};
+000000000000000000000017 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = InkGestures.swift; sourceTree = "<group>";};
+000000000000000000000018 = {isa = PBXBuildFile; fileRef = 000000000000000000000017;};
+000000000000000000000013 = {isa = PBXFileReference; lastKnownFileType = image.png; path = AppIcon.png; sourceTree = "<group>";};
+000000000000000000000014 = {isa = PBXBuildFile; fileRef = 000000000000000000000013;};
+000000000000000000000012 = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (000000000000000000000014); runOnlyForDeploymentPostprocessing = 0;};
+000000000000000000000007 = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (00000000000000000000000A, 00000000000000000000000B, 000000000000000000000016, 000000000000000000000018); runOnlyForDeploymentPostprocessing = 0;};
+000000000000000000000005 = {isa = PBXNativeTarget; buildConfigurationList = 00000000000000000000000D; buildPhases = (000000000000000000000007, 000000000000000000000012); buildRules = (); dependencies = (); name = ToolboxDrawing; productName = ToolboxDrawing; productReference = 000000000000000000000006; productType = "com.apple.product-type.application";};
+00000000000000000000000C = {isa = XCConfigurationList; buildConfigurations = (00000000000000000000000E, 00000000000000000000000F); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release;};
+00000000000000000000000D = {isa = XCConfigurationList; buildConfigurations = (000000000000000000000010, 000000000000000000000011); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release;};
+00000000000000000000000E = {isa = XCBuildConfiguration; buildSettings = {SDKROOT = iphoneos; IPHONEOS_DEPLOYMENT_TARGET = 16.0; CLANG_ENABLE_MODULES = YES; SWIFT_VERSION = 5.0; DEBUG_INFORMATION_FORMAT = dwarf;}; name = Debug;};
+00000000000000000000000F = {isa = XCBuildConfiguration; buildSettings = {SDKROOT = iphoneos; IPHONEOS_DEPLOYMENT_TARGET = 16.0; CLANG_ENABLE_MODULES = YES; SWIFT_VERSION = 5.0; SWIFT_OPTIMIZATION_LEVEL = "-O";}; name = Release;};
+000000000000000000000010 = {isa = XCBuildConfiguration; buildSettings = {PRODUCT_BUNDLE_IDENTIFIER = cn.macpe.agenttoolbox.drawing; PRODUCT_NAME = ToolboxDrawing; INFOPLIST_FILE = ToolboxDrawing/Info.plist; TARGETED_DEVICE_FAMILY = 2; CODE_SIGN_STYLE = Automatic; SUPPORTS_MACCATALYST = NO; SWIFT_EMIT_LOC_STRINGS = YES; SWIFT_OPTIMIZATION_LEVEL = "-Onone";}; name = Debug;};
+000000000000000000000011 = {isa = XCBuildConfiguration; buildSettings = {PRODUCT_BUNDLE_IDENTIFIER = cn.macpe.agenttoolbox.drawing; PRODUCT_NAME = ToolboxDrawing; INFOPLIST_FILE = ToolboxDrawing/Info.plist; TARGETED_DEVICE_FAMILY = 2; CODE_SIGN_STYLE = Automatic; SUPPORTS_MACCATALYST = NO; SWIFT_EMIT_LOC_STRINGS = YES;}; name = Release;};
+}; rootObject = 000000000000000000000001;}
