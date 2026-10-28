@@ -1,4 +1,5 @@
 import { TOOLS } from './core/registry.js';
+import { MODES, getMode, DEFAULT_MODE, pinnedKeyFor, rightPinnedKeyFor } from './core/modes.js';
 import { applyTypography, showStartup } from './core/startup-style.js';
 import { colorOf } from './core/tool-colors.js';
 import { DeepSeekBridge } from './core/deepseek-bridge.js';
@@ -6,7 +7,7 @@ import { Config } from './core/config.js';
 import { AI } from './core/ai.js';
 import { h, toast } from './core/ui.js';
 import { logoById, applyAppIcon, applyLogo } from './core/logos.js';
-import { applyStoredTheme, applyStoredEffect, watchSystemTheme } from './core/themes.js';
+import { applyStoredTheme, applyStoredEffect, applyTheme, applyEffect, watchSystemTheme } from './core/themes.js';
 import { iconFor } from './core/icons.js';
 import { buildTermPrompt, buildTermSystemPrompt, normalizeTermResult } from './tools/terms/prompt.js';
 import { createSwitcher } from './core/switcher.js';
@@ -30,6 +31,8 @@ const paletteButton = h('button', { class: 'atelier-banner__dsh atelier-banner__
 // 顶栏快捷入口：今日大模型 —— 直接在工具箱里开一层内嵌网页，不再甩去系统浏览器
 const aiModelButton = h('button', { class: 'atelier-banner__dsh atelier-banner__aimodel', title: '今日大模型 · 在工具箱内打开 AI Model World', onclick: () => openWebPanel({ url: 'https://www.bilibili.com/toy/ai-model-world', title: '今日大模型', partition: 'persist:aimodel' }) }, '🌐 ', h('span', { class: 'atelier-banner__dsh-state' }, '今日大模型'));
 let palette = null;
+// 三态模式切换胶囊（研读/效率/乐园），内容在 renderModeSwitch() 里填（那时 currentMode 已就绪）
+const modeSwitch = h('div', { class: 'mode-switch', 'aria-label': '模式切换' });
 // 右上角窗口控制：最小化 + 关闭。关闭只关窗口（应用留后台、桌宠还在），不是退出。
 const minButton = h('button', { class: 'atelier-banner__winbtn atelier-banner__winbtn--min', title: '最小化', 'aria-label': '最小化', onclick: () => window.toolbox.app.minimize?.() }, h('span', { 'aria-hidden': 'true' }, '\u2013'));
 const closeButton = h('button', { class: 'atelier-banner__winbtn atelier-banner__winbtn--close', title: '关闭窗口（应用留在后台，桌宠还在；双击桌宠可再打开）', 'aria-label': '关闭窗口', onclick: () => window.toolbox.app.closeWindow?.() }, h('span', { 'aria-hidden': 'true' }, '\u00d7'));
@@ -39,6 +42,7 @@ const atelierBanner = h('header', { class: 'atelier-banner', 'aria-label': 'Agen
     h('span', {}, 'AGENT'),
     h('strong', {}, 'TOOLBOX'),
   ),
+  modeSwitch,
   h('div', { class: 'atelier-banner__bow', 'aria-hidden': 'true' }),
   h('span', { class: 'atelier-banner__caption' }, 'PERSONAL WORKSPACE'),
   aiModelButton,
@@ -49,6 +53,21 @@ const atelierBanner = h('header', { class: 'atelier-banner', 'aria-label': 'Agen
 stage.appendChild(atelierBanner);
 
 const config = await Config.load();
+// ── 模式系统：研读 / 效率 / 极客乐园 ──
+let currentMode = getMode(config.get('ui.mode', DEFAULT_MODE));
+let modeAllowSet = new Set();
+function recomputeAllow() {
+  modeAllowSet = currentMode.allowAll
+    ? new Set(TOOLS.map((t) => t.id))
+    : new Set([...currentMode.allow, 'settings', 'tasks', 'voicebox']);
+}
+recomputeAllow();
+function applyModeVisual(mode) {
+  document.body.dataset.mode = mode.id;
+  if (mode.id === DEFAULT_MODE) { applyStoredTheme(config); applyStoredEffect(config); }
+  else { applyTheme(mode.theme); applyEffect(mode.effect); }
+  if (mode.pet === false) { try { window.toolbox.pet?.setEnabled?.(false); window.toolbox.gaze?.setEnabled?.(false); } catch (_) { /* 桥接不在就算了 */ } }
+}
 applyTypography(config);
 showStartup(config);
 const calmVisualMigrationDone = config.get('ui.visualMigration.crystalCalm', false);
@@ -57,8 +76,7 @@ if (!calmVisualMigrationDone && config.get('ui.theme') === 'cyber' && config.get
   void config.set('ui.effect', 'flat');
 }
 if (!calmVisualMigrationDone) void config.set('ui.visualMigration.crystalCalm', true);
-applyStoredTheme(config);
-applyStoredEffect(config);
+applyModeVisual(currentMode);
 // 鼠标侧键切换：上次开着就自动拉起（仅 macOS），不用每次去工具里点
 if (window.toolbox.platform === 'darwin' && config.get('mouseSwitch.enabled', false)) {
   const _msBack = Number(config.get('mouseSwitch.back', 3)) || 3;
@@ -151,11 +169,11 @@ const SETTINGS_ID = 'settings';
 const MAX_PINNED = LEFT_MAX;
 const DEFAULT_PINNED = ['home', 'ask', 'terms', 'docs', 'controls', 'avatar-rig', 'voice', 'focus'];
 const pinEligibleTools = TOOLS.filter((tool) => tool.id !== SETTINGS_ID && tool.id !== 'tasks');
-let pinnedIds = config.get('ui.pinnedTools', null);
-let rightPinnedIds = config.get('ui.rightPinnedTools', []);
+let pinnedIds = config.get(pinnedKeyFor(currentMode.id), null);
+let rightPinnedIds = config.get(rightPinnedKeyFor(currentMode.id), []);
 if (!Array.isArray(rightPinnedIds)) rightPinnedIds = [];
 if (!pinnedIds || !pinnedIds.length) {
-  pinnedIds = [...DEFAULT_PINNED].slice(0, MAX_PINNED); // 首次运行或已清空：用含快捷控制/语音的默认列表
+  pinnedIds = [...(currentMode.id === DEFAULT_MODE ? DEFAULT_PINNED : currentMode.pinned)].slice(0, MAX_PINNED); // 首次运行或已清空：用该模式的默认列表
 } else {
   pinnedIds = pinnedIds
     .filter((id, index, list) => pinEligibleTools.some((tool) => tool.id === id) && list.indexOf(id) === index)
@@ -187,7 +205,7 @@ rightPinnedIds = rightPinnedIds
   .slice(0, RIGHT_MAX);
 // 左栏满了补不进去的新栏目（今天 / 收纳）放到右栏最前面，别让存量用户只能从「更多」里翻。
 // 只补一次（记在 ui.autoRight 里），之后用户拿掉了就不再塞回来。
-{
+if (currentMode.id === DEFAULT_MODE) {
   const autoRight = config.get('ui.autoRight', []) || [];
   for (const id of ['tidy', 'home']) {
     if (pinnedIds.includes(id) || rightPinnedIds.includes(id) || autoRight.includes(id) || rightPinnedIds.length >= RIGHT_MAX) continue;
@@ -197,6 +215,8 @@ rightPinnedIds = rightPinnedIds
   if (autoRight.length) { config.set('ui.autoRight', autoRight); config.set('ui.rightPinnedTools', rightPinnedIds); }
 }
 
+pinnedIds = pinnedIds.filter((id) => modeAllowSet.has(id));
+rightPinnedIds = rightPinnedIds.filter((id) => modeAllowSet.has(id));
 const pinnedHost = h('div', { class: 'rail__pinned' });
 const rightPinnedHost = h('div', { class: 'rail__pinned' });
 const rightRail = h('nav', { class: 'rail rail--right', id: 'rail-right', hidden: true, 'aria-label': '右侧收藏栏' }, rightPinnedHost);
@@ -228,6 +248,12 @@ const WHEEL_GROUPS = [
   const rest = TOOLS.filter((t) => t.id !== SETTINGS_ID && !grouped.has(t.id)).map((t) => t.id);
   if (rest.length) WHEEL_GROUPS.push({ id: 'other', label: '其他', icon: 'more', color: '#98a2b3', tools: rest });
   for (const g of WHEEL_GROUPS) g.tools = g.tools.filter((id) => TOOLS.some((t) => t.id === id));
+}
+// 轮盘按当前模式过滤：每组工具 ∩ 白名单，空组丢掉
+function buildWheelGroups() {
+  return WHEEL_GROUPS
+    .map((g) => ({ ...g, tools: g.tools.filter((id) => modeAllowSet.has(id)) }))
+    .filter((g) => g.tools.length);
 }
 const TOOL_SUBS = { research: RESEARCH_SUBS, focus: FOCUS_SUBS, game: GAME_SUBS };
 let radial = null;
@@ -343,8 +369,8 @@ async function togglePinned(id) {
     if (added.full) return toast(`右侧常用栏也已达到 ${RIGHT_MAX} 个，请先取消一个收藏。`, 'info');
     rightPinnedIds = added.right;
   }
-  await config.set('ui.pinnedTools', pinnedIds);
-  await config.set('ui.rightPinnedTools', rightPinnedIds);
+  await config.set(pinnedKeyFor(currentMode.id), pinnedIds);
+  await config.set(rightPinnedKeyFor(currentMode.id), rightPinnedIds);
   renderRail();
   radial?.rerender();
 }
@@ -387,7 +413,7 @@ function rightRailButton(tool) {
   button.addEventListener('contextmenu', async (event) => {
     event.preventDefault();
     rightPinnedIds = removePinned({ left: [], right: rightPinnedIds }, tool.id).right;
-    await config.set('ui.rightPinnedTools', rightPinnedIds);
+    await config.set(rightPinnedKeyFor(currentMode.id), rightPinnedIds);
     renderRail();
   });
   return button;
@@ -404,9 +430,10 @@ function renderRail() {
     .map(rightRailButton));
   rightRail.hidden = rightPinnedIds.length === 0;
 
-  const pinnedTools = pinnedIds.map((id) => pinEligibleTools.find((tool) => tool.id === id)).filter(Boolean);
-  const otherTools = pinEligibleTools.filter((tool) => !pinnedIds.includes(tool.id) && !rightPinnedIds.includes(tool.id));
-  libraryCount.textContent = `${pinEligibleTools.length} 个`;
+  const eligible = pinEligibleTools.filter((tool) => modeAllowSet.has(tool.id));
+  const pinnedTools = pinnedIds.map((id) => eligible.find((tool) => tool.id === id)).filter(Boolean);
+  const otherTools = eligible.filter((tool) => !pinnedIds.includes(tool.id) && !rightPinnedIds.includes(tool.id));
+  libraryCount.textContent = `${eligible.length} 个`;
   libraryBody.replaceChildren(
     librarySection('左侧常用', pinnedTools, true),
     librarySection('全部其他', otherTools, false),
@@ -420,7 +447,7 @@ function setLibraryOpen(open) {
   const next = Boolean(open);
   if (!radial) {
     radial = createRadialMenu({
-      groups: WHEEL_GROUPS, tools: TOOLS,
+      groups: buildWheelGroups(), tools: TOOLS.filter((t) => modeAllowSet.has(t.id)),
       subsOf: (id) => TOOL_SUBS[id] || null,
       isPinned: (id) => pinnedIds.includes(id) || rightPinnedIds.includes(id),
       onOpen: (id) => activate(id),
@@ -496,6 +523,7 @@ rail.append(
 );
 document.getElementById('app').appendChild(rightRail);
 renderRail();
+renderModeSwitch();
 window.toolbox.dock.onStatus(renderDockPin);
 window.toolbox.dock.onError((message) => toast(message, 'bad', 5200));
 window.toolbox.dock.status().then(renderDockPin);
@@ -548,6 +576,49 @@ window.addEventListener('keydown', (e) => {
   }
 });
 
+// ── 模式切换：改 body / 皮肤 / 桌宠 + 重载该模式的 pinned + 重建 rail（全部可逆）──
+function loadPinnedForMode(mode) {
+  let left = config.get(pinnedKeyFor(mode.id), null);
+  let right = config.get(rightPinnedKeyFor(mode.id), []);
+  if (!Array.isArray(right)) right = [];
+  if (!left || !left.length) left = [...(mode.id === DEFAULT_MODE ? DEFAULT_PINNED : mode.pinned)];
+  const okIds = new Set(pinEligibleTools.map((t) => t.id));
+  left = left.filter((id, i, l) => okIds.has(id) && modeAllowSet.has(id) && l.indexOf(id) === i).slice(0, MAX_PINNED);
+  right = right.filter((id, i, l) => okIds.has(id) && modeAllowSet.has(id) && !left.includes(id) && l.indexOf(id) === i).slice(0, RIGHT_MAX);
+  return { left, right };
+}
+function renderModeSwitch() {
+  modeSwitch.replaceChildren(...MODES.map((m) => h('button', {
+    class: `mode-switch__btn${m.id === currentMode.id ? ' is-active' : ''}`,
+    title: m.hint,
+    onclick: () => switchMode(m.id),
+  }, h('span', { class: 'mode-switch__emoji' }, m.icon), h('span', { class: 'mode-switch__label' }, m.label))));
+}
+function switchMode(id) {
+  const mode = getMode(id);
+  if (mode.id === currentMode.id) return;
+  currentMode = mode;
+  recomputeAllow();
+  applyModeVisual(mode);
+  config.set('ui.mode', mode.id);
+  const loaded = loadPinnedForMode(mode);
+  pinnedIds = loaded.left;
+  rightPinnedIds = loaded.right;
+  radial = null;
+  renderRail();
+  renderModeSwitch();
+  if (currentId && !modeAllowSet.has(currentId)) {
+    const fb = pinnedIds[0] || [...modeAllowSet][0];
+    if (fb) activate(fb);
+  }
+}
+// Ctrl/Cmd+Shift+1/2/3 切模式（用 e.code 避开 Shift+数字变符号；Ctrl+1..9 已被「切工具」占用，故加 Shift）
+window.addEventListener('keydown', (e) => {
+  if (!(e.ctrlKey || e.metaKey) || !e.shiftKey) return;
+  const id = { Digit1: 'research', Digit2: 'work', Digit3: 'playground' }[e.code];
+  if (id) { e.preventDefault(); switchMode(id); }
+});
+
 // 把工具表推给手机端。写死的话每加一个工具手机上就少一个。
 window.toolbox.remote?.setTools?.(TOOLS.map((t) => ({ id: t.id, title: t.title, emoji: t.emoji || '', color: colorOf(t.id) })));
 
@@ -557,8 +628,9 @@ if (DETACH_ID && TOOLS.some((t) => t.id === DETACH_ID)) {
 } else {
   // 每次打开先落在「今天」；关掉这个开关就回到上次用的工具
   const last = config.get('ui.lastTool');
-  const startHome = config.get('ui.startHome', true) !== false && TOOLS.some((t) => t.id === 'home');
-  activate(startHome ? 'home' : (TOOLS.some((t) => t.id === last) ? last : TOOLS[0].id));
+  const preferHome = config.get('ui.startHome', true) !== false && modeAllowSet.has('home');
+  const startId = preferHome ? 'home' : (modeAllowSet.has(last) && TOOLS.some((t) => t.id === last) ? last : (pinnedIds[0] || [...modeAllowSet][0] || TOOLS[0].id));
+  activate(startId);
   // 主窗口：同步"哪些工具已弹出"（加角标 + 点击改成聚焦独立窗口），以及收回时在主窗口激活
   window.toolbox.detach?.onChanged?.(markDetached);
   window.toolbox.detach?.onDock?.((id) => activate(id));

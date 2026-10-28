@@ -1,0 +1,82 @@
+/* 三大模式皮肤层。排在最后加载，用 body[data-mode] 覆盖；颜色交给 themes.js 的行内变量，这里只管
+   装饰显隐 / 动效总闸 / 紧凑布局。乐园（playground）不写任何规则 = 完全保持原来的女仆霓虹样子。 */
+
+/* ---- 研读 + 效率：隐藏所有女仆装饰（蕾丝 / 蝴蝶结 / 花边 / 贴花 / 纹章） ---- */
+:is(body[data-mode="research"], body[data-mode="work"]) .atelier-banner::before,
+:is(body[data-mode="research"], body[data-mode="work"]) .atelier-banner::after,
+:is(body[data-mode="research"], body[data-mode="work"]) .atelier-banner__bow,
+:is(body[data-mode="research"], body[data-mode="work"]) .stage::before,
+:is(body[data-mode="research"], body[data-mode="work"]) .stage::after,
+:is(body[data-mode="research"], body[data-mode="work"]) .rail-library::before,
+:is(body[data-mode="research"], body[data-mode="work"]) .rail-library::after {
+  display: none !important;
+  content: none !important;
+  background-image: none !important;
+}
+:is(body[data-mode="research"], body[data-mode="work"]) .rail,
+:is(body[data-mode="research"], body[data-mode="work"]) .bar,
+:is(body[data-mode="research"], body[data-mode="work"]) .bar--drag {
+  background-image: none !important;
+}
+/* 侧栏按钮的彩色光晕：研读/效率收掉，回归克制 */
+:is(body[data-mode="research"], body[data-mode="work"]) .rail__item::before {
+  opacity: 0 !important;
+}
+
+/* ---- 研读：学术修道院 —— 关掉一切动效 / 过渡，纸面静止 ---- */
+body[data-mode="research"] *,
+body[data-mode="research"] *::before,
+body[data-mode="research"] *::after {
+  animation-duration: 0.001s !important;
+  animation-delay: 0s !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.08s !important;
+}
+/* logo 脉冲、停靠呼吸这类装饰性动画直接停 */
+body[data-mode="research"] .rail__logo::after,
+body[data-mode="research"] .rail__logo { animation: none !important; box-shadow: none !important; }
+/* 研读行高放宽，长文更好读 */
+body[data-mode="research"] .stage { line-height: 1.75; }
+
+/* ---- 效率：现代暗黑、紧凑高频 —— 更小圆角、更紧的间距 ---- */
+body[data-mode="work"] .rail__label,
+body[data-mode="work"] .rail-library__hint { letter-spacing: 0.01em; }
+body[data-mode="work"] .rail__logo::after { animation: none !important; }
+
+/* ---- 三态模式切换胶囊（顶栏） ---- */
+.mode-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px;
+  border-radius: 999px;
+  background: var(--panel-glass, rgba(255, 255, 255, 0.06));
+  border: 1px solid var(--line, rgba(255, 255, 255, 0.12));
+  -webkit-app-region: no-drag;
+  margin-right: 6px;
+}
+.mode-switch__btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 10px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-dim, #9aa4b2);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.14s, color 0.14s;
+  white-space: nowrap;
+}
+.mode-switch__btn:hover { color: var(--text, #e6eaf0); }
+.mode-switch__btn.is-active {
+  background: var(--accent-soft, rgba(91, 140, 255, 0.18));
+  color: var(--accent, #5b8cff);
+}
+.mode-switch__emoji { font-size: 13px; line-height: 1; }
+@media (max-width: 1040px) {
+  .mode-switch__label { display: none; }
+  .mode-switch__btn { padding: 3px 8px; }
+}
