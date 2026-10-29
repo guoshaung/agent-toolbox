@@ -1,89 +1,39 @@
 'use strict';
 /**
- * Logo 的唯一源头。跑一次生成两个产物，避免图标和界面里的标记走样：
- *   assets/logo.svg            —— 完整图标（深底 + 霓虹芯片），App 图标由它渲染
- *   src/renderer/core/logo.js  —— 只有标记本身（透明底），给侧栏用
+ * Logo 的唯一源头。跑一次生成两个产物：
+ *   assets/logo.svg            —— 完整图标（深石墨底 + 冷白印记），App 图标由它渲染
+ *   src/renderer/core/logo.js  —— 只有印记本身（透明底），给侧栏用
+ *   npm run logo / npm run icon
  *
- *   npm run logo   生成 svg
- *   npm run icon   由 svg 渲染 png / icns
+ * 造型：抽象几何「等距立方体」工坊印记（container = 工具箱）。纯单色冷白，
+ * 无四角星、无芯片引脚、无霓虹发光——能融入深石墨背景（Linear / Raycast 取向）。
  */
 const fs = require('node:fs');
 const path = require('node:path');
-
 const ROOT = path.join(__dirname, '..');
 
-const PALETTES = {
-  // 去掉发白的高光，整体压向饱和的代码绿
-  neon: { light: '#3BFFB4', core: '#00FF9C', deep: '#00A867' },
-  mint: { light: '#5CFFC4', core: '#00FF9C', deep: '#00CE86' },
-};
-const NEON = PALETTES.neon;
-const BG = { top: '#0B2A1D', mid: '#05160E', bottom: '#010805' };
+const INK = '#E6EDF3';   // 冷白
+const BG = '#141720';    // 深石墨（与科研页背景一致，App 图标用）
 
-/** 四角星：AI 的通用符号。腰收得越紧越锐利 */
-function spark(cx, cy, r, waist = 0.09) {
-  const k = r * waist;
-  return `M${cx} ${cy - r} Q${cx + k} ${cy - k}, ${cx + r} ${cy} `
-       + `Q${cx + k} ${cy + k}, ${cx} ${cy + r} `
-       + `Q${cx - k} ${cy + k}, ${cx - r} ${cy} `
-       + `Q${cx - k} ${cy - k}, ${cx} ${cy - r} Z`;
-}
+// 兼容老的 import（logo-preview 等）保留导出；造型已不分色。
+const PALETTES = { mono: { light: INK, core: INK, deep: INK } };
 
-/** 芯片引脚。每边 2 根 —— 3 根在 32px 下会糊成一圈毛边 */
-function pins(bodyInset, { stick = 96, overlap = 36, thick = 60, spread = 150 } = {}) {
-  const near = bodyInset;
-  const far = 1024 - bodyInset;
-  const len = stick + overlap;              // 露在外面的 + 埋进芯片体的
-  const r = thick / 2;
-  const out = [];
-  for (const t of [512 - spread, 512 + spread]) {
-    out.push(`<rect x="${near - stick}" y="${t - r}" width="${len}" height="${thick}" rx="${r}"/>`);
-    out.push(`<rect x="${far - overlap}" y="${t - r}" width="${len}" height="${thick}" rx="${r}"/>`);
-    out.push(`<rect x="${t - r}" y="${near - stick}" width="${thick}" height="${len}" rx="${r}"/>`);
-    out.push(`<rect x="${t - r}" y="${far - overlap}" width="${thick}" height="${len}" rx="${r}"/>`);
-  }
-  return out.join('\n      ');
-}
-
-/** @param p.prefix 给 id 加前缀，防止内联进页面时和别的 SVG 撞 id */
-function build({ prefix = '', withBackground = true, palette = NEON,
-                 outlined = true, bodyInset = 224, sparkR = 236, glow = 0.6,
-                 stroke = 92 } = {}) {
-  const id = (name) => `${prefix}${name}`;
-  const bodySize = 1024 - bodyInset * 2;
-  const body = outlined
-    ? `<rect x="${bodyInset}" y="${bodyInset}" width="${bodySize}" height="${bodySize}" rx="92"
-        fill="none" stroke="url(#${id('neon')})" stroke-width="${stroke}"/>
-      <path d="${spark(512, 512, sparkR * 0.62)}" fill="url(#${id('neon')})"/>`
-    : `<g mask="url(#${id('cut')})"><rect width="1024" height="1024" fill="url(#${id('neon')})"/></g>`;
-  const glyph = `<g fill="url(#${id('neon')})">
-      ${pins(bodyInset)}
-    </g>
-    ${body}`;
-
+/** 等距立方体：正六边形轮廓 + 中心 Y 三辐条（三个可见面），两面微填充做光影。纯冷白线稿。 */
+function build({ prefix = '', withBackground = true } = {}) {
+  void prefix; // 新造型无 gradient/mask id，无需前缀；保留参数兼容旧调用。
+  const T = '512 168', UR = '810 340', LR = '810 684', B = '512 856', LL = '214 684', UL = '214 340', C = '512 512';
+  const hex = `M${T} L${UR} L${LR} L${B} L${LL} L${UL} Z`;
+  const spokes = `M${C} L${T} M${C} L${LR} M${C} L${LL}`;
+  const faceRight = `M${C} L${T} L${UR} L${LR} Z`;  // 受光面
+  const faceLeft = `M${C} L${T} L${UL} L${LL} Z`;
+  const glyph = `
+    <path d="${faceRight}" fill="${INK}" fill-opacity="0.16"/>
+    <path d="${faceLeft}" fill="${INK}" fill-opacity="0.07"/>
+    <path d="${hex}" fill="none" stroke="${INK}" stroke-width="46" stroke-linejoin="round"/>
+    <path d="${spokes}" fill="none" stroke="${INK}" stroke-width="46" stroke-linecap="round" stroke-linejoin="round"/>`;
   return `<svg viewBox="0 0 1024 1024"${withBackground ? ' xmlns="http://www.w3.org/2000/svg"' : ' aria-hidden="true"'}>
-  <defs>
-${withBackground ? `    <linearGradient id="${id('bg')}" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="${BG.top}"/>
-      <stop offset="0.55" stop-color="${BG.mid}"/>
-      <stop offset="1" stop-color="${BG.bottom}"/>
-    </linearGradient>
-` : ''}    <linearGradient id="${id('neon')}" x1="0.1" y1="0" x2="0.9" y2="1">
-      <stop offset="0" stop-color="${palette.light}"/>
-      <stop offset="0.45" stop-color="${palette.core}"/>
-      <stop offset="1" stop-color="${palette.deep}"/>
-    </linearGradient>
-    <filter id="${id('glow')}" x="-30%" y="-30%" width="160%" height="160%">
-      <feGaussianBlur stdDeviation="14"/>
-    </filter>
-    <mask id="${id('cut')}">
-      <rect width="1024" height="1024" fill="black"/>
-      <rect x="${bodyInset}" y="${bodyInset}" width="${bodySize}" height="${bodySize}" rx="88" fill="white"/>
-      <path d="${spark(512, 512, sparkR)}" fill="black"/>
-    </mask>
-  </defs>
-${withBackground ? `  <rect width="1024" height="1024" rx="224" fill="url(#${id('bg')})"/>\n` : ''}  <g filter="url(#${id('glow')})" opacity="${glow}">${glyph}</g>
-  ${glyph}
+${withBackground ? `  <rect width="1024" height="1024" rx="224" fill="${BG}"/>\n` : ''}  <g>${glyph}
+  </g>
 </svg>`;
 }
 
@@ -99,8 +49,7 @@ fs.writeFileSync(path.join(ROOT, 'src', 'renderer', 'core', 'logo.js'),
  * 侧栏上的标记。**这个文件由 scripts/build-logo.js 生成，别手改。**
  * 改造型请改那个脚本，然后跑：npm run logo && npm run icon
  *
- * 这里是无底色版本（只有霓虹芯片），因为侧栏本身就是深色，
- * 再套一层深色圆角底会糊成一团。
+ * 无底色版本（只有冷白几何印记）：侧栏本身深色，不再套深色圆角底。
  */
 export const LOGO_MARK_SVG = \`${mark}\`;
 `);

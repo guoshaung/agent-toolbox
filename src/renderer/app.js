@@ -83,12 +83,14 @@ if (window.toolbox.platform === 'darwin' && config.get('mouseSwitch.enabled', fa
   const _msFwd = Number(config.get('mouseSwitch.fwd', 4)) || 4;
   window.toolbox.mouseSwitch?.start(_msBack, _msFwd).catch(() => {});
 }
-const logoMigrationDone = config.get('ui.logoMigration.prismCore', false);
-const startupLogoId = logoMigrationDone ? config.get('ui.logo', 'prism-core') : 'prism-core';
+// 老版本「星环晶核」(prism-core) 已永久删除：把默认或仍选中它的用户迁到新的冷白几何印记（neon）。
+const logoMigrationDone = config.get('ui.logoMigration.monogram', false);
 if (!logoMigrationDone) {
-  void config.set('ui.logo', 'prism-core');
-  void config.set('ui.logoMigration.prismCore', true);
+  const curLogo = config.get('ui.logo');
+  if (!curLogo || curLogo === 'prism-core') void config.set('ui.logo', 'neon');
+  void config.set('ui.logoMigration.monogram', true);
 }
+const startupLogoId = config.get('ui.logo', 'neon');
 const bridge = new DeepSeekBridge();
 bridge.attach(document.getElementById('bridge-host'));
 
@@ -592,7 +594,7 @@ function renderModeSwitch() {
     class: `mode-switch__btn${m.id === currentMode.id ? ' is-active' : ''}`,
     title: m.hint,
     onclick: () => switchMode(m.id),
-  }, h('span', { class: 'mode-switch__emoji' }, m.icon), h('span', { class: 'mode-switch__label' }, m.label))));
+  }, h('span', { class: 'mode-switch__icon', html: m.icon }), h('span', { class: 'mode-switch__label' }, m.label))));
 }
 function switchMode(id) {
   const mode = getMode(id);

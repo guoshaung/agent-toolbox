@@ -50,8 +50,8 @@ body[data-mode="work"] .rail__logo::after { animation: none !important; }
   gap: 2px;
   padding: 2px;
   border-radius: 999px;
-  background: var(--panel-glass, rgba(255, 255, 255, 0.06));
-  border: 1px solid var(--line, rgba(255, 255, 255, 0.12));
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
   -webkit-app-region: no-drag;
   margin-right: 6px;
 }
@@ -72,12 +72,21 @@ body[data-mode="work"] .rail__logo::after { animation: none !important; }
 }
 .mode-switch__btn:hover { color: var(--text, #e6eaf0); }
 .mode-switch__btn.is-active {
-  background: var(--bg-raised, rgba(255, 255, 255, 0.1));
-  color: var(--text, #e6eaf0);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1), 0 1px 3px rgba(0, 0, 0, 0.35);
+  background: linear-gradient(180deg, #282f3d, #222733);
+  color: #ffffff;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), 0 1px 2px rgba(0, 0, 0, 0.4);
 }
-.mode-switch__emoji { font-size: 13px; line-height: 1; }
+.mode-switch__btn.is-active .mode-switch__icon { color: #ffffff; }
+.mode-switch__icon { display: inline-flex; width: 14px; height: 14px; color: inherit; }
+.mode-switch__icon svg { width: 14px; height: 14px; display: block; }
 @media (max-width: 1040px) {
   .mode-switch__label { display: none; }
   .mode-switch__btn { padding: 3px 8px; }
+}
+
+/* ---- 顶栏黑白融合：研读/效率下让顶栏与正文背景浑然一体，去掉金色边界线 ---- */
+:is(body[data-mode="research"], body[data-mode="work"]) .atelier-banner {
+  background: var(--bg);
+  border-bottom-color: var(--line-soft, rgba(255, 255, 255, 0.06));
+  box-shadow: none;
 }

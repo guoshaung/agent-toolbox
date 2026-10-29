@@ -8,7 +8,7 @@ export const MODES = [
   {
     id: 'research',
     label: '研读',
-    icon: '📖',
+    icon: '<svg viewBox="0 0 14 14" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M7 3.1C5.9 2.3 4.3 2 2.8 2.2v7.6C4.3 9.6 5.9 9.9 7 10.7M7 3.1C8.1 2.3 9.7 2 11.2 2.2v7.6C9.7 9.6 8.1 9.9 7 10.7M7 3.1v7.6"/></svg>',
     hint: '学术修道院：深蓝墨冷色、零干扰、关动效',
     theme: 'ocean',
     effect: 'flat',
@@ -22,7 +22,7 @@ export const MODES = [
   {
     id: 'work',
     label: '效率',
-    icon: '⚡',
+    icon: '<svg viewBox="0 0 14 14" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round"><path d="M7.8 1.6 3.4 7.7h2.9l-.5 4.7 4.8-6.6H7.5z"/></svg>',
     hint: '生产力控制台：现代暗黑、紧凑高频',
     theme: 'silver',
     effect: 'flat',
@@ -36,7 +36,7 @@ export const MODES = [
   {
     id: 'playground',
     label: '乐园',
-    icon: '🎮',
+    icon: '<svg viewBox="0 0 14 14" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><path d="M5.4 2.4h3.2v2.6h2.6v3.2H8.6v2.6H5.4V8.2H2.8V5h2.6z"/></svg>',
     hint: '极客乐园：女仆霓虹、桌宠、全屏动效，工具放飞',
     theme: 'default',
     effect: 'prism',
