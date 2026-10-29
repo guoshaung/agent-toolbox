@@ -9,8 +9,8 @@ export const MODES = [
     id: 'research',
     label: '研读',
     icon: '📖',
-    hint: '学术修道院：极简纸感、零干扰、关动效',
-    theme: 'paper',
+    hint: '学术修道院：深蓝墨冷色、零干扰、关动效',
+    theme: 'ocean',
     effect: 'flat',
     clean: true,          // 隐藏女仆装饰
     motion: false,        // 关全屏动效 / 过渡

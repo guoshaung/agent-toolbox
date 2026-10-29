@@ -72,8 +72,9 @@ body[data-mode="work"] .rail__logo::after { animation: none !important; }
 }
 .mode-switch__btn:hover { color: var(--text, #e6eaf0); }
 .mode-switch__btn.is-active {
-  background: var(--accent-soft, rgba(91, 140, 255, 0.18));
-  color: var(--accent, #5b8cff);
+  background: var(--bg-raised, rgba(255, 255, 255, 0.1));
+  color: var(--text, #e6eaf0);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1), 0 1px 3px rgba(0, 0, 0, 0.35);
 }
 .mode-switch__emoji { font-size: 13px; line-height: 1; }
 @media (max-width: 1040px) {
